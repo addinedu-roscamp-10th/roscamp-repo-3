@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
-from server.ropi_main_service import tcp_server
-from server.ropi_main_service.tcp_protocol import (
+from server.ropi_main_service.transport import tcp_server
+from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     TCPFrame,

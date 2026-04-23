@@ -1,4 +1,4 @@
-from server.ropi_main_service.services.task_request_service import DeliveryRequestService
+from server.ropi_main_service.application.task_request import DeliveryRequestService
 
 
 class FakeDeliveryRequestRepository:

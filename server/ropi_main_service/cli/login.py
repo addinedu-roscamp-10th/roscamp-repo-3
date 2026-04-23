@@ -1,7 +1,7 @@
 import json
 import sys
 
-from server.ropi_main_service.services.auth_service import AuthService
+from server.ropi_main_service.application.auth import AuthService
 
 
 def main():

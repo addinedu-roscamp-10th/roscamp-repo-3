@@ -1,11 +1,11 @@
 from unittest.mock import patch
 
-from server.ropi_main_service.services.task_request_service import DeliveryRequestService
+from server.ropi_main_service.application.task_request import DeliveryRequestService
 
 
 def test_create_delivery_task_rejects_empty_item_id():
     with patch(
-        "server.ropi_main_service.services.task_request_service.DeliveryRequestRepository"
+        "server.ropi_main_service.application.task_request.DeliveryRequestRepository"
     ) as repository_cls:
         service = DeliveryRequestService()
 
@@ -27,7 +27,7 @@ def test_create_delivery_task_rejects_empty_item_id():
 
 def test_create_delivery_task_returns_if_del_001_success_payload():
     with patch(
-        "server.ropi_main_service.services.task_request_service.DeliveryRequestRepository"
+        "server.ropi_main_service.application.task_request.DeliveryRequestRepository"
     ) as repository_cls:
         repository_cls.return_value.create_delivery_task.return_value = {
             "result_code": "ACCEPTED",

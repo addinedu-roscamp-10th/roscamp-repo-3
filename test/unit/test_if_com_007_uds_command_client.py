@@ -1,0 +1,67 @@
+import os
+import socket
+import threading
+
+from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
+from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
+
+
+def test_send_command_uses_unix_domain_socket_and_parses_response(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    received = {}
+    ready = threading.Event()
+    finished = threading.Event()
+
+    def run_server():
+        if socket_path.exists():
+            socket_path.unlink()
+
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server_sock:
+            server_sock.bind(str(socket_path))
+            server_sock.listen(1)
+            ready.set()
+
+            conn, _ = server_sock.accept()
+            with conn:
+                data = conn.recv(4096)
+                received["request"] = decode_message_bytes(data)
+                conn.sendall(
+                    encode_message(
+                        {
+                            "ok": True,
+                            "payload": {
+                                "accepted": True,
+                                "goal_handle_id": "goal_handle_001",
+                            },
+                        }
+                    )
+                )
+        finished.set()
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    ready.wait(timeout=2)
+
+    client = UnixDomainSocketCommandClient(socket_path=str(socket_path), timeout=1.0)
+    response = client.send_command(
+        "navigate_to_goal",
+        {
+            "pinky_id": "pinky2",
+            "goal": {"task_id": "task_delivery_001"},
+        },
+    )
+
+    finished.wait(timeout=2)
+    server_thread.join(timeout=2)
+
+    assert received["request"] == {
+        "command": "navigate_to_goal",
+        "payload": {
+            "pinky_id": "pinky2",
+            "goal": {"task_id": "task_delivery_001"},
+        },
+    }
+    assert response == {
+        "accepted": True,
+        "goal_handle_id": "goal_handle_001",
+    }

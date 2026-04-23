@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
-from server.ropi_main_service.tcp_protocol import MESSAGE_CODE_HEARTBEAT
+from server.ropi_main_service.transport.tcp_protocol import MESSAGE_CODE_HEARTBEAT
 from ui.utils.config.network_config import HEARTBEAT_INTERVAL_MS
 from ui.utils.network.tcp_client import TcpClientError, send_request
 

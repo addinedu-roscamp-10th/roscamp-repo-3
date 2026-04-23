@@ -122,7 +122,7 @@ def control_server(qapp):
         [
             sys.executable,
             "-m",
-            "server.ropi_main_service.tcp_server",
+            "server.ropi_main_service.transport.tcp_server",
             "--host",
             SERVER_HOST,
             "--port",

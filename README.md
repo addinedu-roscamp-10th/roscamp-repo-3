@@ -77,11 +77,11 @@ uv run ropi-user-ui
 단위 테스트:
 
 ```bash
-uv run --group dev ropi-pytest test/unit -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group dev pytest test/unit -q
 ```
 
 운반 런타임 통합 테스트:
 
 ```bash
-uv run --group dev ropi-pytest test/integration/test_runtime_ui_server.py -q
+QT_QPA_PLATFORM=offscreen PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group dev pytest test/integration/test_runtime_ui_server.py -q
 ```

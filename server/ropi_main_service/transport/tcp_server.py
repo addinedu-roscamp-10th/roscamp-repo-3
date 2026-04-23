@@ -6,16 +6,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from server.ropi_main_service.services.auth_service import AuthService
-from server.ropi_main_service.services.caregiver_service import CaregiverService
-from server.ropi_main_service.services.inventory_service import InventoryService
-from server.ropi_main_service.services.patient_service import PatientService
-from server.ropi_main_service.services.staff_call_service import StaffCallService
-from server.ropi_main_service.services.task_request_service import DeliveryRequestService
-from server.ropi_main_service.services.visit_guide_service import VisitGuideService
-from server.ropi_main_service.services.visitor_info_service import VisitorInfoService
-from server.ropi_main_service.services.visitor_register_service import VisitorRegisterService
-from server.ropi_main_service.tcp_protocol import (
+from server.ropi_main_service.application.auth import AuthService
+from server.ropi_main_service.application.caregiver import CaregiverService
+from server.ropi_main_service.application.inventory import InventoryService
+from server.ropi_main_service.application.patient import PatientService
+from server.ropi_main_service.application.staff_call import StaffCallService
+from server.ropi_main_service.application.task_request import DeliveryRequestService
+from server.ropi_main_service.application.visit_guide import VisitGuideService
+from server.ropi_main_service.application.visitor_info import VisitorInfoService
+from server.ropi_main_service.application.visitor_register import VisitorRegisterService
+from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
@@ -27,7 +27,7 @@ from server.ropi_main_service.tcp_protocol import (
     read_frame_from_stream,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SERVER_ROOT = PROJECT_ROOT / "server"
 
 load_dotenv(SERVER_ROOT / ".env")

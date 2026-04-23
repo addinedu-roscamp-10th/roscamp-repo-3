@@ -1,1 +1,1 @@
-"""Business logic layer for the main service."""
+"""ROPI main control service package."""

@@ -1,11 +1,11 @@
 import pytest
 
-from server.ropi_main_service.services.goal_pose_navigation_service import (
+from server.ropi_main_service.application.goal_pose_navigation import (
     GoalPoseNavigationService,
 )
 
 
-class FakeGoalPoseActionClient:
+class FakeRosCommandClient:
     def __init__(self, result=None):
         self.calls = []
         self.result = result or {
@@ -13,11 +13,11 @@ class FakeGoalPoseActionClient:
             "goal_handle_id": "goal_handle_001",
         }
 
-    def send_goal(self, *, action_name, goal):
+    def send_command(self, command, payload):
         self.calls.append(
             {
-                "action_name": action_name,
-                "goal": goal,
+                "command": command,
+                "payload": payload,
             }
         )
         return self.result
@@ -48,9 +48,9 @@ def build_goal_pose(*, frame_id="map"):
     }
 
 
-def test_navigate_delivery_destination_uses_fixed_pinky2_action_name():
-    action_client = FakeGoalPoseActionClient()
-    service = GoalPoseNavigationService(action_client=action_client)
+def test_navigate_delivery_destination_sends_if_com_007_command_to_ros_service():
+    command_client = FakeRosCommandClient()
+    service = GoalPoseNavigationService(command_client=command_client)
 
     response = service.navigate(
         task_id="task_delivery_001",
@@ -59,14 +59,17 @@ def test_navigate_delivery_destination_uses_fixed_pinky2_action_name():
         timeout_sec=120,
     )
 
-    assert action_client.calls == [
+    assert command_client.calls == [
         {
-            "action_name": "/ropi/control/pinky2/navigate_to_goal",
-            "goal": {
-                "task_id": "task_delivery_001",
-                "nav_phase": "DELIVERY_DESTINATION",
-                "goal_pose": build_goal_pose(),
-                "timeout_sec": 120,
+            "command": "navigate_to_goal",
+            "payload": {
+                "pinky_id": "pinky2",
+                "goal": {
+                    "task_id": "task_delivery_001",
+                    "nav_phase": "DELIVERY_DESTINATION",
+                    "goal_pose": build_goal_pose(),
+                    "timeout_sec": 120,
+                },
             },
         }
     ]
@@ -75,8 +78,8 @@ def test_navigate_delivery_destination_uses_fixed_pinky2_action_name():
 
 
 def test_navigate_defaults_goal_pose_frame_id_to_map():
-    action_client = FakeGoalPoseActionClient()
-    service = GoalPoseNavigationService(action_client=action_client)
+    command_client = FakeRosCommandClient()
+    service = GoalPoseNavigationService(command_client=command_client)
 
     service.navigate(
         task_id="task_delivery_002",
@@ -85,13 +88,13 @@ def test_navigate_defaults_goal_pose_frame_id_to_map():
         timeout_sec=90,
     )
 
-    forwarded_goal_pose = action_client.calls[0]["goal"]["goal_pose"]
+    forwarded_goal_pose = command_client.calls[0]["payload"]["goal"]["goal_pose"]
     assert forwarded_goal_pose["header"]["frame_id"] == "map"
 
 
 def test_navigate_rejects_non_delivery_phase_in_phase1():
-    action_client = FakeGoalPoseActionClient()
-    service = GoalPoseNavigationService(action_client=action_client)
+    command_client = FakeRosCommandClient()
+    service = GoalPoseNavigationService(command_client=command_client)
 
     with pytest.raises(ValueError, match="nav_phase"):
         service.navigate(
@@ -101,4 +104,4 @@ def test_navigate_rejects_non_delivery_phase_in_phase1():
             timeout_sec=60,
         )
 
-    assert action_client.calls == []
+    assert command_client.calls == []

@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from server.ropi_main_service.tcp_protocol import (
+from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_INTERNAL_RPC,
     TCPFrame,
     decode_frame_bytes,

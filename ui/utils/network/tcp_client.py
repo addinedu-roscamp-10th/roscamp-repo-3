@@ -1,7 +1,7 @@
 import socket
 from itertools import count
 
-from server.ropi_main_service.tcp_protocol import (
+from server.ropi_main_service.transport.tcp_protocol import (
     build_frame,
     encode_frame,
     read_frame_from_socket,

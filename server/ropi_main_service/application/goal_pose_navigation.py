@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
+
 
 FIXED_DELIVERY_PINKY_ID = "pinky2"
 DEFAULT_FRAME_ID = "map"
@@ -10,8 +12,8 @@ ALLOWED_PHASE1_NAV_PHASES = {
 
 
 class GoalPoseNavigationService:
-    def __init__(self, action_client=None):
-        self.action_client = action_client
+    def __init__(self, command_client=None):
+        self.command_client = command_client or UnixDomainSocketCommandClient()
 
     def navigate(self, *, task_id, nav_phase, goal_pose, timeout_sec):
         self._validate_request(
@@ -29,14 +31,13 @@ class GoalPoseNavigationService:
             "timeout_sec": timeout_sec,
         }
 
-        return self._get_action_client().send_goal(
-            action_name=self._build_action_name(FIXED_DELIVERY_PINKY_ID),
-            goal=goal,
+        return self._get_command_client().send_command(
+            "navigate_to_goal",
+            {
+                "pinky_id": FIXED_DELIVERY_PINKY_ID,
+                "goal": goal,
+            },
         )
-
-    @staticmethod
-    def _build_action_name(pinky_id: str) -> str:
-        return f"/ropi/control/{pinky_id}/navigate_to_goal"
 
     @staticmethod
     def _normalize_goal_pose(goal_pose):
@@ -63,8 +64,8 @@ class GoalPoseNavigationService:
         if int(timeout_sec) <= 0:
             raise ValueError("timeout_sec는 1 이상이어야 합니다.")
 
-    def _get_action_client(self):
-        if self.action_client is None:
-            raise RuntimeError("Goal pose action client가 아직 구성되지 않았습니다.")
+    def _get_command_client(self):
+        if self.command_client is None:
+            raise RuntimeError("ROS service command client가 아직 구성되지 않았습니다.")
 
-        return self.action_client
+        return self.command_client

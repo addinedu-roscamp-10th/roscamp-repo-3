@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from server.ropi_main_service.tcp_protocol import MESSAGE_CODE_DELIVERY_CREATE_TASK
+from server.ropi_main_service.transport.tcp_protocol import MESSAGE_CODE_DELIVERY_CREATE_TASK
 from ui.utils.network.service_clients import DeliveryRequestRemoteService
 
 
