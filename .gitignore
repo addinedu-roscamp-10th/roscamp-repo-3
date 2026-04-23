@@ -211,3 +211,9 @@ __marimo__/
 build/
 install/
 log/
+
+# custom
+system_design/
+.codex/
+.serena
+A_Ros2_project/
