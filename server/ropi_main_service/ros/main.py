@@ -4,6 +4,7 @@ import signal
 import threading
 from contextlib import suppress
 
+from server.ropi_main_service.observability import configure_logging
 from server.ropi_main_service.ros.goal_pose_action_client import RclpyGoalPoseActionClient
 from server.ropi_main_service.ros.manipulation_action_client import RclpyManipulationActionClient
 from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
@@ -58,6 +59,7 @@ async def _run_ros_service(node_name: str):
 
 def main():
     args = parse_args()
+    configure_logging()
     asyncio.run(_run_ros_service(args.node_name))
 
 

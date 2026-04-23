@@ -23,6 +23,7 @@ class RosServiceCommandDispatcher:
         self.goal_pose_action_client = goal_pose_action_client
         self.manipulation_action_client = manipulation_action_client
         self._command_handlers = {
+            "get_runtime_status": self._dispatch_get_runtime_status,
             "navigate_to_goal": self._dispatch_navigate_to_goal,
             "execute_manipulation": self._dispatch_execute_manipulation,
         }
@@ -73,6 +74,63 @@ class RosServiceCommandDispatcher:
             goal=goal,
             result_wait_timeout_sec=self.DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC,
         )
+
+    def _dispatch_get_runtime_status(self, payload: dict) -> dict:
+        pinky_id = str(payload.get("pinky_id") or "pinky2").strip() or "pinky2"
+        arm_ids = payload.get("arm_ids") or []
+        checks = []
+
+        navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
+        checks.append(
+            {
+                "name": f"{pinky_id}.navigate_to_goal",
+                "ready": self.goal_pose_action_client.is_server_ready(
+                    action_name=navigate_action_name,
+                    wait_timeout_sec=0.0,
+                ),
+                "action_name": navigate_action_name,
+            }
+        )
+
+        for arm_id in arm_ids:
+            action_name = f"/ropi/arm/{arm_id}/execute_manipulation"
+            if self.manipulation_action_client is None:
+                checks.append(
+                    {
+                        "name": f"{arm_id}.execute_manipulation",
+                        "ready": False,
+                        "action_name": action_name,
+                        "error": "manipulation action client is not configured",
+                    }
+                )
+                continue
+
+            try:
+                ready = self.manipulation_action_client.is_server_ready(
+                    action_name=action_name,
+                    wait_timeout_sec=0.0,
+                )
+                checks.append(
+                    {
+                        "name": f"{arm_id}.execute_manipulation",
+                        "ready": ready,
+                        "action_name": action_name,
+                    }
+                )
+            except Exception as exc:  # pragma: no cover
+                checks.append(
+                    {
+                        "name": f"{arm_id}.execute_manipulation",
+                        "ready": False,
+                        "action_name": action_name,
+                        "error": str(exc),
+                    }
+                )
+
+        return {
+            "ready": all(check.get("ready") is True for check in checks),
+            "checks": checks,
+        }
 
     @staticmethod
     def _get_required_identifier(

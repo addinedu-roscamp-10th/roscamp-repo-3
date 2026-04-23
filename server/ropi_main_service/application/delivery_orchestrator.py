@@ -1,7 +1,14 @@
+import logging
+import time
+
+from server.ropi_main_service.observability import log_event
+
+
 PICKUP_ARM_ID = "arm1"
 DESTINATION_ARM_ID = "arm2"
 PICKUP_TRANSFER_DIRECTION = "TO_ROBOT"
 UNLOAD_TRANSFER_DIRECTION = "FROM_ROBOT"
+logger = logging.getLogger(__name__)
 
 
 class DeliveryOrchestrator:
@@ -25,12 +32,24 @@ class DeliveryOrchestrator:
         self.delivery_navigation_timeout_sec = delivery_navigation_timeout_sec
 
     def run(self, *, task_id, item_id, quantity, destination_id):
+        started_at = time.monotonic()
+        log_event(
+            logger,
+            logging.INFO,
+            "delivery_workflow_started",
+            task_id=task_id,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
+        )
         pickup_goal_pose = self.pickup_goal_pose_resolver()
         if not pickup_goal_pose:
-            return self._failed(
+            response = self._failed(
                 "pickup goal pose를 찾을 수 없습니다.",
                 reason_code="PICKUP_GOAL_POSE_MISSING",
             )
+            self._log_failure("delivery_pickup_goal_pose_missing", task_id, response, started_at)
+            return response
 
         pickup_response = self.goal_pose_navigation_service.navigate(
             task_id=task_id,
@@ -39,6 +58,7 @@ class DeliveryOrchestrator:
             timeout_sec=self.delivery_navigation_timeout_sec,
         )
         if not self._is_success(pickup_response):
+            self._log_failure("delivery_pickup_navigation_failed", task_id, pickup_response, started_at)
             return pickup_response
 
         load_response = self.manipulation_command_service.execute(
@@ -49,14 +69,17 @@ class DeliveryOrchestrator:
             quantity=quantity,
         )
         if not self._is_success(load_response):
+            self._log_failure("delivery_load_failed", task_id, load_response, started_at)
             return load_response
 
         destination_goal_pose = self.destination_goal_pose_resolver(destination_id)
         if not destination_goal_pose:
-            return self._failed(
+            response = self._failed(
                 "destination goal pose를 찾을 수 없습니다.",
                 reason_code="DESTINATION_GOAL_POSE_MISSING",
             )
+            self._log_failure("delivery_destination_goal_pose_missing", task_id, response, started_at)
+            return response
 
         destination_response = self.goal_pose_navigation_service.navigate(
             task_id=task_id,
@@ -65,6 +88,7 @@ class DeliveryOrchestrator:
             timeout_sec=self.delivery_navigation_timeout_sec,
         )
         if not self._is_success(destination_response):
+            self._log_failure("delivery_destination_navigation_failed", task_id, destination_response, started_at)
             return destination_response
 
         unload_response = self.manipulation_command_service.execute(
@@ -75,21 +99,37 @@ class DeliveryOrchestrator:
             quantity=quantity,
         )
         if not self._is_success(unload_response):
+            self._log_failure("delivery_unload_failed", task_id, unload_response, started_at)
             return unload_response
 
         return_to_dock_goal_pose = self.return_to_dock_goal_pose_resolver()
         if not return_to_dock_goal_pose:
-            return self._failed(
+            response = self._failed(
                 "return_to_dock goal pose를 찾을 수 없습니다.",
                 reason_code="RETURN_TO_DOCK_GOAL_POSE_MISSING",
             )
+            self._log_failure("delivery_return_to_dock_goal_pose_missing", task_id, response, started_at)
+            return response
 
-        return self.goal_pose_navigation_service.navigate(
+        return_to_dock_response = self.goal_pose_navigation_service.navigate(
             task_id=task_id,
             nav_phase="RETURN_TO_DOCK",
             goal_pose=return_to_dock_goal_pose,
             timeout_sec=self.delivery_navigation_timeout_sec,
         )
+        if not self._is_success(return_to_dock_response):
+            self._log_failure("delivery_return_to_dock_failed", task_id, return_to_dock_response, started_at)
+            return return_to_dock_response
+
+        log_event(
+            logger,
+            logging.INFO,
+            "delivery_workflow_succeeded",
+            task_id=task_id,
+            result_code=return_to_dock_response.get("result_code"),
+            elapsed_ms=round((time.monotonic() - started_at) * 1000, 2),
+        )
+        return return_to_dock_response
 
     @staticmethod
     def _is_success(response) -> bool:
@@ -102,6 +142,19 @@ class DeliveryOrchestrator:
             "result_message": result_message,
             "reason_code": reason_code,
         }
+
+    @staticmethod
+    def _log_failure(event: str, task_id: str, response: dict, started_at: float):
+        log_event(
+            logger,
+            logging.WARNING,
+            event,
+            task_id=task_id,
+            result_code=response.get("result_code"),
+            result_message=response.get("result_message"),
+            reason_code=response.get("reason_code"),
+            elapsed_ms=round((time.monotonic() - started_at) * 1000, 2),
+        )
 
 
 __all__ = [

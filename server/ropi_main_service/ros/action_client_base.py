@@ -52,6 +52,11 @@ class BaseRclpyActionClient:
         response.update(self._message_to_dict(getattr(result_wrapper, "result", None)))
         return response
 
+    def is_server_ready(self, *, action_name, wait_timeout_sec=0.0):
+        action_type = self.action_type_loader()
+        action_client = self.action_client_factory(self.node, action_type, action_name)
+        return bool(action_client.wait_for_server(timeout_sec=wait_timeout_sec))
+
     @classmethod
     def _build_goal_message(cls, action_type, goal):
         goal_msg = action_type.Goal()

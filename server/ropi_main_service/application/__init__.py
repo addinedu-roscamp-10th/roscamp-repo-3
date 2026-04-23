@@ -5,6 +5,7 @@ from .goal_pose_navigation import GoalPoseNavigationService
 from .inventory import InventoryService
 from .manipulation_command import ManipulationCommandService
 from .patient import PatientService
+from .runtime_readiness import RosRuntimeReadinessService
 from .staff_call import StaffCallService
 from .task_request import DeliveryRequestService, TaskRequestService
 from .visit_guide import VisitGuideService
@@ -23,6 +24,7 @@ __all__ = [
     "InventoryService",
     "ManipulationCommandService",
     "PatientService",
+    "RosRuntimeReadinessService",
     "StaffCallService",
     "TaskRequestService",
     "VisitGuideService",

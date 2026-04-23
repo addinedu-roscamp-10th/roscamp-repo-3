@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import logging
 import os
 from datetime import date, datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNa
 from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.manipulation_command import ManipulationCommandService
 from server.ropi_main_service.application.patient import PatientService
+from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.staff_call import StaffCallService
 from server.ropi_main_service.application.task_request import DeliveryRequestService
 from server.ropi_main_service.application.visit_guide import VisitGuideService
@@ -23,6 +25,7 @@ from server.ropi_main_service.navigation import (
     MappedGoalPoseResolver,
     get_delivery_navigation_config,
 )
+from server.ropi_main_service.observability import configure_logging, log_event
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
@@ -43,6 +46,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 CONTROL_SERVER_HOST = os.getenv("CONTROL_SERVER_HOST", "127.0.0.1")
 CONTROL_SERVER_PORT = int(os.getenv("CONTROL_SERVER_PORT", "5050"))
+logger = logging.getLogger(__name__)
 
 
 def _serialize(value):
@@ -101,7 +105,27 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
         )
 
         def _start_delivery_workflow(**kwargs):
-            loop.create_task(asyncio.to_thread(orchestrator.run, **kwargs))
+            background_task = loop.create_task(asyncio.to_thread(orchestrator.run, **kwargs))
+
+            def _handle_background_task_done(task: asyncio.Task):
+                try:
+                    result = task.result()
+                except Exception:
+                    logger.exception("delivery workflow background task failed", extra={"task_id": kwargs.get("task_id")})
+                    return
+
+                level = logging.INFO if str(result.get("result_code") or "").upper() == "SUCCESS" else logging.WARNING
+                log_event(
+                    logger,
+                    level,
+                    "delivery_workflow_background_finished",
+                    task_id=kwargs.get("task_id"),
+                    result_code=result.get("result_code"),
+                    result_message=result.get("result_message"),
+                    reason_code=result.get("reason_code"),
+                )
+
+            background_task.add_done_callback(_handle_background_task_done)
 
         delivery_workflow_starter = _start_delivery_workflow
 
@@ -133,6 +157,19 @@ class ControlServiceServer:
                     }
                 except Exception as exc:
                     response_payload["db"] = {
+                        "ok": False,
+                        "detail": str(exc),
+                    }
+
+            if payload.get("check_ros"):
+                try:
+                    ros_result = RosRuntimeReadinessService().get_status()
+                    response_payload["ros"] = {
+                        "ok": bool(ros_result.get("ready")),
+                        "detail": ros_result,
+                    }
+                except Exception as exc:
+                    response_payload["ros"] = {
                         "ok": False,
                         "detail": str(exc),
                     }
@@ -215,6 +252,13 @@ class ControlServiceServer:
         print(
             f"ROPI Control Service listening on {bound_host}:{bound_port}",
             flush=True,
+        )
+        log_event(
+            logger,
+            logging.INFO,
+            "control_service_started",
+            host=bound_host,
+            port=bound_port,
         )
         return self._server
 
@@ -302,6 +346,7 @@ async def _run_server(host: str, port: int):
 
 def main():
     args = parse_args()
+    configure_logging()
     try:
         asyncio.run(_run_server(args.host, args.port))
     except KeyboardInterrupt:

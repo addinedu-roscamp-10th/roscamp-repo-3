@@ -37,6 +37,40 @@ def test_heartbeat_with_db_check_puts_db_status_under_payload(control_service_se
     assert response.payload["db"] == {"ok": True, "detail": {"ok": 1}}
 
 
+def test_heartbeat_with_ros_check_puts_ros_status_under_payload(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_HEARTBEAT,
+        sequence_no=4,
+        payload={"check_ros": True},
+    )
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService"
+    ) as readiness_service_cls:
+        readiness_service_cls.return_value.get_status.return_value = {
+            "ready": True,
+            "checks": [
+                {"name": "pinky2.navigate_to_goal", "ready": True},
+                {"name": "arm1.execute_manipulation", "ready": True},
+                {"name": "arm2.execute_manipulation", "ready": True},
+            ],
+        }
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["ros"] == {
+        "ok": True,
+        "detail": {
+            "ready": True,
+            "checks": [
+                {"name": "pinky2.navigate_to_goal", "ready": True},
+                {"name": "arm1.execute_manipulation", "ready": True},
+                {"name": "arm2.execute_manipulation", "ready": True},
+            ],
+        },
+    }
+
+
 def test_rpc_dispatch_routes_to_registered_service(control_service_server):
     payload = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,

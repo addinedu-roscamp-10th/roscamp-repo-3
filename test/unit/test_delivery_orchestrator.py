@@ -1,3 +1,7 @@
+import logging
+
+import pytest
+
 from server.ropi_main_service.application.delivery_orchestrator import DeliveryOrchestrator
 
 
@@ -248,3 +252,149 @@ def test_run_delivery_workflow_stops_when_return_to_dock_goal_pose_is_missing():
     assert return_to_dock_resolver.calls == 1
     assert len(navigation_service.calls) == 2
     assert len(manipulation_service.calls) == 2
+
+
+def test_run_delivery_workflow_stops_after_load_failure():
+    navigation_service = FakeGoalPoseNavigationService(
+        [build_success_response()]
+    )
+    manipulation_service = FakeManipulationCommandService(
+        [
+            {
+                "result_code": "FAILED",
+                "result_message": "load failed",
+            }
+        ]
+    )
+    orchestrator = DeliveryOrchestrator(
+        goal_pose_navigation_service=navigation_service,
+        manipulation_command_service=manipulation_service,
+        pickup_goal_pose_resolver=FakePickupGoalPoseResolver(build_goal_pose()),
+        destination_goal_pose_resolver=FakeDestinationGoalPoseResolver(build_goal_pose(x=18.4, y=7.2)),
+        return_to_dock_goal_pose_resolver=FakeReturnToDockGoalPoseResolver(build_goal_pose(x=0.5, y=0.5)),
+    )
+
+    response = orchestrator.run(
+        task_id="task_delivery_001",
+        item_id="supply_001",
+        quantity=2,
+        destination_id="room_301",
+    )
+
+    assert response == {
+        "result_code": "FAILED",
+        "result_message": "load failed",
+    }
+    assert len(navigation_service.calls) == 1
+    assert len(manipulation_service.calls) == 1
+
+
+def test_run_delivery_workflow_stops_after_destination_navigation_failure():
+    navigation_service = FakeGoalPoseNavigationService(
+        [
+            build_success_response(),
+            {
+                "result_code": "FAILED",
+                "result_message": "destination navigation failed",
+            },
+        ]
+    )
+    manipulation_service = FakeManipulationCommandService(
+        [build_success_response()]
+    )
+    orchestrator = DeliveryOrchestrator(
+        goal_pose_navigation_service=navigation_service,
+        manipulation_command_service=manipulation_service,
+        pickup_goal_pose_resolver=FakePickupGoalPoseResolver(build_goal_pose()),
+        destination_goal_pose_resolver=FakeDestinationGoalPoseResolver(build_goal_pose(x=18.4, y=7.2)),
+        return_to_dock_goal_pose_resolver=FakeReturnToDockGoalPoseResolver(build_goal_pose(x=0.5, y=0.5)),
+    )
+
+    response = orchestrator.run(
+        task_id="task_delivery_001",
+        item_id="supply_001",
+        quantity=2,
+        destination_id="room_301",
+    )
+
+    assert response == {
+        "result_code": "FAILED",
+        "result_message": "destination navigation failed",
+    }
+    assert len(navigation_service.calls) == 2
+    assert len(manipulation_service.calls) == 1
+
+
+def test_run_delivery_workflow_stops_after_unload_failure():
+    navigation_service = FakeGoalPoseNavigationService(
+        [
+            build_success_response(),
+            build_success_response(),
+        ]
+    )
+    manipulation_service = FakeManipulationCommandService(
+        [
+            build_success_response(),
+            {
+                "result_code": "FAILED",
+                "result_message": "unload failed",
+            },
+        ]
+    )
+    return_to_dock_resolver = FakeReturnToDockGoalPoseResolver(build_goal_pose(x=0.5, y=0.5))
+    orchestrator = DeliveryOrchestrator(
+        goal_pose_navigation_service=navigation_service,
+        manipulation_command_service=manipulation_service,
+        pickup_goal_pose_resolver=FakePickupGoalPoseResolver(build_goal_pose()),
+        destination_goal_pose_resolver=FakeDestinationGoalPoseResolver(build_goal_pose(x=18.4, y=7.2)),
+        return_to_dock_goal_pose_resolver=return_to_dock_resolver,
+    )
+
+    response = orchestrator.run(
+        task_id="task_delivery_001",
+        item_id="supply_001",
+        quantity=2,
+        destination_id="room_301",
+    )
+
+    assert response == {
+        "result_code": "FAILED",
+        "result_message": "unload failed",
+    }
+    assert return_to_dock_resolver.calls == 0
+    assert len(navigation_service.calls) == 2
+    assert len(manipulation_service.calls) == 2
+
+
+def test_run_delivery_workflow_logs_failure_stage(caplog):
+    navigation_service = FakeGoalPoseNavigationService(
+        [
+            build_success_response(),
+            {
+                "result_code": "FAILED",
+                "result_message": "destination navigation failed",
+            },
+        ]
+    )
+    manipulation_service = FakeManipulationCommandService(
+        [build_success_response()]
+    )
+    orchestrator = DeliveryOrchestrator(
+        goal_pose_navigation_service=navigation_service,
+        manipulation_command_service=manipulation_service,
+        pickup_goal_pose_resolver=FakePickupGoalPoseResolver(build_goal_pose()),
+        destination_goal_pose_resolver=FakeDestinationGoalPoseResolver(build_goal_pose(x=18.4, y=7.2)),
+        return_to_dock_goal_pose_resolver=FakeReturnToDockGoalPoseResolver(build_goal_pose(x=0.5, y=0.5)),
+    )
+
+    with caplog.at_level(logging.INFO):
+        response = orchestrator.run(
+            task_id="task_delivery_001",
+            item_id="supply_001",
+            quantity=2,
+            destination_id="room_301",
+        )
+
+    assert response["result_code"] == "FAILED"
+    assert "delivery_workflow_started" in caplog.text
+    assert "delivery_destination_navigation_failed" in caplog.text

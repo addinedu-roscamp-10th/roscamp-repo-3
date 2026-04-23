@@ -2,7 +2,12 @@ import os
 import socket
 import threading
 
-from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
+import pytest
+
+from server.ropi_main_service.ipc.uds_client import (
+    RosServiceCommandError,
+    UnixDomainSocketCommandClient,
+)
 from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
 
 
@@ -65,3 +70,17 @@ def test_send_command_uses_unix_domain_socket_and_parses_response(tmp_path):
         "accepted": True,
         "goal_handle_id": "goal_handle_001",
     }
+
+
+def test_send_command_raises_ros_service_command_error_when_socket_is_unavailable(tmp_path):
+    socket_path = tmp_path / "missing.sock"
+    client = UnixDomainSocketCommandClient(socket_path=str(socket_path), timeout=0.1)
+
+    with pytest.raises(RosServiceCommandError, match="failed"):
+        client.send_command(
+            "navigate_to_goal",
+            {
+                "pinky_id": "pinky2",
+                "goal": {"task_id": "task_delivery_001"},
+            },
+        )
