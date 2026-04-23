@@ -10,7 +10,7 @@ from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="ROPI ROS service UDS bridge")
+    parser = argparse.ArgumentParser(description="ROPI ROS service UDS adapter")
     parser.add_argument("--node-name", default="ropi_ros_service")
     return parser.parse_args()
 

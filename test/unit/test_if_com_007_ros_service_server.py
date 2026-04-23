@@ -8,16 +8,19 @@ class FakeGoalPoseActionClient:
     def __init__(self):
         self.calls = []
 
-    def send_goal(self, *, action_name, goal):
+    def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
         self.calls.append(
             {
                 "action_name": action_name,
                 "goal": goal,
+                "result_wait_timeout_sec": result_wait_timeout_sec,
             }
         )
         return {
             "accepted": True,
-            "goal_handle_id": "goal_handle_001",
+            "status": 4,
+            "result_code": "SUCCESS",
+            "result_message": "navigation done",
         }
 
 
@@ -81,12 +84,15 @@ def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
                 },
                 "timeout_sec": 120,
             },
+            "result_wait_timeout_sec": 125.0,
         }
     ]
     assert response == {
         "ok": True,
         "payload": {
             "accepted": True,
-            "goal_handle_id": "goal_handle_001",
+            "status": 4,
+            "result_code": "SUCCESS",
+            "result_message": "navigation done",
         },
     }

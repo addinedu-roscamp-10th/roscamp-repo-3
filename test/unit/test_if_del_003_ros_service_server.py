@@ -5,10 +5,12 @@ from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
 
 
 class FakeGoalPoseActionClient:
-    def send_goal(self, *, action_name, goal):
+    def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
         return {
             "accepted": True,
-            "goal_handle_id": "goal_handle_nav",
+            "status": 4,
+            "result_code": "SUCCESS",
+            "result_message": "navigation done",
         }
 
 
@@ -16,16 +18,20 @@ class FakeManipulationActionClient:
     def __init__(self):
         self.calls = []
 
-    def send_goal(self, *, action_name, goal):
+    def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
         self.calls.append(
             {
                 "action_name": action_name,
                 "goal": goal,
+                "result_wait_timeout_sec": result_wait_timeout_sec,
             }
         )
         return {
             "accepted": True,
-            "goal_handle_id": "goal_handle_manipulation",
+            "status": 4,
+            "result_code": "SUCCESS",
+            "result_message": "manipulation done",
+            "processed_quantity": 2,
         }
 
 
@@ -80,12 +86,16 @@ def test_ros_service_uds_server_dispatches_execute_manipulation_command(tmp_path
                 "quantity": 2,
                 "robot_slot_id": "robot_slot_a1",
             },
+            "result_wait_timeout_sec": 30.0,
         }
     ]
     assert response == {
         "ok": True,
         "payload": {
             "accepted": True,
-            "goal_handle_id": "goal_handle_manipulation",
+            "status": 4,
+            "result_code": "SUCCESS",
+            "result_message": "manipulation done",
+            "processed_quantity": 2,
         },
     }

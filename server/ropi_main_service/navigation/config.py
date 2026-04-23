@@ -32,6 +32,10 @@ def get_delivery_navigation_config() -> dict:
         "ROPI_DELIVERY_DESTINATION_GOAL_POSES_JSON",
         default={},
     )
+    return_to_dock_goal_pose = _load_json_env(
+        "ROPI_RETURN_TO_DOCK_GOAL_POSE_JSON",
+        default=None,
+    )
 
     if pickup_goal_pose is not None and not isinstance(pickup_goal_pose, dict):
         raise RuntimeError("ROPI_DELIVERY_PICKUP_GOAL_POSE_JSON는 goal_pose JSON object여야 합니다.")
@@ -40,6 +44,9 @@ def get_delivery_navigation_config() -> dict:
         raise RuntimeError(
             "ROPI_DELIVERY_DESTINATION_GOAL_POSES_JSON는 destination_id -> goal_pose map JSON object여야 합니다."
         )
+
+    if return_to_dock_goal_pose is not None and not isinstance(return_to_dock_goal_pose, dict):
+        raise RuntimeError("ROPI_RETURN_TO_DOCK_GOAL_POSE_JSON는 goal_pose JSON object여야 합니다.")
 
     normalized_destination_goal_poses = {
         str(destination_id): goal_pose
@@ -50,6 +57,7 @@ def get_delivery_navigation_config() -> dict:
     return {
         "pickup_goal_pose": pickup_goal_pose,
         "destination_goal_poses": normalized_destination_goal_poses,
+        "return_to_dock_goal_pose": return_to_dock_goal_pose,
     }
 
 

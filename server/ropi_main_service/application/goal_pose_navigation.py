@@ -8,12 +8,22 @@ DEFAULT_FRAME_ID = "map"
 ALLOWED_PHASE1_NAV_PHASES = {
     "DELIVERY_PICKUP",
     "DELIVERY_DESTINATION",
+    "RETURN_TO_DOCK",
 }
+DEFAULT_IPC_TIMEOUT_BUFFER_SEC = 5.0
+MINIMUM_IPC_TIMEOUT_SEC = 30.0
 
 
 class GoalPoseNavigationService:
-    def __init__(self, command_client=None):
+    def __init__(
+        self,
+        command_client=None,
+        ipc_timeout_buffer_sec=DEFAULT_IPC_TIMEOUT_BUFFER_SEC,
+        minimum_ipc_timeout_sec=MINIMUM_IPC_TIMEOUT_SEC,
+    ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
+        self.ipc_timeout_buffer_sec = ipc_timeout_buffer_sec
+        self.minimum_ipc_timeout_sec = minimum_ipc_timeout_sec
 
     def navigate(self, *, task_id, nav_phase, goal_pose, timeout_sec):
         self._validate_request(
@@ -37,6 +47,7 @@ class GoalPoseNavigationService:
                 "pinky_id": FIXED_DELIVERY_PINKY_ID,
                 "goal": goal,
             },
+            timeout=self._build_ipc_timeout_sec(timeout_sec),
         )
 
     @staticmethod
@@ -69,3 +80,9 @@ class GoalPoseNavigationService:
             raise RuntimeError("ROS service command client가 아직 구성되지 않았습니다.")
 
         return self.command_client
+
+    def _build_ipc_timeout_sec(self, timeout_sec):
+        return max(
+            float(timeout_sec) + float(self.ipc_timeout_buffer_sec),
+            float(self.minimum_ipc_timeout_sec),
+        )

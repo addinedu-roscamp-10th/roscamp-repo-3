@@ -9,15 +9,16 @@ class FakeRosCommandClient:
     def __init__(self, result=None):
         self.calls = []
         self.result = result or {
-            "accepted": True,
-            "goal_handle_id": "goal_handle_001",
+            "result_code": "SUCCESS",
+            "result_message": "navigation done",
         }
 
-    def send_command(self, command, payload):
+    def send_command(self, command, payload, timeout=None):
         self.calls.append(
             {
                 "command": command,
                 "payload": payload,
+                "timeout": timeout,
             }
         )
         return self.result
@@ -71,10 +72,11 @@ def test_navigate_delivery_destination_sends_if_com_007_command_to_ros_service()
                     "timeout_sec": 120,
                 },
             },
+            "timeout": 125.0,
         }
     ]
-    assert response["accepted"] is True
-    assert response["goal_handle_id"] == "goal_handle_001"
+    assert response["result_code"] == "SUCCESS"
+    assert response["result_message"] == "navigation done"
 
 
 def test_navigate_defaults_goal_pose_frame_id_to_map():
@@ -90,6 +92,21 @@ def test_navigate_defaults_goal_pose_frame_id_to_map():
 
     forwarded_goal_pose = command_client.calls[0]["payload"]["goal"]["goal_pose"]
     assert forwarded_goal_pose["header"]["frame_id"] == "map"
+
+
+def test_navigate_accepts_return_to_dock_phase_in_phase1_runtime():
+    command_client = FakeRosCommandClient()
+    service = GoalPoseNavigationService(command_client=command_client)
+
+    response = service.navigate(
+        task_id="task_delivery_003",
+        nav_phase="RETURN_TO_DOCK",
+        goal_pose=build_goal_pose(),
+        timeout_sec=60,
+    )
+
+    assert command_client.calls[0]["payload"]["goal"]["nav_phase"] == "RETURN_TO_DOCK"
+    assert response["result_code"] == "SUCCESS"
 
 
 def test_navigate_rejects_non_delivery_phase_in_phase1():

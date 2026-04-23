@@ -1,5 +1,6 @@
 from .auth import AuthService
 from .caregiver import CaregiverService
+from .delivery_orchestrator import DeliveryOrchestrator
 from .goal_pose_navigation import GoalPoseNavigationService
 from .inventory import InventoryService
 from .manipulation_command import ManipulationCommandService
@@ -15,6 +16,7 @@ DeliveryService = DeliveryRequestService
 __all__ = [
     "AuthService",
     "CaregiverService",
+    "DeliveryOrchestrator",
     "DeliveryRequestService",
     "DeliveryService",
     "GoalPoseNavigationService",

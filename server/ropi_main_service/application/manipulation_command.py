@@ -6,11 +6,13 @@ ALLOWED_TRANSFER_DIRECTIONS = {
     "TO_ROBOT",
     "FROM_ROBOT",
 }
+DEFAULT_COMMAND_TIMEOUT_SEC = 30.0
 
 
 class ManipulationCommandService:
-    def __init__(self, command_client=None):
+    def __init__(self, command_client=None, command_timeout_sec=DEFAULT_COMMAND_TIMEOUT_SEC):
         self.command_client = command_client or UnixDomainSocketCommandClient()
+        self.command_timeout_sec = float(command_timeout_sec)
 
     def execute(
         self,
@@ -45,6 +47,7 @@ class ManipulationCommandService:
                 "arm_id": str(arm_id).strip(),
                 "goal": goal,
             },
+            timeout=self.command_timeout_sec,
         )
 
     @staticmethod

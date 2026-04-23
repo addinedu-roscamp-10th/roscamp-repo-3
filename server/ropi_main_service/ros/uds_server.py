@@ -17,6 +17,8 @@ class RosServiceCommandDispatchError(RuntimeError):
 
 
 class RosServiceCommandDispatcher:
+    DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC = 30.0
+
     def __init__(self, *, goal_pose_action_client, manipulation_action_client=None):
         self.goal_pose_action_client = goal_pose_action_client
         self.manipulation_action_client = manipulation_action_client
@@ -49,6 +51,7 @@ class RosServiceCommandDispatcher:
         return self.goal_pose_action_client.send_goal(
             action_name=f"/ropi/control/{pinky_id}/navigate_to_goal",
             goal=goal,
+            result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
         )
 
     def _dispatch_execute_manipulation(self, payload: dict) -> dict:
@@ -68,6 +71,7 @@ class RosServiceCommandDispatcher:
         return action_client.send_goal(
             action_name=f"/ropi/arm/{arm_id}/execute_manipulation",
             goal=goal,
+            result_wait_timeout_sec=self.DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC,
         )
 
     @staticmethod
@@ -94,6 +98,11 @@ class RosServiceCommandDispatcher:
                 error_message,
             )
         return action_client
+
+    @staticmethod
+    def _build_navigation_result_wait_timeout_sec(goal: dict) -> float:
+        timeout_sec = float(goal.get("timeout_sec") or 0)
+        return max(timeout_sec + 5.0, 30.0)
 
 
 class RosServiceUdsServer:

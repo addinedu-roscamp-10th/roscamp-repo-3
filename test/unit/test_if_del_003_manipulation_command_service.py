@@ -10,16 +10,18 @@ class FakeCommandClient:
     def __init__(self):
         self.calls = []
 
-    def send_command(self, command, payload):
+    def send_command(self, command, payload, timeout=None):
         self.calls.append(
             {
                 "command": command,
                 "payload": payload,
+                "timeout": timeout,
             }
         )
         return {
-            "accepted": True,
-            "goal_handle_id": "goal_handle_001",
+            "result_code": "SUCCESS",
+            "result_message": "manipulation done",
+            "processed_quantity": 2,
         }
 
 
@@ -36,8 +38,9 @@ def test_execute_sends_if_del_003_command_with_phase1_default_slot_id():
     )
 
     assert response == {
-        "accepted": True,
-        "goal_handle_id": "goal_handle_001",
+        "result_code": "SUCCESS",
+        "result_message": "manipulation done",
+        "processed_quantity": 2,
     }
     assert command_client.calls == [
         {
@@ -52,6 +55,7 @@ def test_execute_sends_if_del_003_command_with_phase1_default_slot_id():
                     "robot_slot_id": FIXED_PHASE1_ROBOT_SLOT_ID,
                 },
             },
+            "timeout": 30.0,
         }
     ]
 

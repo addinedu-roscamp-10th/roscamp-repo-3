@@ -4,9 +4,9 @@ from server.ropi_main_service.ros.goal_pose_action_client import RclpyGoalPoseAc
 
 
 class _Stamp:
-    def __init__(self):
-        self.sec = 0
-        self.nanosec = 0
+    def __init__(self, sec=0, nanosec=0):
+        self.sec = sec
+        self.nanosec = nanosec
 
 
 class _Header:
@@ -50,8 +50,45 @@ class _Goal:
         self.timeout_sec = 0
 
 
+class _Result:
+    def __init__(self):
+        self.result_code = ""
+        self.result_message = ""
+        self.final_pose = _PoseStamped()
+        self.finished_at = _Stamp()
+
+
 class FakeNavigateToGoal:
     Goal = _Goal
+
+
+class FakeFuture:
+    def __init__(self, result=None, exception=None):
+        self._result = result
+        self._exception = exception
+
+    def add_done_callback(self, callback):
+        callback(self)
+
+    def result(self):
+        if self._exception is not None:
+            raise self._exception
+        return self._result
+
+
+class FakeGoalHandle:
+    def __init__(self, *, accepted, result_wrapper=None):
+        self.accepted = accepted
+        self._result_wrapper = result_wrapper
+
+    def get_result_async(self):
+        return FakeFuture(result=self._result_wrapper)
+
+
+class FakeActionResultWrapper:
+    def __init__(self, *, status, result):
+        self.status = status
+        self.result = result
 
 
 class FakeActionClient:
@@ -62,6 +99,7 @@ class FakeActionClient:
         self.wait_calls = []
         self.sent_goals = []
         self.server_available = True
+        self.goal_handle = None
 
     def wait_for_server(self, timeout_sec=None):
         self.wait_calls.append(timeout_sec)
@@ -69,7 +107,7 @@ class FakeActionClient:
 
     def send_goal_async(self, goal_msg):
         self.sent_goals.append(goal_msg)
-        return "future-token"
+        return FakeFuture(result=self.goal_handle)
 
 
 def build_goal():
@@ -102,11 +140,29 @@ def build_goal():
     }
 
 
-def test_send_goal_builds_if_com_007_ros_goal_and_dispatches_to_action_client():
+def build_result(*, result_code="SUCCESS", result_message="navigation done"):
+    result = _Result()
+    result.result_code = result_code
+    result.result_message = result_message
+    result.final_pose.header.frame_id = "map"
+    result.final_pose.pose.position.x = 18.4
+    result.final_pose.pose.position.y = 7.2
+    result.finished_at.sec = 1776554240
+    return result
+
+
+def test_send_goal_waits_for_final_if_com_007_result_and_serializes_payload():
     created_clients = []
 
     def action_client_factory(node, action_type, action_name):
         client = FakeActionClient(node, action_type, action_name)
+        client.goal_handle = FakeGoalHandle(
+            accepted=True,
+            result_wrapper=FakeActionResultWrapper(
+                status=4,
+                result=build_result(),
+            ),
+        )
         created_clients.append(client)
         return client
 
@@ -119,10 +175,16 @@ def test_send_goal_builds_if_com_007_ros_goal_and_dispatches_to_action_client():
     response = client.send_goal(
         action_name="/ropi/control/pinky2/navigate_to_goal",
         goal=build_goal(),
+        result_wait_timeout_sec=125.0,
     )
 
-    assert response["submitted"] is True
-    assert response["send_goal_future"] == "future-token"
+    assert response["accepted"] is True
+    assert response["status"] == 4
+    assert response["result_code"] == "SUCCESS"
+    assert response["result_message"] == "navigation done"
+    assert response["final_pose"]["header"]["frame_id"] == "map"
+    assert response["final_pose"]["pose"]["position"]["x"] == 18.4
+    assert response["finished_at"]["sec"] == 1776554240
     assert len(created_clients) == 1
     assert created_clients[0].action_name == "/ropi/control/pinky2/navigate_to_goal"
     assert created_clients[0].wait_calls == [1.0]
@@ -136,6 +198,30 @@ def test_send_goal_builds_if_com_007_ros_goal_and_dispatches_to_action_client():
     assert goal_msg.goal_pose.pose.position.y == 7.2
     assert goal_msg.goal_pose.pose.orientation.z == 1.0
     assert goal_msg.timeout_sec == 120
+
+
+def test_send_goal_returns_rejected_when_ros_action_goal_is_rejected():
+    def action_client_factory(node, action_type, action_name):
+        client = FakeActionClient(node, action_type, action_name)
+        client.goal_handle = FakeGoalHandle(accepted=False)
+        return client
+
+    client = RclpyGoalPoseActionClient(
+        node="fake-node",
+        action_type_loader=lambda: FakeNavigateToGoal,
+        action_client_factory=action_client_factory,
+    )
+
+    response = client.send_goal(
+        action_name="/ropi/control/pinky2/navigate_to_goal",
+        goal=build_goal(),
+    )
+
+    assert response == {
+        "accepted": False,
+        "result_code": "REJECTED",
+        "result_message": "/ropi/control/pinky2/navigate_to_goal goal was rejected.",
+    }
 
 
 def test_send_goal_raises_when_ros_action_server_is_unavailable():

@@ -23,11 +23,12 @@ class UnixDomainSocketCommandClient:
         self.socket_path = socket_path or ipc_config["socket_path"]
         self.timeout = ipc_config["timeout"] if timeout is None else timeout
 
-    def send_command(self, command: str, payload: dict | None = None) -> dict:
+    def send_command(self, command: str, payload: dict | None = None, timeout: float | None = None) -> dict:
         request = build_request_message(command, payload)
+        socket_timeout = self.timeout if timeout is None else timeout
 
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(self.timeout)
+            sock.settimeout(socket_timeout)
             sock.connect(self.socket_path)
             sock.sendall(encode_message(request))
             response = read_message_from_socket(sock)

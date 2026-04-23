@@ -8,8 +8,10 @@ from dotenv import load_dotenv
 
 from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.caregiver import CaregiverService
+from server.ropi_main_service.application.delivery_orchestrator import DeliveryOrchestrator
 from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.inventory import InventoryService
+from server.ropi_main_service.application.manipulation_command import ManipulationCommandService
 from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.staff_call import StaffCallService
 from server.ropi_main_service.application.task_request import DeliveryRequestService
@@ -80,29 +82,30 @@ SERVICE_REGISTRY = {
 }
 
 
-def build_delivery_request_service() -> DeliveryRequestService:
+def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
     navigation_config = get_delivery_navigation_config()
     pickup_goal_pose = navigation_config["pickup_goal_pose"]
     destination_goal_poses = navigation_config["destination_goal_poses"]
+    return_to_dock_goal_pose = navigation_config["return_to_dock_goal_pose"]
+    delivery_workflow_starter = None
 
-    goal_pose_navigation_service = None
-    pickup_goal_pose_resolver = None
-    destination_goal_pose_resolver = None
-
-    if pickup_goal_pose is not None or destination_goal_poses:
+    if pickup_goal_pose is not None and destination_goal_poses and loop is not None:
         goal_pose_navigation_service = GoalPoseNavigationService()
+        manipulation_command_service = ManipulationCommandService()
+        orchestrator = DeliveryOrchestrator(
+            goal_pose_navigation_service=goal_pose_navigation_service,
+            manipulation_command_service=manipulation_command_service,
+            pickup_goal_pose_resolver=FixedGoalPoseResolver(pickup_goal_pose),
+            destination_goal_pose_resolver=MappedGoalPoseResolver(destination_goal_poses),
+            return_to_dock_goal_pose_resolver=FixedGoalPoseResolver(return_to_dock_goal_pose),
+        )
 
-    if pickup_goal_pose is not None:
-        pickup_goal_pose_resolver = FixedGoalPoseResolver(pickup_goal_pose)
+        def _start_delivery_workflow(**kwargs):
+            loop.create_task(asyncio.to_thread(orchestrator.run, **kwargs))
 
-    if destination_goal_poses:
-        destination_goal_pose_resolver = MappedGoalPoseResolver(destination_goal_poses)
+        delivery_workflow_starter = _start_delivery_workflow
 
-    return DeliveryRequestService(
-        goal_pose_navigation_service=goal_pose_navigation_service,
-        pickup_goal_pose_resolver=pickup_goal_pose_resolver,
-        destination_goal_pose_resolver=destination_goal_pose_resolver,
-    )
+    return DeliveryRequestService(delivery_workflow_starter=delivery_workflow_starter)
 
 class ControlServiceServer:
     def __init__(self, host: str = CONTROL_SERVER_HOST, port: int = CONTROL_SERVER_PORT):
@@ -159,7 +162,7 @@ class ControlServiceServer:
         )
 
     def _dispatch_delivery_create_task(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        service = build_delivery_request_service()
+        service = build_delivery_request_service(loop=asyncio.get_running_loop())
 
         try:
             result = service.create_delivery_task(**payload)
