@@ -1,0 +1,13 @@
+string task_id
+string nav_phase
+geometry_msgs/PoseStamped goal_pose
+int32 timeout_sec
+---
+string nav_status
+geometry_msgs/PoseStamped current_pose
+float32 distance_remaining_m
+---
+string result_code
+string result_message
+geometry_msgs/PoseStamped final_pose
+builtin_interfaces/Time finished_at

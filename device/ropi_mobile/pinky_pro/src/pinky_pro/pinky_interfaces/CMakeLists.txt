@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 set(
@@ -26,6 +27,7 @@ set(
 
 set(
   ACTION_FILES
+  "action/NavigateToGoal.action"
 )
 
 rosidl_generate_interfaces(
@@ -33,7 +35,7 @@ rosidl_generate_interfaces(
   ${MSG_FILES}
   ${SRV_FILES}
   ${ACTION_FILES}
-  DEPENDENCIES builtin_interfaces std_msgs action_msgs
+  DEPENDENCIES builtin_interfaces std_msgs action_msgs geometry_msgs
 )
 
 
