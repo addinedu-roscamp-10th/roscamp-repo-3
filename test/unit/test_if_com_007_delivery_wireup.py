@@ -30,6 +30,16 @@ class FakeDestinationGoalPoseResolver:
         return self.goal_pose
 
 
+class FakePickupGoalPoseResolver:
+    def __init__(self, goal_pose):
+        self.goal_pose = goal_pose
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
+        return self.goal_pose
+
+
 def build_goal_pose():
     return {
         "header": {
@@ -68,7 +78,7 @@ def build_request_payload():
     }
 
 
-def test_create_delivery_task_wires_if_com_007_delivery_destination_after_acceptance():
+def test_create_delivery_task_wires_if_com_007_delivery_pickup_after_acceptance():
     repository = FakeDeliveryRequestRepository(
         response={
             "result_code": "ACCEPTED",
@@ -80,28 +90,31 @@ def test_create_delivery_task_wires_if_com_007_delivery_destination_after_accept
         }
     )
     goal_service = FakeGoalPoseNavigationService()
-    resolver = FakeDestinationGoalPoseResolver(build_goal_pose())
+    pickup_resolver = FakePickupGoalPoseResolver(build_goal_pose())
+    destination_resolver = FakeDestinationGoalPoseResolver(build_goal_pose())
     service = DeliveryRequestService(
         repository=repository,
         goal_pose_navigation_service=goal_service,
-        destination_goal_pose_resolver=resolver,
+        pickup_goal_pose_resolver=pickup_resolver,
+        destination_goal_pose_resolver=destination_resolver,
     )
 
     response = service.create_delivery_task(**build_request_payload())
 
     assert response["result_code"] == "ACCEPTED"
-    assert resolver.calls == ["room_301"]
+    assert pickup_resolver.calls == 1
+    assert destination_resolver.calls == []
     assert goal_service.calls == [
         {
             "task_id": "task_delivery_001",
-            "nav_phase": "DELIVERY_DESTINATION",
+            "nav_phase": "DELIVERY_PICKUP",
             "goal_pose": build_goal_pose(),
             "timeout_sec": 120,
         }
     ]
 
 
-def test_create_delivery_task_does_not_wire_navigation_when_request_is_rejected():
+def test_create_delivery_task_does_not_wire_pickup_navigation_when_request_is_rejected():
     repository = FakeDeliveryRequestRepository(
         response={
             "result_code": "REJECTED",
@@ -113,15 +126,59 @@ def test_create_delivery_task_does_not_wire_navigation_when_request_is_rejected(
         }
     )
     goal_service = FakeGoalPoseNavigationService()
-    resolver = FakeDestinationGoalPoseResolver(build_goal_pose())
+    pickup_resolver = FakePickupGoalPoseResolver(build_goal_pose())
+    destination_resolver = FakeDestinationGoalPoseResolver(build_goal_pose())
     service = DeliveryRequestService(
         repository=repository,
         goal_pose_navigation_service=goal_service,
-        destination_goal_pose_resolver=resolver,
+        pickup_goal_pose_resolver=pickup_resolver,
+        destination_goal_pose_resolver=destination_resolver,
     )
 
     response = service.create_delivery_task(**build_request_payload())
 
     assert response["result_code"] == "REJECTED"
-    assert resolver.calls == []
+    assert pickup_resolver.calls == 0
+    assert destination_resolver.calls == []
+    assert goal_service.calls == []
+
+
+def test_start_delivery_destination_navigation_wires_if_com_007_after_pickup_completion():
+    goal_service = FakeGoalPoseNavigationService()
+    destination_resolver = FakeDestinationGoalPoseResolver(build_goal_pose())
+    service = DeliveryRequestService(
+        goal_pose_navigation_service=goal_service,
+        destination_goal_pose_resolver=destination_resolver,
+    )
+
+    service.start_delivery_destination_navigation(
+        task_id="task_delivery_001",
+        destination_id="room_301",
+    )
+
+    assert destination_resolver.calls == ["room_301"]
+    assert goal_service.calls == [
+        {
+            "task_id": "task_delivery_001",
+            "nav_phase": "DELIVERY_DESTINATION",
+            "goal_pose": build_goal_pose(),
+            "timeout_sec": 120,
+        }
+    ]
+
+
+def test_start_delivery_destination_navigation_skips_when_destination_pose_is_missing():
+    goal_service = FakeGoalPoseNavigationService()
+    destination_resolver = FakeDestinationGoalPoseResolver(None)
+    service = DeliveryRequestService(
+        goal_pose_navigation_service=goal_service,
+        destination_goal_pose_resolver=destination_resolver,
+    )
+
+    service.start_delivery_destination_navigation(
+        task_id="task_delivery_001",
+        destination_id="room_301",
+    )
+
+    assert destination_resolver.calls == ["room_301"]
     assert goal_service.calls == []

@@ -11,11 +11,13 @@ class DeliveryRequestService:
         self,
         repository=None,
         goal_pose_navigation_service=None,
+        pickup_goal_pose_resolver=None,
         destination_goal_pose_resolver=None,
         delivery_navigation_timeout_sec=DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC,
     ):
         self.repository = repository or DeliveryRequestRepository()
         self.goal_pose_navigation_service = goal_pose_navigation_service
+        self.pickup_goal_pose_resolver = pickup_goal_pose_resolver
         self.destination_goal_pose_resolver = destination_goal_pose_resolver
         self.delivery_navigation_timeout_sec = delivery_navigation_timeout_sec
 
@@ -58,10 +60,7 @@ class DeliveryRequestService:
             notes=notes,
             idempotency_key=idempotency_key,
         )
-        self._wire_delivery_destination_navigation_if_needed(
-            response=response,
-            destination_id=destination_id,
-        )
+        self._wire_delivery_pickup_navigation_if_needed(response=response)
         return response
 
     def submit_delivery_request(
@@ -176,26 +175,49 @@ class DeliveryRequestService:
     def _is_blank(value) -> bool:
         return not str(value or "").strip()
 
-    def _wire_delivery_destination_navigation_if_needed(self, *, response, destination_id):
+    def _wire_delivery_pickup_navigation_if_needed(self, *, response):
         if response.get("result_code") != self.ACCEPTED:
             return
 
         if self.goal_pose_navigation_service is None:
             return
 
-        if self.destination_goal_pose_resolver is None:
+        if self.pickup_goal_pose_resolver is None:
             return
 
         task_id = str(response.get("task_id") or "").strip()
         if not task_id:
             return
 
-        goal_pose = self.destination_goal_pose_resolver(destination_id)
+        goal_pose = self.pickup_goal_pose_resolver()
         if not goal_pose:
             return
 
         self.goal_pose_navigation_service.navigate(
             task_id=task_id,
+            nav_phase="DELIVERY_PICKUP",
+            goal_pose=goal_pose,
+            timeout_sec=self.delivery_navigation_timeout_sec,
+        )
+
+    def start_delivery_destination_navigation(self, *, task_id, destination_id):
+        if self.goal_pose_navigation_service is None:
+            return None
+
+        if self.destination_goal_pose_resolver is None:
+            return None
+
+        normalized_task_id = str(task_id or "").strip()
+        normalized_destination_id = str(destination_id or "").strip()
+        if not normalized_task_id or not normalized_destination_id:
+            return None
+
+        goal_pose = self.destination_goal_pose_resolver(normalized_destination_id)
+        if not goal_pose:
+            return None
+
+        return self.goal_pose_navigation_service.navigate(
+            task_id=normalized_task_id,
             nav_phase="DELIVERY_DESTINATION",
             goal_pose=goal_pose,
             timeout_sec=self.delivery_navigation_timeout_sec,

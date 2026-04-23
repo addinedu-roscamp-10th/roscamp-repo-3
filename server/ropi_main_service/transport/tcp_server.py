@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.caregiver import CaregiverService
+from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.staff_call import StaffCallService
@@ -15,6 +16,11 @@ from server.ropi_main_service.application.task_request import DeliveryRequestSer
 from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.application.visitor_info import VisitorInfoService
 from server.ropi_main_service.application.visitor_register import VisitorRegisterService
+from server.ropi_main_service.navigation import (
+    FixedGoalPoseResolver,
+    MappedGoalPoseResolver,
+    get_delivery_navigation_config,
+)
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
@@ -73,6 +79,31 @@ SERVICE_REGISTRY = {
     "staff_call": StaffCallService,
 }
 
+
+def build_delivery_request_service() -> DeliveryRequestService:
+    navigation_config = get_delivery_navigation_config()
+    pickup_goal_pose = navigation_config["pickup_goal_pose"]
+    destination_goal_poses = navigation_config["destination_goal_poses"]
+
+    goal_pose_navigation_service = None
+    pickup_goal_pose_resolver = None
+    destination_goal_pose_resolver = None
+
+    if pickup_goal_pose is not None or destination_goal_poses:
+        goal_pose_navigation_service = GoalPoseNavigationService()
+
+    if pickup_goal_pose is not None:
+        pickup_goal_pose_resolver = FixedGoalPoseResolver(pickup_goal_pose)
+
+    if destination_goal_poses:
+        destination_goal_pose_resolver = MappedGoalPoseResolver(destination_goal_poses)
+
+    return DeliveryRequestService(
+        goal_pose_navigation_service=goal_pose_navigation_service,
+        pickup_goal_pose_resolver=pickup_goal_pose_resolver,
+        destination_goal_pose_resolver=destination_goal_pose_resolver,
+    )
+
 class ControlServiceServer:
     def __init__(self, host: str = CONTROL_SERVER_HOST, port: int = CONTROL_SERVER_PORT):
         self.host = host
@@ -128,7 +159,7 @@ class ControlServiceServer:
         )
 
     def _dispatch_delivery_create_task(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        service = DeliveryRequestService()
+        service = build_delivery_request_service()
 
         try:
             result = service.create_delivery_task(**payload)
