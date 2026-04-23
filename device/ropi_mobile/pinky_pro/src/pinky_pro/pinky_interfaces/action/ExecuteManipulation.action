@@ -1,0 +1,11 @@
+string task_id
+string transfer_direction
+string item_id
+uint32 quantity
+string robot_slot_id
+---
+uint32 processed_quantity
+---
+string result_code
+string result_message
+uint32 processed_quantity

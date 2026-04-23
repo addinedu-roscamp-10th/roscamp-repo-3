@@ -2,6 +2,7 @@ from .auth import AuthService
 from .caregiver import CaregiverService
 from .goal_pose_navigation import GoalPoseNavigationService
 from .inventory import InventoryService
+from .manipulation_command import ManipulationCommandService
 from .patient import PatientService
 from .staff_call import StaffCallService
 from .task_request import DeliveryRequestService, TaskRequestService
@@ -18,6 +19,7 @@ __all__ = [
     "DeliveryService",
     "GoalPoseNavigationService",
     "InventoryService",
+    "ManipulationCommandService",
     "PatientService",
     "StaffCallService",
     "TaskRequestService",

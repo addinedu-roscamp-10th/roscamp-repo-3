@@ -20,6 +20,7 @@ dev = [
 
 [project.scripts]
 ropi-control-server = "server.ropi_main_service.transport.tcp_server:main"
+ropi-ros-service = "server.ropi_main_service.ros.main:main"
 ropi-admin-ui = "ui.admin_ui.main:main"
 ropi-user-ui = "ui.user_ui.main:main"
 

@@ -28,6 +28,7 @@ set(
 set(
   ACTION_FILES
   "action/NavigateToGoal.action"
+  "action/ExecuteManipulation.action"
 )
 
 rosidl_generate_interfaces(
