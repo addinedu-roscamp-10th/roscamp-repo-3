@@ -1,4 +1,4 @@
-from server.ropi_db.repositories.staff_call_repository import StaffCallRepository
+from server.ropi_main_service.persistence.repositories.staff_call_repository import StaffCallRepository
 
 
 class StaffCallService:

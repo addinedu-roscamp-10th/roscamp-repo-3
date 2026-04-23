@@ -1,4 +1,4 @@
-from server.ropi_db.repositories.task_request_repository import DeliveryRequestRepository
+from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 
 
 class DeliveryRequestService:

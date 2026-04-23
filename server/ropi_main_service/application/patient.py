@@ -1,4 +1,4 @@
-from server.ropi_db.repositories.patient_repository import PatientRepository
+from server.ropi_main_service.persistence.repositories.patient_repository import PatientRepository
 
 
 class PatientService:

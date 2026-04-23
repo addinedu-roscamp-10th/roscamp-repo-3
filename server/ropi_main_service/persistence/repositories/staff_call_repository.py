@@ -1,4 +1,4 @@
-from server.ropi_db.connection import get_connection
+from server.ropi_main_service.persistence.connection import get_connection
 
 
 class StaffCallRepository:

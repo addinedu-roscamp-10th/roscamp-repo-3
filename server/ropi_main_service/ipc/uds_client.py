@@ -1,19 +1,10 @@
-import os
 import socket
 
+from server.ropi_main_service.ipc.config import get_ros_service_ipc_config
 from server.ropi_main_service.ipc.uds_protocol import (
     build_request_message,
-    read_message_from_socket,
     encode_message,
-)
-
-
-DEFAULT_ROS_SERVICE_SOCKET_PATH = os.getenv(
-    "ROPI_ROS_SERVICE_SOCKET_PATH",
-    "/tmp/ropi_control_ros_service.sock",
-)
-DEFAULT_ROS_SERVICE_SOCKET_TIMEOUT = float(
-    os.getenv("ROPI_ROS_SERVICE_SOCKET_TIMEOUT", "1.0")
+    read_message_from_socket,
 )
 
 
@@ -25,11 +16,12 @@ class UnixDomainSocketCommandClient:
     def __init__(
         self,
         *,
-        socket_path: str = DEFAULT_ROS_SERVICE_SOCKET_PATH,
-        timeout: float = DEFAULT_ROS_SERVICE_SOCKET_TIMEOUT,
+        socket_path: str | None = None,
+        timeout: float | None = None,
     ):
-        self.socket_path = socket_path
-        self.timeout = timeout
+        ipc_config = get_ros_service_ipc_config()
+        self.socket_path = socket_path or ipc_config["socket_path"]
+        self.timeout = ipc_config["timeout"] if timeout is None else timeout
 
     def send_command(self, command: str, payload: dict | None = None) -> dict:
         request = build_request_message(command, payload)

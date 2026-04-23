@@ -90,7 +90,7 @@ class ControlServiceServer:
 
             if payload.get("check_db"):
                 try:
-                    from server.ropi_db.connection import test_connection
+                    from server.ropi_main_service.persistence.connection import test_connection
 
                     db_ok, db_result = test_connection()
                     response_payload["db"] = {

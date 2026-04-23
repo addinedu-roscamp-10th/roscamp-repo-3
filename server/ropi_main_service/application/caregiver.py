@@ -1,4 +1,4 @@
-from server.ropi_db.repositories.caregiver_repository import CaregiverRepository
+from server.ropi_main_service.persistence.repositories.caregiver_repository import CaregiverRepository
 
 
 class CaregiverService:

@@ -1,21 +1,22 @@
 import pymysql
 from pymysql.connections import Connection
 
-from server.ropi_db.config.db_config import DB_CONFIG
+from server.ropi_main_service.persistence.config import get_db_config
 
 
 def get_connection() -> Connection:
+    db_config = get_db_config()
     return pymysql.connect(
-        host=DB_CONFIG["host"],
-        port=DB_CONFIG["port"],
-        user=DB_CONFIG["user"],
-        password=DB_CONFIG["password"],
-        database=DB_CONFIG["database"],
-        charset=DB_CONFIG["charset"],
+        host=db_config["host"],
+        port=db_config["port"],
+        user=db_config["user"],
+        password=db_config["password"],
+        database=db_config["database"],
+        charset=db_config["charset"],
         autocommit=True,
-        connect_timeout=5,
-        read_timeout=5,
-        write_timeout=5,
+        connect_timeout=db_config["connect_timeout"],
+        read_timeout=db_config["read_timeout"],
+        write_timeout=db_config["write_timeout"],
         cursorclass=pymysql.cursors.DictCursor,
     )
 

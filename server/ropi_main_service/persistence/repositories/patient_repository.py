@@ -1,4 +1,4 @@
-from server.ropi_db.connection import fetch_all, fetch_one
+from server.ropi_main_service.persistence.connection import fetch_all, fetch_one
 
 
 class PatientRepository:

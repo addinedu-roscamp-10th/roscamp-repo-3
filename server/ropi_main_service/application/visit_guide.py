@@ -1,4 +1,4 @@
-from server.ropi_db.repositories.visit_guide_repository import VisitGuideRepository
+from server.ropi_main_service.persistence.repositories.visit_guide_repository import VisitGuideRepository
 
 
 class VisitGuideService:

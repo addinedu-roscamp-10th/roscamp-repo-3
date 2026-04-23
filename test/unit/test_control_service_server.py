@@ -27,7 +27,7 @@ def test_heartbeat_with_db_check_puts_db_status_under_payload(control_service_se
         payload={"check_db": True},
     )
 
-    with patch("server.ropi_db.connection.test_connection", return_value=(True, {"ok": 1})):
+    with patch("server.ropi_main_service.persistence.connection.test_connection", return_value=(True, {"ok": 1})):
         response = control_service_server.dispatch_frame(request)
 
     assert response.is_response is True

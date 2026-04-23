@@ -1,4 +1,4 @@
-from server.ropi_db.connection import fetch_all, get_connection
+from server.ropi_main_service.persistence.connection import fetch_all, get_connection
 
 
 FIRST_PHASE_DELIVERY_PINKY_ID = "pinky2"

@@ -1,4 +1,4 @@
-from server.ropi_db.repositories.inventory_repository import InventoryRepository
+from server.ropi_main_service.persistence.repositories.inventory_repository import InventoryRepository
 
 
 class InventoryService:

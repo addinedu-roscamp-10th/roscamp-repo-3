@@ -1,4 +1,4 @@
-from server.ropi_db.repositories.user_repository import UserRepository
+from server.ropi_main_service.persistence.repositories.user_repository import UserRepository
 
 
 class AuthService:

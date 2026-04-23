@@ -11,8 +11,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication
 
-from server.ropi_db.connection import fetch_one
-from server.ropi_db.repositories.task_request_repository import DeliveryRequestRepository
+from server.ropi_main_service.persistence.connection import fetch_one
+from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 from ui.utils.network import tcp_client
 from ui.utils.network.service_clients import DeliveryRequestRemoteService
 from ui.utils.network.tcp_client import send_request

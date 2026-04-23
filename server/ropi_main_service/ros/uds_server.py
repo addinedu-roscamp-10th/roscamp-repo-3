@@ -1,6 +1,7 @@
 import asyncio
 import os
 
+from server.ropi_main_service.ipc.config import get_ros_service_ipc_config
 from server.ropi_main_service.ipc.uds_protocol import (
     UDSProtocolError,
     build_response_message,
@@ -44,8 +45,9 @@ class RosServiceCommandDispatcher:
 
 
 class RosServiceUdsServer:
-    def __init__(self, *, socket_path: str, goal_pose_action_client):
-        self.socket_path = socket_path
+    def __init__(self, *, socket_path: str | None = None, goal_pose_action_client):
+        ipc_config = get_ros_service_ipc_config()
+        self.socket_path = socket_path or ipc_config["socket_path"]
         self.dispatcher = RosServiceCommandDispatcher(
             goal_pose_action_client=goal_pose_action_client,
         )

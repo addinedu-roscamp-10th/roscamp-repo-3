@@ -1,4 +1,4 @@
-from server.ropi_db.repositories.visitor_info_repository import VisitorInfoRepository
+from server.ropi_main_service.persistence.repositories.visitor_info_repository import VisitorInfoRepository
 
 
 class VisitorInfoService:

@@ -1,6 +1,6 @@
 import re
 
-from server.ropi_db.repositories.visitor_register_repository import VisitorRegisterRepository
+from server.ropi_main_service.persistence.repositories.visitor_register_repository import VisitorRegisterRepository
 
 
 class VisitorRegisterService:
