@@ -1,4 +1,3 @@
-import unittest
 from unittest.mock import patch
 
 from server.ropi_main_service.tcp_protocol import (
@@ -39,43 +38,35 @@ class FakeSocket:
         return False
 
 
-class TcpClientContractTest(unittest.TestCase):
-    def test_send_request_serializes_custom_frame_and_parses_framed_response(self):
-        fake_socket = FakeSocket(
-            [
-                encode_frame(
-                    TCPFrame(
-                        message_code=MESSAGE_CODE_INTERNAL_RPC,
-                        sequence_no=77,
-                        payload={"items": 3},
-                        is_response=True,
-                    )
+def test_send_request_serializes_custom_frame_and_parses_framed_response():
+    fake_socket = FakeSocket(
+        [
+            encode_frame(
+                TCPFrame(
+                    message_code=MESSAGE_CODE_INTERNAL_RPC,
+                    sequence_no=77,
+                    payload={"items": 3},
+                    is_response=True,
                 )
-            ]
-        )
-
-        with (
-            patch("ui.utils.network.tcp_client.socket.create_connection", return_value=fake_socket) as create_connection,
-            patch("ui.utils.network.tcp_client._next_sequence_no", return_value=77),
-        ):
-            response = send_request(
-                MESSAGE_CODE_INTERNAL_RPC,
-                {"service": "task_request", "method": "get_product_names"},
             )
+        ]
+    )
 
-        self.assertEqual(response, {"ok": True, "payload": {"items": 3}})
-        create_connection.assert_called_once()
-        self.assertIsNotNone(fake_socket.timeout)
-
-        request = decode_frame_bytes(fake_socket.sent_data[0])
-        self.assertEqual(request.message_code, MESSAGE_CODE_INTERNAL_RPC)
-        self.assertEqual(request.sequence_no, 77)
-        self.assertFalse(request.is_response)
-        self.assertEqual(
-            request.payload,
+    with (
+        patch("ui.utils.network.tcp_client.socket.create_connection", return_value=fake_socket) as create_connection,
+        patch("ui.utils.network.tcp_client._next_sequence_no", return_value=77),
+    ):
+        response = send_request(
+            MESSAGE_CODE_INTERNAL_RPC,
             {"service": "task_request", "method": "get_product_names"},
         )
 
+    assert response == {"ok": True, "payload": {"items": 3}}
+    create_connection.assert_called_once()
+    assert fake_socket.timeout is not None
 
-if __name__ == "__main__":
-    unittest.main()
+    request = decode_frame_bytes(fake_socket.sent_data[0])
+    assert request.message_code == MESSAGE_CODE_INTERNAL_RPC
+    assert request.sequence_no == 77
+    assert request.is_response is False
+    assert request.payload == {"service": "task_request", "method": "get_product_names"}

@@ -1,6 +1,9 @@
 from server.ropi_db.connection import fetch_all, get_connection
 
 
+FIRST_PHASE_DELIVERY_PINKY_ID = "pinky2"
+
+
 class DeliveryRequestRepository:
     PRODUCT_SELECT_COLUMNS = """
         SELECT
@@ -42,6 +45,7 @@ class DeliveryRequestRepository:
         notes,
         idempotency_key,
     ):
+        # Phase 1 delivery uses a fixed Pinky because orchestration/scheduling is not in scope yet.
         product = self.get_product_by_id(item_id)
 
         if not product:
@@ -55,6 +59,7 @@ class DeliveryRequestRepository:
             result_code="ACCEPTED",
             task_id=self._build_delivery_task_id(request_id, idempotency_key),
             task_status="WAITING_DISPATCH",
+            assigned_pinky_id=FIRST_PHASE_DELIVERY_PINKY_ID,
         )
 
     def create_delivery_request(

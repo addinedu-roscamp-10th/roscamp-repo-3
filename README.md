@@ -8,6 +8,13 @@ ROS2와 AI를 활용한 자율주행 로봇개발자 부트캠프 3팀 저장소
 현재 기준 운반 전용 GUI와 메인 제어 서버는 같은 머신에서 실행하고,
 DB는 원격 머신에 연결하는 구성을 기준으로 한다.
 
+### Phase 1 Assumptions
+
+- 1차 구현에서는 관제 스케줄링을 아직 두지 않는다.
+- 운반 작업은 즉시 `pinky2`에 할당되는 정책으로 가정한다.
+- 따라서 `IF-DEL-001` 응답의 `assigned_pinky_id`는 현재 `pinky2`로 고정된다.
+- 다음 공통 이동 연동은 `IF-COM-007`을 `/ropi/control/pinky2/navigate_to_goal` 기준으로 붙인다.
+
 ### 1. 환경 동기화
 
 ```bash
@@ -64,3 +71,17 @@ uv run ropi-user-ui
 ```
 
 현재 환경에서는 로컬 서버 실행, GUI 모듈 import, 원격 DB heartbeat/read 경로까지 확인했다.
+
+### 5. 테스트
+
+단위 테스트:
+
+```bash
+uv run --group dev ropi-pytest test/unit -q
+```
+
+운반 런타임 통합 테스트:
+
+```bash
+uv run --group dev ropi-pytest test/integration/test_runtime_ui_server.py -q
+```

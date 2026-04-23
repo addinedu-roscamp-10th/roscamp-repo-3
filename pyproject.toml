@@ -13,10 +13,16 @@ dependencies = [
     "python-dotenv>=1.0.1",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
+
 [project.scripts]
 ropi-control-server = "server.ropi_main_service.tcp_server:main"
 ropi-admin-ui = "ui.admin_ui.main:main"
 ropi-user-ui = "ui.user_ui.main:main"
+ropi-pytest = "server.pytest_runner:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -27,3 +33,7 @@ packages = ["server", "ui"]
 
 [tool.uv]
 package = true
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_files = ["test_*.py"]
