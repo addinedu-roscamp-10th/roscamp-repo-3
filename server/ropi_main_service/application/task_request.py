@@ -10,9 +10,11 @@ class DeliveryRequestService:
         self,
         repository=None,
         delivery_workflow_starter=None,
+        delivery_request_precheck=None,
     ):
         self.repository = repository or DeliveryRequestRepository()
         self.delivery_workflow_starter = delivery_workflow_starter
+        self.delivery_request_precheck = delivery_request_precheck
 
     def get_product_names(self):
         products = self.repository.get_all_products()
@@ -42,6 +44,19 @@ class DeliveryRequestService:
         )
         if invalid_response is not None:
             return invalid_response
+
+        precheck_response = self._run_delivery_request_precheck(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
+            priority=priority,
+            notes=notes,
+            idempotency_key=idempotency_key,
+        )
+        if precheck_response is not None:
+            return precheck_response
 
         response = self.repository.create_delivery_task(
             request_id=request_id,
@@ -172,6 +187,12 @@ class DeliveryRequestService:
     @staticmethod
     def _is_blank(value) -> bool:
         return not str(value or "").strip()
+
+    def _run_delivery_request_precheck(self, **kwargs):
+        if self.delivery_request_precheck is None:
+            return None
+
+        return self.delivery_request_precheck(**kwargs)
 
     def _start_delivery_workflow_if_needed(self, *, response, item_id, quantity, destination_id):
         if response.get("result_code") != self.ACCEPTED:

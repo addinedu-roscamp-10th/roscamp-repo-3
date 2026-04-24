@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from server.ropi_main_service.ipc.config import get_ros_service_ipc_config
@@ -8,6 +9,10 @@ from server.ropi_main_service.ipc.uds_protocol import (
     encode_message,
     read_message_from_stream,
 )
+from server.ropi_main_service.observability import log_event
+
+
+logger = logging.getLogger(__name__)
 
 
 class RosServiceCommandDispatchError(RuntimeError):
@@ -209,7 +214,33 @@ class RosServiceUdsServer:
                 except UDSProtocolError:
                     break
 
+                command = str(request.get("command") or "").strip()
+                payload = request.get("payload") or {}
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "ros_service_request_received",
+                    command=command,
+                    pinky_id=payload.get("pinky_id"),
+                    arm_id=payload.get("arm_id"),
+                )
                 response = self._dispatch_request(request)
+                if response.get("ok"):
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "ros_service_request_succeeded",
+                        command=command,
+                    )
+                else:
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "ros_service_request_failed",
+                        command=command,
+                        error_code=response.get("error_code"),
+                        error=response.get("error"),
+                    )
                 writer.write(encode_message(response))
                 await writer.drain()
         finally:

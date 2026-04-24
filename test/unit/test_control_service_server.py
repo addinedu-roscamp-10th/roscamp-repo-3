@@ -4,6 +4,7 @@ import pytest
 
 from server.ropi_main_service.transport import tcp_server
 from server.ropi_main_service.transport.tcp_protocol import (
+    MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     TCPFrame,
@@ -103,3 +104,78 @@ def test_rpc_dispatch_rejects_unknown_service(control_service_server):
     assert response.is_error is True
     assert response.payload["error_code"] == "UNKNOWN_SERVICE"
     assert "missing" in response.payload["error"]
+
+
+def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
+        sequence_no=5,
+        payload={
+            "request_id": "req_001",
+            "caregiver_id": "cg_001",
+            "item_id": "supply_001",
+            "quantity": 1,
+            "destination_id": "room_302",
+            "priority": "NORMAL",
+            "notes": "delivery test",
+            "idempotency_key": "idem_001",
+        },
+    )
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.get_delivery_navigation_config",
+        return_value={
+            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+            "destination_goal_poses": {
+                "room_302": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+            },
+            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+        },
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+        return_value=object(),
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService"
+    ) as readiness_service_cls:
+        readiness_service_cls.return_value.get_status.side_effect = RuntimeError("socket missing")
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.payload["result_code"] == "REJECTED"
+    assert response.payload["reason_code"] == "ROS_SERVICE_UNAVAILABLE"
+    assert "socket missing" in response.payload["result_message"]
+
+
+def test_delivery_create_task_rejects_unknown_destination_id(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
+        sequence_no=6,
+        payload={
+            "request_id": "req_001",
+            "caregiver_id": "cg_001",
+            "item_id": "supply_001",
+            "quantity": 1,
+            "destination_id": "room_305",
+            "priority": "NORMAL",
+            "notes": "delivery test",
+            "idempotency_key": "idem_001",
+        },
+    )
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.get_delivery_navigation_config",
+        return_value={
+            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+            "destination_goal_poses": {
+                "room_302": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+            },
+            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+        },
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+        return_value=object(),
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "DESTINATION_ID_UNKNOWN"
+    assert "room_305" in response.payload["result_message"]

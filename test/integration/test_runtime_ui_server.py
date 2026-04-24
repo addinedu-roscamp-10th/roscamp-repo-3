@@ -2,6 +2,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from PyQt6.QtWidgets import QApplication
 
 from server.ropi_main_service.persistence.connection import fetch_one
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
+from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
 from ui.utils.network import tcp_client
 from ui.utils.network.service_clients import DeliveryRequestRemoteService
 from ui.utils.network.tcp_client import send_request
@@ -81,10 +83,6 @@ def build_if_del_001_payload() -> dict:
     caregiver_row = _safe_fetch_one(
         "SELECT CAST(caregiver_id AS CHAR) AS caregiver_id FROM caregiver LIMIT 1"
     )
-    destination_row = _safe_fetch_one(
-        "SELECT CAST(location_id AS CHAR) AS destination_id FROM map_table LIMIT 1"
-    )
-
     return {
         "request_id": "runtime-if-del-001",
         "caregiver_id": (
@@ -92,9 +90,7 @@ def build_if_del_001_payload() -> dict:
         ),
         "item_id": product.get("item_id") or f"supply_{product['product_id']}",
         "quantity": 1,
-        "destination_id": (
-            destination_row["destination_id"] if destination_row else "destination_runtime_test"
-        ),
+        "destination_id": "room_302",
         "priority": "NORMAL",
         "notes": "runtime integration test",
         "idempotency_key": "runtime-if-del-001-idem",
@@ -116,7 +112,89 @@ def qapp():
 
 
 @pytest.fixture(scope="session")
-def control_server(qapp):
+def ros_service_stub(tmp_path_factory):
+    socket_path = tmp_path_factory.mktemp("ros-runtime") / "ropi_ros_service.sock"
+    ready = threading.Event()
+    stop_requested = threading.Event()
+    finished = threading.Event()
+
+    def run_server():
+        if socket_path.exists():
+            socket_path.unlink()
+
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server_sock:
+                server_sock.bind(str(socket_path))
+                server_sock.listen(5)
+                server_sock.settimeout(0.2)
+                ready.set()
+
+                while not stop_requested.is_set():
+                    try:
+                        conn, _ = server_sock.accept()
+                    except TimeoutError:
+                        continue
+                    except OSError:
+                        break
+
+                    with conn:
+                        try:
+                            request = decode_message_bytes(conn.recv(4096))
+                        except Exception:
+                            continue
+
+                        if request.get("command") == "get_runtime_status":
+                            response = {
+                                "ok": True,
+                                "payload": {
+                                    "ready": True,
+                                    "checks": [
+                                        {"name": "pinky2.navigate_to_goal", "ready": True},
+                                        {"name": "arm1.execute_manipulation", "ready": True},
+                                        {"name": "arm2.execute_manipulation", "ready": True},
+                                    ],
+                                },
+                            }
+                        else:
+                            response = {
+                                "ok": True,
+                                "payload": {
+                                    "accepted": True,
+                                    "status": 4,
+                                    "result_code": "SUCCESS",
+                                    "result_message": "done",
+                                },
+                            }
+
+                        try:
+                            conn.sendall(encode_message(response))
+                        except BrokenPipeError:
+                            continue
+        finally:
+            finished.set()
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    assert ready.wait(timeout=5), "fake ros service did not become ready"
+
+    try:
+        yield {"socket_path": str(socket_path)}
+    finally:
+        stop_requested.set()
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client_sock:
+                client_sock.connect(str(socket_path))
+                client_sock.sendall(encode_message({"command": "shutdown_probe", "payload": {}}))
+        except OSError:
+            pass
+        server_thread.join(timeout=5)
+        if socket_path.exists():
+            socket_path.unlink()
+        assert finished.is_set()
+
+
+@pytest.fixture(scope="session")
+def control_server(qapp, ros_service_stub):
     server_port = _find_free_port()
     server_process = subprocess.Popen(
         [
@@ -132,7 +210,19 @@ def control_server(qapp):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        env={
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            "ROPI_ROS_SERVICE_SOCKET_PATH": ros_service_stub["socket_path"],
+            "ROPI_DELIVERY_PICKUP_GOAL_POSE": "1.5,2.5,1.57",
+            "ROPI_DELIVERY_DESTINATION_GOAL_POSES": (
+                "room_305=10.0,1.0,0.0;"
+                "room_302=12.0,2.0,0.0;"
+                "nurse_station=14.0,3.0,0.0;"
+                "visit_room=16.0,4.0,0.0"
+            ),
+            "ROPI_RETURN_TO_DOCK_GOAL_POSE": "0.5,0.5,3.14",
+        },
     )
 
     _wait_for_server_ready(server_process, server_port, qapp)

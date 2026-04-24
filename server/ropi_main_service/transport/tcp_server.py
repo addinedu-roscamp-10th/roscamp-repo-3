@@ -86,12 +86,78 @@ SERVICE_REGISTRY = {
 }
 
 
+def _build_delivery_request_precheck(
+    *,
+    pickup_goal_pose,
+    destination_goal_poses,
+    return_to_dock_goal_pose,
+):
+    def _reject(message: str, reason_code: str) -> dict:
+        return DeliveryRequestService._rejected(message, reason_code)
+
+    def _invalid_request(message: str, reason_code: str) -> dict:
+        return DeliveryRequestService._invalid_request(message, reason_code)
+
+    def _precheck(**kwargs):
+        destination_id = str(kwargs.get("destination_id") or "").strip()
+
+        if pickup_goal_pose is None:
+            return _reject(
+                "운반 픽업 좌표가 설정되지 않았습니다.",
+                "PICKUP_GOAL_POSE_NOT_CONFIGURED",
+            )
+
+        if return_to_dock_goal_pose is None:
+            return _reject(
+                "복귀 좌표가 설정되지 않았습니다.",
+                "RETURN_TO_DOCK_GOAL_POSE_NOT_CONFIGURED",
+            )
+
+        if not destination_goal_poses:
+            return _reject(
+                "운반 목적지 좌표가 설정되지 않았습니다.",
+                "DESTINATION_GOAL_POSES_NOT_CONFIGURED",
+            )
+
+        if destination_id not in destination_goal_poses:
+            return _invalid_request(
+                f"지원하지 않는 destination_id입니다: {destination_id}",
+                "DESTINATION_ID_UNKNOWN",
+            )
+
+        try:
+            ros_status = RosRuntimeReadinessService().get_status()
+        except Exception as exc:
+            return _reject(
+                f"ROS service가 준비되지 않았습니다: {exc}",
+                "ROS_SERVICE_UNAVAILABLE",
+            )
+
+        if not ros_status.get("ready"):
+            return _reject(
+                "ROS runtime이 준비되지 않았습니다.",
+                "ROS_RUNTIME_NOT_READY",
+            )
+
+        return None
+
+    return _precheck
+
+
 def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
     navigation_config = get_delivery_navigation_config()
     pickup_goal_pose = navigation_config["pickup_goal_pose"]
     destination_goal_poses = navigation_config["destination_goal_poses"]
     return_to_dock_goal_pose = navigation_config["return_to_dock_goal_pose"]
     delivery_workflow_starter = None
+    delivery_request_precheck = None
+
+    if loop is not None:
+        delivery_request_precheck = _build_delivery_request_precheck(
+            pickup_goal_pose=pickup_goal_pose,
+            destination_goal_poses=destination_goal_poses,
+            return_to_dock_goal_pose=return_to_dock_goal_pose,
+        )
 
     if pickup_goal_pose is not None and destination_goal_poses and loop is not None:
         goal_pose_navigation_service = GoalPoseNavigationService()
@@ -129,7 +195,10 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
 
         delivery_workflow_starter = _start_delivery_workflow
 
-    return DeliveryRequestService(delivery_workflow_starter=delivery_workflow_starter)
+    return DeliveryRequestService(
+        delivery_workflow_starter=delivery_workflow_starter,
+        delivery_request_precheck=delivery_request_precheck,
+    )
 
 class ControlServiceServer:
     def __init__(self, host: str = CONTROL_SERVER_HOST, port: int = CONTROL_SERVER_PORT):

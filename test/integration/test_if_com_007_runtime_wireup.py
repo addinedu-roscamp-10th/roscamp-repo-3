@@ -68,10 +68,38 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
             server_sock.listen(5)
             ready.set()
 
-            for _ in range(5):
+            for _ in range(6):
                 conn, _ = server_sock.accept()
                 with conn:
-                    received.append(decode_message_bytes(conn.recv(4096)))
+                    request = decode_message_bytes(conn.recv(4096))
+                    received.append(request)
+                    if request.get("command") == "get_runtime_status":
+                        conn.sendall(
+                            encode_message(
+                                {
+                                    "ok": True,
+                                    "payload": {
+                                        "ready": True,
+                                        "checks": [
+                                            {
+                                                "name": "pinky2.navigate_to_goal",
+                                                "ready": True,
+                                            },
+                                            {
+                                                "name": "arm1.execute_manipulation",
+                                                "ready": True,
+                                            },
+                                            {
+                                                "name": "arm2.execute_manipulation",
+                                                "ready": True,
+                                            },
+                                        ],
+                                    },
+                                }
+                            )
+                        )
+                        continue
+
                     conn.sendall(encode_message(response_payload))
         finished.set()
 
@@ -172,6 +200,13 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
 
     assert response["result_code"] == "ACCEPTED"
     assert received == [
+        {
+            "command": "get_runtime_status",
+            "payload": {
+                "pinky_id": "pinky2",
+                "arm_ids": ["arm1", "arm2"],
+            },
+        },
         {
             "command": "navigate_to_goal",
             "payload": {
