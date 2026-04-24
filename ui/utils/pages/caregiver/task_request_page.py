@@ -57,10 +57,7 @@ class DeliverySubmitWorker(QObject):
 
 class DeliveryRequestForm(QWidget, InlineStatusMixin):
     DESTINATION_OPTIONS = (
-        ("305호", "room_305"),
-        ("302호", "room_302"),
-        ("간호 스테이션", "nurse_station"),
-        ("면회실", "visit_room"),
+        ("목적지(room2)", "room2"),
     )
     PRIORITY_LABEL_TO_CODE = {
         "일반": "NORMAL",

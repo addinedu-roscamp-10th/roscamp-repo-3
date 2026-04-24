@@ -118,7 +118,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
         },
     }
     destination_goal_poses = {
-        "room_301": {
+        "room2": {
             "header": {
                 "stamp": {"sec": 0, "nanosec": 0},
                 "frame_id": "map",
@@ -176,7 +176,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
             caregiver_id="cg_001",
             item_id="supply_001",
             quantity=1,
-            destination_id="room_301",
+            destination_id="room2",
             priority="NORMAL",
             notes="runtime delivery workflow wire-up test",
             idempotency_key="idem_001",
@@ -239,7 +239,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
                 "goal": {
                     "task_id": "task_delivery_idem_001",
                     "nav_phase": "DELIVERY_DESTINATION",
-                    "goal_pose": destination_goal_poses["room_301"],
+                    "goal_pose": destination_goal_poses["room2"],
                     "timeout_sec": 120,
                 },
             },

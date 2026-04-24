@@ -104,12 +104,12 @@ def test_run_delivery_workflow_executes_pickup_load_destination_unload_in_order(
         task_id="task_delivery_001",
         item_id="supply_001",
         quantity=2,
-        destination_id="room_301",
+        destination_id="room2",
     )
 
     assert response["result_code"] == "SUCCESS"
     assert pickup_resolver.calls == 1
-    assert destination_resolver.calls == ["room_301"]
+    assert destination_resolver.calls == ["room2"]
     assert return_to_dock_resolver.calls == 1
     assert navigation_service.calls == [
         {
@@ -171,7 +171,7 @@ def test_run_delivery_workflow_stops_after_pickup_navigation_failure():
         task_id="task_delivery_001",
         item_id="supply_001",
         quantity=2,
-        destination_id="room_301",
+        destination_id="room2",
     )
 
     assert response == {
@@ -202,7 +202,7 @@ def test_run_delivery_workflow_stops_when_destination_goal_pose_is_missing():
         task_id="task_delivery_001",
         item_id="supply_001",
         quantity=2,
-        destination_id="room_301",
+        destination_id="room2",
     )
 
     assert response == {
@@ -210,7 +210,7 @@ def test_run_delivery_workflow_stops_when_destination_goal_pose_is_missing():
         "result_message": "destination goal pose를 찾을 수 없습니다.",
         "reason_code": "DESTINATION_GOAL_POSE_MISSING",
     }
-    assert destination_resolver.calls == ["room_301"]
+    assert destination_resolver.calls == ["room2"]
     assert len(navigation_service.calls) == 1
     assert len(manipulation_service.calls) == 1
 
@@ -241,7 +241,7 @@ def test_run_delivery_workflow_stops_when_return_to_dock_goal_pose_is_missing():
         task_id="task_delivery_001",
         item_id="supply_001",
         quantity=2,
-        destination_id="room_301",
+        destination_id="room2",
     )
 
     assert response == {
@@ -278,7 +278,7 @@ def test_run_delivery_workflow_stops_after_load_failure():
         task_id="task_delivery_001",
         item_id="supply_001",
         quantity=2,
-        destination_id="room_301",
+        destination_id="room2",
     )
 
     assert response == {
@@ -314,7 +314,7 @@ def test_run_delivery_workflow_stops_after_destination_navigation_failure():
         task_id="task_delivery_001",
         item_id="supply_001",
         quantity=2,
-        destination_id="room_301",
+        destination_id="room2",
     )
 
     assert response == {
@@ -354,7 +354,7 @@ def test_run_delivery_workflow_stops_after_unload_failure():
         task_id="task_delivery_001",
         item_id="supply_001",
         quantity=2,
-        destination_id="room_301",
+        destination_id="room2",
     )
 
     assert response == {
@@ -392,7 +392,7 @@ def test_run_delivery_workflow_logs_failure_stage(caplog):
             task_id="task_delivery_001",
             item_id="supply_001",
             quantity=2,
-            destination_id="room_301",
+            destination_id="room2",
         )
 
     assert response["result_code"] == "FAILED"

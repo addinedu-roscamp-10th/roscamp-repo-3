@@ -25,7 +25,7 @@ def build_request_payload():
         "caregiver_id": "cg_001",
         "item_id": "supply_001",
         "quantity": 2,
-        "destination_id": "room_301",
+        "destination_id": "room2",
         "priority": "NORMAL",
         "notes": "Medication after meals",
         "idempotency_key": "idem_delivery_001",
@@ -57,7 +57,7 @@ def test_create_delivery_task_starts_delivery_workflow_after_acceptance():
             "task_id": "task_delivery_001",
             "item_id": "supply_001",
             "quantity": 2,
-            "destination_id": "room_301",
+            "destination_id": "room2",
         }
     ]
 

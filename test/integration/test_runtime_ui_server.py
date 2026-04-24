@@ -90,7 +90,7 @@ def build_if_del_001_payload() -> dict:
         ),
         "item_id": product.get("item_id") or f"supply_{product['product_id']}",
         "quantity": 1,
-        "destination_id": "room_302",
+        "destination_id": "room2",
         "priority": "NORMAL",
         "notes": "runtime integration test",
         "idempotency_key": "runtime-if-del-001-idem",
@@ -216,10 +216,7 @@ def control_server(qapp, ros_service_stub):
             "ROPI_ROS_SERVICE_SOCKET_PATH": ros_service_stub["socket_path"],
             "ROPI_DELIVERY_PICKUP_GOAL_POSE": "1.5,2.5,1.57",
             "ROPI_DELIVERY_DESTINATION_GOAL_POSES": (
-                "room_305=10.0,1.0,0.0;"
-                "room_302=12.0,2.0,0.0;"
-                "nurse_station=14.0,3.0,0.0;"
-                "visit_room=16.0,4.0,0.0"
+                "room2=12.0,2.0,0.0"
             ),
             "ROPI_RETURN_TO_DOCK_GOAL_POSE": "0.5,0.5,3.14",
         },

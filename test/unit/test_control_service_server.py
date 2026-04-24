@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -115,7 +116,7 @@ def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_se
             "caregiver_id": "cg_001",
             "item_id": "supply_001",
             "quantity": 1,
-            "destination_id": "room_302",
+            "destination_id": "room2",
             "priority": "NORMAL",
             "notes": "delivery test",
             "idempotency_key": "idem_001",
@@ -127,7 +128,7 @@ def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_se
         return_value={
             "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
             "destination_goal_poses": {
-                "room_302": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
             },
             "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
         },
@@ -154,7 +155,7 @@ def test_delivery_create_task_rejects_unknown_destination_id(control_service_ser
             "caregiver_id": "cg_001",
             "item_id": "supply_001",
             "quantity": 1,
-            "destination_id": "room_305",
+            "destination_id": "room1",
             "priority": "NORMAL",
             "notes": "delivery test",
             "idempotency_key": "idem_001",
@@ -166,7 +167,7 @@ def test_delivery_create_task_rejects_unknown_destination_id(control_service_ser
         return_value={
             "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
             "destination_goal_poses": {
-                "room_302": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
             },
             "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
         },
@@ -178,4 +179,66 @@ def test_delivery_create_task_rejects_unknown_destination_id(control_service_ser
 
     assert response.payload["result_code"] == "INVALID_REQUEST"
     assert response.payload["reason_code"] == "DESTINATION_ID_UNKNOWN"
-    assert "room_305" in response.payload["result_message"]
+    assert "room1" in response.payload["result_message"]
+
+
+def test_delivery_create_task_logs_ros_runtime_readiness_details(control_service_server, caplog):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
+        sequence_no=7,
+        payload={
+            "request_id": "req_001",
+            "caregiver_id": "cg_001",
+            "item_id": "supply_001",
+            "quantity": 1,
+            "destination_id": "room2",
+            "priority": "NORMAL",
+            "notes": "delivery test",
+            "idempotency_key": "idem_001",
+        },
+    )
+
+    caplog.set_level(logging.WARNING)
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.get_delivery_navigation_config",
+        return_value={
+            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+            "destination_goal_poses": {
+                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+            },
+            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+        },
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+        return_value=object(),
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService"
+    ) as readiness_service_cls:
+        readiness_service_cls.return_value.get_status.return_value = {
+            "ready": False,
+            "checks": [
+                {
+                    "name": "pinky2.navigate_to_goal",
+                    "ready": False,
+                    "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                },
+                {
+                    "name": "arm1.execute_manipulation",
+                    "ready": True,
+                    "action_name": "/ropi/arm/arm1/execute_manipulation",
+                },
+                {
+                    "name": "arm2.execute_manipulation",
+                    "ready": False,
+                    "action_name": "/ropi/arm/arm2/execute_manipulation",
+                },
+            ],
+        }
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.payload["result_code"] == "REJECTED"
+    assert response.payload["reason_code"] == "ROS_RUNTIME_NOT_READY"
+    assert "delivery_request_precheck_failed" in caplog.text
+    assert "/ropi/control/pinky2/navigate_to_goal" in caplog.text
+    assert "/ropi/arm/arm2/execute_manipulation" in caplog.text

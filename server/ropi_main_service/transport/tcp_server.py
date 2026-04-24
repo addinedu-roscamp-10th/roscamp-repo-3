@@ -92,6 +92,23 @@ def _build_delivery_request_precheck(
     destination_goal_poses,
     return_to_dock_goal_pose,
 ):
+    def _log_precheck_failure(
+        *,
+        reason_code: str,
+        message: str,
+        destination_id: str,
+        ros_detail=None,
+    ) -> None:
+        log_event(
+            logger,
+            logging.WARNING,
+            "delivery_request_precheck_failed",
+            reason_code=reason_code,
+            message=message,
+            destination_id=destination_id,
+            ros_detail=ros_detail,
+        )
+
     def _reject(message: str, reason_code: str) -> dict:
         return DeliveryRequestService._rejected(message, reason_code)
 
@@ -102,24 +119,44 @@ def _build_delivery_request_precheck(
         destination_id = str(kwargs.get("destination_id") or "").strip()
 
         if pickup_goal_pose is None:
+            _log_precheck_failure(
+                reason_code="PICKUP_GOAL_POSE_NOT_CONFIGURED",
+                message="운반 픽업 좌표가 설정되지 않았습니다.",
+                destination_id=destination_id,
+            )
             return _reject(
                 "운반 픽업 좌표가 설정되지 않았습니다.",
                 "PICKUP_GOAL_POSE_NOT_CONFIGURED",
             )
 
         if return_to_dock_goal_pose is None:
+            _log_precheck_failure(
+                reason_code="RETURN_TO_DOCK_GOAL_POSE_NOT_CONFIGURED",
+                message="복귀 좌표가 설정되지 않았습니다.",
+                destination_id=destination_id,
+            )
             return _reject(
                 "복귀 좌표가 설정되지 않았습니다.",
                 "RETURN_TO_DOCK_GOAL_POSE_NOT_CONFIGURED",
             )
 
         if not destination_goal_poses:
+            _log_precheck_failure(
+                reason_code="DESTINATION_GOAL_POSES_NOT_CONFIGURED",
+                message="운반 목적지 좌표가 설정되지 않았습니다.",
+                destination_id=destination_id,
+            )
             return _reject(
                 "운반 목적지 좌표가 설정되지 않았습니다.",
                 "DESTINATION_GOAL_POSES_NOT_CONFIGURED",
             )
 
         if destination_id not in destination_goal_poses:
+            _log_precheck_failure(
+                reason_code="DESTINATION_ID_UNKNOWN",
+                message=f"지원하지 않는 destination_id입니다: {destination_id}",
+                destination_id=destination_id,
+            )
             return _invalid_request(
                 f"지원하지 않는 destination_id입니다: {destination_id}",
                 "DESTINATION_ID_UNKNOWN",
@@ -128,12 +165,23 @@ def _build_delivery_request_precheck(
         try:
             ros_status = RosRuntimeReadinessService().get_status()
         except Exception as exc:
+            _log_precheck_failure(
+                reason_code="ROS_SERVICE_UNAVAILABLE",
+                message=f"ROS service가 준비되지 않았습니다: {exc}",
+                destination_id=destination_id,
+            )
             return _reject(
                 f"ROS service가 준비되지 않았습니다: {exc}",
                 "ROS_SERVICE_UNAVAILABLE",
             )
 
         if not ros_status.get("ready"):
+            _log_precheck_failure(
+                reason_code="ROS_RUNTIME_NOT_READY",
+                message="ROS runtime이 준비되지 않았습니다.",
+                destination_id=destination_id,
+                ros_detail=ros_status,
+            )
             return _reject(
                 "ROS runtime이 준비되지 않았습니다.",
                 "ROS_RUNTIME_NOT_READY",
