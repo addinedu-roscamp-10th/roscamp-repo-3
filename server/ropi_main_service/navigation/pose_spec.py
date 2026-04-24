@@ -74,10 +74,17 @@ def _extract_yaw_radians(spec: dict) -> float:
     raise RuntimeError("2D goal pose에는 yaw 또는 yaw_deg가 필요합니다.")
 
 def parse_goal_pose_string(raw: str, *, env_name: str) -> dict:
-    parts = [part.strip() for part in str(raw or "").split(",")]
+    parts = [part.strip() for part in str(raw or "").split(",") if part.strip()]
+    if not parts:
+        raise RuntimeError(f"{env_name}가 비어 있습니다.")
+
+    if any("=" in part for part in parts):
+        return _parse_key_value_goal_pose_string(parts, env_name=env_name)
+
     if len(parts) not in {3, 4, 5}:
         raise RuntimeError(
-            f"{env_name}는 'x,y,yaw' 또는 'x,y,yaw,frame_id' 또는 'x,y,yaw,z,frame_id' 형식이어야 합니다."
+            f"{env_name}는 'x,y,yaw' 또는 'x,y,yaw,frame_id' 또는 'x,y,yaw,z,frame_id' "
+            "또는 'x=...,y=...,yaw_deg=...' 형식이어야 합니다."
         )
 
     x = float(parts[0])
@@ -104,6 +111,48 @@ def parse_goal_pose_string(raw: str, *, env_name: str) -> dict:
     )
 
 
+def _parse_key_value_goal_pose_string(parts: list[str], *, env_name: str) -> dict:
+    spec = {}
+
+    for part in parts:
+        if "=" not in part:
+            raise RuntimeError(
+                f"{env_name}는 'x=...,y=...,yaw_deg=...' 형식일 때 모든 항목이 key=value여야 합니다."
+            )
+
+        key, value = part.split("=", 1)
+        normalized_key = key.strip()
+        normalized_value = value.strip()
+        if not normalized_key:
+            raise RuntimeError(f"{env_name}의 key가 비어 있습니다.")
+        if not normalized_value:
+            raise RuntimeError(f"{env_name}[{normalized_key}] 값이 비어 있습니다.")
+        spec[normalized_key] = normalized_value
+
+    try:
+        normalized_spec = {
+            "x": float(spec["x"]),
+            "y": float(spec["y"]),
+            "z": float(spec.get("z", 0.0)),
+            "frame_id": str(spec.get("frame_id") or DEFAULT_FRAME_ID).strip() or DEFAULT_FRAME_ID,
+        }
+    except KeyError as exc:
+        raise RuntimeError(
+            f"{env_name}는 x, y와 yaw 또는 yaw_deg를 포함해야 합니다."
+        ) from exc
+
+    if "yaw" in spec:
+        normalized_spec["yaw"] = float(spec["yaw"])
+    elif "yaw_deg" in spec:
+        normalized_spec["yaw_deg"] = float(spec["yaw_deg"])
+    else:
+        raise RuntimeError(
+            f"{env_name}는 x, y와 yaw 또는 yaw_deg를 포함해야 합니다."
+        )
+
+    return _build_pose_stamped_from_simple_2d_pose(normalized_spec)
+
+
 def parse_goal_pose_map_string(raw: str, *, env_name: str) -> dict:
     mapping = {}
     entries = [
@@ -115,7 +164,8 @@ def parse_goal_pose_map_string(raw: str, *, env_name: str) -> dict:
     for entry in entries:
         if "=" not in entry:
             raise RuntimeError(
-                f"{env_name}의 각 항목은 'destination_id=x,y,yaw' 형식이어야 합니다."
+                f"{env_name}의 각 항목은 'destination_id=x,y,yaw' 또는 "
+                "'destination_id=x=...,y=...,yaw_deg=...' 형식이어야 합니다."
             )
 
         destination_id, pose_raw = entry.split("=", 1)
