@@ -19,7 +19,7 @@ class _Result:
         self.processed_quantity = 0
 
 
-class FakeExecuteManipulation:
+class FakeArmManipulation:
     Goal = _Goal
 
 
@@ -106,7 +106,7 @@ def test_send_goal_waits_for_final_if_del_003_result_and_serializes_payload():
 
     client = RclpyManipulationActionClient(
         node="fake-node",
-        action_type_loader=lambda: FakeExecuteManipulation,
+        action_type_loader=lambda: FakeArmManipulation,
         action_client_factory=action_client_factory,
     )
 
@@ -143,7 +143,7 @@ def test_send_goal_returns_rejected_when_manipulation_goal_is_rejected():
 
     client = RclpyManipulationActionClient(
         node="fake-node",
-        action_type_loader=lambda: FakeExecuteManipulation,
+        action_type_loader=lambda: FakeArmManipulation,
         action_client_factory=action_client_factory,
     )
 
@@ -167,7 +167,7 @@ def test_send_goal_raises_when_manipulation_action_server_is_unavailable():
 
     client = RclpyManipulationActionClient(
         node="fake-node",
-        action_type_loader=lambda: FakeExecuteManipulation,
+        action_type_loader=lambda: FakeArmManipulation,
         action_client_factory=action_client_factory,
     )
 
