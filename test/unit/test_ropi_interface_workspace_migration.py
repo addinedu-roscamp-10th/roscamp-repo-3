@@ -65,6 +65,16 @@ PINKY_README = (
     / "pinky_pro"
     / "README.md"
 )
+PINKY_INTERFACES_PACKAGE = (
+    REPO_ROOT
+    / "device"
+    / "ropi_mobile"
+    / "pinky_pro"
+    / "src"
+    / "pinky_pro"
+    / "pinky_interfaces"
+    / "package.xml"
+)
 DELIVERY_ROPI_INTERFACE_PACKAGE = (
     REPO_ROOT
     / "pinky_pro_delivery"
@@ -74,25 +84,29 @@ DELIVERY_ROPI_INTERFACE_PACKAGE = (
 )
 
 
-def test_workspace_runtime_python_uses_ropi_interface_imports():
+def test_main_workspace_runtime_python_keeps_pinky_interfaces_imports():
     for file_path in (PINKY_LED_SERVER, PINKY_EMOTION_SERVER, PINKY_EMOTION_MAIN):
         content = file_path.read_text(encoding="utf-8")
-        assert "from ropi_interface.srv import" in content
-        assert "pinky_interfaces" not in content
+        assert "from pinky_interfaces.srv import" in content
+        assert "from ropi_interface.srv import" not in content
 
 
-def test_workspace_python_packages_declare_ropi_interface_dependency():
+def test_main_workspace_python_packages_do_not_depend_on_ropi_interface():
     for file_path in (PINKY_LED_PACKAGE, PINKY_EMOTION_PACKAGE):
         content = file_path.read_text(encoding="utf-8")
-        assert "<depend>ropi_interface</depend>" in content or "<exec_depend>ropi_interface</exec_depend>" in content
+        assert "ropi_interface" not in content
 
 
-def test_workspace_readme_examples_use_ropi_interface_service_types():
+def test_main_workspace_readme_examples_keep_pinky_interfaces_service_types():
     content = PINKY_README.read_text(encoding="utf-8")
-    assert "ropi_interface/srv/SetLed" in content
-    assert "ropi_interface/srv/SetBrightness" in content
-    assert "ropi_interface/srv/Emotion" in content
-    assert "pinky_interfaces/srv/" not in content
+    assert "pinky_interfaces/srv/SetLed" in content
+    assert "pinky_interfaces/srv/SetBrightness" in content
+    assert "pinky_interfaces/srv/Emotion" in content
+    assert "ropi_interface/srv/" not in content
+
+
+def test_main_workspace_pinky_interfaces_package_exists():
+    assert PINKY_INTERFACES_PACKAGE.exists()
 
 
 def test_delivery_workspace_ropi_interface_package_is_ament_cmake():
