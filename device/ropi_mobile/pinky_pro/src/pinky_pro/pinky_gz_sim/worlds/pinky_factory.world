@@ -26,7 +26,10 @@
     <plugin filename="gz-sim-imu-system"
         name="gz::sim::systems::Imu">
     </plugin>
-    
+    <plugin filename="gz-sim-lamp-control-system" name="pinky_gz_sim::LampControlPlugin">
+        <link>robot_lamp</link>
+    </plugin>
+
     <!--light-->
     <light type="directional" name="sun">
       <cast_shadows>false</cast_shadows>
@@ -102,15 +105,17 @@
     <name>shelf_4</name>
     <pose>1.4 0.5 0 0 0 0</pose>
   </include>
+  
+
 
   <model name="robot_arm_box">
     <static>true</static>
-    <pose>1.7 0 0.1 0 0 0</pose>
+    <pose>1.7 0 0 0 0 0</pose>
     <link name="robot_arm_box">
       <visual name="robot_arm_box_visual">
         <geometry>
           <box>
-            <size>0.15 0.15 0.20</size>
+            <size>0.15 0.15 0.22</size>
           </box>
         </geometry>
         <material>

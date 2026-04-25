@@ -1,17 +1,17 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
-from .pinky_battery import Battery
+from pinkylib import Battery 
 
 class BatteryPublisher(Node):
     def __init__(self):
-        super().__init__('battery_publisher')
+        super().__init__('battery_publihser')
         
         self.battery = Battery()
 
         self.percentage_publisher = self.create_publisher(
             Float32,
-            'battery/present',
+            'battery/percent',
             10
         )
         

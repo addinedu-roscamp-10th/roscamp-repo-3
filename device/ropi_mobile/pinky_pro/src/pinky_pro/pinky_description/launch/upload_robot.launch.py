@@ -6,18 +6,15 @@ from launch.actions import DeclareLaunchArgument, Shutdown
 from launch.substitutions import LaunchConfiguration, Command, TextSubstitution
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
-from launch.substitutions import PathJoinSubstitution, PythonExpression
+from launch.substitutions import PathJoinSubstitution
 
 def generate_launch_description():
     ld = LaunchDescription()
 
-    namespace_arg = DeclareLaunchArgument("namespace", default_value="")
+    namespace = DeclareLaunchArgument("namespace", default_value="")
     is_sim = DeclareLaunchArgument("is_sim", default_value="false")
+    sim_type = DeclareLaunchArgument("sim_type", default_value="gz_sim")
     cam_tilt_deg = DeclareLaunchArgument("cam_tilt_deg", default_value="0")
-
-    namespace = PythonExpression([
-        "'", LaunchConfiguration('namespace'), "' + ('/' if '", LaunchConfiguration('namespace'), "' != '' else '')"
-    ])
 
     rsp_node = Node(
         package='robot_state_publisher',
@@ -34,11 +31,12 @@ def generate_launch_description():
                         get_package_share_directory('pinky_description'),
                         'urdf/robot.urdf.xacro',
                     ]),
-                    ' namespace:=', namespace,
+                    ' namespace:=', LaunchConfiguration('namespace'),
                     ' is_sim:=', LaunchConfiguration('is_sim'),
+                    ' sim_type:=', LaunchConfiguration('sim_type'),
                     ' cam_tilt_deg:=', LaunchConfiguration('cam_tilt_deg')
                 ]),
-            'frame_prefix': [namespace],
+            'frame_prefix': [LaunchConfiguration('namespace'), '/'],
         }]
     )
 
@@ -58,8 +56,9 @@ def generate_launch_description():
         output='screen'
     )
 
-    ld.add_action(namespace_arg)
+    ld.add_action(namespace)
     ld.add_action(is_sim)
+    ld.add_action(sim_type)
     ld.add_action(cam_tilt_deg)
     ld.add_action(rsp_node)
     ld.add_action(jsp_node)

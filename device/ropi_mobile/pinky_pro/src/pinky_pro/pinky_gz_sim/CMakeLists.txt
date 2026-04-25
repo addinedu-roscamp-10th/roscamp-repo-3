@@ -32,7 +32,6 @@ install(
     worlds
     models
     launch
-    params
   DESTINATION share/${PROJECT_NAME}
 )
 

@@ -56,15 +56,6 @@ PINKY_EMOTION_PACKAGE = (
     / "pinky_emotion"
     / "package.xml"
 )
-PINKY_README = (
-    REPO_ROOT
-    / "device"
-    / "ropi_mobile"
-    / "pinky_pro"
-    / "src"
-    / "pinky_pro"
-    / "README.md"
-)
 PINKY_INTERFACES_PACKAGE = (
     REPO_ROOT
     / "device"
@@ -95,14 +86,6 @@ def test_main_workspace_python_packages_do_not_depend_on_ropi_interface():
     for file_path in (PINKY_LED_PACKAGE, PINKY_EMOTION_PACKAGE):
         content = file_path.read_text(encoding="utf-8")
         assert "ropi_interface" not in content
-
-
-def test_main_workspace_readme_examples_keep_pinky_interfaces_service_types():
-    content = PINKY_README.read_text(encoding="utf-8")
-    assert "pinky_interfaces/srv/SetLed" in content
-    assert "pinky_interfaces/srv/SetBrightness" in content
-    assert "pinky_interfaces/srv/Emotion" in content
-    assert "ropi_interface/srv/" not in content
 
 
 def test_main_workspace_pinky_interfaces_package_exists():

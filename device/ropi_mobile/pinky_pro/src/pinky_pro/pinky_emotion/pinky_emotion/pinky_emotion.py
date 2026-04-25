@@ -3,17 +3,34 @@ from rclpy.node import Node
 from ament_index_python.packages import get_package_share_directory
 from PIL import Image, ImageSequence
 import os
-import threading
 from pinky_interfaces.srv import Emotion
-from .pinky_lcd import LCD
+
+import os
+import sys
+import time
+import logging
+import spidev as SPI
+from . import LCD_2inch4
+import logging
+
+RST = 27
+DC = 25
+BL = 18
+bus = 0
+device = 0
+logging.basicConfig(level=logging.DEBUG)
 
 class PinkyEmotion(Node):
     def __init__(self):
         super().__init__('pinky_emotion')
 
         self.emotion_path = os.path.join(get_package_share_directory('pinky_emotion'), 'emotion')
-        self.emotion_service = self.create_service(Emotion, 'set_emotion', self.set_emotion_callback)
-        self.lcd = LCD()
+        self.emotion_service = self.create_service(Emotion, 'set_emotion', self.lcd_callback)
+
+        self.lcd = LCD_2inch4.LCD_2inch4()
+        self.lcd.Init()
+        self.lcd.clear()
+
         self.get_logger().info(f"Pinky's emotion server is ready!!")
 
     def lcd_callback(self, request, response):
@@ -46,29 +63,32 @@ class PinkyEmotion(Node):
             self.play_gif(self.emotion_path + "/sad.gif")
 
         else:
-            response.response = "Wrong command or emotion not cached"
-            self.get_logger().warn(f"Emotion '{emo}' not found in cache.")
+            response.response = "wrong command"
+            self.get_logger().info("wrong command")
+
+        self.lcd.clear_color(0)
 
         return response
 
     def play_gif(self, path):
         img = Image.open(path)
-        for i, frame in enumerate(ImageSequence.Iterator(img)):
-            if i % 2 == 0:
-                self.lcd.img_show(frame)
+        for frame in ImageSequence.Iterator(img):
+            frame = frame.resize((320, 240), Image.LANCZOS)
+            processed_frame = frame.convert("RGB").transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_270)
+            self.lcd.ShowImage(processed_frame)
 
-
+        
 def main(args=None):
     rclpy.init(args=args)
-    pinky_emotion_node = PinkyEmotion()
+    pinky_lcd_node = PinkyEmotion()
      
     try:
-        rclpy.spin(pinky_emotion_node)
+        rclpy.spin(pinky_lcd_node)
     except KeyboardInterrupt:
-        pinky_emotion_node.get_logger().info("KeyboardInterrupt, shutting down.")
+        pass
     finally:
-        pinky_emotion_node.lcd.clear()
-        pinky_emotion_node.destroy_node()
+        pinky_lcd_node.lcd.clear_color(0)
+        pinky_lcd_node.destroy_node()
         rclpy.shutdown()
  
 if __name__ == '__main__':
