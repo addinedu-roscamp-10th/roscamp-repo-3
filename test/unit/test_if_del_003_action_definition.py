@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ROPI_INTERFACE_ROOT = REPO_ROOT / "device" / "ropi_mobile" / "pinky_pro" / "src" / "ropi_interface"
+ROPI_INTERFACE_ROOT = REPO_ROOT / "device" / "ropi_common" / "src" / "ropi_interface"
 ACTION_FILE = ROPI_INTERFACE_ROOT / "action" / "ArmManipulation.action"
 CMAKE_FILE = ROPI_INTERFACE_ROOT / "CMakeLists.txt"
 PACKAGE_FILE = ROPI_INTERFACE_ROOT / "package.xml"

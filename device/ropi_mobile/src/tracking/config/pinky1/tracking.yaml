@@ -1,0 +1,24 @@
+tracking_node:
+  ros__parameters:
+    server_ip: "192.168.4.15"
+    server_video_port: 5005
+    result_port: 6006
+    jpeg_quality: 45
+    cam_width: 320
+    cam_height: 240
+    socket_recv_timeout_sec: 0.001
+    detection_topic: "tracking"
+    cmd_vel_topic: "/cmd_vel"
+    center_dead_band: 20
+    area_dead_band: 5000
+    min_valid_area: 1200
+    turn_gain: 0.0035
+    dist_gain: 0.00003
+    result_timeout_sec: 2.0
+    target_bbox_area: 38000
+    area_ema_alpha: 0.35
+    big_turn_err_px: 80
+    big_turn_forward_scale: 0.5
+    max_linear_x: 0.20
+    max_angular_z: 1.20
+    control_period_sec: 0.05

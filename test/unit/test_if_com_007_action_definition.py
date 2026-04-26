@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ROPI_INTERFACE_ROOT = REPO_ROOT / "device" / "ropi_mobile" / "pinky_pro" / "src" / "ropi_interface"
+ROPI_INTERFACE_ROOT = REPO_ROOT / "device" / "ropi_common" / "src" / "ropi_interface"
 ACTION_FILE = ROPI_INTERFACE_ROOT / "action" / "NavigateToGoal.action"
 CMAKE_FILE = ROPI_INTERFACE_ROOT / "CMakeLists.txt"
 PACKAGE_FILE = ROPI_INTERFACE_ROOT / "package.xml"
@@ -36,7 +36,7 @@ def test_if_com_007_action_is_registered_in_ropi_interface_cmake():
 
     assert 'find_package(geometry_msgs REQUIRED)' in content
     assert '"action/NavigateToGoal.action"' in content or '"NavigateToGoal.action"' in content
-    assert "DEPENDENCIES builtin_interfaces std_msgs action_msgs geometry_msgs" in content
+    assert "DEPENDENCIES builtin_interfaces action_msgs geometry_msgs" in content
 
 
 def test_if_com_007_action_dependencies_are_declared_in_package_xml():
