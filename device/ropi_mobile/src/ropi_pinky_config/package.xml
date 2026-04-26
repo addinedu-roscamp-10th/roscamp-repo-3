@@ -10,6 +10,7 @@
 
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
+  <exec_depend>launch_xml</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>pinky_navigation</exec_depend>
 

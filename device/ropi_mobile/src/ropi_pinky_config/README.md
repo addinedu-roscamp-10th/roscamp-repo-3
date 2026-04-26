@@ -27,8 +27,7 @@ ropi_pinky_config/
 ```bash
 source /opt/ros/jazzy/setup.bash
 source ~/pinky_pro/install/setup.bash
-source ~/roscamp-repo-3/device/ropi_common/install/setup.bash
-source ~/roscamp-repo-3/device/ropi_mobile/install/setup.bash
+source ~/roscamp-repo-3/device/install/setup.bash
 ```
 
 ## 실행 방법

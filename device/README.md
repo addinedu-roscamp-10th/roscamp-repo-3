@@ -37,27 +37,21 @@ device/
 
 ## Pinky 로봇 빌드 순서
 
-Pinky 로봇에서는 제조사 워크스페이스를 먼저 source하고, 그 위에 이 레포의 공통/모바일 워크스페이스를 올린다.
+Pinky 로봇에서는 제조사 워크스페이스를 먼저 source하고, 이 레포의 `device`를 하나의 colcon workspace로 빌드한다.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
 source ~/pinky_pro/install/setup.bash
 
-cd ~/roscamp-repo-3/device/ropi_common
-colcon build
-source install/setup.bash
-
-cd ~/roscamp-repo-3/device/ropi_mobile
-colcon build
+cd ~/roscamp-repo-3/device
+colcon build --symlink-install
 source install/setup.bash
 ```
 
 Pinky navigation은 `ropi_pinky_config`로 실행한다. 이 launch가 `~/pinky_pro` 안의 `pinky_navigation` launch를 include하면서 우리 레포의 map과 Nav2 parameter를 넘긴다.
 
 ```bash
-ros2 launch ropi_pinky_config pinky_nav.launch.py robot_id:=pinky1
-ros2 launch ropi_pinky_config pinky_nav.launch.py robot_id:=pinky2
-ros2 launch ropi_pinky_config pinky_nav.launch.py robot_id:=pinky3
+ros2 launch ropi_pinky_config pinky_nav.launch.py
 ```
 
 시나리오 노드는 각 패키지 launch로 실행한다.
@@ -70,17 +64,13 @@ ros2 launch fallen_detection patrol.launch.py robot_id:=pinky3
 
 ## JetCobot 로봇 빌드 순서
 
-JetCobot은 제조사 Pinky 워크스페이스가 필요하지 않다. 공통 인터페이스를 먼저 빌드하고 arm 패키지를 빌드한다.
+JetCobot은 제조사 Pinky 워크스페이스가 필요하지 않다. 필요한 패키지와 공통 인터페이스만 같이 빌드한다.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
 
-cd ~/roscamp-repo-3/device/ropi_common
-colcon build
-source install/setup.bash
-
-cd ~/roscamp-repo-3/device/ropi_arm
-colcon build
+cd ~/roscamp-repo-3/device
+colcon build --symlink-install --packages-up-to jet_arm_control
 source install/setup.bash
 ```
 

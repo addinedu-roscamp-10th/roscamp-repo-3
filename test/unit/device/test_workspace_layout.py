@@ -33,6 +33,7 @@ def test_pinky_config_wraps_common_nav_files():
     assert "map_test11_0423.yaml" in launch_py
     assert "config\", \"nav2_params.yaml" in launch_py
     assert "maps\", \"map_test11_0423.yaml" in launch_py
+    assert "from launch_xml.launch_description_sources import XMLLaunchDescriptionSource" in launch_py
     assert "robot_id" not in launch_py
     assert "image: map_test11_0423.pgm" in (
         PINKY_CONFIG_ROOT / "maps" / "map_test11_0423.yaml"
