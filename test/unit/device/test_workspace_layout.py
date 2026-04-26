@@ -1,8 +1,7 @@
-from pathlib import Path
 import xml.etree.ElementTree as ET
 
+from test_support.paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 DEVICE_ROOT = REPO_ROOT / "device"
 ROPI_INTERFACE_ROOT = DEVICE_ROOT / "ropi_common" / "src" / "ropi_interface"
 PINKY_CONFIG_ROOT = DEVICE_ROOT / "ropi_mobile" / "src" / "ropi_pinky_config"

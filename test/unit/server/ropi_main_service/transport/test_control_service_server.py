@@ -124,7 +124,7 @@ def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_se
     )
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.get_delivery_navigation_config",
+        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
         return_value={
             "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
             "destination_goal_poses": {
@@ -136,7 +136,7 @@ def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_se
         "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
         return_value=object(),
     ), patch(
-        "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService"
+        "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService"
     ) as readiness_service_cls:
         readiness_service_cls.return_value.get_status.side_effect = RuntimeError("socket missing")
         response = control_service_server.dispatch_frame(request)
@@ -163,7 +163,7 @@ def test_delivery_create_task_rejects_unknown_destination_id(control_service_ser
     )
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.get_delivery_navigation_config",
+        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
         return_value={
             "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
             "destination_goal_poses": {
@@ -201,7 +201,7 @@ def test_delivery_create_task_logs_ros_runtime_readiness_details(control_service
     caplog.set_level(logging.WARNING)
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.get_delivery_navigation_config",
+        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
         return_value={
             "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
             "destination_goal_poses": {
@@ -213,7 +213,7 @@ def test_delivery_create_task_logs_ros_runtime_readiness_details(control_service
         "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
         return_value=object(),
     ), patch(
-        "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService"
+        "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService"
     ) as readiness_service_cls:
         readiness_service_cls.return_value.get_status.return_value = {
             "ready": False,

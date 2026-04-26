@@ -25,7 +25,11 @@ def main() -> int:
         print("System login test failed:", response)
         return 1
 
-    print("System login test passed:", response["payload"]["session"])
+    session = response["payload"]
+    assert session["user_id"]
+    assert session["name"]
+    assert session["role"] == "visitor"
+    print("System login test passed:", session)
     return 0
 
 

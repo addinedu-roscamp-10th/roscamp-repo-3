@@ -1,5 +1,6 @@
 import pytest
 
+from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
 from server.ropi_main_service.application.manipulation_command import (
     FIXED_PHASE1_ROBOT_SLOT_ID,
     ManipulationCommandService,
@@ -58,6 +59,24 @@ def test_execute_sends_if_del_003_command_with_phase1_default_slot_id():
             "timeout": 30.0,
         }
     ]
+
+
+def test_execute_uses_runtime_config_robot_slot_id():
+    command_client = FakeCommandClient()
+    service = ManipulationCommandService(
+        command_client=command_client,
+        runtime_config=DeliveryRuntimeConfig(robot_slot_id="slot_b2"),
+    )
+
+    service.execute(
+        arm_id="arm1",
+        task_id="task_delivery_001",
+        transfer_direction="TO_ROBOT",
+        item_id="med_acetaminophen_500",
+        quantity=2,
+    )
+
+    assert command_client.calls[0]["payload"]["goal"]["robot_slot_id"] == "slot_b2"
 
 
 def test_execute_rejects_invalid_transfer_direction():

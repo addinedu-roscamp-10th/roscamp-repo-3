@@ -1,8 +1,14 @@
+from server.ropi_main_service.application.delivery_config import (
+    DEFAULT_DELIVERY_DESTINATION_ARM_ID,
+    DEFAULT_DELIVERY_PICKUP_ARM_ID,
+    DEFAULT_DELIVERY_PINKY_ID,
+    get_delivery_runtime_config,
+)
 from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
 
 
-FIXED_DELIVERY_PINKY_ID = "pinky2"
-FIXED_PHASE1_ARM_IDS = ("arm1", "arm2")
+FIXED_DELIVERY_PINKY_ID = DEFAULT_DELIVERY_PINKY_ID
+FIXED_PHASE1_ARM_IDS = (DEFAULT_DELIVERY_PICKUP_ARM_ID, DEFAULT_DELIVERY_DESTINATION_ARM_ID)
 DEFAULT_READINESS_TIMEOUT_SEC = 2.0
 
 
@@ -11,17 +17,19 @@ class RosRuntimeReadinessService:
         self,
         *,
         command_client=None,
+        runtime_config=None,
         readiness_timeout_sec=DEFAULT_READINESS_TIMEOUT_SEC,
     ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
+        self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.readiness_timeout_sec = float(readiness_timeout_sec)
 
     def get_status(self):
         return self.command_client.send_command(
             "get_runtime_status",
             {
-                "pinky_id": FIXED_DELIVERY_PINKY_ID,
-                "arm_ids": list(FIXED_PHASE1_ARM_IDS),
+                "pinky_id": self.runtime_config.pinky_id,
+                "arm_ids": list(self.runtime_config.arm_ids),
             },
             timeout=self.readiness_timeout_sec,
         )

@@ -1,9 +1,13 @@
 from copy import deepcopy
 
+from server.ropi_main_service.application.delivery_config import (
+    DEFAULT_DELIVERY_PINKY_ID,
+    get_delivery_runtime_config,
+)
 from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
 
 
-FIXED_DELIVERY_PINKY_ID = "pinky2"
+FIXED_DELIVERY_PINKY_ID = DEFAULT_DELIVERY_PINKY_ID
 DEFAULT_FRAME_ID = "map"
 ALLOWED_PHASE1_NAV_PHASES = {
     "DELIVERY_PICKUP",
@@ -18,10 +22,12 @@ class GoalPoseNavigationService:
     def __init__(
         self,
         command_client=None,
+        runtime_config=None,
         ipc_timeout_buffer_sec=DEFAULT_IPC_TIMEOUT_BUFFER_SEC,
         minimum_ipc_timeout_sec=MINIMUM_IPC_TIMEOUT_SEC,
     ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
+        self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.ipc_timeout_buffer_sec = ipc_timeout_buffer_sec
         self.minimum_ipc_timeout_sec = minimum_ipc_timeout_sec
 
@@ -44,7 +50,7 @@ class GoalPoseNavigationService:
         return self._get_command_client().send_command(
             "navigate_to_goal",
             {
-                "pinky_id": FIXED_DELIVERY_PINKY_ID,
+                "pinky_id": self.runtime_config.pinky_id,
                 "goal": goal,
             },
             timeout=self._build_ipc_timeout_sec(timeout_sec),

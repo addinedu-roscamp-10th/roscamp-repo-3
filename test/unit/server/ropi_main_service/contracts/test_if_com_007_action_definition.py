@@ -1,7 +1,6 @@
-from pathlib import Path
+from test_support.paths import REPO_ROOT
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 ROPI_INTERFACE_ROOT = REPO_ROOT / "device" / "ropi_common" / "src" / "ropi_interface"
 ACTION_FILE = ROPI_INTERFACE_ROOT / "action" / "NavigateToGoal.action"
 CMAKE_FILE = ROPI_INTERFACE_ROOT / "CMakeLists.txt"

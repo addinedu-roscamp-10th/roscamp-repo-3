@@ -1,33 +1,41 @@
-from .auth import AuthService
-from .caregiver import CaregiverService
-from .delivery_orchestrator import DeliveryOrchestrator
-from .goal_pose_navigation import GoalPoseNavigationService
-from .inventory import InventoryService
-from .manipulation_command import ManipulationCommandService
-from .patient import PatientService
-from .runtime_readiness import RosRuntimeReadinessService
-from .staff_call import StaffCallService
-from .task_request import DeliveryRequestService, TaskRequestService
-from .visit_guide import VisitGuideService
-from .visitor_info import VisitorInfoService
-from .visitor_register import VisitorRegisterService
+from importlib import import_module
 
-DeliveryService = DeliveryRequestService
 
-__all__ = [
-    "AuthService",
-    "CaregiverService",
-    "DeliveryOrchestrator",
-    "DeliveryRequestService",
-    "DeliveryService",
-    "GoalPoseNavigationService",
-    "InventoryService",
-    "ManipulationCommandService",
-    "PatientService",
-    "RosRuntimeReadinessService",
-    "StaffCallService",
-    "TaskRequestService",
-    "VisitGuideService",
-    "VisitorInfoService",
-    "VisitorRegisterService",
-]
+_EXPORTS = {
+    "AuthService": ("auth", "AuthService"),
+    "CaregiverService": ("caregiver", "CaregiverService"),
+    "DeliveryOrchestrator": ("delivery_orchestrator", "DeliveryOrchestrator"),
+    "DeliveryRequestService": ("task_request", "DeliveryRequestService"),
+    "DeliveryRuntimeConfig": ("delivery_config", "DeliveryRuntimeConfig"),
+    "DeliveryService": ("task_request", "DeliveryRequestService"),
+    "FixedGoalPoseResolver": ("goal_pose_resolvers", "FixedGoalPoseResolver"),
+    "GoalPoseNavigationService": ("goal_pose_navigation", "GoalPoseNavigationService"),
+    "InventoryService": ("inventory", "InventoryService"),
+    "MappedGoalPoseResolver": ("goal_pose_resolvers", "MappedGoalPoseResolver"),
+    "ManipulationCommandService": ("manipulation_command", "ManipulationCommandService"),
+    "PatientService": ("patient", "PatientService"),
+    "RosRuntimeReadinessService": ("runtime_readiness", "RosRuntimeReadinessService"),
+    "StaffCallService": ("staff_call", "StaffCallService"),
+    "TaskRequestService": ("task_request", "TaskRequestService"),
+    "VisitGuideService": ("visit_guide", "VisitGuideService"),
+    "VisitorInfoService": ("visitor_info", "VisitorInfoService"),
+    "VisitorRegisterService": ("visitor_register", "VisitorRegisterService"),
+    "build_delivery_request_service": ("delivery_runtime", "build_delivery_request_service"),
+    "get_delivery_navigation_config": ("delivery_config", "get_delivery_navigation_config"),
+    "get_delivery_runtime_config": ("delivery_config", "get_delivery_runtime_config"),
+}
+
+
+def __getattr__(name):
+    try:
+        module_name, attribute_name = _EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(name) from exc
+
+    module = import_module(f"{__name__}.{module_name}")
+    value = getattr(module, attribute_name)
+    globals()[name] = value
+    return value
+
+
+__all__ = sorted(_EXPORTS)

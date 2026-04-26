@@ -2,8 +2,8 @@ from pathlib import Path
 
 import yaml
 
+from test_support.paths import REPO_ROOT
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 DEVICE_ROOT = REPO_ROOT / "device"
 MOBILE_SRC = DEVICE_ROOT / "ropi_mobile" / "src"
 ARM_SRC = DEVICE_ROOT / "ropi_arm" / "src"

@@ -1,7 +1,11 @@
+from server.ropi_main_service.application.delivery_config import (
+    DEFAULT_DELIVERY_PINKY_ID,
+    get_delivery_runtime_config,
+)
 from server.ropi_main_service.persistence.connection import fetch_all, get_connection
 
 
-FIRST_PHASE_DELIVERY_PINKY_ID = "pinky2"
+FIRST_PHASE_DELIVERY_PINKY_ID = DEFAULT_DELIVERY_PINKY_ID
 
 
 class DeliveryRequestRepository:
@@ -16,6 +20,9 @@ class DeliveryRequestRepository:
             updated_at
         FROM supply
     """
+
+    def __init__(self, runtime_config=None):
+        self.runtime_config = runtime_config or get_delivery_runtime_config()
 
     def get_all_products(self):
         query = f"""
@@ -59,7 +66,7 @@ class DeliveryRequestRepository:
             result_code="ACCEPTED",
             task_id=self._build_delivery_task_id(request_id, idempotency_key),
             task_status="WAITING_DISPATCH",
-            assigned_pinky_id=FIRST_PHASE_DELIVERY_PINKY_ID,
+            assigned_pinky_id=self.runtime_config.pinky_id,
         )
 
     def create_delivery_request(

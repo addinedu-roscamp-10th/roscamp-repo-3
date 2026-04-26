@@ -1,5 +1,6 @@
 import pytest
 
+from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
 from server.ropi_main_service.application.goal_pose_navigation import (
     GoalPoseNavigationService,
 )
@@ -77,6 +78,23 @@ def test_navigate_delivery_destination_sends_if_com_007_command_to_ros_service()
     ]
     assert response["result_code"] == "SUCCESS"
     assert response["result_message"] == "navigation done"
+
+
+def test_navigate_uses_runtime_config_pinky_id():
+    command_client = FakeRosCommandClient()
+    service = GoalPoseNavigationService(
+        command_client=command_client,
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+    )
+
+    service.navigate(
+        task_id="task_delivery_001",
+        nav_phase="DELIVERY_DESTINATION",
+        goal_pose=build_goal_pose(),
+        timeout_sec=120,
+    )
+
+    assert command_client.calls[0]["payload"]["pinky_id"] == "pinky9"
 
 
 def test_navigate_defaults_goal_pose_frame_id_to_map():

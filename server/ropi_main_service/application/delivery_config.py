@@ -1,9 +1,10 @@
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
-from server.ropi_main_service.navigation.pose_spec import (
+from server.ropi_main_service.application.goal_pose import (
     normalize_goal_pose_spec,
     parse_goal_pose_map_string,
     parse_goal_pose_string,
@@ -15,6 +16,60 @@ SERVER_ROOT = PROJECT_ROOT / "server"
 
 load_dotenv(SERVER_ROOT / ".env")
 load_dotenv(PROJECT_ROOT / ".env")
+
+
+DEFAULT_DELIVERY_PINKY_ID = "pinky2"
+DEFAULT_DELIVERY_PICKUP_ARM_ID = "arm1"
+DEFAULT_DELIVERY_DESTINATION_ARM_ID = "arm2"
+DEFAULT_DELIVERY_ROBOT_SLOT_ID = "robot_slot_a1"
+DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC = 120.0
+
+
+@dataclass(frozen=True)
+class DeliveryRuntimeConfig:
+    pinky_id: str = DEFAULT_DELIVERY_PINKY_ID
+    pickup_arm_id: str = DEFAULT_DELIVERY_PICKUP_ARM_ID
+    destination_arm_id: str = DEFAULT_DELIVERY_DESTINATION_ARM_ID
+    robot_slot_id: str = DEFAULT_DELIVERY_ROBOT_SLOT_ID
+    navigation_timeout_sec: float = DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC
+
+    @property
+    def arm_ids(self) -> tuple[str, ...]:
+        return (self.pickup_arm_id, self.destination_arm_id)
+
+
+def _load_text_env(name: str, *, default: str) -> str:
+    value = str(os.getenv(name, default)).strip()
+    if not value:
+        return default
+    return value
+
+
+def _load_float_env(name: str, *, default: float) -> float:
+    raw = str(os.getenv(name, str(default))).strip()
+    if not raw:
+        return default
+
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name}는 숫자여야 합니다.") from exc
+
+
+def get_delivery_runtime_config() -> DeliveryRuntimeConfig:
+    return DeliveryRuntimeConfig(
+        pinky_id=_load_text_env("ROPI_DELIVERY_PINKY_ID", default=DEFAULT_DELIVERY_PINKY_ID),
+        pickup_arm_id=_load_text_env("ROPI_DELIVERY_PICKUP_ARM_ID", default=DEFAULT_DELIVERY_PICKUP_ARM_ID),
+        destination_arm_id=_load_text_env(
+            "ROPI_DELIVERY_DESTINATION_ARM_ID",
+            default=DEFAULT_DELIVERY_DESTINATION_ARM_ID,
+        ),
+        robot_slot_id=_load_text_env("ROPI_DELIVERY_ROBOT_SLOT_ID", default=DEFAULT_DELIVERY_ROBOT_SLOT_ID),
+        navigation_timeout_sec=_load_float_env(
+            "ROPI_DELIVERY_NAVIGATION_TIMEOUT_SEC",
+            default=DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC,
+        ),
+    )
 
 
 def _load_json_env(name: str, *, default):
@@ -100,4 +155,8 @@ def get_delivery_navigation_config() -> dict:
     }
 
 
-__all__ = ["get_delivery_navigation_config"]
+__all__ = [
+    "DeliveryRuntimeConfig",
+    "get_delivery_navigation_config",
+    "get_delivery_runtime_config",
+]

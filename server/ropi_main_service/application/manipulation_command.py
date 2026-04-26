@@ -1,7 +1,11 @@
+from server.ropi_main_service.application.delivery_config import (
+    DEFAULT_DELIVERY_ROBOT_SLOT_ID,
+    get_delivery_runtime_config,
+)
 from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
 
 
-FIXED_PHASE1_ROBOT_SLOT_ID = "robot_slot_a1"
+FIXED_PHASE1_ROBOT_SLOT_ID = DEFAULT_DELIVERY_ROBOT_SLOT_ID
 ALLOWED_TRANSFER_DIRECTIONS = {
     "TO_ROBOT",
     "FROM_ROBOT",
@@ -10,8 +14,14 @@ DEFAULT_COMMAND_TIMEOUT_SEC = 30.0
 
 
 class ManipulationCommandService:
-    def __init__(self, command_client=None, command_timeout_sec=DEFAULT_COMMAND_TIMEOUT_SEC):
+    def __init__(
+        self,
+        command_client=None,
+        runtime_config=None,
+        command_timeout_sec=DEFAULT_COMMAND_TIMEOUT_SEC,
+    ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
+        self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.command_timeout_sec = float(command_timeout_sec)
 
     def execute(
@@ -22,8 +32,9 @@ class ManipulationCommandService:
         transfer_direction,
         item_id,
         quantity,
-        robot_slot_id=FIXED_PHASE1_ROBOT_SLOT_ID,
+        robot_slot_id=None,
     ):
+        robot_slot_id = robot_slot_id or self.runtime_config.robot_slot_id
         self._validate_request(
             arm_id=arm_id,
             task_id=task_id,
