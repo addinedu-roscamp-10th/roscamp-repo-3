@@ -4,8 +4,8 @@ from test_support.paths import REPO_ROOT
 
 DEVICE_ROOT = REPO_ROOT / "device"
 ROPI_INTERFACE_ROOT = DEVICE_ROOT / "ropi_common" / "src" / "ropi_interface"
-PINKY_CONFIG_ROOT = DEVICE_ROOT / "ropi_mobile" / "src" / "ropi_pinky_config"
-JET_ARM_ROOT = DEVICE_ROOT / "ropi_arm" / "src" / "jet_arm_control"
+PINKY_CONFIG_ROOT = DEVICE_ROOT / "ropi_mobile" / "src" / "ropi_nav_config"
+JET_ARM_ROOT = DEVICE_ROOT / "ropi_arm" / "src" / "ropi_arm_control"
 
 
 def test_ropi_interface_lives_in_common_device_workspace():
@@ -44,11 +44,11 @@ def test_pinky_config_wraps_common_nav_files():
         assert not (PINKY_CONFIG_ROOT / "maps" / robot_id).exists()
 
 
-def test_jet_arm_control_is_shared_between_jetcobots():
+def test_ropi_arm_control_is_shared_between_jetcobots():
     setup_py = (JET_ARM_ROOT / "setup.py").read_text(encoding="utf-8")
-    node_py = (JET_ARM_ROOT / "jet_arm_control" / "arm1_node.py").read_text(encoding="utf-8")
+    node_py = (JET_ARM_ROOT / "ropi_arm_control" / "arm1_node.py").read_text(encoding="utf-8")
 
-    assert "package_name = 'jet_arm_control'" in setup_py
-    assert "jet_arm_node = jet_arm_control.arm1_node:main" in setup_py
+    assert "package_name = 'ropi_arm_control'" in setup_py
+    assert "jet_arm_node = ropi_arm_control.arm1_node:main" in setup_py
     assert 'declare_parameter("arm_id", "arm1")' in node_py
     assert 'f"/ropi/arm/{self.arm_id}/execute_manipulation"' in node_py

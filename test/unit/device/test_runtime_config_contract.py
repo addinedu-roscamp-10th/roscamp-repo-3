@@ -8,10 +8,10 @@ DEVICE_ROOT = REPO_ROOT / "device"
 MOBILE_SRC = DEVICE_ROOT / "ropi_mobile" / "src"
 ARM_SRC = DEVICE_ROOT / "ropi_arm" / "src"
 
-DELIVERY_ROOT = MOBILE_SRC / "pinky_delivery"
-TRACKING_ROOT = MOBILE_SRC / "tracking"
-FALLEN_ROOT = MOBILE_SRC / "fallen_detection"
-JET_ARM_ROOT = ARM_SRC / "jet_arm_control"
+DELIVERY_ROOT = MOBILE_SRC / "ropi_delivery"
+TRACKING_ROOT = MOBILE_SRC / "ropi_guide"
+FALLEN_ROOT = MOBILE_SRC / "ropi_patrol"
+JET_ARM_ROOT = ARM_SRC / "ropi_arm_control"
 
 
 def _load_ros_parameters(config_path: Path, node_name: str) -> dict:
@@ -36,10 +36,10 @@ def _assert_launch_uses_params_file(launch_path: Path, *, package_name: str, con
     assert "parameters=[params_file]" in content
 
 
-def test_pinky_delivery_runtime_config_contract():
+def test_ropi_delivery_runtime_config_contract():
     config_path = DELIVERY_ROOT / "config" / "pinky2" / "delivery.yaml"
-    launch_path = DELIVERY_ROOT / "launch" / "pinky_delivery.launch.py"
-    node_path = DELIVERY_ROOT / "pinky_delivery" / "mobile_controller_test.py"
+    launch_path = DELIVERY_ROOT / "launch" / "ropi_delivery.launch.py"
+    node_path = DELIVERY_ROOT / "ropi_delivery" / "mobile_controller_test.py"
 
     params = _load_ros_parameters(config_path, "pinky_amr_node")
     assert params["robot_id"] == "pinky2"
@@ -50,7 +50,7 @@ def test_pinky_delivery_runtime_config_contract():
 
     _assert_launch_uses_params_file(
         launch_path,
-        package_name="pinky_delivery",
+        package_name="ropi_delivery",
         config_subdir="delivery.yaml",
     )
     _assert_setup_installs(
@@ -67,8 +67,8 @@ def test_pinky_delivery_runtime_config_contract():
 
 def test_tracking_runtime_config_contract():
     config_path = TRACKING_ROOT / "config" / "pinky1" / "tracking.yaml"
-    launch_path = TRACKING_ROOT / "launch" / "tracking.launch.py"
-    node_path = TRACKING_ROOT / "tracking" / "tracking_node.py"
+    launch_path = TRACKING_ROOT / "launch" / "guide.launch.py"
+    node_path = TRACKING_ROOT / "ropi_guide" / "tracking_node.py"
 
     params = _load_ros_parameters(config_path, "tracking_node")
     assert params["server_ip"] == "192.168.4.15"
@@ -81,7 +81,7 @@ def test_tracking_runtime_config_contract():
 
     _assert_launch_uses_params_file(
         launch_path,
-        package_name="tracking",
+        package_name="ropi_guide",
         config_subdir="tracking.yaml",
     )
     _assert_setup_installs(
@@ -90,7 +90,7 @@ def test_tracking_runtime_config_contract():
         "glob('config/pinky1/*.yaml')",
     )
     launch_source = launch_path.read_text(encoding="utf-8")
-    assert "executable='tracking'" in launch_source or 'executable="tracking"' in launch_source
+    assert "executable='guide'" in launch_source or 'executable="guide"' in launch_source
 
     node_source = node_path.read_text(encoding="utf-8")
     assert '"192.168.4.15"' not in node_source
@@ -100,7 +100,7 @@ def test_tracking_runtime_config_contract():
 def test_fallen_detection_runtime_config_contract():
     config_path = FALLEN_ROOT / "config" / "pinky3" / "patrol.yaml"
     launch_path = FALLEN_ROOT / "launch" / "patrol.launch.py"
-    node_path = FALLEN_ROOT / "fallen_detection" / "fallen_detection_client_tcp.py"
+    node_path = FALLEN_ROOT / "ropi_patrol" / "fallen_detection_client_tcp.py"
 
     params = _load_ros_parameters(config_path, "fallen_detection_client_tcp")
     assert params["server_ip"] == "192.168.0.89"
@@ -117,7 +117,7 @@ def test_fallen_detection_runtime_config_contract():
 
     _assert_launch_uses_params_file(
         launch_path,
-        package_name="fallen_detection",
+        package_name="ropi_patrol",
         config_subdir="patrol.yaml",
     )
     _assert_setup_installs(

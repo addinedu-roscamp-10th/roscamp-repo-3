@@ -14,11 +14,11 @@
 
 | 로봇 | 담당 시나리오 | 레포 내 패키지 |
 | --- | --- | --- |
-| `pinky1` | 안내 | `device/ropi_mobile/src/tracking` |
-| `pinky2` | 운반 | `device/ropi_mobile/src/pinky_delivery` |
-| `pinky3` | 순찰 | `device/ropi_mobile/src/fallen_detection` |
-| `jetcobot1` | 운반 arm1 | `device/ropi_arm/src/jet_arm_control` |
-| `jetcobot2` | 운반 arm2 | `device/ropi_arm/src/jet_arm_control` |
+| `pinky1` | 안내 | `device/ropi_mobile/src/ropi_guide` |
+| `pinky2` | 운반 | `device/ropi_mobile/src/ropi_delivery` |
+| `pinky3` | 순찰 | `device/ropi_mobile/src/ropi_patrol` |
+| `jetcobot1` | 운반 arm1 | `device/ropi_arm/src/ropi_arm_control` |
+| `jetcobot2` | 운반 arm2 | `device/ropi_arm/src/ropi_arm_control` |
 
 ## 디렉터리 구조
 
@@ -27,12 +27,12 @@ device/
   ropi_common/
     src/ropi_interface/       # 관제 서버와 모든 로봇이 공유하는 ROS action 정의
   ropi_mobile/
-    src/ropi_pinky_config/    # ~/pinky_pro의 pinky_navigation을 감싸는 우리 설정 패키지
-    src/pinky_delivery/       # pinky2 운반 시나리오
-    src/tracking/             # pinky1 안내 시나리오
-    src/fallen_detection/     # pinky3 순찰/낙상 감지 시나리오
+    src/ropi_nav_config/     # ~/pinky_pro의 pinky_navigation을 감싸는 우리 설정 패키지
+    src/ropi_delivery/       # pinky2 운반 시나리오
+    src/ropi_guide/          # pinky1 안내 시나리오
+    src/ropi_patrol/         # pinky3 순찰/낙상 감지 시나리오
   ropi_arm/
-    src/jet_arm_control/      # jetcobot1, jetcobot2 공용 arm action server
+    src/ropi_arm_control/    # jetcobot1, jetcobot2 공용 arm action server
 ```
 
 ## Pinky 로봇 빌드 순서
@@ -48,18 +48,18 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-Pinky navigation은 `ropi_pinky_config`로 실행한다. 이 launch가 `~/pinky_pro` 안의 `pinky_navigation` launch를 include하면서 우리 레포의 map과 Nav2 parameter를 넘긴다.
+Pinky navigation은 `ropi_nav_config`로 실행한다. 이 launch가 `~/pinky_pro` 안의 `pinky_navigation` launch를 include하면서 우리 레포의 map과 Nav2 parameter를 넘긴다.
 
 ```bash
-ros2 launch ropi_pinky_config pinky_nav.launch.py
+ros2 launch ropi_nav_config pinky_nav.launch.py
 ```
 
 시나리오 노드는 각 패키지 launch로 실행한다.
 
 ```bash
-ros2 launch tracking tracking.launch.py robot_id:=pinky1
-ros2 launch pinky_delivery pinky_delivery.launch.py robot_id:=pinky2
-ros2 launch fallen_detection patrol.launch.py robot_id:=pinky3
+ros2 launch ropi_guide guide.launch.py robot_id:=pinky1
+ros2 launch ropi_delivery ropi_delivery.launch.py robot_id:=pinky2
+ros2 launch ropi_patrol patrol.launch.py robot_id:=pinky3
 ```
 
 ## JetCobot 로봇 빌드 순서
@@ -70,13 +70,13 @@ JetCobot은 제조사 Pinky 워크스페이스가 필요하지 않다. 필요한
 source /opt/ros/jazzy/setup.bash
 
 cd ~/roscamp-repo-3/device
-colcon build --symlink-install --packages-up-to jet_arm_control
+colcon build --symlink-install --packages-up-to ropi_arm_control
 source install/setup.bash
 ```
 
 ```bash
-ros2 launch jet_arm_control jet_arm.launch.py robot_id:=jetcobot1
-ros2 launch jet_arm_control jet_arm.launch.py robot_id:=jetcobot2
+ros2 launch ropi_arm_control arm_control.launch.py robot_id:=jetcobot1
+ros2 launch ropi_arm_control arm_control.launch.py robot_id:=jetcobot2
 ```
 
 ## 관제 연동 계약
@@ -98,16 +98,16 @@ ros2 launch jet_arm_control jet_arm.launch.py robot_id:=jetcobot2
 
 ## 각 팀이 먼저 읽어야 할 README
 
-- 운반 Pinky 팀: `device/ropi_mobile/src/pinky_delivery/README.md`
-- 안내 팀: `device/ropi_mobile/src/tracking/README.md`
-- 순찰 팀: `device/ropi_mobile/src/fallen_detection/README.md`
-- JetCobot 팀: `device/ropi_arm/src/jet_arm_control/README.md`
-- Pinky map/parameter 담당: `device/ropi_mobile/src/ropi_pinky_config/README.md`
+- 운반 Pinky 팀: `device/ropi_mobile/src/ropi_delivery/README.md`
+- 안내 팀: `device/ropi_mobile/src/ropi_guide/README.md`
+- 순찰 팀: `device/ropi_mobile/src/ropi_patrol/README.md`
+- JetCobot 팀: `device/ropi_arm/src/ropi_arm_control/README.md`
+- Pinky map/parameter 담당: `device/ropi_mobile/src/ropi_nav_config/README.md`
 - 관제/로봇 action 계약 담당: `device/ropi_common/src/ropi_interface/README.md`
 
 ## 지금 상태에서 주의할 점
 
-- `pinky_delivery`는 `mobile_controller_test.py`가 실제 관제 연동에 성공한 실행 경로다.
+- `ropi_delivery`는 `mobile_controller_test.py`가 실제 관제 연동에 성공한 실행 경로다.
 - `transport_control_node.py`는 현재 정식 운용 경로가 아니므로, 검증 전까지 메인 실행 파일로 바꾸면 안 된다.
-- `tracking`, `pinky_delivery`, `fallen_detection`의 운영 값은 각 패키지의 `config/<robot_id>/*.yaml`로 분리되어 있다.
+- `ropi_guide`, `ropi_delivery`, `ropi_patrol`의 운영 값은 각 패키지의 `config/<robot_id>/*.yaml`로 분리되어 있다.
 - 새 IP, 포트, waypoint, action 이름을 코드에 직접 추가하지 말고 config와 launch를 통해 주입한다.
