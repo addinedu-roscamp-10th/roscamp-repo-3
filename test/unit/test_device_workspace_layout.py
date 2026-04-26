@@ -23,13 +23,25 @@ def test_pinky_manufacturer_workspace_is_not_tracked_in_repo():
     assert not (DEVICE_ROOT / "ropi_mobile" / "pinky_pro").exists()
 
 
-def test_pinky_config_wraps_robot_specific_nav_files():
+def test_pinky_config_wraps_common_nav_files():
     assert (PINKY_CONFIG_ROOT / "launch" / "pinky_nav.launch.py").exists()
+    launch_py = (PINKY_CONFIG_ROOT / "launch" / "pinky_nav.launch.py").read_text(encoding="utf-8")
+
+    assert (PINKY_CONFIG_ROOT / "config" / "nav2_params.yaml").exists()
+    assert (PINKY_CONFIG_ROOT / "config" / "mapper_params.yaml").exists()
+    assert (PINKY_CONFIG_ROOT / "maps" / "map_test11_0423.yaml").exists()
+    assert (PINKY_CONFIG_ROOT / "maps" / "map_test11_0423.pgm").exists()
+    assert "map_test11_0423.yaml" in launch_py
+    assert "config\", \"nav2_params.yaml" in launch_py
+    assert "maps\", \"map_test11_0423.yaml" in launch_py
+    assert "robot_id" not in launch_py
+    assert "image: map_test11_0423.pgm" in (
+        PINKY_CONFIG_ROOT / "maps" / "map_test11_0423.yaml"
+    ).read_text(encoding="utf-8")
 
     for robot_id in ("pinky1", "pinky2", "pinky3"):
-        assert (PINKY_CONFIG_ROOT / "config" / robot_id / "nav2_params.yaml").exists()
-        assert (PINKY_CONFIG_ROOT / "config" / robot_id / "mapper_params.yaml").exists()
-        assert (PINKY_CONFIG_ROOT / "maps" / robot_id / "map.yaml").exists()
+        assert not (PINKY_CONFIG_ROOT / "config" / robot_id).exists()
+        assert not (PINKY_CONFIG_ROOT / "maps" / robot_id).exists()
 
 
 def test_jet_arm_control_is_shared_between_jetcobots():
