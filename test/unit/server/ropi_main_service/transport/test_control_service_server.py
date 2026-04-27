@@ -1,0 +1,244 @@
+import logging
+from unittest.mock import patch
+
+import pytest
+
+from server.ropi_main_service.transport import tcp_server
+from server.ropi_main_service.transport.tcp_protocol import (
+    MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_HEARTBEAT,
+    MESSAGE_CODE_INTERNAL_RPC,
+    TCPFrame,
+)
+
+
+class FakeTaskRequestService:
+    def get_product_names(self):
+        return ["기저귀", "물티슈"]
+
+
+@pytest.fixture
+def control_service_server():
+    return tcp_server.ControlServiceServer()
+
+
+def test_heartbeat_with_db_check_puts_db_status_under_payload(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_HEARTBEAT,
+        sequence_no=1,
+        payload={"check_db": True},
+    )
+
+    with patch("server.ropi_main_service.persistence.connection.test_connection", return_value=(True, {"ok": 1})):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_HEARTBEAT
+    assert response.sequence_no == 1
+    assert response.payload["message"] == "메인 서버 연결 정상"
+    assert response.payload["db"] == {"ok": True, "detail": {"ok": 1}}
+
+
+def test_heartbeat_with_ros_check_puts_ros_status_under_payload(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_HEARTBEAT,
+        sequence_no=4,
+        payload={"check_ros": True},
+    )
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService"
+    ) as readiness_service_cls:
+        readiness_service_cls.return_value.get_status.return_value = {
+            "ready": True,
+            "checks": [
+                {"name": "pinky2.navigate_to_goal", "ready": True},
+                {"name": "arm1.execute_manipulation", "ready": True},
+                {"name": "arm2.execute_manipulation", "ready": True},
+            ],
+        }
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["ros"] == {
+        "ok": True,
+        "detail": {
+            "ready": True,
+            "checks": [
+                {"name": "pinky2.navigate_to_goal", "ready": True},
+                {"name": "arm1.execute_manipulation", "ready": True},
+                {"name": "arm2.execute_manipulation", "ready": True},
+            ],
+        },
+    }
+
+
+def test_rpc_dispatch_routes_to_registered_service(control_service_server):
+    payload = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=2,
+        payload={
+            "service": "task_request",
+            "method": "get_product_names",
+            "kwargs": {},
+        },
+    )
+
+    with patch.dict(tcp_server.SERVICE_REGISTRY, {"task_request": FakeTaskRequestService}):
+        response = control_service_server.dispatch_frame(payload)
+
+    assert response.payload == ["기저귀", "물티슈"]
+    assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
+    assert response.sequence_no == 2
+    assert response.is_response is True
+
+
+def test_rpc_dispatch_rejects_unknown_service(control_service_server):
+    response = control_service_server.dispatch_frame(
+        TCPFrame(
+            message_code=MESSAGE_CODE_INTERNAL_RPC,
+            sequence_no=3,
+            payload={"service": "missing", "method": "noop", "kwargs": {}},
+        )
+    )
+
+    assert response.is_error is True
+    assert response.payload["error_code"] == "UNKNOWN_SERVICE"
+    assert "missing" in response.payload["error"]
+
+
+def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
+        sequence_no=5,
+        payload={
+            "request_id": "req_001",
+            "caregiver_id": "cg_001",
+            "item_id": "supply_001",
+            "quantity": 1,
+            "destination_id": "room2",
+            "priority": "NORMAL",
+            "notes": "delivery test",
+            "idempotency_key": "idem_001",
+        },
+    )
+
+    with patch(
+        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+        return_value={
+            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+            "destination_goal_poses": {
+                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+            },
+            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+        },
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+        return_value=object(),
+    ), patch(
+        "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService"
+    ) as readiness_service_cls:
+        readiness_service_cls.return_value.get_status.side_effect = RuntimeError("socket missing")
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.payload["result_code"] == "REJECTED"
+    assert response.payload["reason_code"] == "ROS_SERVICE_UNAVAILABLE"
+    assert "socket missing" in response.payload["result_message"]
+
+
+def test_delivery_create_task_rejects_unknown_destination_id(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
+        sequence_no=6,
+        payload={
+            "request_id": "req_001",
+            "caregiver_id": "cg_001",
+            "item_id": "supply_001",
+            "quantity": 1,
+            "destination_id": "room1",
+            "priority": "NORMAL",
+            "notes": "delivery test",
+            "idempotency_key": "idem_001",
+        },
+    )
+
+    with patch(
+        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+        return_value={
+            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+            "destination_goal_poses": {
+                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+            },
+            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+        },
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+        return_value=object(),
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "DESTINATION_ID_UNKNOWN"
+    assert "room1" in response.payload["result_message"]
+
+
+def test_delivery_create_task_logs_ros_runtime_readiness_details(control_service_server, caplog):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
+        sequence_no=7,
+        payload={
+            "request_id": "req_001",
+            "caregiver_id": "cg_001",
+            "item_id": "supply_001",
+            "quantity": 1,
+            "destination_id": "room2",
+            "priority": "NORMAL",
+            "notes": "delivery test",
+            "idempotency_key": "idem_001",
+        },
+    )
+
+    caplog.set_level(logging.WARNING)
+
+    with patch(
+        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+        return_value={
+            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+            "destination_goal_poses": {
+                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+            },
+            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+        },
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+        return_value=object(),
+    ), patch(
+        "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService"
+    ) as readiness_service_cls:
+        readiness_service_cls.return_value.get_status.return_value = {
+            "ready": False,
+            "checks": [
+                {
+                    "name": "pinky2.navigate_to_goal",
+                    "ready": False,
+                    "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                },
+                {
+                    "name": "arm1.execute_manipulation",
+                    "ready": True,
+                    "action_name": "/ropi/arm/arm1/execute_manipulation",
+                },
+                {
+                    "name": "arm2.execute_manipulation",
+                    "ready": False,
+                    "action_name": "/ropi/arm/arm2/execute_manipulation",
+                },
+            ],
+        }
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.payload["result_code"] == "REJECTED"
+    assert response.payload["reason_code"] == "ROS_RUNTIME_NOT_READY"
+    assert "delivery_request_precheck_failed" in caplog.text
+    assert "/ropi/control/pinky2/navigate_to_goal" in caplog.text
+    assert "/ropi/arm/arm2/execute_manipulation" in caplog.text

@@ -1,0 +1,5 @@
+jet_arm_node:
+  ros__parameters:
+    arm_id: arm2
+    port: /dev/ttyJETCOBOT
+    baud: 1000000
