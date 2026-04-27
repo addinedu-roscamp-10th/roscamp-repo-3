@@ -1,26 +1,21 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>ropi_mobile_control</name>
+  <name>ropi_mobile_status_test</name>
   <version>0.1.0</version>
-  <description>ROPI Pinky mobile controller package for IF-COM-005 status publishing.</description>
+  <description>ROPI Pinky mobile status test package for IF-COM-005 publishing.</description>
 
   <maintainer email="devnull@example.com">ropi</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <build_depend>rosidl_default_generators</build_depend>
-
   <depend>builtin_interfaces</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>ropi_interface</depend>
   <depend>rcl_interfaces</depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
-
-  <exec_depend>rosidl_default_runtime</exec_depend>
-
-  <member_of_group>rosidl_interface_packages</member_of_group>
 
   <export>
     <build_type>ament_cmake</build_type>

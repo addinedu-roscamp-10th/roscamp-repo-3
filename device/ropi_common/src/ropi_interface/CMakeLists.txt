@@ -14,6 +14,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 set(
   MSG_FILES
+  "msg/PinkyStatus.msg"
 )
 
 set(SRV_FILES)

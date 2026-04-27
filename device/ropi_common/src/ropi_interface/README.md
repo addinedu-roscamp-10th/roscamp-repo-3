@@ -6,6 +6,7 @@
 
 | 파일 | 용도 |
 | --- | --- |
+| `msg/PinkyStatus.msg` | IF-COM-005 Pinky 운영 telemetry 상태 topic |
 | `action/NavigateToGoal.action` | 관제 서버가 Pinky에게 목적지 이동을 요청할 때 사용 |
 | `action/ArmManipulation.action` | 관제 서버가 JetCobot에게 적재/하역 동작을 요청할 때 사용 |
 

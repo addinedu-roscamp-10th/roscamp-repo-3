@@ -1,0 +1,10 @@
+string pinky_id
+string pinky_state
+string active_task_id
+string charging_state
+bool docked
+float32 battery_percent
+float32 battery_voltage
+string fail_code
+geometry_msgs/PoseStamped pose
+builtin_interfaces/Time timestamp
