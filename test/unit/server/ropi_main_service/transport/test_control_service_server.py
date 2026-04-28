@@ -499,12 +499,17 @@ def test_serve_forever_closes_background_writer_before_db_pool(control_service_s
         async def stop(self):
             events.append("writer_stopped")
 
+    class FakeWorkflowTaskManager:
+        async def shutdown(self):
+            events.append("workflow_shutdown")
+
     async def fake_close_pool():
         events.append("pool_closed")
 
     async def scenario():
         control_service_server._server = FakeTcpServer()
         control_service_server.db_writer = FakeBackgroundDbWriter()
+        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
 
         with patch(
             "server.ropi_main_service.transport.tcp_server.close_pool",
@@ -518,6 +523,7 @@ def test_serve_forever_closes_background_writer_before_db_pool(control_service_s
         "server_entered",
         "server_served",
         "server_exited",
+        "workflow_shutdown",
         "writer_stopped",
         "pool_closed",
     ]
@@ -533,6 +539,10 @@ def test_start_failure_closes_background_writer_and_db_pool(control_service_serv
         async def stop(self):
             events.append("writer_stopped")
 
+    class FakeWorkflowTaskManager:
+        async def shutdown(self):
+            events.append("workflow_shutdown")
+
     async def fake_start_server(*args, **kwargs):
         events.append("start_server_failed")
         raise OSError("bind failed")
@@ -542,6 +552,7 @@ def test_start_failure_closes_background_writer_and_db_pool(control_service_serv
 
     async def scenario():
         control_service_server.db_writer = FakeBackgroundDbWriter()
+        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
 
         with patch(
             "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
@@ -558,6 +569,7 @@ def test_start_failure_closes_background_writer_and_db_pool(control_service_serv
     assert events == [
         "writer_started",
         "start_server_failed",
+        "workflow_shutdown",
         "writer_stopped",
         "pool_closed",
     ]

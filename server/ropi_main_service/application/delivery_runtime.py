@@ -6,6 +6,9 @@ from server.ropi_main_service.application.delivery_config import (
     get_delivery_runtime_config,
 )
 from server.ropi_main_service.application.delivery_orchestrator import DeliveryOrchestrator
+from server.ropi_main_service.application.delivery_workflow_task_manager import (
+    get_default_delivery_workflow_task_manager,
+)
 from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.goal_pose_resolvers import (
     FixedGoalPoseResolver,
@@ -211,7 +214,7 @@ def _build_async_delivery_request_precheck(
     return _async_precheck
 
 
-def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
+def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> DeliveryRequestService:
     runtime_config = get_delivery_runtime_config()
     navigation_config = get_delivery_navigation_config()
     pickup_goal_pose = navigation_config["pickup_goal_pose"]
@@ -237,6 +240,7 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
         )
 
     if pickup_goal_pose is not None and destination_goal_poses and loop is not None:
+        workflow_task_manager = workflow_task_manager or get_default_delivery_workflow_task_manager()
         goal_pose_navigation_service = GoalPoseNavigationService(runtime_config=runtime_config)
         manipulation_command_service = ManipulationCommandService(runtime_config=runtime_config)
         orchestrator = DeliveryOrchestrator(
@@ -273,22 +277,63 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
                 )
 
         def _start_delivery_workflow(**kwargs):
-            background_task = loop.create_task(orchestrator.async_run(**kwargs))
+            task_id = kwargs.get("task_id")
+            background_task = workflow_task_manager.create_task(
+                orchestrator.async_run(**kwargs),
+                name=f"delivery_workflow_{task_id}",
+                loop=loop,
+                cancel_on_shutdown=True,
+            )
+
+            def _record_workflow_result_in_background(workflow_response):
+                workflow_task_manager.create_task(
+                    _record_workflow_result(
+                        task_id=task_id,
+                        workflow_response=workflow_response,
+                    ),
+                    name=f"delivery_workflow_result_{task_id}",
+                    loop=loop,
+                    cancel_on_shutdown=False,
+                )
+
+            def _record_cancelled_workflow_result_in_background(workflow_response):
+                workflow_task_manager.create_task(
+                    _record_cancelled_workflow_result(
+                        task_id=task_id,
+                        workflow_response=workflow_response,
+                    ),
+                    name=f"delivery_workflow_cancelled_result_{task_id}",
+                    loop=loop,
+                    cancel_on_shutdown=False,
+                )
 
             def _handle_background_task_done(task: asyncio.Task):
                 try:
                     result = task.result()
+                except asyncio.CancelledError:
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "delivery_workflow_background_cancelled",
+                        task_id=task_id,
+                        reason_code="WORKFLOW_TASK_CANCELLED",
+                    )
+                    _record_workflow_result_in_background(
+                        {
+                            "result_code": "FAILED",
+                            "result_message": "delivery workflow background task was cancelled.",
+                            "reason_code": "WORKFLOW_TASK_CANCELLED",
+                        }
+                    )
+                    return
                 except Exception as exc:
-                    logger.exception("delivery workflow background task failed", extra={"task_id": kwargs.get("task_id")})
-                    loop.create_task(
-                        _record_workflow_result(
-                            task_id=kwargs.get("task_id"),
-                            workflow_response={
-                                "result_code": "FAILED",
-                                "result_message": f"delivery workflow background task failed: {exc}",
-                                "reason_code": "WORKFLOW_UNHANDLED_EXCEPTION",
-                            },
-                        )
+                    logger.exception("delivery workflow background task failed", extra={"task_id": task_id})
+                    _record_workflow_result_in_background(
+                        {
+                            "result_code": "FAILED",
+                            "result_message": f"delivery workflow background task failed: {exc}",
+                            "reason_code": "WORKFLOW_UNHANDLED_EXCEPTION",
+                        }
                     )
                     return
 
@@ -298,26 +343,16 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
                     logger,
                     level,
                     "delivery_workflow_background_finished",
-                    task_id=kwargs.get("task_id"),
+                    task_id=task_id,
                     result_code=result.get("result_code"),
                     result_message=result.get("result_message"),
                     reason_code=result.get("reason_code"),
                 )
                 if _is_cancelled_workflow_response(result):
-                    loop.create_task(
-                        _record_cancelled_workflow_result(
-                            task_id=kwargs.get("task_id"),
-                            workflow_response=result,
-                        )
-                    )
+                    _record_cancelled_workflow_result_in_background(result)
                     return
 
-                loop.create_task(
-                    _record_workflow_result(
-                        task_id=kwargs.get("task_id"),
-                        workflow_response=result,
-                    )
-                )
+                _record_workflow_result_in_background(result)
 
             background_task.add_done_callback(_handle_background_task_done)
 

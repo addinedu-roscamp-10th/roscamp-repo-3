@@ -8,6 +8,7 @@ _EXPORTS = {
     "DeliveryRequestService": ("task_request", "DeliveryRequestService"),
     "DeliveryRuntimeConfig": ("delivery_config", "DeliveryRuntimeConfig"),
     "DeliveryService": ("task_request", "DeliveryRequestService"),
+    "DeliveryWorkflowTaskManager": ("delivery_workflow_task_manager", "DeliveryWorkflowTaskManager"),
     "FixedGoalPoseResolver": ("goal_pose_resolvers", "FixedGoalPoseResolver"),
     "GoalPoseNavigationService": ("goal_pose_navigation", "GoalPoseNavigationService"),
     "InventoryService": ("inventory", "InventoryService"),
@@ -23,6 +24,10 @@ _EXPORTS = {
     "build_delivery_request_service": ("delivery_runtime", "build_delivery_request_service"),
     "get_delivery_navigation_config": ("delivery_config", "get_delivery_navigation_config"),
     "get_delivery_runtime_config": ("delivery_config", "get_delivery_runtime_config"),
+    "get_default_delivery_workflow_task_manager": (
+        "delivery_workflow_task_manager",
+        "get_default_delivery_workflow_task_manager",
+    ),
 }
 
 

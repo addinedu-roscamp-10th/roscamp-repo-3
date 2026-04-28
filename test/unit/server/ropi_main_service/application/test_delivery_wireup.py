@@ -2,6 +2,9 @@ import asyncio
 from unittest.mock import patch
 
 from server.ropi_main_service.application import delivery_runtime
+from server.ropi_main_service.application.delivery_workflow_task_manager import (
+    DeliveryWorkflowTaskManager,
+)
 from server.ropi_main_service.application.task_request import DeliveryRequestService
 
 
@@ -409,6 +412,70 @@ def test_build_delivery_request_service_records_failed_workflow_result_when_orch
                 "result_code": "FAILED",
                 "result_message": "delivery workflow background task failed: navigation action crashed",
                 "reason_code": "WORKFLOW_UNHANDLED_EXCEPTION",
+            },
+        }
+    ]
+
+
+def test_build_delivery_request_service_records_failed_result_when_workflow_task_is_cancelled():
+    repository_calls = []
+
+    class FakeDeliveryRequestRepository:
+        async def async_record_delivery_task_workflow_result(self, **kwargs):
+            repository_calls.append(kwargs)
+            return {"result_code": "FAILED", "task_status": "FAILED"}
+
+    class FakeDeliveryOrchestrator:
+        def __init__(self, **kwargs):
+            pass
+
+        async def async_run(self, **kwargs):
+            await asyncio.sleep(3600)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        workflow_task_manager = DeliveryWorkflowTaskManager()
+        with patch(
+            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+            return_value={
+                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+                "destination_goal_poses": {
+                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                },
+                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+            },
+        ), patch(
+            "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
+            FakeDeliveryRequestRepository,
+        ), patch(
+            "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
+            FakeDeliveryOrchestrator,
+        ):
+            service = delivery_runtime.build_delivery_request_service(
+                loop=loop,
+                workflow_task_manager=workflow_task_manager,
+            )
+            service._start_delivery_workflow_if_needed(
+                response={
+                    "result_code": "ACCEPTED",
+                    "task_id": 101,
+                },
+                item_id="1",
+                quantity=2,
+                destination_id="delivery_room_301",
+            )
+            await asyncio.sleep(0)
+            await workflow_task_manager.shutdown(timeout_sec=1)
+
+    asyncio.run(scenario())
+
+    assert repository_calls == [
+        {
+            "task_id": "101",
+            "workflow_response": {
+                "result_code": "FAILED",
+                "result_message": "delivery workflow background task was cancelled.",
+                "reason_code": "WORKFLOW_TASK_CANCELLED",
             },
         }
     ]

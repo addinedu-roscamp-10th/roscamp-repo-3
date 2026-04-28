@@ -12,6 +12,9 @@ from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.action_feedback import RosActionFeedbackService
 from server.ropi_main_service.application.caregiver import CaregiverService
 from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
+from server.ropi_main_service.application.delivery_workflow_task_manager import (
+    get_default_delivery_workflow_task_manager,
+)
 from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
@@ -169,6 +172,7 @@ class ControlServiceServer:
         self.port = port
         self._server = None
         self.db_writer = get_default_background_db_writer()
+        self.delivery_workflow_task_manager = get_default_delivery_workflow_task_manager()
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         payload = frame.payload or {}
@@ -422,9 +426,12 @@ class ControlServiceServer:
 
     async def _shutdown_resources(self):
         try:
-            await self.db_writer.stop()
+            await self.delivery_workflow_task_manager.shutdown()
         finally:
-            await close_pool()
+            try:
+                await self.db_writer.stop()
+            finally:
+                await close_pool()
 
     async def _handle_client(
         self,
