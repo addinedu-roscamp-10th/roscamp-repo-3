@@ -219,6 +219,68 @@ def test_async_run_delivery_workflow_executes_async_services_in_order():
     ]
 
 
+def test_run_delivery_workflow_delegates_to_async_workflow():
+    navigation_service = FakeAsyncGoalPoseNavigationService(
+        [
+            build_success_response(),
+            build_success_response(),
+            build_success_response(),
+        ]
+    )
+    manipulation_service = FakeAsyncManipulationCommandService(
+        [
+            build_success_response(),
+            build_success_response(),
+        ]
+    )
+    orchestrator = DeliveryOrchestrator(
+        goal_pose_navigation_service=navigation_service,
+        manipulation_command_service=manipulation_service,
+        pickup_goal_pose_resolver=FakePickupGoalPoseResolver(build_goal_pose(x=1.5, y=2.5)),
+        destination_goal_pose_resolver=FakeDestinationGoalPoseResolver(build_goal_pose(x=18.4, y=7.2)),
+        return_to_dock_goal_pose_resolver=FakeReturnToDockGoalPoseResolver(build_goal_pose(x=0.5, y=0.5)),
+    )
+
+    response = orchestrator.run(
+        task_id="task_delivery_001",
+        item_id="1",
+        quantity=2,
+        destination_id="room2",
+    )
+
+    assert response["result_code"] == "SUCCESS"
+    assert [call["nav_phase"] for call in navigation_service.calls] == [
+        "DELIVERY_PICKUP",
+        "DELIVERY_DESTINATION",
+        "RETURN_TO_DOCK",
+    ]
+    assert [call["transfer_direction"] for call in manipulation_service.calls] == [
+        "TO_ROBOT",
+        "FROM_ROBOT",
+    ]
+
+
+def test_run_delivery_workflow_rejects_call_from_running_event_loop():
+    orchestrator = DeliveryOrchestrator(
+        goal_pose_navigation_service=FakeGoalPoseNavigationService([]),
+        manipulation_command_service=FakeManipulationCommandService([]),
+        pickup_goal_pose_resolver=FakePickupGoalPoseResolver(build_goal_pose()),
+        destination_goal_pose_resolver=FakeDestinationGoalPoseResolver(build_goal_pose()),
+        return_to_dock_goal_pose_resolver=FakeReturnToDockGoalPoseResolver(build_goal_pose()),
+    )
+
+    async def scenario():
+        return orchestrator.run(
+            task_id="task_delivery_001",
+            item_id="1",
+            quantity=2,
+            destination_id="room2",
+        )
+
+    with pytest.raises(RuntimeError, match="async_run"):
+        asyncio.run(scenario())
+
+
 def test_run_delivery_workflow_stops_after_pickup_navigation_failure():
     navigation_service = FakeGoalPoseNavigationService(
         [

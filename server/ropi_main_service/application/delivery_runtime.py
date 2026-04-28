@@ -273,11 +273,7 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
                 )
 
         def _start_delivery_workflow(**kwargs):
-            async_run = getattr(orchestrator, "async_run", None)
-            if async_run is not None:
-                background_task = loop.create_task(async_run(**kwargs))
-            else:
-                background_task = loop.create_task(asyncio.to_thread(orchestrator.run, **kwargs))
+            background_task = loop.create_task(orchestrator.async_run(**kwargs))
 
             def _handle_background_task_done(task: asyncio.Task):
                 try:
