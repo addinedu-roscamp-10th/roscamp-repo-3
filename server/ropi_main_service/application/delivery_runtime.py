@@ -15,9 +15,26 @@ from server.ropi_main_service.application.manipulation_command import Manipulati
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.task_request import DeliveryRequestService
 from server.ropi_main_service.observability import log_event
+from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 
 
 logger = logging.getLogger(__name__)
+ROS_GOAL_STATUS_CANCELED = 5
+
+
+def _is_cancelled_workflow_response(result):
+    if not isinstance(result, dict):
+        return False
+
+    if str(result.get("status") or "").strip() == str(ROS_GOAL_STATUS_CANCELED):
+        return True
+
+    result_code = str(result.get("result_code") or "").strip().upper()
+    reason_code = str(result.get("reason_code") or "").strip().upper()
+    return result_code in {"CANCELED", "CANCELLED"} or reason_code in {
+        "ROS_ACTION_CANCELED",
+        "ROS_ACTION_CANCELLED",
+    }
 
 
 def _build_delivery_precheck_helpers(
@@ -189,6 +206,7 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
     pickup_goal_pose = navigation_config["pickup_goal_pose"]
     destination_goal_poses = navigation_config["destination_goal_poses"]
     return_to_dock_goal_pose = navigation_config["return_to_dock_goal_pose"]
+    delivery_request_repository = DeliveryRequestRepository()
     delivery_workflow_starter = None
     delivery_request_precheck = None
     async_delivery_request_precheck = None
@@ -219,6 +237,18 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
             runtime_config=runtime_config,
         )
 
+        async def _record_cancelled_workflow_result(*, task_id, workflow_response):
+            try:
+                await delivery_request_repository.async_record_delivery_task_cancelled_result(
+                    task_id=task_id,
+                    workflow_response=workflow_response,
+                )
+            except Exception:
+                logger.exception(
+                    "delivery workflow cancelled result persistence failed",
+                    extra={"task_id": task_id},
+                )
+
         def _start_delivery_workflow(**kwargs):
             async_run = getattr(orchestrator, "async_run", None)
             if async_run is not None:
@@ -243,12 +273,20 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
                     result_message=result.get("result_message"),
                     reason_code=result.get("reason_code"),
                 )
+                if _is_cancelled_workflow_response(result):
+                    loop.create_task(
+                        _record_cancelled_workflow_result(
+                            task_id=kwargs.get("task_id"),
+                            workflow_response=result,
+                        )
+                    )
 
             background_task.add_done_callback(_handle_background_task_done)
 
         delivery_workflow_starter = _start_delivery_workflow
 
     return DeliveryRequestService(
+        repository=delivery_request_repository,
         delivery_workflow_starter=delivery_workflow_starter,
         delivery_request_precheck=delivery_request_precheck,
         async_delivery_request_precheck=async_delivery_request_precheck,

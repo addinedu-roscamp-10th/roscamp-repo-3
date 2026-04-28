@@ -512,6 +512,65 @@ def test_async_record_delivery_task_cancel_result_logs_rejection_without_status_
     )
 
 
+def test_async_record_delivery_task_cancelled_result_finalizes_cancel_requested_task(monkeypatch):
+    cursor = RecordingAsyncCursor(
+        row={
+            "task_id": 101,
+            "task_status": "CANCEL_REQUESTED",
+            "phase": "CANCEL_REQUESTED",
+            "assigned_robot_id": "pinky2",
+        }
+    )
+    fake_transaction = FakeAsyncTransaction()
+    fake_transaction.cursor = cursor
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    workflow_response = {
+        "result_code": "FAILED",
+        "result_message": "goal canceled by user request.",
+        "status": 5,
+    }
+    response = asyncio.run(
+        DeliveryRequestRepository().async_record_delivery_task_cancelled_result(
+            task_id="101",
+            workflow_response=workflow_response,
+        )
+    )
+
+    assert response["result_code"] == "CANCELLED"
+    assert response["reason_code"] == "ROS_ACTION_CANCELLED"
+    assert response["task_status"] == "CANCELLED"
+    assert response["assigned_robot_id"] == "pinky2"
+    assert response["workflow_result"] == workflow_response
+    assert [call[0].split()[0] for call in cursor.calls] == [
+        "SELECT",
+        "UPDATE",
+        "INSERT",
+        "INSERT",
+    ]
+    assert "FOR UPDATE" in cursor.calls[0][0]
+    assert "UPDATE task" in cursor.calls[1][0]
+    assert "INSERT INTO task_state_history" in cursor.calls[2][0]
+    assert "INSERT INTO task_event_log" in cursor.calls[3][0]
+    assert cursor.calls[1][1][0:3] == (
+        "ROS_ACTION_CANCELLED",
+        "CANCELLED",
+        "goal canceled by user request.",
+    )
+    assert cursor.calls[3][1][1:7] == (
+        "DELIVERY_TASK_CANCELLED",
+        "INFO",
+        "pinky2",
+        "CANCELLED",
+        "ROS_ACTION_CANCELLED",
+        "goal canceled by user request.",
+    )
+
+
 def test_find_idempotent_response_rejects_key_reuse_with_different_payload():
     response = IdempotencyRepository().find_response(
         FakeExistingIdempotencyCursor(),

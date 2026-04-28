@@ -228,6 +228,70 @@ def test_build_delivery_request_service_starts_async_orchestrator_without_thread
     ]
 
 
+def test_build_delivery_request_service_records_cancelled_workflow_result():
+    repository_calls = []
+
+    class FakeDeliveryRequestRepository:
+        async def async_record_delivery_task_cancelled_result(self, **kwargs):
+            repository_calls.append(kwargs)
+            return {"result_code": "CANCELLED"}
+
+    class FakeDeliveryOrchestrator:
+        def __init__(self, **kwargs):
+            pass
+
+        async def async_run(self, **kwargs):
+            return {
+                "result_code": "FAILED",
+                "result_message": "goal canceled by user request.",
+                "status": 5,
+            }
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        with patch(
+            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+            return_value={
+                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+                "destination_goal_poses": {
+                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                },
+                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+            },
+        ), patch(
+            "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
+            FakeDeliveryRequestRepository,
+        ), patch(
+            "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
+            FakeDeliveryOrchestrator,
+        ):
+            service = delivery_runtime.build_delivery_request_service(loop=loop)
+            service._start_delivery_workflow_if_needed(
+                response={
+                    "result_code": "ACCEPTED",
+                    "task_id": 101,
+                },
+                item_id="1",
+                quantity=2,
+                destination_id="delivery_room_301",
+            )
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+
+    assert repository_calls == [
+        {
+            "task_id": "101",
+            "workflow_response": {
+                "result_code": "FAILED",
+                "result_message": "goal canceled by user request.",
+                "status": 5,
+            },
+        }
+    ]
+
+
 def test_create_delivery_task_does_not_start_delivery_workflow_when_request_is_rejected():
     repository = FakeDeliveryRequestRepository(
         response={
