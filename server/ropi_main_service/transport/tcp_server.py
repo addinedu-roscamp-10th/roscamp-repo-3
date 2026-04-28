@@ -21,6 +21,7 @@ from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.application.visitor_info import VisitorInfoService
 from server.ropi_main_service.application.visitor_register import VisitorRegisterService
 from server.ropi_main_service.observability import configure_logging, log_event
+from server.ropi_main_service.persistence.async_connection import close_pool
 from server.ropi_main_service.persistence.background_db_writer import (
     get_default_background_db_writer,
 )
@@ -380,11 +381,15 @@ class ControlServiceServer:
 
     async def start(self):
         self.db_writer.start()
-        self._server = await asyncio.start_server(
-            self._handle_client,
-            host=self.host,
-            port=self.port,
-        )
+        try:
+            self._server = await asyncio.start_server(
+                self._handle_client,
+                host=self.host,
+                port=self.port,
+            )
+        except BaseException:
+            await self._shutdown_resources()
+            raise
 
         sockets = self._server.sockets or []
         bound_host, bound_port = self.host, self.port
@@ -413,7 +418,13 @@ class ControlServiceServer:
             async with self._server:
                 await self._server.serve_forever()
         finally:
+            await self._shutdown_resources()
+
+    async def _shutdown_resources(self):
+        try:
             await self.db_writer.stop()
+        finally:
+            await close_pool()
 
     async def _handle_client(
         self,

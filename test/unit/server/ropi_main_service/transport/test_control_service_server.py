@@ -481,6 +481,88 @@ def test_async_response_build_does_not_block_event_loop(control_service_server):
     assert response.payload == {"ok": True}
 
 
+def test_serve_forever_closes_background_writer_before_db_pool(control_service_server):
+    events = []
+
+    class FakeTcpServer:
+        async def __aenter__(self):
+            events.append("server_entered")
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            events.append("server_exited")
+
+        async def serve_forever(self):
+            events.append("server_served")
+
+    class FakeBackgroundDbWriter:
+        async def stop(self):
+            events.append("writer_stopped")
+
+    async def fake_close_pool():
+        events.append("pool_closed")
+
+    async def scenario():
+        control_service_server._server = FakeTcpServer()
+        control_service_server.db_writer = FakeBackgroundDbWriter()
+
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.close_pool",
+            new=fake_close_pool,
+        ):
+            await control_service_server.serve_forever()
+
+    asyncio.run(scenario())
+
+    assert events == [
+        "server_entered",
+        "server_served",
+        "server_exited",
+        "writer_stopped",
+        "pool_closed",
+    ]
+
+
+def test_start_failure_closes_background_writer_and_db_pool(control_service_server):
+    events = []
+
+    class FakeBackgroundDbWriter:
+        def start(self):
+            events.append("writer_started")
+
+        async def stop(self):
+            events.append("writer_stopped")
+
+    async def fake_start_server(*args, **kwargs):
+        events.append("start_server_failed")
+        raise OSError("bind failed")
+
+    async def fake_close_pool():
+        events.append("pool_closed")
+
+    async def scenario():
+        control_service_server.db_writer = FakeBackgroundDbWriter()
+
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
+            new=fake_start_server,
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.close_pool",
+            new=fake_close_pool,
+        ):
+            with pytest.raises(OSError, match="bind failed"):
+                await control_service_server.start()
+
+    asyncio.run(scenario())
+
+    assert events == [
+        "writer_started",
+        "start_server_failed",
+        "writer_stopped",
+        "pool_closed",
+    ]
+
+
 def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
