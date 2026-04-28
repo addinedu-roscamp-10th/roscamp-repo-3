@@ -84,6 +84,14 @@ class DeliveryRequestRemoteService:
     def submit_delivery_request(self, **payload):
         return self._rpc("submit_delivery_request", **payload)
 
+    def cancel_delivery_task(self, task_id, action_name=None):
+        kwargs = {
+            "task_id": str(task_id).strip(),
+        }
+        if action_name is not None:
+            kwargs["action_name"] = str(action_name).strip()
+        return self._rpc("cancel_delivery_task", **kwargs)
+
 
 class VisitGuideRemoteService:
     def search_patient(self, keyword: str):

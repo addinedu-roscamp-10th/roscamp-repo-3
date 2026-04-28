@@ -54,6 +54,10 @@ class FakeAsyncCaregiverRepository:
         return [
             {
                 "event_id": 1,
+                "task_id": 101,
+                "task_type": "DELIVERY",
+                "task_status": "WAITING_DISPATCH",
+                "phase": "REQUESTED",
                 "robot_id": "pinky2",
                 "description": "accepted",
                 "event_type": "WAITING_DISPATCH",
@@ -158,7 +162,19 @@ def test_caregiver_service_async_methods_keep_response_shape():
     assert result["robots"][0]["robot_name"] == "pinky2"
     assert result["robots"][0]["chip_type"] == "green"
     assert result["timeline"] == [["12:00:00", "1", "DELIVERY_TASK_ACCEPTED", "accepted"]]
-    assert result["flow"]["READY"] == ["#1 accepted / pinky2"]
+    assert result["flow"]["READY"] == [
+        {
+            "event_id": 1,
+            "task_id": 101,
+            "task_type": "DELIVERY",
+            "task_status": "WAITING_DISPATCH",
+            "phase": "REQUESTED",
+            "robot_id": "pinky2",
+            "description": "accepted",
+            "display_text": "#101 accepted / pinky2",
+            "cancellable": True,
+        }
+    ]
 
 
 def test_patient_service_async_search_keeps_response_shape():

@@ -79,7 +79,7 @@ class RobotBoardCard(QFrame):
 
 
 class FlowColumn(QFrame):
-    def __init__(self, title: str, tasks: list[str]):
+    def __init__(self, title: str, tasks: list):
         super().__init__()
         self.setObjectName("card")
         root = QVBoxLayout(self)
@@ -101,7 +101,7 @@ class FlowColumn(QFrame):
                 task_card.setObjectName("infoBox")
                 tc = QVBoxLayout(task_card)
                 tc.setContentsMargins(12, 12, 12, 12)
-                task_label = QLabel(task)
+                task_label = QLabel(self._format_task_label(task))
                 task_label.setWordWrap(True)
                 tc.addWidget(task_label)
                 root.addWidget(task_card)
@@ -111,6 +111,20 @@ class FlowColumn(QFrame):
             root.addWidget(empty)
 
         root.addStretch()
+
+    @staticmethod
+    def _format_task_label(task):
+        if not isinstance(task, dict):
+            return str(task)
+
+        display_text = str(task.get("display_text") or "").strip()
+        if display_text:
+            return display_text
+
+        task_id = task.get("task_id") or "-"
+        description = task.get("description") or "-"
+        robot_id = task.get("robot_id") or "-"
+        return f"#{task_id} {description} / {robot_id}"
 
 
 class CaregiverHomePage(QWidget):

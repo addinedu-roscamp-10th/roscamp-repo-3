@@ -1,6 +1,9 @@
 from unittest.mock import patch
 
-from server.ropi_main_service.transport.tcp_protocol import MESSAGE_CODE_DELIVERY_CREATE_TASK
+from server.ropi_main_service.transport.tcp_protocol import (
+    MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_INTERNAL_RPC,
+)
 from ui.utils.network.service_clients import DeliveryRequestRemoteService
 
 
@@ -38,3 +41,31 @@ def test_create_delivery_task_forwards_if_del_001_request_fields():
     assert response["task_id"] == 101
     assert response["assigned_robot_id"] == "pinky2"
     assert "assigned_pinky_id" not in response
+
+
+def test_cancel_delivery_task_uses_internal_rpc_contract():
+    with patch(
+        "ui.utils.network.service_clients.send_request",
+        return_value={
+            "ok": True,
+            "payload": {
+                "result_code": "CANCEL_REQUESTED",
+                "task_id": "101",
+                "cancel_requested": True,
+            },
+        },
+    ) as send_request:
+        response = DeliveryRequestRemoteService().cancel_delivery_task(task_id=101)
+
+    send_request.assert_called_once_with(
+        MESSAGE_CODE_INTERNAL_RPC,
+        {
+            "service": "task_request",
+            "method": "cancel_delivery_task",
+            "kwargs": {
+                "task_id": "101",
+            },
+        },
+    )
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert response["cancel_requested"] is True
