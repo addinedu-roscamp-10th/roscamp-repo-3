@@ -2,6 +2,10 @@ import asyncio
 
 from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
 from server.ropi_main_service.application.action_feedback import RosActionFeedbackService
+from server.ropi_main_service.application.action_feedback_sampling import (
+    ActionFeedbackSampleBuilder,
+    FeedbackSamplingGate,
+)
 
 
 class FakeActionFeedbackCommandClient:
@@ -45,6 +49,33 @@ class FakeRobotDataLogRepository:
 
     async def async_insert_feedback_sample(self, **kwargs):
         self.samples.append({"mode": "async", **kwargs})
+
+
+def test_action_feedback_sample_builder_skips_unknown_robot_action_name():
+    builder = ActionFeedbackSampleBuilder(runtime_config=DeliveryRuntimeConfig())
+
+    sample = builder.build_sample(
+        {
+            "task_id": "101",
+            "action_name": "/unknown/action",
+            "feedback_type": "ACTION_FEEDBACK",
+            "payload": {},
+        }
+    )
+
+    assert sample is None
+
+
+def test_feedback_sampling_gate_throttles_same_feedback_key():
+    gate = FeedbackSamplingGate(sample_interval_sec=5.0)
+    feedback = {
+        "task_id": "101",
+        "action_name": "/ropi/control/pinky2/navigate_to_goal",
+        "feedback_type": "NAVIGATION_FEEDBACK",
+    }
+
+    assert gate.should_sample(feedback) is True
+    assert gate.should_sample(feedback) is False
 
 
 def test_get_latest_feedback_sends_get_action_feedback_command():
