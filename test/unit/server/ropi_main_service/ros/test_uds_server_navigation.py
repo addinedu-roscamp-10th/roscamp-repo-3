@@ -9,6 +9,7 @@ class FakeGoalPoseActionClient:
     def __init__(self):
         self.calls = []
         self.ready_checks = []
+        self.cancel_calls = []
 
     def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
         self.calls.append(
@@ -33,6 +34,19 @@ class FakeGoalPoseActionClient:
             }
         )
         return True
+
+    async def async_cancel_goal(self, *, task_id, action_name=None):
+        self.cancel_calls.append(
+            {
+                "task_id": task_id,
+                "action_name": action_name,
+            }
+        )
+        return {
+            "result_code": "CANCEL_REQUESTED",
+            "cancel_requested": True,
+            "matched_goal_count": 1,
+        }
 
 
 def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
@@ -260,6 +274,65 @@ def test_ros_service_uds_server_reports_runtime_readiness(tmp_path):
                     "action_name": "/ropi/arm/arm2/execute_manipulation",
                     "error": "manipulation action client is not configured",
                 },
+            ],
+        },
+    }
+
+
+def test_ros_service_uds_server_dispatches_cancel_action_command(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    action_client = FakeGoalPoseActionClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=action_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "cancel_action",
+                        "payload": {
+                            "task_id": "task_delivery_001",
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert action_client.cancel_calls == [
+        {
+            "task_id": "task_delivery_001",
+            "action_name": None,
+        }
+    ]
+    assert response == {
+        "ok": True,
+        "payload": {
+            "result_code": "CANCEL_REQUESTED",
+            "result_message": "action cancel request was accepted.",
+            "task_id": "task_delivery_001",
+            "action_name": None,
+            "cancel_requested": True,
+            "details": [
+                {
+                    "client": "navigation",
+                    "result_code": "CANCEL_REQUESTED",
+                    "cancel_requested": True,
+                    "matched_goal_count": 1,
+                }
             ],
         },
     }

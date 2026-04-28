@@ -12,13 +12,24 @@ class FakeFuture:
         return self._result
 
 
+class FakeCancelResponse:
+    def __init__(self, *, goals_canceling=None):
+        self.goals_canceling = [object()] if goals_canceling is None else goals_canceling
+
+
 class FakeGoalHandle:
     def __init__(self, *, accepted, result_wrapper=None):
         self.accepted = accepted
         self._result_wrapper = result_wrapper
+        self.cancel_calls = 0
+        self.cancel_response = FakeCancelResponse()
 
     def get_result_async(self):
         return FakeFuture(result=self._result_wrapper)
+
+    def cancel_goal_async(self):
+        self.cancel_calls += 1
+        return FakeFuture(result=self.cancel_response)
 
 
 class FakeActionResultWrapper:
@@ -49,6 +60,7 @@ class FakeActionClient:
 __all__ = [
     "FakeActionClient",
     "FakeActionResultWrapper",
+    "FakeCancelResponse",
     "FakeFuture",
     "FakeGoalHandle",
 ]

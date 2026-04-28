@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from server.ropi_main_service.ros.manipulation_action_client import RclpyManipulationActionClient
@@ -90,6 +92,46 @@ def test_send_goal_waits_for_final_if_del_003_result_and_serializes_payload():
     assert goal_msg.item_id == "med_acetaminophen_500"
     assert goal_msg.quantity == 2
     assert goal_msg.robot_slot_id == "robot_slot_a1"
+
+
+def test_async_send_goal_waits_for_final_if_del_003_result_and_serializes_payload():
+    created_clients = []
+
+    def action_client_factory(node, action_type, action_name):
+        client = FakeActionClient(node, action_type, action_name)
+        client.goal_handle = FakeGoalHandle(
+            accepted=True,
+            result_wrapper=FakeActionResultWrapper(
+                status=4,
+                result=build_result(),
+            ),
+        )
+        created_clients.append(client)
+        return client
+
+    client = RclpyManipulationActionClient(
+        node="fake-node",
+        action_type_loader=lambda: FakeArmManipulation,
+        action_client_factory=action_client_factory,
+    )
+
+    response = asyncio.run(
+        client.async_send_goal(
+            action_name="/ropi/arm/arm1/execute_manipulation",
+            goal=build_goal(),
+            result_wait_timeout_sec=30.0,
+        )
+    )
+
+    assert response == {
+        "accepted": True,
+        "status": 4,
+        "result_code": "SUCCESS",
+        "result_message": "manipulation done",
+        "processed_quantity": 2,
+    }
+    assert len(created_clients) == 1
+    assert created_clients[0].wait_calls == [1.0]
 
 
 def test_send_goal_returns_rejected_when_manipulation_goal_is_rejected():
