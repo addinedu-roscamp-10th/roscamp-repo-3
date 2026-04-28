@@ -57,6 +57,7 @@ class RosServiceUdsServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        self.dispatcher.close()
         self._cleanup_existing_socket()
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -77,7 +78,7 @@ class RosServiceUdsServer:
                     pinky_id=payload.get("pinky_id"),
                     arm_id=payload.get("arm_id"),
                 )
-                response = self._dispatch_request(request)
+                response = await self._dispatch_request(request)
                 if response.get("ok"):
                     log_event(
                         logger,
@@ -100,11 +101,11 @@ class RosServiceUdsServer:
             writer.close()
             await writer.wait_closed()
 
-    def _dispatch_request(self, request: dict) -> dict:
+    async def _dispatch_request(self, request: dict) -> dict:
         try:
             return build_response_message(
                 ok=True,
-                payload=self.dispatcher.dispatch(
+                payload=await self.dispatcher.async_dispatch(
                     request.get("command", ""),
                     request.get("payload") or {},
                 ),

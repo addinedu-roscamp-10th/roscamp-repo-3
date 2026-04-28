@@ -1,3 +1,7 @@
+import asyncio
+import inspect
+from concurrent.futures import ThreadPoolExecutor
+
 from server.ropi_main_service.application.delivery_config import get_delivery_runtime_config
 
 
@@ -20,6 +24,10 @@ class RosServiceCommandDispatcher:
         self.goal_pose_action_client = goal_pose_action_client
         self.manipulation_action_client = manipulation_action_client
         self.runtime_config = runtime_config or get_delivery_runtime_config()
+        self._dispatch_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="ropi_ros_dispatch",
+        )
         self._command_handlers = {
             "get_runtime_status": self._dispatch_get_runtime_status,
             "navigate_to_goal": self._dispatch_navigate_to_goal,
@@ -37,6 +45,25 @@ class RosServiceCommandDispatcher:
             )
 
         return handler(payload)
+
+    async def async_dispatch(self, command: str, payload: dict | None = None) -> dict:
+        payload = payload or {}
+        handler = self._command_handlers.get(command)
+
+        if handler is None:
+            raise RosServiceCommandDispatchError(
+                "UNKNOWN_COMMAND",
+                f"Unsupported ROS service command: {command}",
+            )
+
+        if inspect.iscoroutinefunction(handler):
+            return await handler(payload)
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._dispatch_executor, handler, payload)
+
+    def close(self):
+        self._dispatch_executor.shutdown(wait=False, cancel_futures=True)
 
     def _dispatch_navigate_to_goal(self, payload: dict) -> dict:
         pinky_id = self._get_required_identifier(

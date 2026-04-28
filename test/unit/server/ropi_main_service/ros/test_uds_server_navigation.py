@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
 from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
@@ -106,6 +107,95 @@ def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
             "result_message": "navigation done",
         },
     }
+
+
+def test_ros_service_uds_server_dispatch_request_is_awaitable(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    action_client = FakeGoalPoseActionClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=action_client,
+        )
+        try:
+            return await server._dispatch_request(
+                {
+                    "command": "navigate_to_goal",
+                    "payload": {
+                        "pinky_id": "pinky2",
+                        "goal": {
+                            "task_id": "task_delivery_001",
+                            "nav_phase": "DELIVERY_DESTINATION",
+                            "timeout_sec": 120,
+                        },
+                    },
+                }
+            )
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["ok"] is True
+    assert response["payload"]["result_code"] == "SUCCESS"
+
+
+def test_ros_service_uds_server_does_not_block_event_loop_while_action_waits(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+
+    class SlowGoalPoseActionClient(FakeGoalPoseActionClient):
+        def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
+            time.sleep(0.25)
+            return super().send_goal(
+                action_name=action_name,
+                goal=goal,
+                result_wait_timeout_sec=result_wait_timeout_sec,
+            )
+
+    async def send_request(command, payload):
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        writer.write(encode_message({"command": command, "payload": payload}))
+        await writer.drain()
+        response = decode_message_bytes(await reader.readline())
+        writer.close()
+        await writer.wait_closed()
+        return response
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=SlowGoalPoseActionClient(),
+        )
+        await server.start()
+        try:
+            started_at = time.monotonic()
+            slow_task = asyncio.create_task(
+                send_request(
+                    "navigate_to_goal",
+                    {
+                        "pinky_id": "pinky2",
+                        "goal": {
+                            "task_id": "task_delivery_001",
+                            "nav_phase": "DELIVERY_DESTINATION",
+                            "timeout_sec": 120,
+                        },
+                    },
+                )
+            )
+            await asyncio.sleep(0.01)
+            fast_response = await send_request("unknown_command", {})
+            elapsed = time.monotonic() - started_at
+            await slow_task
+            return elapsed, fast_response
+        finally:
+            await server.close()
+
+    elapsed, fast_response = asyncio.run(scenario())
+
+    assert elapsed < 0.2
+    assert fast_response["ok"] is False
+    assert fast_response["error_code"] == "UNKNOWN_COMMAND"
 
 
 def test_ros_service_uds_server_reports_runtime_readiness(tmp_path):
