@@ -197,17 +197,14 @@ def runtime_delivery_schema():
     )
     quoted_tables = ", ".join(f"'{table}'" for table in required_tables)
 
-    try:
-        row = fetch_one(
-            f"""
-            SELECT COUNT(*) AS table_count
-            FROM information_schema.tables
-            WHERE table_schema = DATABASE()
-              AND table_name IN ({quoted_tables})
-            """
-        )
-    except Exception as exc:
-        pytest.skip(f"MariaDB runtime schema를 확인할 수 없습니다: {exc}")
+    row = fetch_one(
+        f"""
+        SELECT COUNT(*) AS table_count
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_name IN ({quoted_tables})
+        """
+    )
 
     if int(row["table_count"]) != len(required_tables):
-        pytest.skip("MariaDB가 새 운반 task 스키마로 마이그레이션되지 않았습니다.")
+        pytest.fail("MariaDB가 새 운반 task 스키마로 마이그레이션되지 않았습니다.")
