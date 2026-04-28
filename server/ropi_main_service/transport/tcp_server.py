@@ -173,12 +173,7 @@ class ControlServiceServer:
 
         if frame.message_code == MESSAGE_CODE_DELIVERY_CREATE_TASK:
             loop = asyncio.get_running_loop()
-            return await asyncio.to_thread(
-                self._dispatch_delivery_create_task,
-                frame,
-                payload,
-                loop=loop,
-            )
+            return await self._dispatch_delivery_create_task_async(frame, payload, loop=loop)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return await self._dispatch_rpc_async(frame, payload)
@@ -234,6 +229,16 @@ class ControlServiceServer:
 
         try:
             result = service.create_delivery_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "DELIVERY_CREATE_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def _dispatch_delivery_create_task_async(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
+        service = build_delivery_request_service(loop=loop or asyncio.get_running_loop())
+
+        try:
+            result = await service.async_create_delivery_task(**payload)
         except Exception as exc:
             return self._error_response(frame, "DELIVERY_CREATE_ERROR", str(exc))
 

@@ -1,3 +1,5 @@
+import asyncio
+
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 
 
@@ -66,6 +68,59 @@ class DeliveryRequestService:
             return precheck_response
 
         response = self.repository.create_delivery_task(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
+            priority=priority,
+            notes=notes,
+            idempotency_key=idempotency_key,
+        )
+        self._start_delivery_workflow_if_needed(
+            response=response,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
+        )
+        return response
+
+    async def async_create_delivery_task(
+        self,
+        request_id,
+        caregiver_id,
+        item_id,
+        quantity,
+        destination_id,
+        priority,
+        notes=None,
+        idempotency_key=None,
+    ):
+        invalid_response = self._validate_create_delivery_task_request(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
+            idempotency_key=idempotency_key,
+        )
+        if invalid_response is not None:
+            return invalid_response
+
+        precheck_response = await self._async_run_delivery_request_precheck(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
+            priority=priority,
+            notes=notes,
+            idempotency_key=idempotency_key,
+        )
+        if precheck_response is not None:
+            return precheck_response
+
+        response = await self.repository.async_create_delivery_task(
             request_id=request_id,
             caregiver_id=caregiver_id,
             item_id=item_id,
@@ -230,6 +285,12 @@ class DeliveryRequestService:
             return None
 
         return self.delivery_request_precheck(**kwargs)
+
+    async def _async_run_delivery_request_precheck(self, **kwargs):
+        if self.delivery_request_precheck is None:
+            return None
+
+        return await asyncio.to_thread(self.delivery_request_precheck, **kwargs)
 
     def _start_delivery_workflow_if_needed(self, *, response, item_id, quantity, destination_id):
         if response.get("result_code") != self.ACCEPTED:

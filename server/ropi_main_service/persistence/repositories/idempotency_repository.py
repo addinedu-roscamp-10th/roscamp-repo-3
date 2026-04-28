@@ -20,6 +20,41 @@ class IdempotencyRepository:
             (requester_id, idempotency_key),
         )
         row = cur.fetchone()
+        return self._response_from_row(row, request_hash)
+
+    async def async_find_response(self, cur, *, requester_id, idempotency_key, request_hash):
+        await cur.execute(
+            load_sql("idempotency/find_delivery_create_task_response.sql"),
+            (requester_id, idempotency_key),
+        )
+        row = await cur.fetchone()
+        return self._response_from_row(row, request_hash)
+
+    def insert_record(self, cur, *, requester_id, idempotency_key, request_hash, response, task_id):
+        cur.execute(
+            load_sql("idempotency/insert_delivery_create_task_record.sql"),
+            (
+                requester_id,
+                idempotency_key,
+                request_hash,
+                json.dumps(response, ensure_ascii=False),
+                task_id,
+            ),
+        )
+
+    async def async_insert_record(self, cur, *, requester_id, idempotency_key, request_hash, response, task_id):
+        await cur.execute(
+            load_sql("idempotency/insert_delivery_create_task_record.sql"),
+            (
+                requester_id,
+                idempotency_key,
+                request_hash,
+                json.dumps(response, ensure_ascii=False),
+                task_id,
+            ),
+        )
+
+    def _response_from_row(self, row, request_hash):
         if not row:
             return None
 
@@ -36,18 +71,6 @@ class IdempotencyRepository:
         if response:
             return json.loads(response)
         return None
-
-    def insert_record(self, cur, *, requester_id, idempotency_key, request_hash, response, task_id):
-        cur.execute(
-            load_sql("idempotency/insert_delivery_create_task_record.sql"),
-            (
-                requester_id,
-                idempotency_key,
-                request_hash,
-                json.dumps(response, ensure_ascii=False),
-                task_id,
-            ),
-        )
 
     @staticmethod
     def _build_delivery_task_response(

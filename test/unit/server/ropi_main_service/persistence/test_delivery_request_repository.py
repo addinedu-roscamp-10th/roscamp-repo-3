@@ -1,8 +1,12 @@
 from unittest.mock import patch
+import asyncio
 
 from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
 from server.ropi_main_service.persistence.repositories.idempotency_repository import (
     IdempotencyRepository,
+)
+from server.ropi_main_service.persistence.repositories.delivery_task_repository import (
+    DeliveryTaskRepository,
 )
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
     DeliveryRequestRepository,
@@ -17,6 +21,39 @@ class FakeCursor:
 
     def __exit__(self, exc_type, exc, tb):
         return False
+
+
+class FakeAsyncCursor:
+    lastrowid = 101
+
+
+class FakeAsyncTransaction:
+    def __init__(self):
+        self.cursor = FakeAsyncCursor()
+        self.entered = False
+        self.exited = False
+
+    async def __aenter__(self):
+        self.entered = True
+        return self.cursor
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.exited = True
+        return False
+
+
+class RecordingAsyncCursor:
+    lastrowid = 101
+
+    def __init__(self, row=None):
+        self.calls = []
+        self.row = row
+
+    async def execute(self, query, params):
+        self.calls.append((query, params))
+
+    async def fetchone(self):
+        return self.row
 
 
 class FakeExistingIdempotencyCursor:
@@ -110,12 +147,27 @@ class FakeIdempotencyRepository:
     def insert_record(self, cur, **kwargs):
         self.inserted = kwargs
 
+    async def async_find_response(self, cur, *, requester_id, idempotency_key, request_hash):
+        self.find_args = {
+            "requester_id": requester_id,
+            "idempotency_key": idempotency_key,
+            "request_hash": request_hash,
+        }
+        return None
+
+    async def async_insert_record(self, cur, **kwargs):
+        self.inserted = kwargs
+
 
 class FakeDeliveryTaskRepository:
     def __init__(self):
         self.created = None
 
     def create_delivery_task_records(self, cur, **kwargs):
+        self.created = kwargs
+        return 101
+
+    async def async_create_delivery_task_records(self, cur, **kwargs):
         self.created = kwargs
         return 101
 
@@ -129,6 +181,20 @@ class CollaboratorBackedDeliveryRequestRepository(DeliveryRequestRepository):
 
     def _goal_pose_exists(self, cur, goal_pose_id):
         return True
+
+    async def _async_fetch_product_by_id(self, cur, item_id):
+        return {"item_id": "1", "item_name": "물티슈", "quantity": 10}
+
+    async def _async_caregiver_exists(self, cur, caregiver_id):
+        return True
+
+    async def _async_goal_pose_exists(self, cur, goal_pose_id):
+        return True
+
+
+class AsyncInsufficientItemRepository(CollaboratorBackedDeliveryRequestRepository):
+    async def _async_fetch_product_by_id(self, cur, item_id):
+        return {"item_id": "1", "item_name": "물티슈", "quantity": 0}
 
 
 def test_create_delivery_task_delegates_persistence_to_collaborators():
@@ -166,6 +232,49 @@ def test_create_delivery_task_delegates_persistence_to_collaborators():
     }
     assert idempotency_repository.inserted["task_id"] == 101
     assert fake_conn.committed is True
+
+
+def test_async_create_delivery_task_delegates_persistence_to_collaborators(monkeypatch):
+    fake_transaction = FakeAsyncTransaction()
+    idempotency_repository = FakeIdempotencyRepository()
+    delivery_task_repository = FakeDeliveryTaskRepository()
+    repository = CollaboratorBackedDeliveryRequestRepository(
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=idempotency_repository,
+        delivery_task_repository=delivery_task_repository,
+    )
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    response = asyncio.run(
+        repository.async_create_delivery_task(
+            request_id="req_001",
+            caregiver_id="1",
+            item_id="1",
+            quantity=1,
+            destination_id="delivery_room_301",
+            priority="NORMAL",
+            notes="note",
+            idempotency_key="idem_001",
+        )
+    )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_id"] == 101
+    assert response["assigned_robot_id"] == "pinky9"
+    assert delivery_task_repository.created["item_id"] == 1
+    assert delivery_task_repository.created["destination_goal_pose_id"] == "delivery_room_301"
+    assert idempotency_repository.find_args == {
+        "requester_id": "1",
+        "idempotency_key": "idem_001",
+        "request_hash": "request_hash",
+    }
+    assert idempotency_repository.inserted["task_id"] == 101
+    assert fake_transaction.entered is True
+    assert fake_transaction.exited is True
 
 
 def test_create_delivery_task_uses_runtime_config_assigned_robot_id():
@@ -235,6 +344,38 @@ def test_create_delivery_task_rejects_when_item_quantity_is_insufficient():
     assert delivery_task_repository.created is None
 
 
+def test_async_create_delivery_task_rejects_when_item_quantity_is_insufficient(monkeypatch):
+    fake_transaction = FakeAsyncTransaction()
+    delivery_task_repository = FakeDeliveryTaskRepository()
+    repository = AsyncInsufficientItemRepository(
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=FakeIdempotencyRepository(),
+        delivery_task_repository=delivery_task_repository,
+    )
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    response = asyncio.run(
+        repository.async_create_delivery_task(
+            request_id="req_001",
+            caregiver_id="1",
+            item_id="1",
+            quantity=2,
+            destination_id="delivery_room_301",
+            priority="NORMAL",
+            notes=None,
+            idempotency_key="idem_001",
+        )
+    )
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "ITEM_QUANTITY_INSUFFICIENT"
+    assert delivery_task_repository.created is None
+
+
 def test_find_idempotent_response_rejects_key_reuse_with_different_payload():
     response = IdempotencyRepository().find_response(
         FakeExistingIdempotencyCursor(),
@@ -245,3 +386,62 @@ def test_find_idempotent_response_rejects_key_reuse_with_different_payload():
 
     assert response["result_code"] == "INVALID_REQUEST"
     assert response["reason_code"] == "IDEMPOTENCY_KEY_CONFLICT"
+
+
+def test_async_find_idempotent_response_rejects_key_reuse_with_different_payload():
+    cursor = RecordingAsyncCursor(
+        row={
+            "request_hash": "different_hash",
+            "response_json": '{"result_code":"ACCEPTED"}',
+        }
+    )
+
+    response = asyncio.run(
+        IdempotencyRepository().async_find_response(
+            cursor,
+            requester_id="1",
+            idempotency_key="idem_001",
+            request_hash="expected_hash",
+        )
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "IDEMPOTENCY_KEY_CONFLICT"
+    assert "FROM idempotency_record" in cursor.calls[0][0]
+
+
+def test_async_delivery_task_repository_inserts_records_in_order():
+    cursor = RecordingAsyncCursor()
+    repository = DeliveryTaskRepository(
+        runtime_config=DeliveryRuntimeConfig(
+            pinky_id="pinky9",
+            pickup_arm_robot_id="jetcobot1",
+            destination_arm_robot_id="jetcobot2",
+            robot_slot_id="slot_a",
+        )
+    )
+
+    task_id = asyncio.run(
+        repository.async_create_delivery_task_records(
+            cursor,
+            request_id="req_001",
+            idempotency_key="idem_001",
+            caregiver_id=1,
+            priority="NORMAL",
+            destination_goal_pose_id="delivery_room_301",
+            notes="note",
+            item_id=1,
+            quantity=2,
+        )
+    )
+
+    assert task_id == 101
+    assert [call[0].split()[2] for call in cursor.calls[:5]] == [
+        "task",
+        "delivery_task_detail",
+        "delivery_task_item",
+        "task_state_history",
+        "task_event_log",
+    ]
+    assert cursor.calls[0][1][4] == "pinky9"
+    assert cursor.calls[1][1][3:6] == ("jetcobot1", "jetcobot2", "slot_a")

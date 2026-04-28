@@ -269,6 +269,48 @@ def test_async_rpc_dispatch_offloads_sync_service_method(control_service_server)
     assert calls == ["get_product_names"]
 
 
+def test_async_delivery_create_task_uses_native_async_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
+        sequence_no=17,
+        payload={
+            "request_id": "req_001",
+            "caregiver_id": "1",
+            "item_id": "1",
+            "quantity": 1,
+            "destination_id": "delivery_room_301",
+            "priority": "NORMAL",
+            "notes": "delivery test",
+            "idempotency_key": "idem_001",
+        },
+    )
+
+    class FakeAsyncDeliveryRequestService:
+        async def async_create_delivery_task(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 101,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky2",
+            }
+
+    async def scenario():
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.build_delivery_request_service",
+            return_value=FakeAsyncDeliveryRequestService(),
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("delivery create should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "ACCEPTED"
+    assert response.payload["task_id"] == 101
+
+
 def test_async_response_build_does_not_block_event_loop(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_HEARTBEAT,

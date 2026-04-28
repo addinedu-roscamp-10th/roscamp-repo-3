@@ -1,3 +1,5 @@
+import asyncio
+
 from server.ropi_main_service.application.task_request import DeliveryRequestService
 
 
@@ -7,6 +9,10 @@ class FakeDeliveryRequestRepository:
         self.calls = []
 
     def create_delivery_task(self, **kwargs):
+        self.calls.append(kwargs)
+        return dict(self.response)
+
+    async def async_create_delivery_task(self, **kwargs):
         self.calls.append(kwargs)
         return dict(self.response)
 
@@ -50,6 +56,36 @@ def test_create_delivery_task_starts_delivery_workflow_after_acceptance():
     )
 
     response = service.create_delivery_task(**build_request_payload())
+
+    assert response["result_code"] == "ACCEPTED"
+    assert workflow_starter.calls == [
+        {
+            "task_id": "101",
+            "item_id": "1",
+            "quantity": 2,
+            "destination_id": "delivery_room_301",
+        }
+    ]
+
+
+def test_async_create_delivery_task_starts_delivery_workflow_after_acceptance():
+    repository = FakeDeliveryRequestRepository(
+        response={
+            "result_code": "ACCEPTED",
+            "result_message": None,
+            "reason_code": None,
+            "task_id": 101,
+            "task_status": "WAITING_DISPATCH",
+            "assigned_robot_id": "pinky2",
+        }
+    )
+    workflow_starter = FakeDeliveryWorkflowStarter()
+    service = DeliveryRequestService(
+        repository=repository,
+        delivery_workflow_starter=workflow_starter,
+    )
+
+    response = asyncio.run(service.async_create_delivery_task(**build_request_payload()))
 
     assert response["result_code"] == "ACCEPTED"
     assert workflow_starter.calls == [

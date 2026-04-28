@@ -14,6 +14,7 @@ from server.ropi_main_service.persistence.async_connection import (
     async_execute,
     async_fetch_all,
     async_fetch_one,
+    async_transaction,
 )
 from server.ropi_main_service.persistence.sql_loader import load_sql
 
@@ -185,6 +186,120 @@ class DeliveryRequestRepository:
         finally:
             conn.close()
 
+    async def async_create_delivery_task(
+        self,
+        request_id,
+        caregiver_id,
+        item_id,
+        quantity,
+        destination_id,
+        priority,
+        notes,
+        idempotency_key,
+    ):
+        numeric_item_id = self._parse_numeric_identifier(item_id)
+        numeric_caregiver_id = self._parse_numeric_identifier(caregiver_id)
+        requested_quantity = int(quantity)
+        destination_goal_pose_id = str(destination_id or "").strip()
+        request_hash = self.idempotency_repository.build_request_hash(
+            request_id=request_id,
+            caregiver_id=numeric_caregiver_id,
+            item_id=numeric_item_id,
+            quantity=requested_quantity,
+            destination_id=destination_goal_pose_id,
+            priority=priority,
+            notes=notes,
+        )
+
+        if numeric_item_id is None:
+            return self._build_delivery_task_response(
+                result_code="REJECTED",
+                result_message="요청한 item_id를 현재 물품 목록에서 찾을 수 없습니다.",
+                reason_code="ITEM_NOT_FOUND",
+            )
+
+        if numeric_caregiver_id is None:
+            return self._build_delivery_task_response(
+                result_code="REJECTED",
+                result_message="caregiver_id를 확인할 수 없습니다.",
+                reason_code="REQUESTER_NOT_AUTHORIZED",
+            )
+
+        async with async_transaction() as cur:
+            existing_response = await self.idempotency_repository.async_find_response(
+                cur,
+                requester_id=str(numeric_caregiver_id),
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+            )
+            if existing_response is not None:
+                return existing_response
+
+            product = await self._async_fetch_product_by_id(cur, numeric_item_id)
+            if not product:
+                return self._build_delivery_task_response(
+                    result_code="REJECTED",
+                    result_message="요청한 item_id를 현재 물품 목록에서 찾을 수 없습니다.",
+                    reason_code="ITEM_NOT_FOUND",
+                )
+
+            current_quantity = int(product["quantity"])
+            if requested_quantity > current_quantity:
+                return self._build_delivery_task_response(
+                    result_code="REJECTED",
+                    result_message=f"재고가 부족합니다. 현재 재고: {current_quantity}",
+                    reason_code="ITEM_QUANTITY_INSUFFICIENT",
+                )
+
+            if not await self._async_caregiver_exists(cur, numeric_caregiver_id):
+                return self._build_delivery_task_response(
+                    result_code="REJECTED",
+                    result_message="요청자를 확인할 수 없습니다.",
+                    reason_code="REQUESTER_NOT_AUTHORIZED",
+                )
+
+            if not await self._async_goal_pose_exists(cur, DEFAULT_PICKUP_GOAL_POSE_ID):
+                return self._build_delivery_task_response(
+                    result_code="REJECTED",
+                    result_message="운반 픽업 goal pose를 찾을 수 없습니다.",
+                    reason_code="PICKUP_GOAL_POSE_NOT_FOUND",
+                )
+
+            if not await self._async_goal_pose_exists(cur, destination_goal_pose_id):
+                return self._build_delivery_task_response(
+                    result_code="INVALID_REQUEST",
+                    result_message=f"지원하지 않는 destination_id입니다: {destination_goal_pose_id}",
+                    reason_code="DESTINATION_GOAL_POSE_NOT_FOUND",
+                )
+
+            task_id = await self.delivery_task_repository.async_create_delivery_task_records(
+                cur,
+                request_id=request_id,
+                idempotency_key=idempotency_key,
+                caregiver_id=numeric_caregiver_id,
+                priority=priority,
+                destination_goal_pose_id=destination_goal_pose_id,
+                notes=notes,
+                item_id=numeric_item_id,
+                quantity=requested_quantity,
+            )
+
+            response = self._build_delivery_task_response(
+                result_code="ACCEPTED",
+                task_id=task_id,
+                task_status="WAITING_DISPATCH",
+                assigned_robot_id=self.runtime_config.pinky_id,
+            )
+            await self.idempotency_repository.async_insert_record(
+                cur,
+                requester_id=str(numeric_caregiver_id),
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                task_id=task_id,
+            )
+            return response
+
     def create_delivery_request(
         self,
         item_name,
@@ -292,6 +407,14 @@ class DeliveryRequestRepository:
                 conn.close()
 
     @staticmethod
+    async def _async_fetch_product_by_id(cur, item_id):
+        await cur.execute(
+            load_sql("task_request/find_item_by_id.sql"),
+            (item_id,),
+        )
+        return await cur.fetchone()
+
+    @staticmethod
     def _product_query_for(where_clause):
         if where_clause == "item_id = %s":
             return load_sql("task_request/find_item_by_id.sql")
@@ -308,12 +431,28 @@ class DeliveryRequestRepository:
         return cur.fetchone() is not None
 
     @staticmethod
+    async def _async_caregiver_exists(cur, caregiver_id) -> bool:
+        await cur.execute(
+            load_sql("task_request/caregiver_exists.sql"),
+            (caregiver_id,),
+        )
+        return await cur.fetchone() is not None
+
+    @staticmethod
     def _goal_pose_exists(cur, goal_pose_id) -> bool:
         cur.execute(
             load_sql("task_request/goal_pose_exists.sql"),
             (goal_pose_id,),
         )
         return cur.fetchone() is not None
+
+    @staticmethod
+    async def _async_goal_pose_exists(cur, goal_pose_id) -> bool:
+        await cur.execute(
+            load_sql("task_request/goal_pose_exists.sql"),
+            (goal_pose_id,),
+        )
+        return await cur.fetchone() is not None
 
     @staticmethod
     def _parse_numeric_identifier(value):
