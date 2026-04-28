@@ -30,12 +30,14 @@ class RosServiceCommandDispatcher:
         )
         self._command_handlers = {
             "cancel_action": self._dispatch_cancel_action,
+            "get_action_feedback": self._dispatch_get_action_feedback,
             "get_runtime_status": self._dispatch_get_runtime_status,
             "navigate_to_goal": self._dispatch_navigate_to_goal,
             "execute_manipulation": self._dispatch_execute_manipulation,
         }
         self._async_command_handlers = {
             "cancel_action": self._async_dispatch_cancel_action,
+            "get_action_feedback": self._async_dispatch_get_action_feedback,
             "get_runtime_status": self._async_dispatch_get_runtime_status,
             "navigate_to_goal": self._async_dispatch_navigate_to_goal,
             "execute_manipulation": self._async_dispatch_execute_manipulation,
@@ -138,6 +140,41 @@ class RosServiceCommandDispatcher:
             details=details,
         )
 
+    def _dispatch_get_action_feedback(self, payload: dict) -> dict:
+        task_id = self._get_required_identifier(
+            payload,
+            field_name="task_id",
+            error_code="TASK_ID_REQUIRED",
+            error_message="get_action_feedback command requires task_id.",
+        )
+        action_name = self._get_optional_identifier(payload, "action_name")
+        feedback = []
+
+        feedback.extend(
+            self._get_latest_feedback(
+                self.goal_pose_action_client,
+                client_name="navigation",
+                task_id=task_id,
+                action_name=action_name,
+            )
+        )
+
+        if self.manipulation_action_client is not None:
+            feedback.extend(
+                self._get_latest_feedback(
+                    self.manipulation_action_client,
+                    client_name="manipulation",
+                    task_id=task_id,
+                    action_name=action_name,
+                )
+            )
+
+        return self._build_action_feedback_response(
+            task_id=task_id,
+            action_name=action_name,
+            feedback=feedback,
+        )
+
     async def _async_dispatch_navigate_to_goal(self, payload: dict) -> dict:
         pinky_id = self._get_required_identifier(
             payload,
@@ -208,6 +245,41 @@ class RosServiceCommandDispatcher:
             task_id=task_id,
             action_name=action_name,
             details=details,
+        )
+
+    async def _async_dispatch_get_action_feedback(self, payload: dict) -> dict:
+        task_id = self._get_required_identifier(
+            payload,
+            field_name="task_id",
+            error_code="TASK_ID_REQUIRED",
+            error_message="get_action_feedback command requires task_id.",
+        )
+        action_name = self._get_optional_identifier(payload, "action_name")
+        feedback = []
+
+        feedback.extend(
+            self._get_latest_feedback(
+                self.goal_pose_action_client,
+                client_name="navigation",
+                task_id=task_id,
+                action_name=action_name,
+            )
+        )
+
+        if self.manipulation_action_client is not None:
+            feedback.extend(
+                self._get_latest_feedback(
+                    self.manipulation_action_client,
+                    client_name="manipulation",
+                    task_id=task_id,
+                    action_name=action_name,
+                )
+            )
+
+        return self._build_action_feedback_response(
+            task_id=task_id,
+            action_name=action_name,
+            feedback=feedback,
         )
 
     def _dispatch_get_runtime_status(self, payload: dict) -> dict:
@@ -389,6 +461,21 @@ class RosServiceCommandDispatcher:
         return result
 
     @staticmethod
+    def _get_latest_feedback(action_client, *, client_name, **kwargs):
+        get_latest_feedback = getattr(action_client, "get_latest_feedback", None)
+        if get_latest_feedback is None:
+            return []
+
+        feedback_records = get_latest_feedback(**kwargs)
+        return [
+            {
+                "client": client_name,
+                **record,
+            }
+            for record in feedback_records
+        ]
+
+    @staticmethod
     def _get_required_identifier(
         payload: dict,
         *,
@@ -437,6 +524,15 @@ class RosServiceCommandDispatcher:
             "action_name": action_name,
             "cancel_requested": cancel_requested,
             "details": details,
+        }
+
+    @staticmethod
+    def _build_action_feedback_response(*, task_id, action_name, feedback):
+        return {
+            "result_code": "FOUND" if feedback else "NOT_FOUND",
+            "task_id": task_id,
+            "action_name": action_name,
+            "feedback": feedback,
         }
 
 

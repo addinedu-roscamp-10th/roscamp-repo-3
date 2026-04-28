@@ -36,6 +36,21 @@ class FakeAsyncGoalPoseActionClient:
             "matched_goal_count": 1,
         }
 
+    def get_latest_feedback(self, **kwargs):
+        return [
+            {
+                "task_id": kwargs["task_id"],
+                "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                "action_type": "navigation",
+                "feedback_type": "NAVIGATION_FEEDBACK",
+                "received_at": "2026-04-28T00:00:00+00:00",
+                "payload": {
+                    "nav_status": "MOVING",
+                    "distance_remaining_m": 1.25,
+                },
+            }
+        ]
+
 
 class FakeAsyncManipulationActionClient:
     def __init__(self):
@@ -70,6 +85,9 @@ class FakeAsyncManipulationActionClient:
             "cancel_requested": False,
             "matched_goal_count": 0,
         }
+
+    def get_latest_feedback(self, **kwargs):
+        return []
 
 
 def test_async_dispatch_prefers_async_goal_pose_action_client():
@@ -212,3 +230,45 @@ def test_async_dispatch_cancel_action_cancels_matching_goal_by_task_id():
             "action_name": None,
         }
     ]
+
+
+def test_async_dispatch_get_action_feedback_returns_latest_feedback_by_task_id():
+    goal_client = FakeAsyncGoalPoseActionClient()
+    manipulation_client = FakeAsyncManipulationActionClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=goal_client,
+        manipulation_action_client=manipulation_client,
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "get_action_feedback",
+                {
+                    "task_id": "task_delivery_001",
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response == {
+        "result_code": "FOUND",
+        "task_id": "task_delivery_001",
+        "action_name": None,
+        "feedback": [
+            {
+                "client": "navigation",
+                "task_id": "task_delivery_001",
+                "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                "action_type": "navigation",
+                "feedback_type": "NAVIGATION_FEEDBACK",
+                "received_at": "2026-04-28T00:00:00+00:00",
+                "payload": {
+                    "nav_status": "MOVING",
+                    "distance_remaining_m": 1.25,
+                },
+            }
+        ],
+    }

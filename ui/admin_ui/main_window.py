@@ -118,13 +118,19 @@ class FlowColumn(QFrame):
             return str(task)
 
         display_text = str(task.get("display_text") or "").strip()
+        feedback_summary = str(task.get("feedback_summary") or "").strip()
+        if display_text and feedback_summary:
+            return f"{display_text}\n{feedback_summary}"
         if display_text:
             return display_text
 
         task_id = task.get("task_id") or "-"
         description = task.get("description") or "-"
         robot_id = task.get("robot_id") or "-"
-        return f"#{task_id} {description} / {robot_id}"
+        fallback = f"#{task_id} {description} / {robot_id}"
+        if feedback_summary:
+            return f"{fallback}\n{feedback_summary}"
+        return fallback
 
 
 class CaregiverHomePage(QWidget):

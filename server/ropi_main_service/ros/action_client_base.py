@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from datetime import datetime, timezone
 
 
 class BaseRclpyActionClient:
@@ -21,6 +22,8 @@ class BaseRclpyActionClient:
         self.cancel_wait_timeout_sec = cancel_wait_timeout_sec
         self._active_goal_handles = {}
         self._active_goal_lock = threading.Lock()
+        self._latest_feedback = {}
+        self._latest_feedback_lock = threading.Lock()
 
     def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
         action_type = self.action_type_loader()
@@ -29,8 +32,16 @@ class BaseRclpyActionClient:
         if not action_client.wait_for_server(timeout_sec=self.server_wait_timeout_sec):
             raise RuntimeError(f"{action_name} action server is not available.")
 
+        task_id = self._extract_task_id(goal)
         goal_msg = self._build_goal_message(action_type, goal)
-        send_goal_future = action_client.send_goal_async(goal_msg)
+        send_goal_future = self._send_goal_async(
+            action_client,
+            goal_msg,
+            feedback_callback=self._build_feedback_callback(
+                action_name=action_name,
+                task_id=task_id,
+            ),
+        )
         goal_handle = self._wait_for_future(
             send_goal_future,
             timeout_sec=self.goal_response_wait_timeout_sec,
@@ -44,7 +55,6 @@ class BaseRclpyActionClient:
                 "result_message": f"{action_name} goal was rejected.",
             }
 
-        task_id = self._extract_task_id(goal)
         active_key = self._register_active_goal(action_name=action_name, task_id=task_id, goal_handle=goal_handle)
         try:
             result_future = goal_handle.get_result_async()
@@ -81,8 +91,16 @@ class BaseRclpyActionClient:
         ):
             raise RuntimeError(f"{action_name} action server is not available.")
 
+        task_id = self._extract_task_id(goal)
         goal_msg = self._build_goal_message(action_type, goal)
-        send_goal_future = action_client.send_goal_async(goal_msg)
+        send_goal_future = self._send_goal_async(
+            action_client,
+            goal_msg,
+            feedback_callback=self._build_feedback_callback(
+                action_name=action_name,
+                task_id=task_id,
+            ),
+        )
         goal_handle = await self._wait_for_future_async(
             send_goal_future,
             timeout_sec=self.goal_response_wait_timeout_sec,
@@ -96,7 +114,6 @@ class BaseRclpyActionClient:
                 "result_message": f"{action_name} goal was rejected.",
             }
 
-        task_id = self._extract_task_id(goal)
         active_key = self._register_active_goal(action_name=action_name, task_id=task_id, goal_handle=goal_handle)
         try:
             result_future = goal_handle.get_result_async()
@@ -207,11 +224,39 @@ class BaseRclpyActionClient:
             details=details,
         )
 
+    def get_latest_feedback(self, *, task_id, action_name=None):
+        normalized_task_id = str(task_id or "").strip()
+        normalized_action_name = None if action_name is None else str(action_name).strip()
+        if not normalized_task_id:
+            return []
+
+        with self._latest_feedback_lock:
+            records = [
+                self._copy_feedback_record(record)
+                for key, record in self._latest_feedback.items()
+                if key[1] == normalized_task_id
+                and (normalized_action_name is None or key[0] == normalized_action_name)
+            ]
+
+        return records
+
     @classmethod
     def _build_goal_message(cls, action_type, goal):
         goal_msg = action_type.Goal()
         cls._assign_attributes(goal_msg, goal)
         return goal_msg
+
+    @staticmethod
+    def _send_goal_async(action_client, goal_msg, *, feedback_callback=None):
+        if feedback_callback is None:
+            return action_client.send_goal_async(goal_msg)
+
+        try:
+            return action_client.send_goal_async(goal_msg, feedback_callback=feedback_callback)
+        except TypeError as exc:
+            if "feedback_callback" not in str(exc):
+                raise
+            return action_client.send_goal_async(goal_msg)
 
     @classmethod
     def _assign_attributes(cls, target, values):
@@ -259,6 +304,58 @@ class BaseRclpyActionClient:
                 continue
             result[public_name] = cls._message_to_dict(getattr(value, public_name))
         return result
+
+    def _build_feedback_callback(self, *, action_name, task_id):
+        if not task_id:
+            return None
+
+        def _on_feedback(feedback_msg):
+            self._record_feedback(
+                action_name=action_name,
+                task_id=task_id,
+                feedback_msg=feedback_msg,
+            )
+
+        return _on_feedback
+
+    def _record_feedback(self, *, action_name, task_id, feedback_msg):
+        payload = self._message_to_dict(getattr(feedback_msg, "feedback", feedback_msg))
+        record = {
+            "task_id": str(task_id).strip(),
+            "action_name": str(action_name).strip(),
+            "action_type": self._infer_action_type(action_name=action_name, payload=payload),
+            "feedback_type": self._infer_feedback_type(payload),
+            "received_at": datetime.now(timezone.utc).isoformat(),
+            "payload": payload,
+        }
+        key = (record["action_name"], record["task_id"])
+        with self._latest_feedback_lock:
+            self._latest_feedback[key] = record
+
+    @staticmethod
+    def _copy_feedback_record(record):
+        copied = dict(record)
+        payload = copied.get("payload")
+        if isinstance(payload, dict):
+            copied["payload"] = dict(payload)
+        return copied
+
+    @staticmethod
+    def _infer_action_type(*, action_name, payload):
+        action_name = str(action_name or "")
+        if "navigate_to_goal" in action_name or "nav_status" in payload:
+            return "navigation"
+        if "execute_manipulation" in action_name or "processed_quantity" in payload:
+            return "manipulation"
+        return "unknown"
+
+    @staticmethod
+    def _infer_feedback_type(payload):
+        if "nav_status" in payload or "distance_remaining_m" in payload:
+            return "NAVIGATION_FEEDBACK"
+        if "processed_quantity" in payload:
+            return "MANIPULATION_FEEDBACK"
+        return "ACTION_FEEDBACK"
 
     @staticmethod
     def _wait_for_future(future, *, timeout_sec, error_message):

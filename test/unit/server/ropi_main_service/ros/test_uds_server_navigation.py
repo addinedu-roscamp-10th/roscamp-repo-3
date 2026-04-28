@@ -48,6 +48,21 @@ class FakeGoalPoseActionClient:
             "matched_goal_count": 1,
         }
 
+    def get_latest_feedback(self, *, task_id, action_name=None):
+        return [
+            {
+                "task_id": task_id,
+                "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                "action_type": "navigation",
+                "feedback_type": "NAVIGATION_FEEDBACK",
+                "received_at": "2026-04-28T00:00:00+00:00",
+                "payload": {
+                    "nav_status": "MOVING",
+                    "distance_remaining_m": 1.25,
+                },
+            }
+        ]
+
 
 def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
     socket_path = tmp_path / "ropi_ros_service.sock"
@@ -332,6 +347,63 @@ def test_ros_service_uds_server_dispatches_cancel_action_command(tmp_path):
                     "result_code": "CANCEL_REQUESTED",
                     "cancel_requested": True,
                     "matched_goal_count": 1,
+                }
+            ],
+        },
+    }
+
+
+def test_ros_service_uds_server_dispatches_get_action_feedback_command(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    action_client = FakeGoalPoseActionClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=action_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "get_action_feedback",
+                        "payload": {
+                            "task_id": "task_delivery_001",
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert response == {
+        "ok": True,
+        "payload": {
+            "result_code": "FOUND",
+            "task_id": "task_delivery_001",
+            "action_name": None,
+            "feedback": [
+                {
+                    "client": "navigation",
+                    "task_id": "task_delivery_001",
+                    "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                    "action_type": "navigation",
+                    "feedback_type": "NAVIGATION_FEEDBACK",
+                    "received_at": "2026-04-28T00:00:00+00:00",
+                    "payload": {
+                        "nav_status": "MOVING",
+                        "distance_remaining_m": 1.25,
+                    },
                 }
             ],
         },

@@ -280,6 +280,62 @@ def test_async_rpc_dispatch_prefers_async_method_alias(control_service_server):
     assert response.payload == {"summary": {"available_robot_count": 3}}
 
 
+def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
+    class FakeCaregiverService:
+        def get_dashboard_summary(self):
+            return {"available_robot_count": 1, "waiting_job_count": 0, "running_job_count": 1}
+
+        def get_robot_board_data(self):
+            return []
+
+        def get_flow_board_data(self):
+            return {
+                "READY": [],
+                "ASSIGNED": [],
+                "RUNNING": [
+                    {
+                        "task_id": 101,
+                        "task_status": "RUNNING",
+                        "description": "delivery task",
+                    }
+                ],
+                "DONE": [],
+            }
+
+        def get_timeline_data(self):
+            return []
+
+    class FakeActionFeedbackService:
+        def get_latest_feedback(self, *, task_id):
+            return {
+                "result_code": "FOUND",
+                "task_id": str(task_id),
+                "feedback": [
+                    {
+                        "client": "navigation",
+                        "feedback_type": "NAVIGATION_FEEDBACK",
+                        "payload": {
+                            "nav_status": "MOVING",
+                            "distance_remaining_m": 1.25,
+                        },
+                    }
+                ],
+            }
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        FakeCaregiverService,
+    ), patch(
+        "server.ropi_main_service.transport.tcp_server.RosActionFeedbackService",
+        FakeActionFeedbackService,
+    ):
+        bundle = tcp_server.CaregiverFacade().get_dashboard_bundle()
+
+    task = bundle["flow_data"]["RUNNING"][0]
+    assert task["feedback"]["feedback_type"] == "NAVIGATION_FEEDBACK"
+    assert task["feedback_summary"] == "MOVING / 남은 거리 1.25m"
+
+
 def test_async_rpc_dispatch_offloads_sync_service_method(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,

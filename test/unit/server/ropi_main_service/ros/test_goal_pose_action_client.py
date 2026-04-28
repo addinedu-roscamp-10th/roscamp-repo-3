@@ -6,6 +6,7 @@ from server.ropi_main_service.ros.goal_pose_action_client import RclpyGoalPoseAc
 from test_support.ros_action import (
     FakeActionClient,
     FakeActionResultWrapper,
+    FakeFuture,
     FakeGoalHandle,
 )
 
@@ -63,6 +64,18 @@ class _Result:
         self.result_message = ""
         self.final_pose = _PoseStamped()
         self.finished_at = _Stamp()
+
+
+class _Feedback:
+    def __init__(self):
+        self.nav_status = "MOVING"
+        self.current_pose = _PoseStamped()
+        self.distance_remaining_m = 1.25
+
+
+class _FeedbackMessage:
+    def __init__(self):
+        self.feedback = _Feedback()
 
 
 class FakeNavigateToGoal:
@@ -229,6 +242,64 @@ def test_async_send_goal_waits_for_final_if_com_007_result_and_serializes_payloa
     assert goal_msg.task_id == "task_delivery_001"
     assert goal_msg.nav_phase == "DELIVERY_DESTINATION"
     assert goal_msg.goal_pose.header.frame_id == "map"
+
+
+def test_send_goal_records_latest_navigation_feedback_by_task_id():
+    class FeedbackActionClient(FakeActionClient):
+        def send_goal_async(self, goal_msg, feedback_callback=None):
+            self.sent_goals.append(goal_msg)
+            self.feedback_callback = feedback_callback
+            if feedback_callback is not None:
+                feedback_callback(_FeedbackMessage())
+            return FakeFuture(result=self.goal_handle)
+
+    def action_client_factory(node, action_type, action_name):
+        client = FeedbackActionClient(node, action_type, action_name)
+        client.goal_handle = FakeGoalHandle(
+            accepted=True,
+            result_wrapper=FakeActionResultWrapper(
+                status=4,
+                result=build_result(),
+            ),
+        )
+        return client
+
+    client = RclpyGoalPoseActionClient(
+        node="fake-node",
+        action_type_loader=lambda: FakeNavigateToGoal,
+        action_client_factory=action_client_factory,
+    )
+
+    client.send_goal(
+        action_name="/ropi/control/pinky2/navigate_to_goal",
+        goal=build_goal(),
+    )
+
+    feedback = client.get_latest_feedback(task_id="task_delivery_001")
+
+    assert feedback == [
+        {
+            "task_id": "task_delivery_001",
+            "action_name": "/ropi/control/pinky2/navigate_to_goal",
+            "action_type": "navigation",
+            "feedback_type": "NAVIGATION_FEEDBACK",
+            "received_at": feedback[0]["received_at"],
+            "payload": {
+                "nav_status": "MOVING",
+                "current_pose": {
+                    "header": {
+                        "stamp": {"sec": 0, "nanosec": 0},
+                        "frame_id": "",
+                    },
+                    "pose": {
+                        "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+                        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0},
+                    },
+                },
+                "distance_remaining_m": 1.25,
+            },
+        }
+    ]
 
 
 def test_send_goal_returns_rejected_when_ros_action_goal_is_rejected():
