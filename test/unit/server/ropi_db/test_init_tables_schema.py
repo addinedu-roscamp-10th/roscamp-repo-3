@@ -1,0 +1,122 @@
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+INIT_TABLES_SQL = REPO_ROOT / "server" / "ropi_db" / "init_tables.sql"
+INSERT_DUMMIES_SQL = REPO_ROOT / "server" / "ropi_db" / "insert_dummies.sql"
+
+
+def _ddl() -> str:
+    return INIT_TABLES_SQL.read_text(encoding="utf-8")
+
+
+def _seed_sql() -> str:
+    return INSERT_DUMMIES_SQL.read_text(encoding="utf-8")
+
+
+def test_schema_uses_member_event_without_legacy_event_type_tables():
+    ddl = _ddl()
+
+    assert "CREATE TABLE `member_event`" in ddl
+    assert "`member_event_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT" in ddl
+    assert "`event_type_code` VARCHAR(50) NOT NULL" in ddl
+    assert "`event_category` VARCHAR(30) NOT NULL" in ddl
+    assert "`severity` VARCHAR(20) NOT NULL" in ddl
+    assert "CREATE TABLE `event`" not in ddl
+    assert "CREATE TABLE `event_type`" not in ddl
+
+
+def test_schema_uses_item_table_and_unsigned_delivery_quantities():
+    ddl = _ddl()
+
+    assert "CREATE TABLE `item`" in ddl
+    assert "`item_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT" in ddl
+    assert "`item_type` VARCHAR(100) NOT NULL" in ddl
+    assert "`quantity` INT UNSIGNED NOT NULL" in ddl
+    assert "CREATE TABLE `supply`" not in ddl
+    assert "`requested_quantity` INT UNSIGNED NOT NULL" in ddl
+    assert "`loaded_quantity` INT UNSIGNED NOT NULL" in ddl
+    assert "`delivered_quantity` INT UNSIGNED NOT NULL" in ddl
+
+
+def test_schema_contains_control_task_and_log_tables():
+    ddl = _ddl()
+
+    for table_name in (
+        "task",
+        "delivery_task_detail",
+        "delivery_task_item",
+        "patrol_task_detail",
+        "patrol_task_zone",
+        "guide_task_detail",
+        "task_state_history",
+        "task_event_log",
+        "command_execution",
+        "robot_runtime_status",
+        "robot_data_log",
+        "ai_inference_log",
+        "stream_metrics_log",
+        "idempotency_record",
+    ):
+        assert f"CREATE TABLE `{table_name}`" in ddl
+
+    assert "CREATE TABLE `robot_event`" not in ddl
+    assert "CREATE TABLE `map_table`" not in ddl
+
+
+def test_schema_contains_expected_indexes():
+    ddl = _ddl()
+
+    expected_indexes = (
+        "idx_member_event_member_event_at",
+        "idx_member_event_type_event_at",
+        "idx_task_status_type_created_at",
+        "idx_task_robot_status_updated_at",
+        "idx_task_requester_created_at",
+        "idx_delivery_task_item_task",
+        "idx_delivery_task_item_item",
+        "idx_task_state_history_task_changed_at",
+        "idx_task_event_log_task_occurred_at",
+        "idx_command_execution_task_started_at",
+        "idx_command_execution_robot_started_at",
+        "idx_robot_data_log_robot_received_at",
+        "idx_robot_data_log_task_received_at",
+        "idx_stream_metrics_robot_window",
+        "idx_ai_inference_task_inferred_at",
+        "uq_idempotency",
+    )
+
+    for index_name in expected_indexes:
+        assert index_name in ddl
+
+
+def test_dummy_data_targets_current_schema_tables():
+    seed_sql = _seed_sql()
+
+    for table_name in (
+        "member",
+        "caregiver",
+        "visitor",
+        "preference",
+        "prescription",
+        "member_event",
+        "robot",
+        "item",
+        "map_profile",
+        "operation_zone",
+        "goal_pose",
+        "task",
+        "delivery_task_detail",
+        "delivery_task_item",
+        "task_state_history",
+        "task_event_log",
+        "command_execution",
+        "robot_runtime_status",
+    ):
+        assert f"INSERT INTO `{table_name}`" in seed_sql
+
+    assert "INSERT INTO `event`" not in seed_sql
+    assert "INSERT INTO `event_type`" not in seed_sql
+    assert "INSERT INTO `robot_event`" not in seed_sql
+    assert "INSERT INTO `supply`" not in seed_sql
+    assert "INSERT INTO `map_table`" not in seed_sql
