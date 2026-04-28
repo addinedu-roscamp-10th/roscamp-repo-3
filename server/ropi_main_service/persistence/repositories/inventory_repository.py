@@ -5,29 +5,29 @@ class InventoryRepository:
     def get_all_products(self):
         query = """
             SELECT
-                supply_id AS product_id,
+                CAST(item_id AS CHAR) AS item_id,
                 item_name,
                 quantity,
-                supply_type,
+                item_type,
                 created_at,
                 updated_at
-            FROM supply
+            FROM item
             ORDER BY item_name
         """
         return fetch_all(query)
 
-    def add_quantity(self, product_id, quantity):
+    def add_quantity(self, item_id, quantity):
         conn = get_connection()
         try:
             with conn.cursor() as cur:
                 query = """
-                    UPDATE supply
+                    UPDATE item
                     SET
                         quantity = quantity + %s,
                         updated_at = NOW()
-                    WHERE supply_id = %s
+                    WHERE item_id = %s
                 """
-                cur.execute(query, (quantity, product_id))
+                cur.execute(query, (quantity, item_id))
                 conn.commit()
                 return cur.rowcount > 0
         finally:

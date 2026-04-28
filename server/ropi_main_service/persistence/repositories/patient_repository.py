@@ -20,10 +20,13 @@ class PatientRepository:
         query = """
             SELECT
                 event_at,
-                description
-            FROM event
+                description,
+                event_type_code,
+                event_type_name,
+                severity
+            FROM member_event
             WHERE member_id = %s
-            ORDER BY event_at DESC, event_id DESC
+            ORDER BY event_at DESC, member_event_id DESC
             LIMIT %s
         """
         return fetch_all(query, (member_id, limit))

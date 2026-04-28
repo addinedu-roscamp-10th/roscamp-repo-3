@@ -7,14 +7,12 @@ class VisitorInfoRepository:
             SELECT
                 m.member_name AS name,
                 m.room_no AS room,
-                MAX(CASE WHEN et.event_type_name = '식사' THEN e.event_name END) AS meal_status,
-                MAX(CASE WHEN et.event_type_name = '복약' THEN e.event_name END) AS medication_status,
-                MAX(CASE WHEN et.event_type_name = '낙상' THEN e.event_name END) AS fall_risk
+                MAX(CASE WHEN e.event_type_code = 'MEAL_RECORDED' THEN e.event_name END) AS meal_status,
+                MAX(CASE WHEN e.event_type_code = 'MEDICATION_RECORDED' THEN e.event_name END) AS medication_status,
+                MAX(CASE WHEN e.event_type_code = 'FALL_DETECTED' THEN e.event_name END) AS fall_risk
             FROM member m
-            LEFT JOIN event e
+            LEFT JOIN member_event e
               ON m.member_id = e.member_id
-            LEFT JOIN event_type et
-              ON e.event_type_id = et.event_type_id
             WHERE m.member_name LIKE %s
                OR m.room_no LIKE %s
             GROUP BY m.member_id, m.member_name, m.room_no

@@ -57,7 +57,7 @@ class DeliverySubmitWorker(QObject):
 
 class DeliveryRequestForm(QWidget, InlineStatusMixin):
     DESTINATION_OPTIONS = (
-        ("목적지(room2)", "room2"),
+        ("301호", "delivery_room_301"),
     )
     PRIORITY_LABEL_TO_CODE = {
         "일반": "NORMAL",
@@ -245,7 +245,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
             self.show_inline_status("유효한 물품을 선택하세요.", "warning")
             return None
 
-        item_id = str(item.get("item_id") or f"supply_{item.get('product_id', '')}").strip()
+        item_id = str(item.get("item_id") or "").strip()
         if not item_id:
             self.show_inline_status("물품 식별자를 확인할 수 없습니다.", "warning")
             return None

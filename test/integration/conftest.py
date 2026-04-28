@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
+from server.ropi_main_service.persistence.connection import fetch_one
 from ui.utils.network import tcp_client
 
 
@@ -149,7 +150,7 @@ def control_server(ros_service_stub):
             "PYTHONUNBUFFERED": "1",
             "ROPI_ROS_SERVICE_SOCKET_PATH": ros_service_stub["socket_path"],
             "ROPI_DELIVERY_PICKUP_GOAL_POSE": "1.5,2.5,1.57",
-            "ROPI_DELIVERY_DESTINATION_GOAL_POSES": "room2=12.0,2.0,0.0",
+            "ROPI_DELIVERY_DESTINATION_GOAL_POSES": "delivery_room_301=12.0,2.0,0.0",
             "ROPI_RETURN_TO_DOCK_GOAL_POSE": "0.5,0.5,3.14",
         },
     )
@@ -182,3 +183,31 @@ def patched_ui_endpoint(control_server, monkeypatch):
     monkeypatch.setattr(tcp_client, "CONTROL_SERVER_PORT", control_server["port"])
     monkeypatch.setattr(tcp_client, "CONTROL_SERVER_TIMEOUT", 5.0)
     return control_server
+
+
+@pytest.fixture
+def runtime_delivery_schema():
+    required_tables = (
+        "item",
+        "task",
+        "delivery_task_item",
+        "member_event",
+        "goal_pose",
+        "caregiver",
+    )
+    quoted_tables = ", ".join(f"'{table}'" for table in required_tables)
+
+    try:
+        row = fetch_one(
+            f"""
+            SELECT COUNT(*) AS table_count
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name IN ({quoted_tables})
+            """
+        )
+    except Exception as exc:
+        pytest.skip(f"MariaDB runtime schema를 확인할 수 없습니다: {exc}")
+
+    if int(row["table_count"]) != len(required_tables):
+        pytest.skip("MariaDB가 새 운반 task 스키마로 마이그레이션되지 않았습니다.")

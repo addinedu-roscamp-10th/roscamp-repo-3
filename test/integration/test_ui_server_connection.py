@@ -16,7 +16,7 @@ def run_ui_server_connection_check() -> tuple[dict, dict]:
     login = send_request(
         "LOGIN",
         {
-            "login_id": "VIS001",
+            "login_id": "1",
             "password": "1234",
             "role": "visitor",
         },

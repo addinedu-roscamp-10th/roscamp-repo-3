@@ -113,10 +113,10 @@ def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_se
         sequence_no=5,
         payload={
             "request_id": "req_001",
-            "caregiver_id": "cg_001",
-            "item_id": "supply_001",
+            "caregiver_id": "1",
+            "item_id": "1",
             "quantity": 1,
-            "destination_id": "room2",
+            "destination_id": "delivery_room_301",
             "priority": "NORMAL",
             "notes": "delivery test",
             "idempotency_key": "idem_001",
@@ -128,7 +128,7 @@ def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_se
         return_value={
             "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
             "destination_goal_poses": {
-                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
             },
             "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
         },
@@ -152,8 +152,8 @@ def test_delivery_create_task_rejects_unknown_destination_id(control_service_ser
         sequence_no=6,
         payload={
             "request_id": "req_001",
-            "caregiver_id": "cg_001",
-            "item_id": "supply_001",
+            "caregiver_id": "1",
+            "item_id": "1",
             "quantity": 1,
             "destination_id": "room1",
             "priority": "NORMAL",
@@ -167,7 +167,7 @@ def test_delivery_create_task_rejects_unknown_destination_id(control_service_ser
         return_value={
             "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
             "destination_goal_poses": {
-                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
             },
             "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
         },
@@ -188,10 +188,10 @@ def test_delivery_create_task_logs_ros_runtime_readiness_details(control_service
         sequence_no=7,
         payload={
             "request_id": "req_001",
-            "caregiver_id": "cg_001",
-            "item_id": "supply_001",
+            "caregiver_id": "1",
+            "item_id": "1",
             "quantity": 1,
-            "destination_id": "room2",
+            "destination_id": "delivery_room_301",
             "priority": "NORMAL",
             "notes": "delivery test",
             "idempotency_key": "idem_001",
@@ -205,7 +205,7 @@ def test_delivery_create_task_logs_ros_runtime_readiness_details(control_service
         return_value={
             "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
             "destination_goal_poses": {
-                "room2": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
             },
             "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
         },

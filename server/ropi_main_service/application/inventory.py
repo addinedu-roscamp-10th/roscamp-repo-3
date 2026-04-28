@@ -21,7 +21,7 @@ class InventoryService:
         if product is None:
             return False, "선택한 물품을 찾을 수 없습니다."
 
-        updated = self.repository.add_quantity(product["product_id"], quantity)
+        updated = self.repository.add_quantity(product["item_id"], quantity)
         if not updated:
             return False, "재고 수량을 업데이트하지 못했습니다."
 

@@ -173,7 +173,7 @@ class DeliveryRequestService:
         reason_code=None,
         task_id=None,
         task_status=None,
-        assigned_pinky_id=None,
+        assigned_robot_id=None,
     ):
         return {
             "result_code": result_code,
@@ -181,7 +181,7 @@ class DeliveryRequestService:
             "reason_code": reason_code,
             "task_id": task_id,
             "task_status": task_status,
-            "assigned_pinky_id": assigned_pinky_id,
+            "assigned_robot_id": assigned_robot_id,
         }
 
     @staticmethod

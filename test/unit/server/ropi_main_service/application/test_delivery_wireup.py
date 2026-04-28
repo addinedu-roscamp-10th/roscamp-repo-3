@@ -22,10 +22,10 @@ class FakeDeliveryWorkflowStarter:
 def build_request_payload():
     return {
         "request_id": "req_001",
-        "caregiver_id": "cg_001",
-        "item_id": "supply_001",
+        "caregiver_id": "1",
+        "item_id": "1",
         "quantity": 2,
-        "destination_id": "room2",
+        "destination_id": "delivery_room_301",
         "priority": "NORMAL",
         "notes": "Medication after meals",
         "idempotency_key": "idem_delivery_001",
@@ -38,9 +38,9 @@ def test_create_delivery_task_starts_delivery_workflow_after_acceptance():
             "result_code": "ACCEPTED",
             "result_message": None,
             "reason_code": None,
-            "task_id": "task_delivery_001",
+            "task_id": 101,
             "task_status": "WAITING_DISPATCH",
-            "assigned_pinky_id": "pinky2",
+            "assigned_robot_id": "pinky2",
         }
     )
     workflow_starter = FakeDeliveryWorkflowStarter()
@@ -54,10 +54,10 @@ def test_create_delivery_task_starts_delivery_workflow_after_acceptance():
     assert response["result_code"] == "ACCEPTED"
     assert workflow_starter.calls == [
         {
-            "task_id": "task_delivery_001",
-            "item_id": "supply_001",
+            "task_id": "101",
+            "item_id": "1",
             "quantity": 2,
-            "destination_id": "room2",
+            "destination_id": "delivery_room_301",
         }
     ]
 
@@ -70,7 +70,7 @@ def test_create_delivery_task_does_not_start_delivery_workflow_when_request_is_r
             "reason_code": "ITEM_NOT_FOUND",
             "task_id": None,
             "task_status": None,
-            "assigned_pinky_id": None,
+            "assigned_robot_id": None,
         }
     )
     workflow_starter = FakeDeliveryWorkflowStarter()

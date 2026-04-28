@@ -2,8 +2,6 @@ from server.ropi_main_service.persistence.connection import get_connection
 
 
 class VisitorRegisterRepository:
-    EVENT_TYPE_ID = 4
-
     def create_visitor_registration(
         self,
         visitor_name: str,
@@ -21,21 +19,32 @@ class VisitorRegisterRepository:
         conn = get_connection()
         try:
             with conn.cursor() as cur:
-                target_member_id = str(member_id) if member_id else self._find_member_id(cur, patient_name)
+                target_member_id = self._normalize_member_id(member_id) if member_id else self._find_member_id(cur, patient_name)
                 cur.execute(
                     """
-                    INSERT INTO event (
+                    INSERT INTO member_event (
+                        member_id,
+                        event_type_code,
+                        event_type_name,
+                        event_category,
+                        severity,
                         event_name,
                         description,
                         event_at,
-                        member_id,
-                        event_type_id,
                         created_at,
                         updated_at
                     )
-                    VALUES (%s, %s, NOW(), %s, %s, NOW(), NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW())
                     """,
-                    ("방문 등록", description, target_member_id, self.EVENT_TYPE_ID),
+                    (
+                        target_member_id,
+                        "VISIT_CHECKIN",
+                        "방문 등록",
+                        "VISIT",
+                        "INFO",
+                        "방문 등록",
+                        description,
+                    ),
                 )
                 conn.commit()
                 return True, "방문 등록이 완료되었습니다."
@@ -57,7 +66,14 @@ class VisitorRegisterRepository:
             (patient_name,),
         )
         row = cur.fetchone()
-        return row["member_id"] if row else "MEM001"
+        return row["member_id"] if row else 1
+
+    @staticmethod
+    def _normalize_member_id(member_id):
+        raw = str(member_id or "").strip()
+        if raw.isdigit():
+            return int(raw)
+        return 1
 
 
 __all__ = ["VisitorRegisterRepository"]

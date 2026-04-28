@@ -21,6 +21,8 @@ load_dotenv(PROJECT_ROOT / ".env")
 DEFAULT_DELIVERY_PINKY_ID = "pinky2"
 DEFAULT_DELIVERY_PICKUP_ARM_ID = "arm1"
 DEFAULT_DELIVERY_DESTINATION_ARM_ID = "arm2"
+DEFAULT_DELIVERY_PICKUP_ARM_ROBOT_ID = "jetcobot1"
+DEFAULT_DELIVERY_DESTINATION_ARM_ROBOT_ID = "jetcobot2"
 DEFAULT_DELIVERY_ROBOT_SLOT_ID = "robot_slot_a1"
 DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC = 120.0
 
@@ -30,6 +32,8 @@ class DeliveryRuntimeConfig:
     pinky_id: str = DEFAULT_DELIVERY_PINKY_ID
     pickup_arm_id: str = DEFAULT_DELIVERY_PICKUP_ARM_ID
     destination_arm_id: str = DEFAULT_DELIVERY_DESTINATION_ARM_ID
+    pickup_arm_robot_id: str = DEFAULT_DELIVERY_PICKUP_ARM_ROBOT_ID
+    destination_arm_robot_id: str = DEFAULT_DELIVERY_DESTINATION_ARM_ROBOT_ID
     robot_slot_id: str = DEFAULT_DELIVERY_ROBOT_SLOT_ID
     navigation_timeout_sec: float = DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC
 
@@ -63,6 +67,14 @@ def get_delivery_runtime_config() -> DeliveryRuntimeConfig:
         destination_arm_id=_load_text_env(
             "ROPI_DELIVERY_DESTINATION_ARM_ID",
             default=DEFAULT_DELIVERY_DESTINATION_ARM_ID,
+        ),
+        pickup_arm_robot_id=_load_text_env(
+            "ROPI_DELIVERY_PICKUP_ARM_ROBOT_ID",
+            default=DEFAULT_DELIVERY_PICKUP_ARM_ROBOT_ID,
+        ),
+        destination_arm_robot_id=_load_text_env(
+            "ROPI_DELIVERY_DESTINATION_ARM_ROBOT_ID",
+            default=DEFAULT_DELIVERY_DESTINATION_ARM_ROBOT_ID,
         ),
         robot_slot_id=_load_text_env("ROPI_DELIVERY_ROBOT_SLOT_ID", default=DEFAULT_DELIVERY_ROBOT_SLOT_ID),
         navigation_timeout_sec=_load_float_env(

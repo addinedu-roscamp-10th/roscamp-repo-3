@@ -36,24 +36,36 @@ class VisitGuideRepository:
 
     def create_robot_guide_event(self, patient_name: str, room_no: str, member_id=None):
         description = f"[면회 안내] 대상={patient_name}, 목적지={room_no or '미지정'}, 안내 시작 요청"
+        target_member_id = self._normalize_member_id(member_id)
 
         conn = get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO event (
+                    INSERT INTO member_event (
+                        member_id,
+                        event_type_code,
+                        event_type_name,
+                        event_category,
+                        severity,
                         event_name,
                         description,
                         event_at,
-                        member_id,
-                        event_type_id,
                         created_at,
                         updated_at
                     )
-                    VALUES (%s, %s, NOW(), %s, %s, NOW(), NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW())
                     """,
-                    ("안내 요청", description, str(member_id) if member_id else "MEM001", 4),
+                    (
+                        target_member_id,
+                        "GUIDE_REQUESTED",
+                        "안내 요청",
+                        "VISIT",
+                        "INFO",
+                        "안내 요청",
+                        description,
+                    ),
                 )
                 conn.commit()
                 return True, "로봇 안내 요청이 접수되었습니다."
@@ -62,6 +74,13 @@ class VisitGuideRepository:
             return False, f"로봇 안내 요청 등록 중 오류가 발생했습니다: {exc}"
         finally:
             conn.close()
+
+    @staticmethod
+    def _normalize_member_id(member_id):
+        raw = str(member_id or "").strip()
+        if raw.isdigit():
+            return int(raw)
+        return 1
 
 
 __all__ = ["VisitGuideRepository"]

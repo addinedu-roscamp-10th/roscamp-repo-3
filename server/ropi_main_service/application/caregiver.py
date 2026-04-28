@@ -34,8 +34,8 @@ class CaregiverService:
                 "robot_name": row["robot_id"],
                 "status": status,
                 "zone": row["current_location"] or "-",
-                "battery": "-",
-                "current_task": row["current_task"] or "-",
+                "battery": row.get("battery_percent") if row.get("battery_percent") is not None else "-",
+                "current_task": row.get("current_task_phase") or row.get("current_task_status") or "-",
                 "chip_type": chip_type,
             })
 
@@ -64,18 +64,18 @@ class CaregiverService:
         }
 
         for row in rows:
-            event_id = row["robot_event_id"]
+            event_id = row["event_id"]
             robot_id = row["robot_id"] or "-"
             desc = row["description"] or "-"
-            event_type = row["robot_event_type"]
+            event_type = row["event_type"]
 
             item_text = f"#{event_id} {desc} / {robot_id}"
 
-            if "대기" in desc:
+            if event_type in ("WAITING", "WAITING_DISPATCH"):
                 flow_data["READY"].append(item_text)
-            elif event_type in ("운반", "READY", "ASSIGNED"):
+            elif event_type in ("READY", "ASSIGNED"):
                 flow_data["ASSIGNED"].append(item_text)
-            elif event_type in ("순찰", "RUNNING"):
+            elif event_type == "RUNNING":
                 flow_data["RUNNING"].append(item_text)
             else:
                 flow_data["DONE"].append(item_text)

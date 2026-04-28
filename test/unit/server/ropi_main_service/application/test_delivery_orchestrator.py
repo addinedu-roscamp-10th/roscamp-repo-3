@@ -102,7 +102,7 @@ def test_run_delivery_workflow_executes_pickup_load_destination_unload_in_order(
 
     response = orchestrator.run(
         task_id="task_delivery_001",
-        item_id="supply_001",
+        item_id="1",
         quantity=2,
         destination_id="room2",
     )
@@ -136,14 +136,14 @@ def test_run_delivery_workflow_executes_pickup_load_destination_unload_in_order(
             "arm_id": "arm1",
             "task_id": "task_delivery_001",
             "transfer_direction": "TO_ROBOT",
-            "item_id": "supply_001",
+            "item_id": "1",
             "quantity": 2,
         },
         {
             "arm_id": "arm2",
             "task_id": "task_delivery_001",
             "transfer_direction": "FROM_ROBOT",
-            "item_id": "supply_001",
+            "item_id": "1",
             "quantity": 2,
         },
     ]
@@ -169,7 +169,7 @@ def test_run_delivery_workflow_stops_after_pickup_navigation_failure():
 
     response = orchestrator.run(
         task_id="task_delivery_001",
-        item_id="supply_001",
+        item_id="1",
         quantity=2,
         destination_id="room2",
     )
@@ -200,7 +200,7 @@ def test_run_delivery_workflow_stops_when_destination_goal_pose_is_missing():
 
     response = orchestrator.run(
         task_id="task_delivery_001",
-        item_id="supply_001",
+        item_id="1",
         quantity=2,
         destination_id="room2",
     )
@@ -239,7 +239,7 @@ def test_run_delivery_workflow_stops_when_return_to_dock_goal_pose_is_missing():
 
     response = orchestrator.run(
         task_id="task_delivery_001",
-        item_id="supply_001",
+        item_id="1",
         quantity=2,
         destination_id="room2",
     )
@@ -276,7 +276,7 @@ def test_run_delivery_workflow_stops_after_load_failure():
 
     response = orchestrator.run(
         task_id="task_delivery_001",
-        item_id="supply_001",
+        item_id="1",
         quantity=2,
         destination_id="room2",
     )
@@ -312,7 +312,7 @@ def test_run_delivery_workflow_stops_after_destination_navigation_failure():
 
     response = orchestrator.run(
         task_id="task_delivery_001",
-        item_id="supply_001",
+        item_id="1",
         quantity=2,
         destination_id="room2",
     )
@@ -352,7 +352,7 @@ def test_run_delivery_workflow_stops_after_unload_failure():
 
     response = orchestrator.run(
         task_id="task_delivery_001",
-        item_id="supply_001",
+        item_id="1",
         quantity=2,
         destination_id="room2",
     )
@@ -390,7 +390,7 @@ def test_run_delivery_workflow_logs_failure_stage(caplog):
     with caplog.at_level(logging.INFO):
         response = orchestrator.run(
             task_id="task_delivery_001",
-            item_id="supply_001",
+            item_id="1",
             quantity=2,
             destination_id="room2",
         )
