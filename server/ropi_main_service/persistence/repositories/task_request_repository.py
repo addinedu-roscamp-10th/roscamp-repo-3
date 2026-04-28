@@ -10,6 +10,9 @@ from server.ropi_main_service.persistence.repositories.delivery_task_repository 
 from server.ropi_main_service.persistence.repositories.delivery_task_cancel_repository import (
     DeliveryTaskCancelRepository,
 )
+from server.ropi_main_service.persistence.repositories.delivery_task_result_repository import (
+    DeliveryTaskResultRepository,
+)
 from server.ropi_main_service.persistence.repositories.idempotency_repository import (
     IdempotencyRepository,
 )
@@ -31,6 +34,7 @@ class DeliveryRequestRepository:
         runtime_config=None,
         delivery_task_repository=None,
         delivery_task_cancel_repository=None,
+        delivery_task_result_repository=None,
         idempotency_repository=None,
     ):
         self.runtime_config = runtime_config or get_delivery_runtime_config()
@@ -38,6 +42,7 @@ class DeliveryRequestRepository:
             runtime_config=self.runtime_config
         )
         self.delivery_task_cancel_repository = delivery_task_cancel_repository or DeliveryTaskCancelRepository()
+        self.delivery_task_result_repository = delivery_task_result_repository or DeliveryTaskResultRepository()
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
 
     def get_all_products(self):
@@ -331,6 +336,18 @@ class DeliveryRequestRepository:
 
     async def async_record_delivery_task_cancelled_result(self, *, task_id, workflow_response):
         return await self.delivery_task_cancel_repository.async_record_delivery_task_cancelled_result(
+            task_id=task_id,
+            workflow_response=workflow_response,
+        )
+
+    def record_delivery_task_workflow_result(self, *, task_id, workflow_response):
+        return self.delivery_task_result_repository.record_delivery_task_workflow_result(
+            task_id=task_id,
+            workflow_response=workflow_response,
+        )
+
+    async def async_record_delivery_task_workflow_result(self, *, task_id, workflow_response):
+        return await self.delivery_task_result_repository.async_record_delivery_task_workflow_result(
             task_id=task_id,
             workflow_response=workflow_response,
         )

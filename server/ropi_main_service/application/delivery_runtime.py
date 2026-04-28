@@ -37,6 +37,17 @@ def _is_cancelled_workflow_response(result):
     }
 
 
+def _normalize_workflow_response(result):
+    if isinstance(result, dict):
+        return result
+
+    return {
+        "result_code": "FAILED",
+        "result_message": f"delivery workflow returned non-dict result: {result!r}",
+        "reason_code": "WORKFLOW_RESULT_INVALID",
+    }
+
+
 def _build_delivery_precheck_helpers(
     *,
     pickup_goal_pose,
@@ -249,6 +260,18 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
                     extra={"task_id": task_id},
                 )
 
+        async def _record_workflow_result(*, task_id, workflow_response):
+            try:
+                await delivery_request_repository.async_record_delivery_task_workflow_result(
+                    task_id=task_id,
+                    workflow_response=workflow_response,
+                )
+            except Exception:
+                logger.exception(
+                    "delivery workflow result persistence failed",
+                    extra={"task_id": task_id},
+                )
+
         def _start_delivery_workflow(**kwargs):
             async_run = getattr(orchestrator, "async_run", None)
             if async_run is not None:
@@ -259,10 +282,21 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
             def _handle_background_task_done(task: asyncio.Task):
                 try:
                     result = task.result()
-                except Exception:
+                except Exception as exc:
                     logger.exception("delivery workflow background task failed", extra={"task_id": kwargs.get("task_id")})
+                    loop.create_task(
+                        _record_workflow_result(
+                            task_id=kwargs.get("task_id"),
+                            workflow_response={
+                                "result_code": "FAILED",
+                                "result_message": f"delivery workflow background task failed: {exc}",
+                                "reason_code": "WORKFLOW_UNHANDLED_EXCEPTION",
+                            },
+                        )
+                    )
                     return
 
+                result = _normalize_workflow_response(result)
                 level = logging.INFO if str(result.get("result_code") or "").upper() == "SUCCESS" else logging.WARNING
                 log_event(
                     logger,
@@ -280,6 +314,14 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
                             workflow_response=result,
                         )
                     )
+                    return
+
+                loop.create_task(
+                    _record_workflow_result(
+                        task_id=kwargs.get("task_id"),
+                        workflow_response=result,
+                    )
+                )
 
             background_task.add_done_callback(_handle_background_task_done)
 
