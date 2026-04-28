@@ -5,6 +5,9 @@ from server.ropi_main_service.application.action_feedback_sampling import (
     FeedbackSamplingGate,
 )
 from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
+from server.ropi_main_service.persistence.background_db_writer import (
+    get_default_background_db_writer,
+)
 from server.ropi_main_service.persistence.repositories.robot_data_log_repository import (
     RobotDataLogRepository,
 )
@@ -20,6 +23,7 @@ class RosActionFeedbackService:
         *,
         command_client=None,
         robot_data_log_repository=None,
+        robot_data_log_writer=None,
         runtime_config=None,
         feedback_sample_builder=None,
         feedback_sampling_gate=None,
@@ -28,6 +32,7 @@ class RosActionFeedbackService:
     ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
         self.robot_data_log_repository = robot_data_log_repository or RobotDataLogRepository()
+        self.robot_data_log_writer = robot_data_log_writer or get_default_background_db_writer()
         self.feedback_sample_builder = feedback_sample_builder or ActionFeedbackSampleBuilder(
             runtime_config=runtime_config
         )
@@ -93,10 +98,7 @@ class RosActionFeedbackService:
             if sample is None or not self.feedback_sampling_gate.should_sample(feedback):
                 continue
 
-            try:
-                await self.robot_data_log_repository.async_insert_feedback_sample(**sample)
-            except Exception:
-                continue
+            self.robot_data_log_writer.enqueue_robot_data_log_sample(sample)
 
 
 __all__ = ["RosActionFeedbackService"]

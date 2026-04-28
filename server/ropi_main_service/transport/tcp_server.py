@@ -21,6 +21,9 @@ from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.application.visitor_info import VisitorInfoService
 from server.ropi_main_service.application.visitor_register import VisitorRegisterService
 from server.ropi_main_service.observability import configure_logging, log_event
+from server.ropi_main_service.persistence.background_db_writer import (
+    get_default_background_db_writer,
+)
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
@@ -164,6 +167,7 @@ class ControlServiceServer:
         self.host = host
         self.port = port
         self._server = None
+        self.db_writer = get_default_background_db_writer()
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         payload = frame.payload or {}
@@ -375,6 +379,7 @@ class ControlServiceServer:
         return self._success_response(frame, result)
 
     async def start(self):
+        self.db_writer.start()
         self._server = await asyncio.start_server(
             self._handle_client,
             host=self.host,
@@ -404,8 +409,11 @@ class ControlServiceServer:
         if self._server is None:
             await self.start()
 
-        async with self._server:
-            await self._server.serve_forever()
+        try:
+            async with self._server:
+                await self._server.serve_forever()
+        finally:
+            await self.db_writer.stop()
 
     async def _handle_client(
         self,

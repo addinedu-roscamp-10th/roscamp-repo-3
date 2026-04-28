@@ -51,6 +51,15 @@ class FakeRobotDataLogRepository:
         self.samples.append({"mode": "async", **kwargs})
 
 
+class FakeRobotDataLogWriter:
+    def __init__(self):
+        self.samples = []
+
+    def enqueue_robot_data_log_sample(self, sample):
+        self.samples.append(sample)
+        return True
+
+
 def test_action_feedback_sample_builder_skips_unknown_robot_action_name():
     builder = ActionFeedbackSampleBuilder(runtime_config=DeliveryRuntimeConfig())
 
@@ -181,9 +190,11 @@ def test_async_get_latest_feedback_samples_manipulation_feedback_with_arm_robot_
         ],
     }
     robot_data_log_repository = FakeRobotDataLogRepository()
+    robot_data_log_writer = FakeRobotDataLogWriter()
     service = RosActionFeedbackService(
         command_client=command_client,
         robot_data_log_repository=robot_data_log_repository,
+        robot_data_log_writer=robot_data_log_writer,
         runtime_config=DeliveryRuntimeConfig(
             pickup_arm_id="arm1",
             pickup_arm_robot_id="jetcobot1",
@@ -193,9 +204,9 @@ def test_async_get_latest_feedback_samples_manipulation_feedback_with_arm_robot_
 
     asyncio.run(service.async_get_latest_feedback(task_id=101))
 
-    assert robot_data_log_repository.samples == [
+    assert robot_data_log_repository.samples == []
+    assert robot_data_log_writer.samples == [
         {
-            "mode": "async",
             "robot_id": "jetcobot1",
             "task_id": 101,
             "data_type": "MANIPULATION_FEEDBACK",
