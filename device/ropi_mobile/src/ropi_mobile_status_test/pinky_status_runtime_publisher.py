@@ -18,6 +18,20 @@ from ropi_interface.msg import PinkyStatus
 FAST_STATES = {"EXECUTING", "RETURNING_TO_DOCK"}
 SLOW_PERIOD_SEC = 1.0
 FAST_PERIOD_SEC = 0.2
+SPEC_PINKY_STATES = {
+    "IDLE",
+    "EXECUTING",
+    "RETURNING_TO_DOCK",
+    "DOCK_IDLE",
+    "CHARGING",
+    "FAULT_RECOVERY",
+}
+SPEC_CHARGING_STATES = {
+    "NOT_CHARGING",
+    "CHARGING",
+    "CHARGE_COMPLETE",
+    "CHARGING_FAULT",
+}
 
 
 @dataclass
@@ -38,15 +52,15 @@ class PinkyStatusSnapshot:
 
 
 class PinkyStatusRuntimePublisher(Node):
-    """IF-COM-005 typed Pinky status publisher for device-side testing."""
+    """IF-COM-005 typed Pinky status publisher using ropi_interface.msg.PinkyStatus."""
 
     def __init__(self):
         super().__init__("pinky_status_runtime_publisher")
 
         self.declare_parameter("pinky_id", "pinky2")
         self.declare_parameter("frame_id", "map")
-        self.declare_parameter("pose_topic", "/transport/current_goal")
-        self.declare_parameter("odom_topic", "")
+        self.declare_parameter("pose_topic", "")
+        self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("battery_topic", "")
         self.declare_parameter("state_topic", "/transport/amr_status")
         self.declare_parameter("task_topic", "")
@@ -60,15 +74,22 @@ class PinkyStatusRuntimePublisher(Node):
         self.declare_parameter("fallback_battery_percent", 0.0)
         self.declare_parameter("fallback_battery_voltage", 0.0)
         self.declare_parameter("fallback_fail_code", "")
+        self.declare_parameter("use_pinkylib_battery", False)
+        self.declare_parameter("battery_poll_period_sec", 2.0)
 
         self._pinky_id = str(self.get_parameter("pinky_id").value)
         self._default_frame_id = str(self.get_parameter("frame_id").value)
         self._last_measurement = None
+        self._battery = None
 
         self._snapshot = PinkyStatusSnapshot(
-            pinky_state=str(self.get_parameter("fallback_state").value),
+            pinky_state=self._normalize_pinky_state(
+                str(self.get_parameter("fallback_state").value)
+            ),
             active_task_id=str(self.get_parameter("fallback_active_task_id").value),
-            charging_state=str(self.get_parameter("fallback_charging_state").value),
+            charging_state=self._normalize_charging_state(
+                str(self.get_parameter("fallback_charging_state").value)
+            ),
             docked=bool(self.get_parameter("fallback_docked").value),
             battery_percent=float(self.get_parameter("fallback_battery_percent").value),
             battery_voltage=float(self.get_parameter("fallback_battery_voltage").value),
@@ -125,10 +146,65 @@ class PinkyStatusRuntimePublisher(Node):
             self.create_subscription(String, fail_topic, self._on_fail, qos)
             self.get_logger().info(f"Using fail source topic: {fail_topic}")
 
+        self._configure_pinkylib_battery()
         self.add_on_set_parameters_callback(self._on_parameters_changed)
         self._timer = self.create_timer(self._target_period_sec(), self._on_timer)
         self.get_logger().info(f"Publishing IF-COM-005 Pinky status on {topic_name}")
         self._publish_snapshot()
+
+    @staticmethod
+    def _normalize_pinky_state(raw_state: str) -> str:
+        value = str(raw_state or "").strip().upper()
+        if not value:
+            return "IDLE"
+        if value in SPEC_PINKY_STATES:
+            return value
+        if value.startswith("MOVING_") or value.endswith("_WORKING"):
+            return "EXECUTING"
+        if value == "MOVING":
+            return "EXECUTING"
+        if value == "ARRIVED":
+            return "IDLE"
+        if value in {"RETURNING_HOME", "DOCKING"}:
+            return "RETURNING_TO_DOCK"
+        if value in {"DONE", "AMR_REJECTED"} or value.endswith("_REJECTED"):
+            return "IDLE"
+        if value in {"FAILED", "AMR_FAILED"} or value.endswith("_FAILED"):
+            return "FAULT_RECOVERY"
+        return value
+
+    @staticmethod
+    def _normalize_charging_state(raw_state: str) -> str:
+        value = str(raw_state or "").strip().upper()
+        if not value or value == "UNKNOWN":
+            return "NOT_CHARGING"
+        if value in SPEC_CHARGING_STATES:
+            return value
+        return value
+
+    def _configure_pinkylib_battery(self):
+        if not bool(self.get_parameter("use_pinkylib_battery").value):
+            return
+        try:
+            from pinkylib import Battery
+
+            self._battery = Battery()
+            poll_period_sec = max(float(self.get_parameter("battery_poll_period_sec").value), 0.2)
+            self.create_timer(poll_period_sec, self._poll_pinkylib_battery)
+            self.get_logger().info("Using pinkylib Battery for runtime battery telemetry")
+        except Exception as exc:  # pragma: no cover - depends on Pinky runtime
+            self.get_logger().warning(f"pinkylib Battery unavailable: {exc}")
+
+    def _poll_pinkylib_battery(self):
+        if self._battery is None:
+            return
+        try:
+            self._snapshot.battery_percent = float(self._battery.battery_percentage())
+            self._snapshot.battery_voltage = float(self._battery.get_voltage())
+            self._mark_measured_now()
+        except Exception as exc:  # pragma: no cover - depends on Pinky runtime
+            self.get_logger().warning(f"Failed to poll pinkylib Battery: {exc}")
+            self._battery = None
 
     def _target_period_sec(self) -> float:
         state = str(self._snapshot.pinky_state or "").strip().upper()
@@ -198,7 +274,7 @@ class PinkyStatusRuntimePublisher(Node):
         self._mark_measured_now()
 
     def _on_state(self, msg: String):
-        value = msg.data.strip() or self._snapshot.pinky_state
+        value = self._normalize_pinky_state(msg.data)
         changed = value != self._snapshot.pinky_state
         self._snapshot.pinky_state = value
         self._publish_if_changed(changed)
@@ -210,7 +286,7 @@ class PinkyStatusRuntimePublisher(Node):
         self._publish_if_changed(changed)
 
     def _on_charging(self, msg: String):
-        value = msg.data.strip() or self._snapshot.charging_state
+        value = self._normalize_charging_state(msg.data)
         changed = value != self._snapshot.charging_state
         self._snapshot.charging_state = value
         self._publish_if_changed(changed)
@@ -274,11 +350,11 @@ class PinkyStatusRuntimePublisher(Node):
     def _on_parameters_changed(self, params):
         for param in params:
             if param.name == "fallback_state":
-                self._snapshot.pinky_state = str(param.value)
+                self._snapshot.pinky_state = self._normalize_pinky_state(str(param.value))
             elif param.name == "fallback_active_task_id":
                 self._snapshot.active_task_id = str(param.value)
             elif param.name == "fallback_charging_state":
-                self._snapshot.charging_state = str(param.value)
+                self._snapshot.charging_state = self._normalize_charging_state(str(param.value))
             elif param.name == "fallback_docked":
                 self._snapshot.docked = bool(param.value)
             elif param.name == "fallback_battery_percent":
@@ -303,6 +379,12 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        battery = getattr(node, "_battery", None)
+        if battery is not None:
+            try:
+                battery.close()
+            except Exception:
+                pass
         node.destroy_node()
         rclpy.shutdown()
 

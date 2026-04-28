@@ -24,13 +24,13 @@ class PinkyStatusSnapshot:
     docked: bool = False
     battery_percent: float = 82.3
     battery_voltage: float = 24.8
-    fault_code: str = ""
+    fail_code: str = ""
     x: float = 0.0
     y: float = 0.0
     yaw_rad: float = 0.0
 
 
-class PinkyStatusJsonPublisher(Node):
+class PinkyStatusJsonTestPublisher(Node):
     """
     Copy-paste friendly IF-COM-005 publisher.
 
@@ -39,9 +39,9 @@ class PinkyStatusJsonPublisher(Node):
     """
 
     def __init__(self):
-        super().__init__("pinky_status_json_publisher")
+        super().__init__("pinky_status_json_test_publisher")
 
-        self.declare_parameter("pinky_id", "pinky_01") #핑키 id
+        self.declare_parameter("pinky_id", "pinky2") #핑키 id
         self.declare_parameter("frame_id", "map") #map 이름
         self.declare_parameter("initial_state", "IDLE")
         self.declare_parameter("initial_active_task_id", "")
@@ -49,7 +49,7 @@ class PinkyStatusJsonPublisher(Node):
         self.declare_parameter("initial_docked", False)
         self.declare_parameter("initial_battery_percent", 82.3)
         self.declare_parameter("initial_battery_voltage", 24.8)
-        self.declare_parameter("initial_fault_code", "")
+        self.declare_parameter("initial_fail_code", "")
         self.declare_parameter("simulate_motion", True)
         self.declare_parameter("pose_x", 0.0)
         self.declare_parameter("pose_y", 0.0)
@@ -66,7 +66,7 @@ class PinkyStatusJsonPublisher(Node):
             docked=bool(self.get_parameter("initial_docked").value),
             battery_percent=float(self.get_parameter("initial_battery_percent").value),
             battery_voltage=float(self.get_parameter("initial_battery_voltage").value),
-            fault_code=str(self.get_parameter("initial_fault_code").value),
+            fail_code=str(self.get_parameter("initial_fail_code").value),
             x=float(self.get_parameter("pose_x").value),
             y=float(self.get_parameter("pose_y").value),
             yaw_rad=math.radians(float(self.get_parameter("pose_yaw_deg").value)),
@@ -86,7 +86,7 @@ class PinkyStatusJsonPublisher(Node):
         self.add_on_set_parameters_callback(self._on_parameters_changed)
         self._timer = self.create_timer(self._target_period_sec(), self._on_timer)
 
-        self.get_logger().info(f"Publishing copy-paste IF-COM-005 JSON on {topic_name}")
+        self.get_logger().info(f"Publishing test IF-COM-005 JSON on {topic_name}")
         self._publish_snapshot()
 
     def _target_period_sec(self) -> float:
@@ -113,7 +113,7 @@ class PinkyStatusJsonPublisher(Node):
         return (
             snapshot.pinky_state,
             snapshot.active_task_id,
-            snapshot.fault_code,
+            snapshot.fail_code,
             snapshot.docked,
             snapshot.charging_state,
         )
@@ -128,7 +128,7 @@ class PinkyStatusJsonPublisher(Node):
             "docked": self._snapshot.docked,
             "battery_percent": float(self._snapshot.battery_percent),
             "battery_voltage": float(self._snapshot.battery_voltage),
-            "fault_code": self._snapshot.fault_code,
+            "fail_code": self._snapshot.fail_code,
             "pose": {
                 "header": {
                     "stamp": {"sec": int(now.sec), "nanosec": int(now.nanosec)},
@@ -165,7 +165,7 @@ class PinkyStatusJsonPublisher(Node):
             self.get_logger().info(
                 f"Published immediate-change eligible status: state={snapshot.pinky_state}, "
                 f"task={snapshot.active_task_id or '-'}, charging={snapshot.charging_state}, "
-                f"docked={snapshot.docked}, fault={snapshot.fault_code or '-'}"
+                f"docked={snapshot.docked}, fail={snapshot.fail_code or '-'}"
             )
         self._last_event_key = event_key
 
@@ -187,8 +187,8 @@ class PinkyStatusJsonPublisher(Node):
                 self._snapshot.battery_percent = float(param.value)
             elif param.name == "initial_battery_voltage":
                 self._snapshot.battery_voltage = float(param.value)
-            elif param.name == "initial_fault_code":
-                self._snapshot.fault_code = str(param.value)
+            elif param.name == "initial_fail_code":
+                self._snapshot.fail_code = str(param.value)
             elif param.name == "pose_x":
                 self._snapshot.x = float(param.value)
             elif param.name == "pose_y":
@@ -208,7 +208,7 @@ class PinkyStatusJsonPublisher(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PinkyStatusJsonPublisher()
+    node = PinkyStatusJsonTestPublisher()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

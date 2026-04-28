@@ -12,7 +12,7 @@ from std_msgs.msg import String
 
 
 @dataclass
-class PinkyStatusJsonView:
+class PinkyStatusCommView:
     pinky_id: str
     pinky_state: str
     active_task_id: str
@@ -20,7 +20,7 @@ class PinkyStatusJsonView:
     docked: bool
     battery_percent: float
     battery_voltage: float
-    fault_code: str
+    fail_code: str
     frame_id: str
     x: float
     y: float
@@ -32,15 +32,13 @@ class PinkyStatusJsonView:
     stale: bool
 
 
-class PinkyStatusJsonSubscriber(Node):
-    """
-    Copy-paste friendly server-side subscriber for the JSON String topic.
-    """
+class PinkyStatusCommSubscriber(Node):
+    """Simple communication-test subscriber for Pinky JSON status."""
 
     def __init__(self):
-        super().__init__("pinky_status_json_subscriber")
+        super().__init__("pinky_status_comm_subscriber")
 
-        self.declare_parameter("pinky_id", "pinky_01")
+        self.declare_parameter("pinky_id", "pinky2")
         self.declare_parameter("stale_timeout_sec", 3.0)
 
         pinky_id = self.get_parameter("pinky_id").value
@@ -74,7 +72,7 @@ class PinkyStatusJsonSubscriber(Node):
         timestamp = payload.get("timestamp", {})
         received_at = self.get_clock().now().to_msg()
 
-        view = PinkyStatusJsonView(
+        view = PinkyStatusCommView(
             pinky_id=str(payload.get("pinky_id", "")),
             pinky_state=str(payload.get("pinky_state", "")),
             active_task_id=str(payload.get("active_task_id", "")),
@@ -82,7 +80,7 @@ class PinkyStatusJsonSubscriber(Node):
             docked=bool(payload.get("docked", False)),
             battery_percent=float(payload.get("battery_percent", 0.0)),
             battery_voltage=float(payload.get("battery_voltage", 0.0)),
-            fault_code=str(payload.get("fault_code", "")),
+            fail_code=str(payload.get("fail_code", payload.get("fault_code", ""))),
             frame_id=str(pose_header.get("frame_id", "")),
             x=float(position.get("x", 0.0)),
             y=float(position.get("y", 0.0)),
@@ -127,7 +125,7 @@ class PinkyStatusJsonSubscriber(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PinkyStatusJsonSubscriber()
+    node = PinkyStatusCommSubscriber()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

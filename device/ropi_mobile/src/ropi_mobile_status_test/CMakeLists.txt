@@ -18,7 +18,6 @@ find_package(std_msgs REQUIRED)
 install(
   PROGRAMS
     pinky_status_json_test_publisher.py
-    pinky_status_json_runtime_publisher.py
     pinky_status_runtime_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )

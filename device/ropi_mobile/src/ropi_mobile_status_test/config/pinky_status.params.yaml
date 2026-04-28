@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    pinky_id: "pinky_01"
+    pinky_id: "pinky2"
     frame_id: "map"
     initial_state: "IDLE"
     initial_active_task_id: ""
@@ -8,7 +8,7 @@
     initial_docked: false
     initial_battery_percent: 82.3
     initial_battery_voltage: 24.8
-    initial_fault_code: ""
+    initial_fail_code: ""
     simulate_motion: true
     pose_x: 0.0
     pose_y: 0.0
