@@ -354,6 +354,50 @@ def test_async_delivery_create_task_uses_native_async_service(control_service_se
     assert response.payload["task_id"] == 101
 
 
+def test_async_rpc_dispatch_routes_delivery_cancel_to_async_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=19,
+        payload={
+            "service": "task_request",
+            "method": "cancel_delivery_task",
+            "kwargs": {
+                "task_id": "101",
+            },
+        },
+    )
+
+    class FakeDeliveryRequestService:
+        def cancel_delivery_task(self, **kwargs):
+            raise AssertionError("delivery cancel RPC should prefer async method")
+
+        async def async_cancel_delivery_task(self, **kwargs):
+            return {
+                "result_code": "CANCEL_REQUESTED",
+                "task_id": kwargs["task_id"],
+                "cancel_requested": True,
+            }
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"task_request": FakeDeliveryRequestService},
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("delivery cancel should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload == {
+        "result_code": "CANCEL_REQUESTED",
+        "task_id": "101",
+        "cancel_requested": True,
+    }
+
+
 def test_async_response_build_does_not_block_event_loop(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_HEARTBEAT,

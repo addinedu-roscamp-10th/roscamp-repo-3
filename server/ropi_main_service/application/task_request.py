@@ -1,6 +1,10 @@
 import asyncio
 import inspect
 
+from server.ropi_main_service.ipc.uds_client import (
+    RosServiceCommandError,
+    UnixDomainSocketCommandClient,
+)
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 
 
@@ -15,11 +19,15 @@ class DeliveryRequestService:
         delivery_workflow_starter=None,
         delivery_request_precheck=None,
         async_delivery_request_precheck=None,
+        command_client=None,
+        cancel_timeout_sec=5.0,
     ):
         self.repository = repository or DeliveryRequestRepository()
         self.delivery_workflow_starter = delivery_workflow_starter
         self.delivery_request_precheck = delivery_request_precheck
         self.async_delivery_request_precheck = async_delivery_request_precheck
+        self.command_client = command_client or UnixDomainSocketCommandClient()
+        self.cancel_timeout_sec = float(cancel_timeout_sec)
 
     def get_product_names(self):
         products = self.repository.get_all_products()
@@ -141,6 +149,52 @@ class DeliveryRequestService:
         )
         return response
 
+    def cancel_delivery_task(self, task_id, action_name=None):
+        invalid_response = self._validate_cancel_delivery_task_request(task_id=task_id)
+        if invalid_response is not None:
+            return invalid_response
+
+        payload = self._build_cancel_action_payload(task_id=task_id, action_name=action_name)
+        try:
+            return self.command_client.send_command(
+                "cancel_action",
+                payload,
+                timeout=self.cancel_timeout_sec,
+            )
+        except RosServiceCommandError as exc:
+            return self._rejected(
+                f"ROS service cancel 요청에 실패했습니다: {exc}",
+                "ROS_SERVICE_UNAVAILABLE",
+            )
+
+    async def async_cancel_delivery_task(self, task_id, action_name=None):
+        invalid_response = self._validate_cancel_delivery_task_request(task_id=task_id)
+        if invalid_response is not None:
+            return invalid_response
+
+        payload = self._build_cancel_action_payload(task_id=task_id, action_name=action_name)
+        async_send_command = getattr(self.command_client, "async_send_command", None)
+
+        try:
+            if async_send_command is not None:
+                return await async_send_command(
+                    "cancel_action",
+                    payload,
+                    timeout=self.cancel_timeout_sec,
+                )
+
+            return await asyncio.to_thread(
+                self.command_client.send_command,
+                "cancel_action",
+                payload,
+                timeout=self.cancel_timeout_sec,
+            )
+        except RosServiceCommandError as exc:
+            return self._rejected(
+                f"ROS service cancel 요청에 실패했습니다: {exc}",
+                "ROS_SERVICE_UNAVAILABLE",
+            )
+
     def submit_delivery_request(
         self,
         item_name,
@@ -243,6 +297,22 @@ class DeliveryRequestService:
                 return response
 
         return None
+
+    def _validate_cancel_delivery_task_request(self, *, task_id):
+        if self._is_blank(task_id):
+            return self._invalid_request("task_id가 필요합니다.", "TASK_ID_INVALID")
+
+        return None
+
+    @staticmethod
+    def _build_cancel_action_payload(*, task_id, action_name=None):
+        payload = {
+            "task_id": str(task_id).strip(),
+        }
+        normalized_action_name = str(action_name or "").strip()
+        if normalized_action_name:
+            payload["action_name"] = normalized_action_name
+        return payload
 
     @staticmethod
     def _invalid_request(message: str, reason_code: str):
