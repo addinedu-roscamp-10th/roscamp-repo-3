@@ -8,6 +8,7 @@ from server.ropi_main_service.persistence import async_connection
 class FakeCursor:
     def __init__(self, connection):
         self.connection = connection
+        self.rowcount = 1
 
     async def __aenter__(self):
         return self
@@ -28,9 +29,21 @@ class FakeCursor:
 class FakeConnection:
     def __init__(self):
         self.executed = []
+        self.begun = False
+        self.committed = False
+        self.rolled_back = False
 
     def cursor(self):
         return FakeCursor(self)
+
+    async def begin(self):
+        self.begun = True
+
+    async def commit(self):
+        self.committed = True
+
+    async def rollback(self):
+        self.rolled_back = True
 
 
 class FakeAcquire:
@@ -115,6 +128,68 @@ def test_async_fetch_rejects_write_query():
 
     with pytest.raises(ValueError):
         asyncio.run(scenario())
+
+
+def test_async_execute_returns_rowcount_without_select_validation(monkeypatch):
+    fake_pool = FakePool()
+
+    async def fake_create_pool(**kwargs):
+        return fake_pool
+
+    monkeypatch.setattr(async_connection.aiomysql, "create_pool", fake_create_pool)
+
+    async def scenario():
+        return await async_connection.async_execute(
+            "UPDATE item SET quantity = quantity + %s WHERE item_id = %s",
+            (1, 10),
+        )
+
+    rowcount = asyncio.run(scenario())
+
+    assert rowcount == 1
+    assert fake_pool.connection.executed == [
+        ("UPDATE item SET quantity = quantity + %s WHERE item_id = %s", (1, 10))
+    ]
+
+
+def test_async_transaction_commits_on_success(monkeypatch):
+    fake_pool = FakePool()
+
+    async def fake_create_pool(**kwargs):
+        return fake_pool
+
+    monkeypatch.setattr(async_connection.aiomysql, "create_pool", fake_create_pool)
+
+    async def scenario():
+        async with async_connection.async_transaction() as cursor:
+            await cursor.execute("INSERT INTO member_event VALUES (%s)", (1,))
+
+    asyncio.run(scenario())
+
+    assert fake_pool.connection.begun is True
+    assert fake_pool.connection.committed is True
+    assert fake_pool.connection.rolled_back is False
+
+
+def test_async_transaction_rolls_back_on_failure(monkeypatch):
+    fake_pool = FakePool()
+
+    async def fake_create_pool(**kwargs):
+        return fake_pool
+
+    monkeypatch.setattr(async_connection.aiomysql, "create_pool", fake_create_pool)
+
+    async def scenario():
+        async with async_connection.async_transaction() as cursor:
+            await cursor.execute("INSERT INTO member_event VALUES (%s)", (1,))
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(scenario())
+
+    assert fake_pool.connection.begun is True
+    assert fake_pool.connection.committed is False
+    assert fake_pool.connection.rolled_back is True
 
 
 def test_close_pool_closes_cached_pool(monkeypatch):

@@ -4,7 +4,11 @@ from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.caregiver import CaregiverService
 from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.patient import PatientService
+from server.ropi_main_service.application.staff_call import StaffCallService
+from server.ropi_main_service.application.task_request import DeliveryRequestService
 from server.ropi_main_service.application.visitor_info import VisitorInfoService
+from server.ropi_main_service.application.visit_guide import VisitGuideService
+from server.ropi_main_service.application.visitor_register import VisitorRegisterService
 
 
 class FakeAsyncUserRepository:
@@ -85,6 +89,38 @@ class FakeAsyncInventoryRepository:
     async def async_get_all_products(self):
         return [{"item_id": "1", "item_name": "물티슈"}]
 
+    async def async_add_quantity(self, item_id, quantity):
+        self.added = (item_id, quantity)
+        return True
+
+
+class FakeAsyncDeliveryRequestRepository:
+    async def async_get_all_products(self):
+        return [{"item_name": "물티슈"}]
+
+    async def async_create_delivery_request(self, **kwargs):
+        self.created = kwargs
+        return True, "물품 요청이 접수되었습니다."
+
+
+class FakeAsyncStaffCallRepository:
+    async def async_create_staff_call(self, call_type, detail, member_id=None):
+        return True, "직원 호출 요청이 접수되었습니다."
+
+
+class FakeAsyncVisitGuideRepository:
+    async def async_find_patient(self, keyword):
+        return {"name": "김환자", "member_id": 1, "room": "301"}
+
+    async def async_create_robot_guide_event(self, patient_name, room_no, member_id=None):
+        return True, "로봇 안내 요청이 접수되었습니다."
+
+
+class FakeAsyncVisitorRegisterRepository:
+    async def async_create_visitor_registration(self, **kwargs):
+        self.created = kwargs
+        return True, "방문 등록이 완료되었습니다."
+
 
 def test_auth_service_async_authenticate_uses_async_repository():
     service = AuthService(repository=FakeAsyncUserRepository())
@@ -153,3 +189,77 @@ def test_inventory_service_async_get_inventory_rows():
     rows = asyncio.run(service.async_get_inventory_rows())
 
     assert rows == [{"item_id": "1", "item_name": "물티슈"}]
+
+
+def test_inventory_service_async_add_inventory():
+    repository = FakeAsyncInventoryRepository()
+    service = InventoryService(repository=repository)
+
+    result = asyncio.run(service.async_add_inventory("물티슈", 2))
+
+    assert result == (True, "재고가 추가되었습니다.")
+    assert repository.added == ("1", 2)
+
+
+def test_delivery_request_service_async_product_list_and_submit_request():
+    repository = FakeAsyncDeliveryRequestRepository()
+    service = DeliveryRequestService(repository=repository)
+
+    names = asyncio.run(service.async_get_product_names())
+    result = asyncio.run(
+        service.async_submit_delivery_request(
+            item_name="물티슈",
+            quantity=1,
+            destination="301호",
+            priority="일반",
+            detail="요청",
+            member_id="1",
+        )
+    )
+
+    assert names == ["물티슈"]
+    assert result == (True, "물품 요청이 접수되었습니다.")
+    assert repository.created["item_name"] == "물티슈"
+
+
+def test_staff_call_service_async_submit_staff_call():
+    service = StaffCallService(repository=FakeAsyncStaffCallRepository())
+
+    result = asyncio.run(service.async_submit_staff_call("긴급", "도움 필요", member_id="1"))
+
+    assert result == (True, "직원 호출 요청이 접수되었습니다.")
+
+
+def test_visit_guide_service_async_search_and_start():
+    service = VisitGuideService(repository=FakeAsyncVisitGuideRepository())
+
+    search_result = asyncio.run(service.async_search_patient("김환자"))
+    start_result = asyncio.run(
+        service.async_start_robot_guide({"name": "김환자", "room": "301"}, member_id="1")
+    )
+
+    assert search_result == (
+        True,
+        "어르신 정보를 찾았습니다.",
+        {"name": "김환자", "member_id": 1, "room": "301"},
+    )
+    assert start_result == (True, "로봇 안내 요청이 접수되었습니다.")
+
+
+def test_visitor_register_service_async_submit_registration():
+    repository = FakeAsyncVisitorRegisterRepository()
+    service = VisitorRegisterService(repository=repository)
+
+    result = asyncio.run(
+        service.async_submit_registration(
+            visitor_name="방문객",
+            phone="010-1111-2222",
+            patient_name="김환자",
+            relation="가족",
+            purpose="면회",
+            member_id="1",
+        )
+    )
+
+    assert result == (True, "방문 등록이 완료되었습니다.")
+    assert repository.created["visitor_name"] == "방문객"

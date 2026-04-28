@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 import aiomysql
 
 from server.ropi_main_service.persistence.config import get_db_config
@@ -60,6 +62,30 @@ async def async_fetch_all(query: str, params=None):
             return await cursor.fetchall()
 
 
+async def async_execute(query: str, params=None):
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(query, params)
+            return cursor.rowcount
+
+
+@asynccontextmanager
+async def async_transaction():
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        await conn.begin()
+        try:
+            async with conn.cursor() as cursor:
+                yield cursor
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
+
+
 async def async_test_connection():
     try:
         row = await async_fetch_one("SELECT 1 AS ok")
@@ -69,9 +95,11 @@ async def async_test_connection():
 
 
 __all__ = [
+    "async_execute",
     "async_fetch_all",
     "async_fetch_one",
     "async_test_connection",
+    "async_transaction",
     "close_pool",
     "get_pool",
 ]

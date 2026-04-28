@@ -10,6 +10,11 @@ from server.ropi_main_service.persistence.repositories.delivery_task_repository 
 from server.ropi_main_service.persistence.repositories.idempotency_repository import (
     IdempotencyRepository,
 )
+from server.ropi_main_service.persistence.async_connection import (
+    async_execute,
+    async_fetch_all,
+    async_fetch_one,
+)
 from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
@@ -32,6 +37,9 @@ class DeliveryRequestRepository:
     def get_all_products(self):
         return fetch_all(load_sql("task_request/list_items.sql"))
 
+    async def async_get_all_products(self):
+        return await async_fetch_all(load_sql("task_request/list_items.sql"))
+
     def get_product_by_id(self, item_id, conn=None):
         numeric_item_id = self._parse_numeric_identifier(item_id)
         if numeric_item_id is None:
@@ -41,6 +49,12 @@ class DeliveryRequestRepository:
 
     def get_product_by_name(self, item_name, conn=None):
         return self._fetch_product("item_name = %s", (item_name,), conn=conn)
+
+    async def async_get_product_by_name(self, item_name):
+        return await async_fetch_one(
+            load_sql("task_request/find_item_by_name.sql"),
+            (item_name,),
+        )
 
     def create_delivery_task(
         self,
@@ -220,6 +234,47 @@ class DeliveryRequestRepository:
             return False, f"물품 요청 등록 중 오류가 발생했습니다: {exc}"
         finally:
             conn.close()
+
+    async def async_create_delivery_request(
+        self,
+        item_name,
+        quantity,
+        destination,
+        priority,
+        detail,
+        member_id,
+    ):
+        try:
+            product = await self.async_get_product_by_name(item_name)
+
+            if not product:
+                return False, "선택한 물품이 존재하지 않습니다."
+
+            current_qty = int(product["quantity"])
+            if int(quantity) > current_qty:
+                return False, f"재고가 부족합니다. 현재 재고: {current_qty}"
+
+            description = (
+                f"[물품 요청] 물품종류={item_name}, 수량={quantity}, 목적지={destination}, "
+                f"우선순위={priority}, 설명={detail.strip() if detail and detail.strip() else '없음'}"
+            )
+
+            await async_execute(
+                load_sql("member_event/insert_member_event.sql"),
+                (
+                    self._parse_numeric_identifier(member_id) or 1,
+                    "DELIVERY_REQUESTED",
+                    "물품 요청",
+                    "CARE",
+                    "INFO",
+                    "물품 요청",
+                    description,
+                ),
+            )
+
+            return True, "물품 요청이 접수되었습니다."
+        except Exception as exc:
+            return False, f"물품 요청 등록 중 오류가 발생했습니다: {exc}"
 
     def _fetch_product(self, where_clause, params, *, conn=None):
         own_conn = False
