@@ -1,3 +1,5 @@
+import asyncio
+import inspect
 import logging
 import time
 
@@ -143,9 +145,129 @@ class DeliveryOrchestrator:
         )
         return return_to_dock_response
 
+    async def async_run(self, *, task_id, item_id, quantity, destination_id):
+        started_at = time.monotonic()
+        log_event(
+            logger,
+            logging.INFO,
+            "delivery_workflow_started",
+            task_id=task_id,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
+        )
+        pickup_goal_pose = self.pickup_goal_pose_resolver()
+        if not pickup_goal_pose:
+            response = self._failed(
+                "pickup goal pose를 찾을 수 없습니다.",
+                reason_code="PICKUP_GOAL_POSE_MISSING",
+            )
+            self._log_failure("delivery_pickup_goal_pose_missing", task_id, response, started_at)
+            return response
+
+        pickup_response = await self._async_navigate(
+            task_id=task_id,
+            nav_phase="DELIVERY_PICKUP",
+            goal_pose=pickup_goal_pose,
+            timeout_sec=self.delivery_navigation_timeout_sec,
+        )
+        if not self._is_success(pickup_response):
+            self._log_failure("delivery_pickup_navigation_failed", task_id, pickup_response, started_at)
+            return pickup_response
+
+        load_response = await self._async_execute(
+            arm_id=self.runtime_config.pickup_arm_id,
+            task_id=task_id,
+            transfer_direction=PICKUP_TRANSFER_DIRECTION,
+            item_id=item_id,
+            quantity=quantity,
+        )
+        if not self._is_success(load_response):
+            self._log_failure("delivery_load_failed", task_id, load_response, started_at)
+            return load_response
+
+        destination_goal_pose = self.destination_goal_pose_resolver(destination_id)
+        if not destination_goal_pose:
+            response = self._failed(
+                "destination goal pose를 찾을 수 없습니다.",
+                reason_code="DESTINATION_GOAL_POSE_MISSING",
+            )
+            self._log_failure("delivery_destination_goal_pose_missing", task_id, response, started_at)
+            return response
+
+        destination_response = await self._async_navigate(
+            task_id=task_id,
+            nav_phase="DELIVERY_DESTINATION",
+            goal_pose=destination_goal_pose,
+            timeout_sec=self.delivery_navigation_timeout_sec,
+        )
+        if not self._is_success(destination_response):
+            self._log_failure("delivery_destination_navigation_failed", task_id, destination_response, started_at)
+            return destination_response
+
+        unload_response = await self._async_execute(
+            arm_id=self.runtime_config.destination_arm_id,
+            task_id=task_id,
+            transfer_direction=UNLOAD_TRANSFER_DIRECTION,
+            item_id=item_id,
+            quantity=quantity,
+        )
+        if not self._is_success(unload_response):
+            self._log_failure("delivery_unload_failed", task_id, unload_response, started_at)
+            return unload_response
+
+        return_to_dock_goal_pose = self.return_to_dock_goal_pose_resolver()
+        if not return_to_dock_goal_pose:
+            response = self._failed(
+                "return_to_dock goal pose를 찾을 수 없습니다.",
+                reason_code="RETURN_TO_DOCK_GOAL_POSE_MISSING",
+            )
+            self._log_failure("delivery_return_to_dock_goal_pose_missing", task_id, response, started_at)
+            return response
+
+        return_to_dock_response = await self._async_navigate(
+            task_id=task_id,
+            nav_phase="RETURN_TO_DOCK",
+            goal_pose=return_to_dock_goal_pose,
+            timeout_sec=self.delivery_navigation_timeout_sec,
+        )
+        if not self._is_success(return_to_dock_response):
+            self._log_failure("delivery_return_to_dock_failed", task_id, return_to_dock_response, started_at)
+            return return_to_dock_response
+
+        log_event(
+            logger,
+            logging.INFO,
+            "delivery_workflow_succeeded",
+            task_id=task_id,
+            result_code=return_to_dock_response.get("result_code"),
+            elapsed_ms=round((time.monotonic() - started_at) * 1000, 2),
+        )
+        return return_to_dock_response
+
+    async def _async_navigate(self, **kwargs):
+        async_navigate = getattr(self.goal_pose_navigation_service, "async_navigate", None)
+        if async_navigate is not None:
+            return await self._await_if_needed(async_navigate(**kwargs))
+
+        return await asyncio.to_thread(self.goal_pose_navigation_service.navigate, **kwargs)
+
+    async def _async_execute(self, **kwargs):
+        async_execute = getattr(self.manipulation_command_service, "async_execute", None)
+        if async_execute is not None:
+            return await self._await_if_needed(async_execute(**kwargs))
+
+        return await asyncio.to_thread(self.manipulation_command_service.execute, **kwargs)
+
     @staticmethod
     def _is_success(response) -> bool:
         return str((response or {}).get("result_code") or "").upper() == "SUCCESS"
+
+    @staticmethod
+    async def _await_if_needed(value):
+        if inspect.isawaitable(value):
+            return await value
+        return value
 
     @staticmethod
     def _failed(result_message: str, *, reason_code: str):

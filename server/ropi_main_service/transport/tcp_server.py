@@ -209,9 +209,7 @@ class ControlServiceServer:
 
         if payload.get("check_ros"):
             try:
-                ros_result = await asyncio.to_thread(
-                    RosRuntimeReadinessService().get_status
-                )
+                ros_result = await RosRuntimeReadinessService().async_get_status()
                 response_payload["ros"] = {
                     "ok": bool(ros_result.get("ready")),
                     "detail": ros_result,

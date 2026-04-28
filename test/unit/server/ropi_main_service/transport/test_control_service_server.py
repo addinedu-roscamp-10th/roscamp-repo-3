@@ -136,6 +136,49 @@ def test_async_heartbeat_with_db_check_uses_async_connection(control_service_ser
     assert response.payload["db"] == {"ok": True, "detail": {"ok": 1}}
 
 
+def test_async_heartbeat_with_ros_check_uses_async_readiness_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_HEARTBEAT,
+        sequence_no=18,
+        payload={"check_ros": True},
+    )
+
+    class FakeReadinessService:
+        def get_status(self):
+            raise AssertionError("async heartbeat should not use sync ROS readiness")
+
+        async def async_get_status(self):
+            return {
+                "ready": True,
+                "checks": [
+                    {"name": "pinky2.navigate_to_goal", "ready": True},
+                ],
+            }
+
+    async def scenario():
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService",
+            return_value=FakeReadinessService(),
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("ROS heartbeat should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload["ros"] == {
+        "ok": True,
+        "detail": {
+            "ready": True,
+            "checks": [
+                {"name": "pinky2.navigate_to_goal", "ready": True},
+            ],
+        },
+    }
+
+
 def test_async_dispatch_login_uses_native_async_auth(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_LOGIN,

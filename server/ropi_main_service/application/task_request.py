@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 
@@ -13,10 +14,12 @@ class DeliveryRequestService:
         repository=None,
         delivery_workflow_starter=None,
         delivery_request_precheck=None,
+        async_delivery_request_precheck=None,
     ):
         self.repository = repository or DeliveryRequestRepository()
         self.delivery_workflow_starter = delivery_workflow_starter
         self.delivery_request_precheck = delivery_request_precheck
+        self.async_delivery_request_precheck = async_delivery_request_precheck
 
     def get_product_names(self):
         products = self.repository.get_all_products()
@@ -287,10 +290,23 @@ class DeliveryRequestService:
         return self.delivery_request_precheck(**kwargs)
 
     async def _async_run_delivery_request_precheck(self, **kwargs):
+        if self.async_delivery_request_precheck is not None:
+            return await self._call_precheck_async(self.async_delivery_request_precheck, **kwargs)
+
         if self.delivery_request_precheck is None:
             return None
 
+        if inspect.iscoroutinefunction(self.delivery_request_precheck):
+            return await self.delivery_request_precheck(**kwargs)
+
         return await asyncio.to_thread(self.delivery_request_precheck, **kwargs)
+
+    @staticmethod
+    async def _call_precheck_async(precheck, **kwargs):
+        result = precheck(**kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     def _start_delivery_workflow_if_needed(self, *, response, item_id, quantity, destination_id):
         if response.get("result_code") != self.ACCEPTED:

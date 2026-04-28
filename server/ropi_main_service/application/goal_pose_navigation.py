@@ -1,3 +1,4 @@
+import asyncio
 from copy import deepcopy
 
 from server.ropi_main_service.application.delivery_config import (
@@ -32,6 +33,40 @@ class GoalPoseNavigationService:
         self.minimum_ipc_timeout_sec = minimum_ipc_timeout_sec
 
     def navigate(self, *, task_id, nav_phase, goal_pose, timeout_sec):
+        command, payload, ipc_timeout = self._build_navigation_command(
+            task_id=task_id,
+            nav_phase=nav_phase,
+            goal_pose=goal_pose,
+            timeout_sec=timeout_sec,
+        )
+
+        return self._get_command_client().send_command(
+            command,
+            payload,
+            timeout=ipc_timeout,
+        )
+
+    async def async_navigate(self, *, task_id, nav_phase, goal_pose, timeout_sec):
+        command, payload, ipc_timeout = self._build_navigation_command(
+            task_id=task_id,
+            nav_phase=nav_phase,
+            goal_pose=goal_pose,
+            timeout_sec=timeout_sec,
+        )
+        command_client = self._get_command_client()
+        async_send_command = getattr(command_client, "async_send_command", None)
+
+        if async_send_command is not None:
+            return await async_send_command(command, payload, timeout=ipc_timeout)
+
+        return await asyncio.to_thread(
+            command_client.send_command,
+            command,
+            payload,
+            timeout=ipc_timeout,
+        )
+
+    def _build_navigation_command(self, *, task_id, nav_phase, goal_pose, timeout_sec):
         self._validate_request(
             task_id=task_id,
             nav_phase=nav_phase,
@@ -47,13 +82,13 @@ class GoalPoseNavigationService:
             "timeout_sec": timeout_sec,
         }
 
-        return self._get_command_client().send_command(
+        return (
             "navigate_to_goal",
             {
                 "pinky_id": self.runtime_config.pinky_id,
                 "goal": goal,
             },
-            timeout=self._build_ipc_timeout_sec(timeout_sec),
+            self._build_ipc_timeout_sec(timeout_sec),
         )
 
     @staticmethod

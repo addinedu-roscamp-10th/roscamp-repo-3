@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import pytest
@@ -21,6 +22,32 @@ class FakeManipulationCommandService:
         self.calls = []
 
     def execute(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.results.pop(0)
+
+
+class FakeAsyncGoalPoseNavigationService:
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
+
+    def navigate(self, **kwargs):
+        raise AssertionError("async_run should not use sync navigate")
+
+    async def async_navigate(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.results.pop(0)
+
+
+class FakeAsyncManipulationCommandService:
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
+
+    def execute(self, **kwargs):
+        raise AssertionError("async_run should not use sync execute")
+
+    async def async_execute(self, **kwargs):
         self.calls.append(kwargs)
         return self.results.pop(0)
 
@@ -146,6 +173,49 @@ def test_run_delivery_workflow_executes_pickup_load_destination_unload_in_order(
             "item_id": "1",
             "quantity": 2,
         },
+    ]
+
+
+def test_async_run_delivery_workflow_executes_async_services_in_order():
+    navigation_service = FakeAsyncGoalPoseNavigationService(
+        [
+            build_success_response(),
+            build_success_response(),
+            build_success_response(),
+        ]
+    )
+    manipulation_service = FakeAsyncManipulationCommandService(
+        [
+            build_success_response(),
+            build_success_response(),
+        ]
+    )
+    orchestrator = DeliveryOrchestrator(
+        goal_pose_navigation_service=navigation_service,
+        manipulation_command_service=manipulation_service,
+        pickup_goal_pose_resolver=FakePickupGoalPoseResolver(build_goal_pose(x=1.5, y=2.5)),
+        destination_goal_pose_resolver=FakeDestinationGoalPoseResolver(build_goal_pose(x=18.4, y=7.2)),
+        return_to_dock_goal_pose_resolver=FakeReturnToDockGoalPoseResolver(build_goal_pose(x=0.5, y=0.5)),
+    )
+
+    response = asyncio.run(
+        orchestrator.async_run(
+            task_id="task_delivery_001",
+            item_id="1",
+            quantity=2,
+            destination_id="room2",
+        )
+    )
+
+    assert response["result_code"] == "SUCCESS"
+    assert [call["nav_phase"] for call in navigation_service.calls] == [
+        "DELIVERY_PICKUP",
+        "DELIVERY_DESTINATION",
+        "RETURN_TO_DOCK",
+    ]
+    assert [call["transfer_direction"] for call in manipulation_service.calls] == [
+        "TO_ROBOT",
+        "FROM_ROBOT",
     ]
 
 

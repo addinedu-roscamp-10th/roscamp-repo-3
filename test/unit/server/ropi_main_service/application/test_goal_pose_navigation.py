@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
@@ -15,6 +17,28 @@ class FakeRosCommandClient:
         }
 
     def send_command(self, command, payload, timeout=None):
+        self.calls.append(
+            {
+                "command": command,
+                "payload": payload,
+                "timeout": timeout,
+            }
+        )
+        return self.result
+
+
+class FakeAsyncRosCommandClient:
+    def __init__(self, result=None):
+        self.calls = []
+        self.result = result or {
+            "result_code": "SUCCESS",
+            "result_message": "navigation done",
+        }
+
+    def send_command(self, command, payload, timeout=None):
+        raise AssertionError("async_navigate should not use sync send_command")
+
+    async def async_send_command(self, command, payload, timeout=None):
         self.calls.append(
             {
                 "command": command,
@@ -78,6 +102,37 @@ def test_navigate_delivery_destination_sends_if_com_007_command_to_ros_service()
     ]
     assert response["result_code"] == "SUCCESS"
     assert response["result_message"] == "navigation done"
+
+
+def test_async_navigate_uses_async_ros_service_command_client():
+    command_client = FakeAsyncRosCommandClient()
+    service = GoalPoseNavigationService(command_client=command_client)
+
+    response = asyncio.run(
+        service.async_navigate(
+            task_id="task_delivery_001",
+            nav_phase="DELIVERY_DESTINATION",
+            goal_pose=build_goal_pose(),
+            timeout_sec=120,
+        )
+    )
+
+    assert command_client.calls == [
+        {
+            "command": "navigate_to_goal",
+            "payload": {
+                "pinky_id": "pinky2",
+                "goal": {
+                    "task_id": "task_delivery_001",
+                    "nav_phase": "DELIVERY_DESTINATION",
+                    "goal_pose": build_goal_pose(),
+                    "timeout_sec": 120,
+                },
+            },
+            "timeout": 125.0,
+        }
+    ]
+    assert response["result_code"] == "SUCCESS"
 
 
 def test_navigate_uses_runtime_config_pinky_id():

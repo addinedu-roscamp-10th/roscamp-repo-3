@@ -20,12 +20,11 @@ from server.ropi_main_service.observability import log_event
 logger = logging.getLogger(__name__)
 
 
-def _build_delivery_request_precheck(
+def _build_delivery_precheck_helpers(
     *,
     pickup_goal_pose,
     destination_goal_poses,
     return_to_dock_goal_pose,
-    runtime_config,
 ):
     def _log_precheck_failure(
         *,
@@ -50,9 +49,7 @@ def _build_delivery_request_precheck(
     def _invalid_request(message: str, reason_code: str) -> dict:
         return DeliveryRequestService._invalid_request(message, reason_code)
 
-    def _precheck(**kwargs):
-        destination_id = str(kwargs.get("destination_id") or "").strip()
-
+    def _run_static_precheck(destination_id: str):
         if pickup_goal_pose is None:
             _log_precheck_failure(
                 reason_code="PICKUP_GOAL_POSE_NOT_CONFIGURED",
@@ -97,19 +94,20 @@ def _build_delivery_request_precheck(
                 "DESTINATION_ID_UNKNOWN",
             )
 
-        try:
-            ros_status = RosRuntimeReadinessService(runtime_config=runtime_config).get_status()
-        except Exception as exc:
-            _log_precheck_failure(
-                reason_code="ROS_SERVICE_UNAVAILABLE",
-                message=f"ROS service가 준비되지 않았습니다: {exc}",
-                destination_id=destination_id,
-            )
-            return _reject(
-                f"ROS service가 준비되지 않았습니다: {exc}",
-                "ROS_SERVICE_UNAVAILABLE",
-            )
+        return None
 
+    def _handle_ros_unavailable(exc: Exception, destination_id: str):
+        _log_precheck_failure(
+            reason_code="ROS_SERVICE_UNAVAILABLE",
+            message=f"ROS service가 준비되지 않았습니다: {exc}",
+            destination_id=destination_id,
+        )
+        return _reject(
+            f"ROS service가 준비되지 않았습니다: {exc}",
+            "ROS_SERVICE_UNAVAILABLE",
+        )
+
+    def _evaluate_ros_status(ros_status: dict, destination_id: str):
         if not ros_status.get("ready"):
             _log_precheck_failure(
                 reason_code="ROS_RUNTIME_NOT_READY",
@@ -124,7 +122,65 @@ def _build_delivery_request_precheck(
 
         return None
 
+    return _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status
+
+
+def _build_delivery_request_precheck(
+    *,
+    pickup_goal_pose,
+    destination_goal_poses,
+    return_to_dock_goal_pose,
+    runtime_config,
+):
+    _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status = _build_delivery_precheck_helpers(
+        pickup_goal_pose=pickup_goal_pose,
+        destination_goal_poses=destination_goal_poses,
+        return_to_dock_goal_pose=return_to_dock_goal_pose,
+    )
+
+    def _precheck(**kwargs):
+        destination_id = str(kwargs.get("destination_id") or "").strip()
+        static_response = _run_static_precheck(destination_id)
+        if static_response is not None:
+            return static_response
+
+        try:
+            ros_status = RosRuntimeReadinessService(runtime_config=runtime_config).get_status()
+        except Exception as exc:
+            return _handle_ros_unavailable(exc, destination_id)
+
+        return _evaluate_ros_status(ros_status, destination_id)
+
     return _precheck
+
+
+def _build_async_delivery_request_precheck(
+    *,
+    pickup_goal_pose,
+    destination_goal_poses,
+    return_to_dock_goal_pose,
+    runtime_config,
+):
+    _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status = _build_delivery_precheck_helpers(
+        pickup_goal_pose=pickup_goal_pose,
+        destination_goal_poses=destination_goal_poses,
+        return_to_dock_goal_pose=return_to_dock_goal_pose,
+    )
+
+    async def _async_precheck(**kwargs):
+        destination_id = str(kwargs.get("destination_id") or "").strip()
+        static_response = _run_static_precheck(destination_id)
+        if static_response is not None:
+            return static_response
+
+        try:
+            ros_status = await RosRuntimeReadinessService(runtime_config=runtime_config).async_get_status()
+        except Exception as exc:
+            return _handle_ros_unavailable(exc, destination_id)
+
+        return _evaluate_ros_status(ros_status, destination_id)
+
+    return _async_precheck
 
 
 def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
@@ -135,9 +191,16 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
     return_to_dock_goal_pose = navigation_config["return_to_dock_goal_pose"]
     delivery_workflow_starter = None
     delivery_request_precheck = None
+    async_delivery_request_precheck = None
 
     if loop is not None:
         delivery_request_precheck = _build_delivery_request_precheck(
+            pickup_goal_pose=pickup_goal_pose,
+            destination_goal_poses=destination_goal_poses,
+            return_to_dock_goal_pose=return_to_dock_goal_pose,
+            runtime_config=runtime_config,
+        )
+        async_delivery_request_precheck = _build_async_delivery_request_precheck(
             pickup_goal_pose=pickup_goal_pose,
             destination_goal_poses=destination_goal_poses,
             return_to_dock_goal_pose=return_to_dock_goal_pose,
@@ -157,7 +220,11 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
         )
 
         def _start_delivery_workflow(**kwargs):
-            background_task = loop.create_task(asyncio.to_thread(orchestrator.run, **kwargs))
+            async_run = getattr(orchestrator, "async_run", None)
+            if async_run is not None:
+                background_task = loop.create_task(async_run(**kwargs))
+            else:
+                background_task = loop.create_task(asyncio.to_thread(orchestrator.run, **kwargs))
 
             def _handle_background_task_done(task: asyncio.Task):
                 try:
@@ -184,6 +251,7 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
     return DeliveryRequestService(
         delivery_workflow_starter=delivery_workflow_starter,
         delivery_request_precheck=delivery_request_precheck,
+        async_delivery_request_precheck=async_delivery_request_precheck,
     )
 
 

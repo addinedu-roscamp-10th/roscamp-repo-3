@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
@@ -12,6 +14,28 @@ class FakeCommandClient:
         self.calls = []
 
     def send_command(self, command, payload, timeout=None):
+        self.calls.append(
+            {
+                "command": command,
+                "payload": payload,
+                "timeout": timeout,
+            }
+        )
+        return {
+            "result_code": "SUCCESS",
+            "result_message": "manipulation done",
+            "processed_quantity": 2,
+        }
+
+
+class FakeAsyncCommandClient:
+    def __init__(self):
+        self.calls = []
+
+    def send_command(self, command, payload, timeout=None):
+        raise AssertionError("async_execute should not use sync send_command")
+
+    async def async_send_command(self, command, payload, timeout=None):
         self.calls.append(
             {
                 "command": command,
@@ -43,6 +67,39 @@ def test_execute_sends_if_del_003_command_with_phase1_default_slot_id():
         "result_message": "manipulation done",
         "processed_quantity": 2,
     }
+    assert command_client.calls == [
+        {
+            "command": "execute_manipulation",
+            "payload": {
+                "arm_id": "arm1",
+                "goal": {
+                    "task_id": "task_delivery_001",
+                    "transfer_direction": "TO_ROBOT",
+                    "item_id": "med_acetaminophen_500",
+                    "quantity": 2,
+                    "robot_slot_id": FIXED_PHASE1_ROBOT_SLOT_ID,
+                },
+            },
+            "timeout": 30.0,
+        }
+    ]
+
+
+def test_async_execute_uses_async_ros_service_command_client():
+    command_client = FakeAsyncCommandClient()
+    service = ManipulationCommandService(command_client=command_client)
+
+    response = asyncio.run(
+        service.async_execute(
+            arm_id="arm1",
+            task_id="task_delivery_001",
+            transfer_direction="TO_ROBOT",
+            item_id="med_acetaminophen_500",
+            quantity=2,
+        )
+    )
+
+    assert response["result_code"] == "SUCCESS"
     assert command_client.calls == [
         {
             "command": "execute_manipulation",

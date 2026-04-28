@@ -1,5 +1,7 @@
 import asyncio
+from unittest.mock import patch
 
+from server.ropi_main_service.application import delivery_runtime
 from server.ropi_main_service.application.task_request import DeliveryRequestService
 
 
@@ -89,6 +91,134 @@ def test_async_create_delivery_task_starts_delivery_workflow_after_acceptance():
 
     assert response["result_code"] == "ACCEPTED"
     assert workflow_starter.calls == [
+        {
+            "task_id": "101",
+            "item_id": "1",
+            "quantity": 2,
+            "destination_id": "delivery_room_301",
+        }
+    ]
+
+
+def test_async_create_delivery_task_awaits_async_precheck_without_thread_offload():
+    precheck_calls = []
+    repository = FakeDeliveryRequestRepository(
+        response={
+            "result_code": "ACCEPTED",
+            "result_message": None,
+            "reason_code": None,
+            "task_id": 101,
+            "task_status": "WAITING_DISPATCH",
+            "assigned_robot_id": "pinky2",
+        }
+    )
+
+    async def async_precheck(**kwargs):
+        precheck_calls.append(kwargs)
+        return None
+
+    service = DeliveryRequestService(
+        repository=repository,
+        async_delivery_request_precheck=async_precheck,
+    )
+
+    async def scenario():
+        with patch(
+            "server.ropi_main_service.application.task_request.asyncio.to_thread",
+            side_effect=AssertionError("async precheck should not use thread fallback"),
+        ):
+            return await service.async_create_delivery_task(**build_request_payload())
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "ACCEPTED"
+    assert precheck_calls[0]["destination_id"] == "delivery_room_301"
+
+
+def test_build_delivery_request_service_async_precheck_uses_async_ros_readiness():
+    class FakeReadinessService:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_status(self):
+            raise AssertionError("async delivery precheck should not use sync ROS readiness")
+
+        async def async_get_status(self):
+            return {"ready": True, "checks": []}
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        with patch(
+            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+            return_value={
+                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+                "destination_goal_poses": {
+                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                },
+                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+            },
+        ), patch(
+            "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService",
+            FakeReadinessService,
+        ), patch(
+            "server.ropi_main_service.application.task_request.asyncio.to_thread",
+            side_effect=AssertionError("async delivery precheck should not use thread fallback"),
+        ):
+            service = delivery_runtime.build_delivery_request_service(loop=loop)
+            return await service._async_run_delivery_request_precheck(**build_request_payload())
+
+    response = asyncio.run(scenario())
+
+    assert response is None
+
+
+def test_build_delivery_request_service_starts_async_orchestrator_without_thread_offload():
+    calls = []
+
+    class FakeDeliveryOrchestrator:
+        def __init__(self, **kwargs):
+            pass
+
+        def run(self, **kwargs):
+            raise AssertionError("delivery workflow should not use sync orchestrator.run")
+
+        async def async_run(self, **kwargs):
+            calls.append(kwargs)
+            return {"result_code": "SUCCESS"}
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        with patch(
+            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+            return_value={
+                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
+                "destination_goal_poses": {
+                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+                },
+                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
+            },
+        ), patch(
+            "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
+            FakeDeliveryOrchestrator,
+        ), patch(
+            "server.ropi_main_service.application.delivery_runtime.asyncio.to_thread",
+            side_effect=AssertionError("delivery workflow should not be started via to_thread"),
+        ):
+            service = delivery_runtime.build_delivery_request_service(loop=loop)
+            service._start_delivery_workflow_if_needed(
+                response={
+                    "result_code": "ACCEPTED",
+                    "task_id": 101,
+                },
+                item_id="1",
+                quantity=2,
+                destination_id="delivery_room_301",
+            )
+            await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+
+    assert calls == [
         {
             "task_id": "101",
             "item_id": "1",
