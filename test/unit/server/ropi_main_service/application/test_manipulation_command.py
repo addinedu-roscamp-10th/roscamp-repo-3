@@ -50,9 +50,26 @@ class FakeAsyncCommandClient:
         }
 
 
+class RecordingCommandExecutionRecorder:
+    def __init__(self):
+        self.specs = []
+
+    def record(self, spec, command_runner):
+        self.specs.append(spec)
+        return command_runner()
+
+    async def async_record(self, spec, command_runner):
+        self.specs.append(spec)
+        return await command_runner()
+
+
 def test_execute_sends_if_del_003_command_with_phase1_default_slot_id():
     command_client = FakeCommandClient()
-    service = ManipulationCommandService(command_client=command_client)
+    command_execution_recorder = RecordingCommandExecutionRecorder()
+    service = ManipulationCommandService(
+        command_client=command_client,
+        command_execution_recorder=command_execution_recorder,
+    )
 
     response = service.execute(
         arm_id="arm1",
@@ -83,11 +100,23 @@ def test_execute_sends_if_del_003_command_with_phase1_default_slot_id():
             "timeout": 30.0,
         }
     ]
+    assert len(command_execution_recorder.specs) == 1
+    spec = command_execution_recorder.specs[0]
+    assert spec.task_id == "task_delivery_001"
+    assert spec.transport == "ROS_ACTION"
+    assert spec.command_type == "ARM_MANIPULATION"
+    assert spec.command_phase == "TO_ROBOT"
+    assert spec.target_robot_id == "jetcobot1"
+    assert spec.target_endpoint == "/ropi/arm/arm1/execute_manipulation"
 
 
 def test_async_execute_uses_async_ros_service_command_client():
     command_client = FakeAsyncCommandClient()
-    service = ManipulationCommandService(command_client=command_client)
+    command_execution_recorder = RecordingCommandExecutionRecorder()
+    service = ManipulationCommandService(
+        command_client=command_client,
+        command_execution_recorder=command_execution_recorder,
+    )
 
     response = asyncio.run(
         service.async_execute(
@@ -116,6 +145,7 @@ def test_async_execute_uses_async_ros_service_command_client():
             "timeout": 30.0,
         }
     ]
+    assert command_execution_recorder.specs[0].command_type == "ARM_MANIPULATION"
 
 
 def test_execute_uses_runtime_config_robot_slot_id():
@@ -123,6 +153,7 @@ def test_execute_uses_runtime_config_robot_slot_id():
     service = ManipulationCommandService(
         command_client=command_client,
         runtime_config=DeliveryRuntimeConfig(robot_slot_id="slot_b2"),
+        command_execution_recorder=RecordingCommandExecutionRecorder(),
     )
 
     service.execute(

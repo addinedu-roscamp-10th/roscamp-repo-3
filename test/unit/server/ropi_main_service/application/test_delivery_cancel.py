@@ -98,12 +98,27 @@ class FakeCancelRepository:
         return response
 
 
+class RecordingCommandExecutionRecorder:
+    def __init__(self):
+        self.specs = []
+
+    def record(self, spec, command_runner):
+        self.specs.append(spec)
+        return command_runner()
+
+    async def async_record(self, spec, command_runner):
+        self.specs.append(spec)
+        return await command_runner()
+
+
 def test_cancel_delivery_task_sends_cancel_action_to_ros_service():
     command_client = FakeCancelCommandClient()
     repository = FakeCancelRepository()
+    command_execution_recorder = RecordingCommandExecutionRecorder()
     service = DeliveryRequestService(
         repository=repository,
         command_client=command_client,
+        command_execution_recorder=command_execution_recorder,
     )
 
     response = service.cancel_delivery_task(task_id="101")
@@ -128,14 +143,24 @@ def test_cancel_delivery_task_sends_cancel_action_to_ros_service():
             "mode": "sync",
         }
     ]
+    assert len(command_execution_recorder.specs) == 1
+    spec = command_execution_recorder.specs[0]
+    assert spec.task_id == "101"
+    assert spec.transport == "ROS_ACTION"
+    assert spec.command_type == "CANCEL_ACTION"
+    assert spec.command_phase == "CANCEL"
+    assert spec.target_robot_id == "pinky2"
+    assert spec.target_endpoint == "active_action_for_task"
 
 
 def test_async_cancel_delivery_task_uses_async_ros_service_client():
     command_client = FakeCancelCommandClient()
     repository = FakeCancelRepository()
+    command_execution_recorder = RecordingCommandExecutionRecorder()
     service = DeliveryRequestService(
         repository=repository,
         command_client=command_client,
+        command_execution_recorder=command_execution_recorder,
     )
 
     response = asyncio.run(
@@ -155,6 +180,8 @@ def test_async_cancel_delivery_task_uses_async_ros_service_client():
             "mode": "async",
         }
     ]
+    assert command_execution_recorder.specs[0].command_type == "CANCEL_ACTION"
+    assert command_execution_recorder.specs[0].target_endpoint == "/ropi/control/pinky2/navigate_to_goal"
     assert command_client.calls == [
         {
             "command": "cancel_action",

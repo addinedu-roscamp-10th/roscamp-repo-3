@@ -49,6 +49,19 @@ class FakeAsyncRosCommandClient:
         return self.result
 
 
+class RecordingCommandExecutionRecorder:
+    def __init__(self):
+        self.specs = []
+
+    def record(self, spec, command_runner):
+        self.specs.append(spec)
+        return command_runner()
+
+    async def async_record(self, spec, command_runner):
+        self.specs.append(spec)
+        return await command_runner()
+
+
 def build_goal_pose(*, frame_id="map"):
     return {
         "header": {
@@ -76,7 +89,11 @@ def build_goal_pose(*, frame_id="map"):
 
 def test_navigate_delivery_destination_sends_if_com_007_command_to_ros_service():
     command_client = FakeRosCommandClient()
-    service = GoalPoseNavigationService(command_client=command_client)
+    command_execution_recorder = RecordingCommandExecutionRecorder()
+    service = GoalPoseNavigationService(
+        command_client=command_client,
+        command_execution_recorder=command_execution_recorder,
+    )
 
     response = service.navigate(
         task_id="task_delivery_001",
@@ -102,11 +119,23 @@ def test_navigate_delivery_destination_sends_if_com_007_command_to_ros_service()
     ]
     assert response["result_code"] == "SUCCESS"
     assert response["result_message"] == "navigation done"
+    assert len(command_execution_recorder.specs) == 1
+    spec = command_execution_recorder.specs[0]
+    assert spec.task_id == "task_delivery_001"
+    assert spec.transport == "ROS_ACTION"
+    assert spec.command_type == "NAVIGATE_TO_GOAL"
+    assert spec.command_phase == "DELIVERY_DESTINATION"
+    assert spec.target_robot_id == "pinky2"
+    assert spec.target_endpoint == "/ropi/control/pinky2/navigate_to_goal"
 
 
 def test_async_navigate_uses_async_ros_service_command_client():
     command_client = FakeAsyncRosCommandClient()
-    service = GoalPoseNavigationService(command_client=command_client)
+    command_execution_recorder = RecordingCommandExecutionRecorder()
+    service = GoalPoseNavigationService(
+        command_client=command_client,
+        command_execution_recorder=command_execution_recorder,
+    )
 
     response = asyncio.run(
         service.async_navigate(
@@ -133,6 +162,7 @@ def test_async_navigate_uses_async_ros_service_command_client():
         }
     ]
     assert response["result_code"] == "SUCCESS"
+    assert command_execution_recorder.specs[0].command_type == "NAVIGATE_TO_GOAL"
 
 
 def test_navigate_uses_runtime_config_pinky_id():
@@ -140,6 +170,7 @@ def test_navigate_uses_runtime_config_pinky_id():
     service = GoalPoseNavigationService(
         command_client=command_client,
         runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        command_execution_recorder=RecordingCommandExecutionRecorder(),
     )
 
     service.navigate(
@@ -154,7 +185,10 @@ def test_navigate_uses_runtime_config_pinky_id():
 
 def test_navigate_defaults_goal_pose_frame_id_to_map():
     command_client = FakeRosCommandClient()
-    service = GoalPoseNavigationService(command_client=command_client)
+    service = GoalPoseNavigationService(
+        command_client=command_client,
+        command_execution_recorder=RecordingCommandExecutionRecorder(),
+    )
 
     service.navigate(
         task_id="task_delivery_002",
@@ -169,7 +203,10 @@ def test_navigate_defaults_goal_pose_frame_id_to_map():
 
 def test_navigate_accepts_return_to_dock_phase_in_phase1_runtime():
     command_client = FakeRosCommandClient()
-    service = GoalPoseNavigationService(command_client=command_client)
+    service = GoalPoseNavigationService(
+        command_client=command_client,
+        command_execution_recorder=RecordingCommandExecutionRecorder(),
+    )
 
     response = service.navigate(
         task_id="task_delivery_003",

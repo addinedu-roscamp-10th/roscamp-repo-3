@@ -1,6 +1,10 @@
 import asyncio
 import inspect
 
+from server.ropi_main_service.application.command_execution import (
+    CommandExecutionRecorder,
+    CommandExecutionSpec,
+)
 from server.ropi_main_service.ipc.uds_client import (
     RosServiceCommandError,
     UnixDomainSocketCommandClient,
@@ -20,6 +24,7 @@ class DeliveryRequestService:
         delivery_request_precheck=None,
         async_delivery_request_precheck=None,
         command_client=None,
+        command_execution_recorder=None,
         cancel_timeout_sec=5.0,
     ):
         self.repository = repository or DeliveryRequestRepository()
@@ -27,6 +32,7 @@ class DeliveryRequestService:
         self.delivery_request_precheck = delivery_request_precheck
         self.async_delivery_request_precheck = async_delivery_request_precheck
         self.command_client = command_client or UnixDomainSocketCommandClient()
+        self.command_execution_recorder = command_execution_recorder or CommandExecutionRecorder()
         self.cancel_timeout_sec = float(cancel_timeout_sec)
 
     def get_product_names(self):
@@ -159,11 +165,20 @@ class DeliveryRequestService:
             return target_response
 
         payload = self._build_cancel_action_payload(task_id=task_id, action_name=action_name)
+        spec = self._build_cancel_command_execution_spec(
+            task_id=task_id,
+            action_name=action_name,
+            assigned_robot_id=target_response.get("assigned_robot_id"),
+            payload=payload,
+        )
         try:
-            cancel_response = self.command_client.send_command(
-                "cancel_action",
-                payload,
-                timeout=self.cancel_timeout_sec,
+            cancel_response = self.command_execution_recorder.record(
+                spec,
+                lambda: self.command_client.send_command(
+                    "cancel_action",
+                    payload,
+                    timeout=self.cancel_timeout_sec,
+                ),
             )
         except RosServiceCommandError as exc:
             cancel_response = self._rejected(
@@ -195,20 +210,38 @@ class DeliveryRequestService:
 
         payload = self._build_cancel_action_payload(task_id=task_id, action_name=action_name)
         async_send_command = getattr(self.command_client, "async_send_command", None)
+        spec = self._build_cancel_command_execution_spec(
+            task_id=task_id,
+            action_name=action_name,
+            assigned_robot_id=target_response.get("assigned_robot_id"),
+            payload=payload,
+        )
 
         try:
             if async_send_command is not None:
-                cancel_response = await async_send_command(
-                    "cancel_action",
-                    payload,
-                    timeout=self.cancel_timeout_sec,
+                async def _send_async_cancel_command():
+                    return await async_send_command(
+                        "cancel_action",
+                        payload,
+                        timeout=self.cancel_timeout_sec,
+                    )
+
+                cancel_response = await self.command_execution_recorder.async_record(
+                    spec,
+                    _send_async_cancel_command,
                 )
             else:
-                cancel_response = await asyncio.to_thread(
-                    self.command_client.send_command,
-                    "cancel_action",
-                    payload,
-                    timeout=self.cancel_timeout_sec,
+                async def _send_sync_cancel_command_in_thread():
+                    return await asyncio.to_thread(
+                        self.command_client.send_command,
+                        "cancel_action",
+                        payload,
+                        timeout=self.cancel_timeout_sec,
+                    )
+
+                cancel_response = await self.command_execution_recorder.async_record(
+                    spec,
+                    _send_sync_cancel_command_in_thread,
                 )
 
         except RosServiceCommandError as exc:
@@ -349,6 +382,20 @@ class DeliveryRequestService:
         if normalized_action_name:
             payload["action_name"] = normalized_action_name
         return payload
+
+    @staticmethod
+    def _build_cancel_command_execution_spec(*, task_id, action_name=None, assigned_robot_id=None, payload):
+        normalized_action_name = str(action_name or "").strip()
+        return CommandExecutionSpec(
+            task_id=str(task_id).strip(),
+            transport="ROS_ACTION",
+            command_type="CANCEL_ACTION",
+            command_phase="CANCEL",
+            target_component="ros_service",
+            target_robot_id=str(assigned_robot_id or "").strip() or None,
+            target_endpoint=normalized_action_name or "active_action_for_task",
+            request_payload=payload,
+        )
 
     @staticmethod
     def _invalid_request(message: str, reason_code: str):
