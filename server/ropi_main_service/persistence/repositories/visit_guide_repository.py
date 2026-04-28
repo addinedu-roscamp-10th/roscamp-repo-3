@@ -1,24 +1,16 @@
 from server.ropi_main_service.persistence.connection import get_connection
+from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 class VisitGuideRepository:
     def find_patient(self, keyword: str):
-        query = """
-            SELECT
-                member_id,
-                member_name AS patient_name,
-                room_no
-            FROM member
-            WHERE member_name LIKE %s
-               OR room_no LIKE %s
-            ORDER BY member_name
-            LIMIT 1
-        """
-
         conn = get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute(query, (f"%{keyword}%", f"%{keyword}%"))
+                cur.execute(
+                    load_sql("visit_guide/find_patient.sql"),
+                    (f"%{keyword}%", f"%{keyword}%"),
+                )
                 row = cur.fetchone()
                 if not row:
                     return None
@@ -42,21 +34,7 @@ class VisitGuideRepository:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    INSERT INTO member_event (
-                        member_id,
-                        event_type_code,
-                        event_type_name,
-                        event_category,
-                        severity,
-                        event_name,
-                        description,
-                        event_at,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW())
-                    """,
+                    load_sql("member_event/insert_member_event.sql"),
                     (
                         target_member_id,
                         "GUIDE_REQUESTED",

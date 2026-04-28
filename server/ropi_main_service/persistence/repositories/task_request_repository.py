@@ -10,23 +10,13 @@ from server.ropi_main_service.persistence.repositories.delivery_task_repository 
 from server.ropi_main_service.persistence.repositories.idempotency_repository import (
     IdempotencyRepository,
 )
+from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 FIRST_PHASE_DELIVERY_PINKY_ID = DEFAULT_DELIVERY_PINKY_ID
 
 
 class DeliveryRequestRepository:
-    PRODUCT_SELECT_COLUMNS = """
-        SELECT
-            CAST(item_id AS CHAR) AS item_id,
-            item_name,
-            quantity,
-            item_type,
-            created_at,
-            updated_at
-        FROM item
-    """
-
     def __init__(
         self,
         runtime_config=None,
@@ -40,11 +30,7 @@ class DeliveryRequestRepository:
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
 
     def get_all_products(self):
-        query = f"""
-            {self.PRODUCT_SELECT_COLUMNS}
-            ORDER BY item_name
-        """
-        return fetch_all(query)
+        return fetch_all(load_sql("task_request/list_items.sql"))
 
     def get_product_by_id(self, item_id, conn=None):
         numeric_item_id = self._parse_numeric_identifier(item_id)
@@ -215,21 +201,7 @@ class DeliveryRequestRepository:
                 )
 
                 cur.execute(
-                    """
-                    INSERT INTO member_event (
-                        member_id,
-                        event_type_code,
-                        event_type_name,
-                        event_category,
-                        severity,
-                        event_name,
-                        description,
-                        event_at,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW())
-                    """,
+                    load_sql("member_event/insert_member_event.sql"),
                     (
                         self._parse_numeric_identifier(member_id) or 1,
                         "DELIVERY_REQUESTED",
@@ -258,26 +230,24 @@ class DeliveryRequestRepository:
 
         try:
             with conn.cursor() as cur:
-                query = f"""
-                    {self.PRODUCT_SELECT_COLUMNS}
-                    WHERE {where_clause}
-                    LIMIT 1
-                """
-                cur.execute(query, params)
+                cur.execute(self._product_query_for(where_clause), params)
                 return cur.fetchone()
         finally:
             if own_conn:
                 conn.close()
 
     @staticmethod
+    def _product_query_for(where_clause):
+        if where_clause == "item_id = %s":
+            return load_sql("task_request/find_item_by_id.sql")
+        if where_clause == "item_name = %s":
+            return load_sql("task_request/find_item_by_name.sql")
+        raise ValueError(f"Unsupported product lookup: {where_clause}")
+
+    @staticmethod
     def _caregiver_exists(cur, caregiver_id) -> bool:
         cur.execute(
-            """
-            SELECT 1
-            FROM caregiver
-            WHERE caregiver_id = %s
-            LIMIT 1
-            """,
+            load_sql("task_request/caregiver_exists.sql"),
             (caregiver_id,),
         )
         return cur.fetchone() is not None
@@ -285,12 +255,7 @@ class DeliveryRequestRepository:
     @staticmethod
     def _goal_pose_exists(cur, goal_pose_id) -> bool:
         cur.execute(
-            """
-            SELECT 1
-            FROM goal_pose
-            WHERE goal_pose_id = %s
-            LIMIT 1
-            """,
+            load_sql("task_request/goal_pose_exists.sql"),
             (goal_pose_id,),
         )
         return cur.fetchone() is not None

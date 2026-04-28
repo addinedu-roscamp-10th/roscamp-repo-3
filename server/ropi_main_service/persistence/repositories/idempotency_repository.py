@@ -1,6 +1,8 @@
 import hashlib
 import json
 
+from server.ropi_main_service.persistence.sql_loader import load_sql
+
 
 class IdempotencyRepository:
     def build_request_hash(self, **payload) -> str:
@@ -14,15 +16,7 @@ class IdempotencyRepository:
 
     def find_response(self, cur, *, requester_id, idempotency_key, request_hash):
         cur.execute(
-            """
-            SELECT request_hash, response_json
-            FROM idempotency_record
-            WHERE scope = 'DELIVERY_CREATE_TASK'
-              AND requester_type = 'CAREGIVER'
-              AND requester_id = %s
-              AND idempotency_key = %s
-            LIMIT 1
-            """,
+            load_sql("idempotency/find_delivery_create_task_response.sql"),
             (requester_id, idempotency_key),
         )
         row = cur.fetchone()
@@ -45,30 +39,7 @@ class IdempotencyRepository:
 
     def insert_record(self, cur, *, requester_id, idempotency_key, request_hash, response, task_id):
         cur.execute(
-            """
-            INSERT INTO idempotency_record (
-                scope,
-                requester_type,
-                requester_id,
-                idempotency_key,
-                request_hash,
-                response_json,
-                task_id,
-                expires_at,
-                created_at
-            )
-            VALUES (
-                'DELIVERY_CREATE_TASK',
-                'CAREGIVER',
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                DATE_ADD(NOW(3), INTERVAL 1 DAY),
-                NOW(3)
-            )
-            """,
+            load_sql("idempotency/insert_delivery_create_task_record.sql"),
             (
                 requester_id,
                 idempotency_key,

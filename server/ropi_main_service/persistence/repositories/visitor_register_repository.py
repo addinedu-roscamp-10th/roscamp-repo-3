@@ -1,4 +1,5 @@
 from server.ropi_main_service.persistence.connection import get_connection
+from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 class VisitorRegisterRepository:
@@ -19,23 +20,13 @@ class VisitorRegisterRepository:
         conn = get_connection()
         try:
             with conn.cursor() as cur:
-                target_member_id = self._normalize_member_id(member_id) if member_id else self._find_member_id(cur, patient_name)
+                target_member_id = (
+                    self._normalize_member_id(member_id)
+                    if member_id
+                    else self._find_member_id(cur, patient_name)
+                )
                 cur.execute(
-                    """
-                    INSERT INTO member_event (
-                        member_id,
-                        event_type_code,
-                        event_type_name,
-                        event_category,
-                        severity,
-                        event_name,
-                        description,
-                        event_at,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW())
-                    """,
+                    load_sql("member_event/insert_member_event.sql"),
                     (
                         target_member_id,
                         "VISIT_CHECKIN",
@@ -57,12 +48,7 @@ class VisitorRegisterRepository:
     @staticmethod
     def _find_member_id(cur, patient_name: str):
         cur.execute(
-            """
-            SELECT member_id
-            FROM member
-            WHERE member_name = %s
-            LIMIT 1
-            """,
+            load_sql("visitor_register/find_member_id_by_name.sql"),
             (patient_name,),
         )
         row = cur.fetchone()

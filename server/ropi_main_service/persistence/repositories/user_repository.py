@@ -1,4 +1,5 @@
 from server.ropi_main_service.persistence.connection import fetch_one
+from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 class UserRepository:
@@ -6,27 +7,9 @@ class UserRepository:
         normalized_role = (role or "").strip().lower()
 
         if normalized_role == "caregiver":
-            query = """
-                SELECT
-                    CAST(caregiver_id AS CHAR) AS user_id,
-                    password AS user_password,
-                    caregiver_name AS user_name
-                FROM caregiver
-                WHERE caregiver_id = %s
-                LIMIT 1
-            """
-            return fetch_one(query, (login_id,))
+            return fetch_one(load_sql("user/find_caregiver_for_login.sql"), (login_id,))
 
-        query = """
-            SELECT
-                visitor_id AS user_id,
-                password AS user_password,
-                visitor_name AS user_name
-            FROM visitor
-            WHERE visitor_id = %s
-            LIMIT 1
-        """
-        return fetch_one(query, (login_id,))
+        return fetch_one(load_sql("user/find_visitor_for_login.sql"), (login_id,))
 
 
 __all__ = ["UserRepository"]

@@ -1,4 +1,5 @@
 from server.ropi_main_service.application.delivery_config import get_delivery_runtime_config
+from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 DEFAULT_PICKUP_GOAL_POSE_ID = "pickup_supply"
@@ -56,38 +57,7 @@ class DeliveryTaskRepository:
         destination_goal_pose_id,
     ):
         cur.execute(
-            """
-            INSERT INTO task (
-                task_type,
-                request_id,
-                idempotency_key,
-                requester_type,
-                requester_id,
-                priority,
-                task_status,
-                phase,
-                assigned_robot_id,
-                map_id,
-                created_at,
-                updated_at
-            )
-            SELECT
-                'DELIVERY',
-                %s,
-                %s,
-                'CAREGIVER',
-                %s,
-                %s,
-                'WAITING_DISPATCH',
-                'REQUESTED',
-                %s,
-                gp.map_id,
-                NOW(3),
-                NOW(3)
-            FROM goal_pose gp
-            WHERE gp.goal_pose_id = %s
-            LIMIT 1
-            """,
+            load_sql("delivery/insert_delivery_task.sql"),
             (
                 request_id,
                 idempotency_key,
@@ -101,18 +71,7 @@ class DeliveryTaskRepository:
 
     def _insert_delivery_detail(self, cur, *, task_id, destination_goal_pose_id, notes):
         cur.execute(
-            """
-            INSERT INTO delivery_task_detail (
-                task_id,
-                pickup_goal_pose_id,
-                destination_goal_pose_id,
-                pickup_arm_robot_id,
-                dropoff_arm_robot_id,
-                robot_slot_id,
-                notes
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
+            load_sql("delivery/insert_delivery_task_detail.sql"),
             (
                 task_id,
                 DEFAULT_PICKUP_GOAL_POSE_ID,
@@ -127,77 +86,21 @@ class DeliveryTaskRepository:
     @staticmethod
     def _insert_delivery_item(cur, *, task_id, item_id, quantity):
         cur.execute(
-            """
-            INSERT INTO delivery_task_item (
-                task_id,
-                item_id,
-                requested_quantity,
-                loaded_quantity,
-                delivered_quantity,
-                item_status,
-                created_at,
-                updated_at
-            )
-            VALUES (%s, %s, %s, 0, 0, 'REQUESTED', NOW(), NOW())
-            """,
+            load_sql("delivery/insert_delivery_task_item.sql"),
             (task_id, item_id, quantity),
         )
 
     @staticmethod
     def _insert_initial_task_history(cur, *, task_id):
         cur.execute(
-            """
-            INSERT INTO task_state_history (
-                task_id,
-                from_status,
-                to_status,
-                from_phase,
-                to_phase,
-                reason_code,
-                message,
-                changed_by_component,
-                changed_at
-            )
-            VALUES (
-                %s,
-                NULL,
-                'WAITING_DISPATCH',
-                NULL,
-                'REQUESTED',
-                NULL,
-                %s,
-                %s,
-                NOW(3)
-            )
-            """,
+            load_sql("delivery/insert_initial_task_history.sql"),
             (task_id, "delivery task accepted", "control_service"),
         )
 
     @staticmethod
     def _insert_initial_task_event(cur, *, task_id):
         cur.execute(
-            """
-            INSERT INTO task_event_log (
-                task_id,
-                event_name,
-                severity,
-                component,
-                result_code,
-                message,
-                occurred_at,
-                created_at
-            )
-            VALUES (
-                %s,
-                'DELIVERY_TASK_ACCEPTED',
-                'INFO',
-                'control_service',
-                'ACCEPTED',
-                %s,
-                NOW(3),
-                NOW(3)
-            )
-            """,
+            load_sql("delivery/insert_initial_task_event.sql"),
             (task_id, "delivery task accepted"),
         )
 
