@@ -10,7 +10,7 @@ from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import BatteryState
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Float32, String
 
 from ropi_interface.msg import PinkyStatus
 
@@ -62,6 +62,8 @@ class PinkyStatusRuntimePublisher(Node):
         self.declare_parameter("pose_topic", "")
         self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("battery_topic", "")
+        self.declare_parameter("battery_percent_topic", "")
+        self.declare_parameter("battery_voltage_topic", "")
         self.declare_parameter("state_topic", "/transport/amr_status")
         self.declare_parameter("task_topic", "")
         self.declare_parameter("charging_topic", "")
@@ -117,9 +119,21 @@ class PinkyStatusRuntimePublisher(Node):
             self.get_logger().info(f"Using Odometry source topic: {odom_topic}")
 
         battery_topic = str(self.get_parameter("battery_topic").value).strip()
+        battery_percent_topic = str(self.get_parameter("battery_percent_topic").value).strip()
+        battery_voltage_topic = str(self.get_parameter("battery_voltage_topic").value).strip()
         if battery_topic:
             self.create_subscription(BatteryState, battery_topic, self._on_battery, qos)
             self.get_logger().info(f"Using BatteryState source topic: {battery_topic}")
+        if battery_percent_topic:
+            self.create_subscription(Float32, battery_percent_topic, self._on_battery_percent, qos)
+            self.get_logger().info(
+                f"Using battery percent source topic: {battery_percent_topic}"
+            )
+        if battery_voltage_topic:
+            self.create_subscription(Float32, battery_voltage_topic, self._on_battery_voltage, qos)
+            self.get_logger().info(
+                f"Using battery voltage source topic: {battery_voltage_topic}"
+            )
 
         state_topic = str(self.get_parameter("state_topic").value).strip()
         if state_topic:
@@ -271,6 +285,14 @@ class PinkyStatusRuntimePublisher(Node):
             self._snapshot.battery_percent = float(msg.percentage) * 100.0
         if not math.isnan(float(msg.voltage)):
             self._snapshot.battery_voltage = float(msg.voltage)
+        self._mark_measured_now()
+
+    def _on_battery_percent(self, msg: Float32):
+        self._snapshot.battery_percent = float(msg.data)
+        self._mark_measured_now()
+
+    def _on_battery_voltage(self, msg: Float32):
+        self._snapshot.battery_voltage = float(msg.data)
         self._mark_measured_now()
 
     def _on_state(self, msg: String):
