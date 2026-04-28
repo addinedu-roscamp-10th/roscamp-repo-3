@@ -1,6 +1,9 @@
 from unittest.mock import patch
 
 from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
+from server.ropi_main_service.persistence.repositories.idempotency_repository import (
+    IdempotencyRepository,
+)
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
     DeliveryRequestRepository,
 )
@@ -88,10 +91,91 @@ class FakeInsufficientItemRepository(FakeDeliveryRequestRepository):
         return {"item_id": "1", "item_name": "물티슈", "quantity": 0}
 
 
+class FakeIdempotencyRepository:
+    def __init__(self):
+        self.inserted = None
+
+    def build_request_hash(self, **payload):
+        self.hash_payload = payload
+        return "request_hash"
+
+    def find_response(self, cur, *, requester_id, idempotency_key, request_hash):
+        self.find_args = {
+            "requester_id": requester_id,
+            "idempotency_key": idempotency_key,
+            "request_hash": request_hash,
+        }
+        return None
+
+    def insert_record(self, cur, **kwargs):
+        self.inserted = kwargs
+
+
+class FakeDeliveryTaskRepository:
+    def __init__(self):
+        self.created = None
+
+    def create_delivery_task_records(self, cur, **kwargs):
+        self.created = kwargs
+        return 101
+
+
+class CollaboratorBackedDeliveryRequestRepository(DeliveryRequestRepository):
+    def _fetch_product(self, where_clause, params, *, conn=None):
+        return {"item_id": "1", "item_name": "물티슈", "quantity": 10}
+
+    def _caregiver_exists(self, cur, caregiver_id):
+        return True
+
+    def _goal_pose_exists(self, cur, goal_pose_id):
+        return True
+
+
+def test_create_delivery_task_delegates_persistence_to_collaborators():
+    fake_conn = FakeConnection()
+    idempotency_repository = FakeIdempotencyRepository()
+    delivery_task_repository = FakeDeliveryTaskRepository()
+    repository = CollaboratorBackedDeliveryRequestRepository(
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=idempotency_repository,
+        delivery_task_repository=delivery_task_repository,
+    )
+
+    with patch(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.get_connection",
+        return_value=fake_conn,
+    ):
+        response = repository.create_delivery_task(
+            request_id="req_001",
+            caregiver_id="1",
+            item_id="1",
+            quantity=1,
+            destination_id="delivery_room_301",
+            priority="NORMAL",
+            notes="note",
+            idempotency_key="idem_001",
+        )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert delivery_task_repository.created["item_id"] == 1
+    assert delivery_task_repository.created["destination_goal_pose_id"] == "delivery_room_301"
+    assert idempotency_repository.find_args == {
+        "requester_id": "1",
+        "idempotency_key": "idem_001",
+        "request_hash": "request_hash",
+    }
+    assert idempotency_repository.inserted["task_id"] == 101
+    assert fake_conn.committed is True
+
+
 def test_create_delivery_task_uses_runtime_config_assigned_robot_id():
     fake_conn = FakeConnection()
+    idempotency_repository = FakeIdempotencyRepository()
+    delivery_task_repository = FakeDeliveryTaskRepository()
     repository = FakeDeliveryRequestRepository(
-        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9")
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=idempotency_repository,
+        delivery_task_repository=delivery_task_repository,
     )
 
     with patch(
@@ -113,20 +197,21 @@ def test_create_delivery_task_uses_runtime_config_assigned_robot_id():
     assert response["task_id"] == 101
     assert response["assigned_robot_id"] == "pinky9"
     assert "assigned_pinky_id" not in response
-    assert repository.inserted_task_kwargs["destination_goal_pose_id"] == "delivery_room_301"
-    assert repository.inserted_detail_kwargs["destination_goal_pose_id"] == "delivery_room_301"
-    assert repository.inserted_item_kwargs == {"task_id": 101, "item_id": 1, "quantity": 1}
-    assert repository.history_task_id == 101
-    assert repository.event_task_id == 101
-    assert repository.idempotency_kwargs["task_id"] == 101
+    assert delivery_task_repository.created["destination_goal_pose_id"] == "delivery_room_301"
+    assert delivery_task_repository.created["item_id"] == 1
+    assert delivery_task_repository.created["quantity"] == 1
+    assert idempotency_repository.inserted["task_id"] == 101
     assert fake_conn.committed is True
     assert fake_conn.closed is True
 
 
 def test_create_delivery_task_rejects_when_item_quantity_is_insufficient():
     fake_conn = FakeConnection()
+    delivery_task_repository = FakeDeliveryTaskRepository()
     repository = FakeInsufficientItemRepository(
-        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9")
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=FakeIdempotencyRepository(),
+        delivery_task_repository=delivery_task_repository,
     )
 
     with patch(
@@ -147,11 +232,11 @@ def test_create_delivery_task_rejects_when_item_quantity_is_insufficient():
     assert response["result_code"] == "REJECTED"
     assert response["reason_code"] == "ITEM_QUANTITY_INSUFFICIENT"
     assert fake_conn.rolled_back is True
-    assert not hasattr(repository, "inserted_task_kwargs")
+    assert delivery_task_repository.created is None
 
 
 def test_find_idempotent_response_rejects_key_reuse_with_different_payload():
-    response = DeliveryRequestRepository._find_idempotent_response(
+    response = IdempotencyRepository().find_response(
         FakeExistingIdempotencyCursor(),
         requester_id="1",
         idempotency_key="idem_001",

@@ -1,15 +1,18 @@
-import hashlib
-import json
-
 from server.ropi_main_service.application.delivery_config import (
     DEFAULT_DELIVERY_PINKY_ID,
     get_delivery_runtime_config,
 )
 from server.ropi_main_service.persistence.connection import fetch_all, get_connection
+from server.ropi_main_service.persistence.repositories.delivery_task_repository import (
+    DEFAULT_PICKUP_GOAL_POSE_ID,
+    DeliveryTaskRepository,
+)
+from server.ropi_main_service.persistence.repositories.idempotency_repository import (
+    IdempotencyRepository,
+)
 
 
 FIRST_PHASE_DELIVERY_PINKY_ID = DEFAULT_DELIVERY_PINKY_ID
-DEFAULT_PICKUP_GOAL_POSE_ID = "pickup_supply"
 
 
 class DeliveryRequestRepository:
@@ -24,8 +27,17 @@ class DeliveryRequestRepository:
         FROM item
     """
 
-    def __init__(self, runtime_config=None):
+    def __init__(
+        self,
+        runtime_config=None,
+        delivery_task_repository=None,
+        idempotency_repository=None,
+    ):
         self.runtime_config = runtime_config or get_delivery_runtime_config()
+        self.delivery_task_repository = delivery_task_repository or DeliveryTaskRepository(
+            runtime_config=self.runtime_config
+        )
+        self.idempotency_repository = idempotency_repository or IdempotencyRepository()
 
     def get_all_products(self):
         query = f"""
@@ -59,7 +71,7 @@ class DeliveryRequestRepository:
         numeric_caregiver_id = self._parse_numeric_identifier(caregiver_id)
         requested_quantity = int(quantity)
         destination_goal_pose_id = str(destination_id or "").strip()
-        request_hash = self._build_request_hash(
+        request_hash = self.idempotency_repository.build_request_hash(
             request_id=request_id,
             caregiver_id=numeric_caregiver_id,
             item_id=numeric_item_id,
@@ -87,7 +99,7 @@ class DeliveryRequestRepository:
         try:
             self._begin(conn)
             with conn.cursor() as cur:
-                existing_response = self._find_idempotent_response(
+                existing_response = self.idempotency_repository.find_response(
                     cur,
                     requester_id=str(numeric_caregiver_id),
                     idempotency_key=idempotency_key,
@@ -139,28 +151,17 @@ class DeliveryRequestRepository:
                         reason_code="DESTINATION_GOAL_POSE_NOT_FOUND",
                     )
 
-                task_id = self._insert_delivery_task(
+                task_id = self.delivery_task_repository.create_delivery_task_records(
                     cur,
                     request_id=request_id,
                     idempotency_key=idempotency_key,
                     caregiver_id=numeric_caregiver_id,
                     priority=priority,
                     destination_goal_pose_id=destination_goal_pose_id,
-                )
-                self._insert_delivery_detail(
-                    cur,
-                    task_id=task_id,
-                    destination_goal_pose_id=destination_goal_pose_id,
                     notes=notes,
-                )
-                self._insert_delivery_item(
-                    cur,
-                    task_id=task_id,
                     item_id=numeric_item_id,
                     quantity=requested_quantity,
                 )
-                self._insert_initial_task_history(cur, task_id=task_id)
-                self._insert_initial_task_event(cur, task_id=task_id)
 
                 response = self._build_delivery_task_response(
                     result_code="ACCEPTED",
@@ -168,7 +169,7 @@ class DeliveryRequestRepository:
                     task_status="WAITING_DISPATCH",
                     assigned_robot_id=self.runtime_config.pinky_id,
                 )
-                self._insert_idempotency_record(
+                self.idempotency_repository.insert_record(
                     cur,
                     requester_id=str(numeric_caregiver_id),
                     idempotency_key=idempotency_key,
@@ -268,162 +269,6 @@ class DeliveryRequestRepository:
             if own_conn:
                 conn.close()
 
-    def _insert_delivery_task(
-        self,
-        cur,
-        *,
-        request_id,
-        idempotency_key,
-        caregiver_id,
-        priority,
-        destination_goal_pose_id,
-    ):
-        cur.execute(
-            """
-            INSERT INTO task (
-                task_type,
-                request_id,
-                idempotency_key,
-                requester_type,
-                requester_id,
-                priority,
-                task_status,
-                phase,
-                assigned_robot_id,
-                map_id,
-                created_at,
-                updated_at
-            )
-            SELECT
-                'DELIVERY',
-                %s,
-                %s,
-                'CAREGIVER',
-                %s,
-                %s,
-                'WAITING_DISPATCH',
-                'REQUESTED',
-                %s,
-                gp.map_id,
-                NOW(3),
-                NOW(3)
-            FROM goal_pose gp
-            WHERE gp.goal_pose_id = %s
-            LIMIT 1
-            """,
-            (
-                request_id,
-                idempotency_key,
-                str(caregiver_id),
-                priority or "NORMAL",
-                self.runtime_config.pinky_id,
-                destination_goal_pose_id,
-            ),
-        )
-        return cur.lastrowid
-
-    def _insert_delivery_detail(self, cur, *, task_id, destination_goal_pose_id, notes):
-        cur.execute(
-            """
-            INSERT INTO delivery_task_detail (
-                task_id,
-                pickup_goal_pose_id,
-                destination_goal_pose_id,
-                pickup_arm_robot_id,
-                dropoff_arm_robot_id,
-                robot_slot_id,
-                notes
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                task_id,
-                DEFAULT_PICKUP_GOAL_POSE_ID,
-                destination_goal_pose_id,
-                self.runtime_config.pickup_arm_robot_id,
-                self.runtime_config.destination_arm_robot_id,
-                self.runtime_config.robot_slot_id,
-                notes,
-            ),
-        )
-
-    @staticmethod
-    def _insert_delivery_item(cur, *, task_id, item_id, quantity):
-        cur.execute(
-            """
-            INSERT INTO delivery_task_item (
-                task_id,
-                item_id,
-                requested_quantity,
-                loaded_quantity,
-                delivered_quantity,
-                item_status,
-                created_at,
-                updated_at
-            )
-            VALUES (%s, %s, %s, 0, 0, 'REQUESTED', NOW(), NOW())
-            """,
-            (task_id, item_id, quantity),
-        )
-
-    @staticmethod
-    def _insert_initial_task_history(cur, *, task_id):
-        cur.execute(
-            """
-            INSERT INTO task_state_history (
-                task_id,
-                from_status,
-                to_status,
-                from_phase,
-                to_phase,
-                reason_code,
-                message,
-                changed_by_component,
-                changed_at
-            )
-            VALUES (
-                %s,
-                NULL,
-                'WAITING_DISPATCH',
-                NULL,
-                'REQUESTED',
-                NULL,
-                %s,
-                %s,
-                NOW(3)
-            )
-            """,
-            (task_id, "delivery task accepted", "control_service"),
-        )
-
-    @staticmethod
-    def _insert_initial_task_event(cur, *, task_id):
-        cur.execute(
-            """
-            INSERT INTO task_event_log (
-                task_id,
-                event_name,
-                severity,
-                component,
-                result_code,
-                message,
-                occurred_at,
-                created_at
-            )
-            VALUES (
-                %s,
-                'DELIVERY_TASK_ACCEPTED',
-                'INFO',
-                'control_service',
-                'ACCEPTED',
-                %s,
-                NOW(3),
-                NOW(3)
-            )
-            """,
-            (task_id, "delivery task accepted"),
-        )
-
     @staticmethod
     def _caregiver_exists(cur, caregiver_id) -> bool:
         cur.execute(
@@ -449,92 +294,6 @@ class DeliveryRequestRepository:
             (goal_pose_id,),
         )
         return cur.fetchone() is not None
-
-    @staticmethod
-    def _find_idempotent_response(cur, *, requester_id, idempotency_key, request_hash):
-        cur.execute(
-            """
-            SELECT request_hash, response_json
-            FROM idempotency_record
-            WHERE scope = 'DELIVERY_CREATE_TASK'
-              AND requester_type = 'CAREGIVER'
-              AND requester_id = %s
-              AND idempotency_key = %s
-            LIMIT 1
-            """,
-            (requester_id, idempotency_key),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None
-
-        if row.get("request_hash") != request_hash:
-            return DeliveryRequestRepository._build_delivery_task_response(
-                result_code="INVALID_REQUEST",
-                result_message="같은 idempotency_key로 다른 요청 payload가 전달되었습니다.",
-                reason_code="IDEMPOTENCY_KEY_CONFLICT",
-            )
-
-        response = row.get("response_json")
-        if isinstance(response, dict):
-            return response
-        if response:
-            return json.loads(response)
-        return None
-
-    @staticmethod
-    def _insert_idempotency_record(
-        cur,
-        *,
-        requester_id,
-        idempotency_key,
-        request_hash,
-        response,
-        task_id,
-    ):
-        cur.execute(
-            """
-            INSERT INTO idempotency_record (
-                scope,
-                requester_type,
-                requester_id,
-                idempotency_key,
-                request_hash,
-                response_json,
-                task_id,
-                expires_at,
-                created_at
-            )
-            VALUES (
-                'DELIVERY_CREATE_TASK',
-                'CAREGIVER',
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                DATE_ADD(NOW(3), INTERVAL 1 DAY),
-                NOW(3)
-            )
-            """,
-            (
-                requester_id,
-                idempotency_key,
-                request_hash,
-                json.dumps(response, ensure_ascii=False),
-                task_id,
-            ),
-        )
-
-    @staticmethod
-    def _build_request_hash(**payload) -> str:
-        normalized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _parse_numeric_identifier(value):

@@ -120,3 +120,9 @@ def test_dummy_data_targets_current_schema_tables():
     assert "INSERT INTO `robot_event`" not in seed_sql
     assert "INSERT INTO `supply`" not in seed_sql
     assert "INSERT INTO `map_table`" not in seed_sql
+
+
+def test_dummy_data_does_not_force_database_name():
+    seed_sql = _seed_sql()
+
+    assert "USE care_service" not in seed_sql

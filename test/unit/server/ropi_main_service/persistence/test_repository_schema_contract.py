@@ -44,14 +44,16 @@ def test_inventory_repository_uses_item_schema():
 
 
 def test_delivery_request_repository_persists_task_model():
-    source = _source("task_request_repository.py")
+    request_source = _source("task_request_repository.py")
+    task_source = _source("delivery_task_repository.py")
+    combined_source = request_source + "\n" + task_source
 
-    assert "FROM item" in source
-    assert "INSERT INTO task" in source
-    assert "INSERT INTO delivery_task_item" in source
-    assert "INSERT INTO task_state_history" in source
-    assert "INSERT INTO task_event_log" in source
-    assert "assigned_robot_id" in source
+    assert "FROM item" in combined_source
+    assert "INSERT INTO task" in combined_source
+    assert "INSERT INTO delivery_task_item" in combined_source
+    assert "INSERT INTO task_state_history" in combined_source
+    assert "INSERT INTO task_event_log" in combined_source
+    assert "assigned_robot_id" in combined_source
 
 
 def test_member_event_repositories_use_member_event_table():
