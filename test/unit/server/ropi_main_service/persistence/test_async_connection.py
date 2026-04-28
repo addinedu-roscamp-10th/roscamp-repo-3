@@ -122,6 +122,45 @@ def test_async_fetch_one_uses_cached_aiomysql_pool(monkeypatch):
     ]
 
 
+def test_concurrent_get_pool_initializes_aiomysql_pool_once(monkeypatch):
+    created_pools = []
+
+    async def fake_create_pool(**kwargs):
+        await asyncio.sleep(0.01)
+        pool = FakePool()
+        created_pools.append(pool)
+        return pool
+
+    monkeypatch.setattr(async_connection.aiomysql, "create_pool", fake_create_pool)
+    monkeypatch.setattr(
+        async_connection,
+        "get_db_config",
+        lambda: {
+            "host": "127.0.0.1",
+            "port": 3306,
+            "user": "user",
+            "password": "pw",
+            "database": "care_service",
+            "charset": "utf8mb4",
+            "connect_timeout": 3,
+            "read_timeout": 3,
+            "write_timeout": 3,
+        },
+    )
+
+    async def scenario():
+        return await asyncio.gather(
+            async_connection.get_pool(),
+            async_connection.get_pool(),
+            async_connection.get_pool(),
+        )
+
+    pools = asyncio.run(scenario())
+
+    assert len(created_pools) == 1
+    assert pools == [created_pools[0], created_pools[0], created_pools[0]]
+
+
 def test_async_fetch_rejects_write_query():
     async def scenario():
         await async_connection.async_fetch_one("UPDATE item SET quantity = 1")

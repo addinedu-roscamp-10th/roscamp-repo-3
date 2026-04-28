@@ -1,3 +1,5 @@
+import asyncio
+import weakref
 from contextlib import asynccontextmanager
 
 import aiomysql
@@ -7,6 +9,16 @@ from server.ropi_main_service.persistence.connection import _validate_select_que
 
 
 _pool = None
+_pool_init_locks = weakref.WeakKeyDictionary()
+
+
+def _get_pool_init_lock():
+    loop = asyncio.get_running_loop()
+    lock = _pool_init_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _pool_init_locks[loop] = lock
+    return lock
 
 
 async def get_pool():
@@ -15,8 +27,17 @@ async def get_pool():
     if _pool is not None:
         return _pool
 
+    async with _get_pool_init_lock():
+        if _pool is not None:
+            return _pool
+
+        _pool = await _create_pool()
+        return _pool
+
+
+async def _create_pool():
     db_config = get_db_config()
-    _pool = await aiomysql.create_pool(
+    return await aiomysql.create_pool(
         host=db_config["host"],
         port=db_config["port"],
         user=db_config["user"],
@@ -33,13 +54,14 @@ async def get_pool():
 async def close_pool():
     global _pool
 
-    if _pool is None:
-        return
+    async with _get_pool_init_lock():
+        if _pool is None:
+            return
 
-    pool = _pool
-    _pool = None
-    pool.close()
-    await pool.wait_closed()
+        pool = _pool
+        _pool = None
+        pool.close()
+        await pool.wait_closed()
 
 
 async def async_fetch_one(query: str, params=None):
