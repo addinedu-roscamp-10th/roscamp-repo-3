@@ -1,0 +1,77 @@
+import aiomysql
+
+from server.ropi_main_service.persistence.config import get_db_config
+from server.ropi_main_service.persistence.connection import _validate_select_query
+
+
+_pool = None
+
+
+async def get_pool():
+    global _pool
+
+    if _pool is not None:
+        return _pool
+
+    db_config = get_db_config()
+    _pool = await aiomysql.create_pool(
+        host=db_config["host"],
+        port=db_config["port"],
+        user=db_config["user"],
+        password=db_config["password"],
+        db=db_config["database"],
+        charset=db_config["charset"],
+        autocommit=True,
+        connect_timeout=db_config["connect_timeout"],
+        cursorclass=aiomysql.DictCursor,
+    )
+    return _pool
+
+
+async def close_pool():
+    global _pool
+
+    if _pool is None:
+        return
+
+    pool = _pool
+    _pool = None
+    pool.close()
+    await pool.wait_closed()
+
+
+async def async_fetch_one(query: str, params=None):
+    validated_query = _validate_select_query(query)
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(validated_query, params)
+            return await cursor.fetchone()
+
+
+async def async_fetch_all(query: str, params=None):
+    validated_query = _validate_select_query(query)
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(validated_query, params)
+            return await cursor.fetchall()
+
+
+async def async_test_connection():
+    try:
+        row = await async_fetch_one("SELECT 1 AS ok")
+        return True, row
+    except Exception as exc:
+        return False, str(exc)
+
+
+__all__ = [
+    "async_fetch_all",
+    "async_fetch_one",
+    "async_test_connection",
+    "close_pool",
+    "get_pool",
+]

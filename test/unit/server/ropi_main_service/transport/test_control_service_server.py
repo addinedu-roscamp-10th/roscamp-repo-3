@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 from unittest.mock import patch
 
 import pytest
@@ -105,6 +107,33 @@ def test_rpc_dispatch_rejects_unknown_service(control_service_server):
     assert response.is_error is True
     assert response.payload["error_code"] == "UNKNOWN_SERVICE"
     assert "missing" in response.payload["error"]
+
+
+def test_async_response_build_does_not_block_event_loop(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_HEARTBEAT,
+        sequence_no=11,
+        payload={},
+    )
+
+    def slow_dispatch(frame, **kwargs):
+        time.sleep(0.2)
+        return control_service_server._success_response(frame, {"ok": True})
+
+    control_service_server.dispatch_frame = slow_dispatch
+
+    async def scenario():
+        started_at = time.monotonic()
+        response_task = asyncio.create_task(control_service_server._build_response_frame(request))
+        await asyncio.sleep(0.01)
+        elapsed_before_dispatch_finishes = time.monotonic() - started_at
+        response = await response_task
+        return elapsed_before_dispatch_finishes, response
+
+    elapsed, response = asyncio.run(scenario())
+
+    assert elapsed < 0.1
+    assert response.payload == {"ok": True}
 
 
 def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_service_server):

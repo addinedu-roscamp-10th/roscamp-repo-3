@@ -85,7 +85,7 @@ class ControlServiceServer:
         self.port = port
         self._server = None
 
-    def dispatch_frame(self, frame: TCPFrame) -> TCPFrame:
+    def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         payload = frame.payload or {}
 
         if frame.message_code == MESSAGE_CODE_HEARTBEAT:
@@ -135,7 +135,7 @@ class ControlServiceServer:
             return self._error_response(frame, "AUTH_FAILED", str(result))
 
         if frame.message_code == MESSAGE_CODE_DELIVERY_CREATE_TASK:
-            return self._dispatch_delivery_create_task(frame, payload)
+            return self._dispatch_delivery_create_task(frame, payload, loop=loop)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return self._dispatch_rpc(frame, payload)
@@ -146,8 +146,8 @@ class ControlServiceServer:
             f"지원하지 않는 message_code입니다: 0x{frame.message_code:04x}",
         )
 
-    def _dispatch_delivery_create_task(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        service = build_delivery_request_service(loop=asyncio.get_running_loop())
+    def _dispatch_delivery_create_task(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
+        service = build_delivery_request_service(loop=loop or asyncio.get_running_loop())
 
         try:
             result = service.create_delivery_task(**payload)
@@ -229,16 +229,19 @@ class ControlServiceServer:
                 except TCPFrameError:
                     break
 
-                response_frame = self._build_response_frame(request_frame)
+                response_frame = await self._build_response_frame(request_frame)
                 writer.write(self._encode_response(response_frame))
                 await writer.drain()
         finally:
             writer.close()
             await writer.wait_closed()
 
-    def _build_response_frame(self, frame: TCPFrame):
+    async def _build_response_frame(self, frame: TCPFrame):
+        loop = asyncio.get_running_loop()
+
         try:
-            return self.dispatch_frame(frame)
+            # Repository/service calls are still sync during the incremental async migration.
+            return await asyncio.to_thread(self.dispatch_frame, frame, loop=loop)
         except Exception as exc:  # pragma: no cover
             return self._error_response(frame, "INTERNAL_ERROR", str(exc))
 
