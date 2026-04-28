@@ -32,11 +32,14 @@ class BackgroundDbWriter:
         self.queue = asyncio.Queue(maxsize=max_queue_size)
         self.max_batch_size = int(max_batch_size)
         self._task = None
+        self._stopping = False
+        self._stop_lock = asyncio.Lock()
 
     def start(self):
         if self._task is not None and not self._task.done():
             return self._task
 
+        self._stopping = False
         loop = asyncio.get_running_loop()
         self._task = loop.create_task(
             self._run(),
@@ -45,15 +48,17 @@ class BackgroundDbWriter:
         return self._task
 
     async def stop(self):
-        task = self._task
-        if task is None:
-            return
+        async with self._stop_lock:
+            self._stopping = True
+            task = self._task
+            if task is None:
+                return
 
-        if not task.done():
-            await self.queue.put(STOP)
-            await task
+            if not task.done():
+                await self.queue.put(STOP)
+                await task
 
-        self._task = None
+            self._task = None
 
     async def flush(self):
         await self.queue.join()
@@ -75,6 +80,13 @@ class BackgroundDbWriter:
         )
 
     def _enqueue(self, item: dict) -> bool:
+        if self._stopping:
+            logger.warning(
+                "background db writer is stopping; dropping db write item",
+                extra={"item_type": item.get("type")},
+            )
+            return False
+
         try:
             self.queue.put_nowait(item)
             return True

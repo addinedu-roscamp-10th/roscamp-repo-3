@@ -27,6 +27,18 @@ class FakeRobotRuntimeStatusRepository:
         self.status_batches.append(list(statuses))
 
 
+class BlockingRobotDataLogRepository(FakeRobotDataLogRepository):
+    def __init__(self, *, entered, release):
+        super().__init__()
+        self.entered = entered
+        self.release = release
+
+    async def async_insert_feedback_samples(self, samples):
+        self.sample_batches.append(list(samples))
+        self.entered.set()
+        await self.release.wait()
+
+
 def build_sample():
     return {
         "robot_id": "pinky2",
@@ -146,3 +158,58 @@ def test_background_db_writer_drops_samples_when_queue_is_full():
 
     assert writer.enqueue_robot_data_log_sample(build_sample()) is True
     assert writer.enqueue_robot_data_log_sample(build_sample()) is False
+
+
+def test_background_db_writer_rejects_enqueue_after_stop_starts():
+    async def scenario():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        writer = BackgroundDbWriter(
+            robot_data_log_repository=BlockingRobotDataLogRepository(
+                entered=entered,
+                release=release,
+            ),
+            robot_runtime_status_repository=FakeRobotRuntimeStatusRepository(),
+        )
+
+        writer.start()
+        assert writer.enqueue_robot_data_log_sample(build_sample()) is True
+        await asyncio.wait_for(entered.wait(), timeout=1.0)
+
+        stop_task = asyncio.create_task(writer.stop())
+        await asyncio.sleep(0)
+        accepted_after_stop_started = writer.enqueue_robot_data_log_sample(build_sample())
+
+        release.set()
+        await asyncio.wait_for(stop_task, timeout=1.0)
+        return accepted_after_stop_started, writer.queue.qsize()
+
+    accepted_after_stop_started, remaining_queue_size = asyncio.run(scenario())
+
+    assert accepted_after_stop_started is False
+    assert remaining_queue_size == 0
+
+
+def test_background_db_writer_rejects_enqueue_after_stop_until_restarted():
+    robot_data_log_repository = FakeRobotDataLogRepository()
+    writer = BackgroundDbWriter(
+        robot_data_log_repository=robot_data_log_repository,
+        robot_runtime_status_repository=FakeRobotRuntimeStatusRepository(),
+    )
+
+    async def scenario():
+        writer.start()
+        await writer.stop()
+        accepted_after_stop = writer.enqueue_robot_data_log_sample(build_sample())
+
+        writer.start()
+        accepted_after_restart = writer.enqueue_robot_data_log_sample(build_sample())
+        await writer.flush()
+        await writer.stop()
+        return accepted_after_stop, accepted_after_restart
+
+    accepted_after_stop, accepted_after_restart = asyncio.run(scenario())
+
+    assert accepted_after_stop is False
+    assert accepted_after_restart is True
+    assert robot_data_log_repository.sample_batches == [[build_sample()]]
