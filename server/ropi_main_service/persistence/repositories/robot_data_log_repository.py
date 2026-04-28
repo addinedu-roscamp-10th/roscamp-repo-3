@@ -1,6 +1,6 @@
 import json
 
-from server.ropi_main_service.persistence.async_connection import async_execute
+from server.ropi_main_service.persistence.async_connection import async_execute, async_execute_many
 from server.ropi_main_service.persistence.connection import get_connection
 from server.ropi_main_service.persistence.sql_loader import load_sql
 
@@ -61,6 +61,28 @@ class RobotDataLogRepository:
                 battery_percent=battery_percent,
                 payload=payload,
             ),
+        )
+
+    async def async_insert_feedback_samples(self, samples):
+        samples = list(samples or [])
+        if not samples:
+            return 0
+
+        return await async_execute_many(
+            load_sql("robot_data_log/insert_feedback_sample.sql"),
+            [
+                self._build_params(
+                    robot_id=sample.get("robot_id"),
+                    task_id=sample.get("task_id"),
+                    data_type=sample.get("data_type"),
+                    pose_x=sample.get("pose_x"),
+                    pose_y=sample.get("pose_y"),
+                    pose_yaw=sample.get("pose_yaw"),
+                    battery_percent=sample.get("battery_percent"),
+                    payload=sample.get("payload"),
+                )
+                for sample in samples
+            ],
         )
 
     @staticmethod

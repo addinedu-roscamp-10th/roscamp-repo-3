@@ -11,6 +11,7 @@ from server.ropi_main_service.persistence.repositories.robot_runtime_status_repo
 
 logger = logging.getLogger(__name__)
 DEFAULT_DB_WRITE_QUEUE_SIZE = 1000
+DEFAULT_DB_WRITE_BATCH_SIZE = 100
 ROBOT_DATA_LOG_SAMPLE = "robot_data_log_sample"
 ROBOT_RUNTIME_STATUS = "robot_runtime_status"
 STOP = object()
@@ -24,10 +25,12 @@ class BackgroundDbWriter:
         robot_data_log_repository=None,
         robot_runtime_status_repository=None,
         max_queue_size=DEFAULT_DB_WRITE_QUEUE_SIZE,
+        max_batch_size=DEFAULT_DB_WRITE_BATCH_SIZE,
     ):
         self.robot_data_log_repository = robot_data_log_repository or RobotDataLogRepository()
         self.robot_runtime_status_repository = robot_runtime_status_repository or RobotRuntimeStatusRepository()
         self.queue = asyncio.Queue(maxsize=max_queue_size)
+        self.max_batch_size = int(max_batch_size)
         self._task = None
 
     def start(self):
@@ -85,37 +88,75 @@ class BackgroundDbWriter:
     async def _run(self):
         while True:
             item = await self.queue.get()
+            batch, should_stop = self._drain_batch(item)
             try:
-                if item is STOP:
-                    return
-                await self._write_item(item)
+                await self._write_batch(batch)
             except Exception:
                 logger.exception(
-                    "background db writer failed to process item",
-                    extra={"item_type": self._get_item_type(item)},
+                    "background db writer failed to process batch",
+                    extra={"batch_size": len(batch)},
                 )
             finally:
-                self.queue.task_done()
+                for _ in batch:
+                    self.queue.task_done()
+
+            if should_stop:
+                return
+
+    def _drain_batch(self, first_item):
+        batch = [first_item]
+        should_stop = first_item is STOP
+
+        while not should_stop and len(batch) < self.max_batch_size:
+            try:
+                item = self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+            batch.append(item)
+            should_stop = item is STOP
+
+        return batch, should_stop
 
     async def _write_item(self, item: dict):
-        item_type = item.get("type")
-        payload = item.get("payload") or {}
+        await self._write_batch([item])
 
-        if item_type == ROBOT_DATA_LOG_SAMPLE:
-            await self.robot_data_log_repository.async_insert_feedback_sample(**payload)
-            status = self._build_runtime_status_from_sample(payload)
-            if status is not None:
-                await self.robot_runtime_status_repository.async_upsert_runtime_status(**status)
-            return
+    async def _write_batch(self, batch):
+        robot_data_log_samples = []
+        runtime_status_by_robot_id = {}
 
-        if item_type == ROBOT_RUNTIME_STATUS:
-            await self.robot_runtime_status_repository.async_upsert_runtime_status(**payload)
-            return
+        for item in batch:
+            if item is STOP:
+                continue
 
-        logger.warning(
-            "background db writer received unknown item type",
-            extra={"item_type": item_type},
-        )
+            item_type = self._get_item_type(item)
+            payload = item.get("payload") or {}
+
+            if item_type == ROBOT_DATA_LOG_SAMPLE:
+                robot_data_log_samples.append(payload)
+                status = self._build_runtime_status_from_sample(payload)
+                if status is not None:
+                    runtime_status_by_robot_id[status["robot_id"]] = status
+                continue
+
+            if item_type == ROBOT_RUNTIME_STATUS:
+                robot_id = str(payload.get("robot_id") or "").strip()
+                if robot_id:
+                    runtime_status_by_robot_id[robot_id] = payload
+                continue
+
+            logger.warning(
+                "background db writer received unknown item type",
+                extra={"item_type": item_type},
+            )
+
+        if robot_data_log_samples:
+            await self.robot_data_log_repository.async_insert_feedback_samples(robot_data_log_samples)
+
+        if runtime_status_by_robot_id:
+            await self.robot_runtime_status_repository.async_upsert_runtime_statuses(
+                list(runtime_status_by_robot_id.values())
+            )
 
     @staticmethod
     def _get_item_type(item):

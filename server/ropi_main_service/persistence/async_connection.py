@@ -71,6 +71,19 @@ async def async_execute(query: str, params=None):
             return cursor.rowcount
 
 
+async def async_execute_many(query: str, params_seq):
+    params_seq = list(params_seq or [])
+    if not params_seq:
+        return 0
+
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.executemany(query, params_seq)
+            return cursor.rowcount
+
+
 @asynccontextmanager
 async def async_transaction():
     pool = await get_pool()
@@ -96,6 +109,7 @@ async def async_test_connection():
 
 __all__ = [
     "async_execute",
+    "async_execute_many",
     "async_fetch_all",
     "async_fetch_one",
     "async_test_connection",
