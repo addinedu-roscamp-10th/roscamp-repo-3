@@ -2,12 +2,19 @@ from server.ropi_main_service.persistence.repositories.caregiver_repository impo
 
 
 class CaregiverService:
-    def __init__(self):
-        self.repo = CaregiverRepository()
+    def __init__(self, repository=None):
+        self.repo = repository or CaregiverRepository()
 
     def get_dashboard_summary(self):
         row = self.repo.get_dashboard_summary()
+        return self._format_dashboard_summary(row)
 
+    async def async_get_dashboard_summary(self):
+        row = await self.repo.async_get_dashboard_summary()
+        return self._format_dashboard_summary(row)
+
+    @staticmethod
+    def _format_dashboard_summary(row):
         return {
             "available_robot_count": row["available_robot_count"] if row else 0,
             "waiting_job_count": row["waiting_job_count"] if row else 0,
@@ -16,6 +23,14 @@ class CaregiverService:
 
     def get_robot_board_data(self):
         rows = self.repo.get_robot_board()
+        return self._format_robot_board_data(rows)
+
+    async def async_get_robot_board_data(self):
+        rows = await self.repo.async_get_robot_board()
+        return self._format_robot_board_data(rows)
+
+    @staticmethod
+    def _format_robot_board_data(rows):
         result = []
 
         for row in rows:
@@ -43,6 +58,14 @@ class CaregiverService:
 
     def get_timeline_data(self):
         rows = self.repo.get_timeline(limit=30)
+        return self._format_timeline_data(rows)
+
+    async def async_get_timeline_data(self):
+        rows = await self.repo.async_get_timeline(limit=30)
+        return self._format_timeline_data(rows)
+
+    @staticmethod
+    def _format_timeline_data(rows):
         return [
             [
                 row["timeline_time"] or "",
@@ -55,7 +78,14 @@ class CaregiverService:
 
     def get_flow_board_data(self):
         rows = self.repo.get_flow_board_events(limit=50)
+        return self._format_flow_board_data(rows)
 
+    async def async_get_flow_board_data(self):
+        rows = await self.repo.async_get_flow_board_events(limit=50)
+        return self._format_flow_board_data(rows)
+
+    @staticmethod
+    def _format_flow_board_data(rows):
         flow_data = {
             "READY": [],
             "ASSIGNED": [],

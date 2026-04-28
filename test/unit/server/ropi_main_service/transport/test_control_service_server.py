@@ -10,6 +10,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
+    MESSAGE_CODE_LOGIN,
     TCPFrame,
 )
 
@@ -109,6 +110,165 @@ def test_rpc_dispatch_rejects_unknown_service(control_service_server):
     assert "missing" in response.payload["error"]
 
 
+def test_async_heartbeat_with_db_check_uses_async_connection(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_HEARTBEAT,
+        sequence_no=14,
+        payload={"check_db": True},
+    )
+
+    async def fake_async_test_connection():
+        return True, {"ok": 1}
+
+    async def scenario():
+        with patch(
+            "server.ropi_main_service.persistence.async_connection.async_test_connection",
+            new=fake_async_test_connection,
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("DB heartbeat should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload["db"] == {"ok": True, "detail": {"ok": 1}}
+
+
+def test_async_dispatch_login_uses_native_async_auth(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_LOGIN,
+        sequence_no=12,
+        payload={
+            "login_id": "1",
+            "password": "1234",
+            "role": "caregiver",
+        },
+    )
+
+    class FakeAuthService:
+        async def async_authenticate(self, login_id, password, role):
+            return True, {
+                "user_id": login_id,
+                "name": "최보호",
+                "role": role,
+            }
+
+    async def scenario():
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.AuthService",
+            return_value=FakeAuthService(),
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("login should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload == {
+        "user_id": "1",
+        "name": "최보호",
+        "role": "caregiver",
+    }
+
+
+def test_async_rpc_dispatch_awaits_async_service_method(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=13,
+        payload={
+            "service": "caregiver",
+            "method": "get_dashboard_bundle",
+            "kwargs": {},
+        },
+    )
+
+    class FakeAsyncCaregiverFacade:
+        async def get_dashboard_bundle(self):
+            return {"summary": {"available_robot_count": 2}}
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"caregiver": FakeAsyncCaregiverFacade},
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("async RPC should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload == {"summary": {"available_robot_count": 2}}
+
+
+def test_async_rpc_dispatch_prefers_async_method_alias(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=16,
+        payload={
+            "service": "caregiver",
+            "method": "get_dashboard_bundle",
+            "kwargs": {},
+        },
+    )
+
+    class FakeAsyncAliasCaregiverFacade:
+        def get_dashboard_bundle(self):
+            raise AssertionError("sync alias should not be called")
+
+        async def async_get_dashboard_bundle(self):
+            return {"summary": {"available_robot_count": 3}}
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"caregiver": FakeAsyncAliasCaregiverFacade},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload == {"summary": {"available_robot_count": 3}}
+
+
+def test_async_rpc_dispatch_offloads_sync_service_method(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=15,
+        payload={
+            "service": "task_request",
+            "method": "get_product_names",
+            "kwargs": {},
+        },
+    )
+    calls = []
+
+    async def fake_to_thread(func, /, *args, **kwargs):
+        calls.append(func.__name__)
+        return func(*args, **kwargs)
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"task_request": FakeTaskRequestService},
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            new=fake_to_thread,
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.payload == ["기저귀", "물티슈"]
+    assert calls == ["get_product_names"]
+
+
 def test_async_response_build_does_not_block_event_loop(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_HEARTBEAT,
@@ -116,11 +276,11 @@ def test_async_response_build_does_not_block_event_loop(control_service_server):
         payload={},
     )
 
-    def slow_dispatch(frame, **kwargs):
-        time.sleep(0.2)
+    async def slow_dispatch(frame):
+        await asyncio.sleep(0.2)
         return control_service_server._success_response(frame, {"ok": True})
 
-    control_service_server.dispatch_frame = slow_dispatch
+    control_service_server.async_dispatch_frame = slow_dispatch
 
     async def scenario():
         started_at = time.monotonic()

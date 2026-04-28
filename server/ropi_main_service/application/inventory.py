@@ -2,11 +2,14 @@ from server.ropi_main_service.persistence.repositories.inventory_repository impo
 
 
 class InventoryService:
-    def __init__(self):
-        self.repository = InventoryRepository()
+    def __init__(self, repository=None):
+        self.repository = repository or InventoryRepository()
 
     def get_inventory_rows(self):
         return self.repository.get_all_products()
+
+    async def async_get_inventory_rows(self):
+        return await self.repository.async_get_all_products()
 
     def add_inventory(self, item_name, quantity):
         if not item_name:

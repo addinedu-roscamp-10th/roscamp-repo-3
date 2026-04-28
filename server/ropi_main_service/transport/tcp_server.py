@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import inspect
 import logging
 import os
 from datetime import date, datetime
@@ -64,6 +65,14 @@ class CaregiverFacade:
             "robots": self.service.get_robot_board_data(),
             "flow_data": self.service.get_flow_board_data(),
             "timeline_rows": self.service.get_timeline_data(),
+        }
+
+    async def async_get_dashboard_bundle(self):
+        return {
+            "summary": await self.service.async_get_dashboard_summary(),
+            "robots": await self.service.async_get_robot_board_data(),
+            "flow_data": await self.service.async_get_flow_board_data(),
+            "timeline_rows": await self.service.async_get_timeline_data(),
         }
 
 
@@ -146,6 +155,80 @@ class ControlServiceServer:
             f"지원하지 않는 message_code입니다: 0x{frame.message_code:04x}",
         )
 
+    async def async_dispatch_frame(self, frame: TCPFrame) -> TCPFrame:
+        payload = frame.payload or {}
+
+        if frame.message_code == MESSAGE_CODE_HEARTBEAT:
+            return await self._dispatch_heartbeat_async(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_LOGIN:
+            ok, result = await AuthService().async_authenticate(
+                payload.get("login_id", ""),
+                payload.get("password", ""),
+                payload.get("role", ""),
+            )
+            if ok:
+                return self._success_response(frame, result)
+            return self._error_response(frame, "AUTH_FAILED", str(result))
+
+        if frame.message_code == MESSAGE_CODE_DELIVERY_CREATE_TASK:
+            loop = asyncio.get_running_loop()
+            return await asyncio.to_thread(
+                self._dispatch_delivery_create_task,
+                frame,
+                payload,
+                loop=loop,
+            )
+
+        if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
+            return await self._dispatch_rpc_async(frame, payload)
+
+        return self._error_response(
+            frame,
+            "UNKNOWN_MESSAGE_CODE",
+            f"지원하지 않는 message_code입니다: 0x{frame.message_code:04x}",
+        )
+
+    async def _dispatch_heartbeat_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        response_payload = {
+            "message": "메인 서버 연결 정상",
+            "server_time": datetime.now().isoformat(timespec="seconds"),
+        }
+
+        if payload.get("check_db"):
+            try:
+                from server.ropi_main_service.persistence.async_connection import (
+                    async_test_connection,
+                )
+
+                db_ok, db_result = await async_test_connection()
+                response_payload["db"] = {
+                    "ok": db_ok,
+                    "detail": db_result,
+                }
+            except Exception as exc:
+                response_payload["db"] = {
+                    "ok": False,
+                    "detail": str(exc),
+                }
+
+        if payload.get("check_ros"):
+            try:
+                ros_result = await asyncio.to_thread(
+                    RosRuntimeReadinessService().get_status
+                )
+                response_payload["ros"] = {
+                    "ok": bool(ros_result.get("ready")),
+                    "detail": ros_result,
+                }
+            except Exception as exc:
+                response_payload["ros"] = {
+                    "ok": False,
+                    "detail": str(exc),
+                }
+
+        return self._success_response(frame, response_payload)
+
     def _dispatch_delivery_create_task(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
         service = build_delivery_request_service(loop=loop or asyncio.get_running_loop())
 
@@ -153,6 +236,39 @@ class ControlServiceServer:
             result = service.create_delivery_task(**payload)
         except Exception as exc:
             return self._error_response(frame, "DELIVERY_CREATE_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def _dispatch_rpc_async(self, frame: TCPFrame, payload: dict):
+        service_name = payload.get("service")
+        method_name = payload.get("method")
+        kwargs = payload.get("kwargs") or {}
+
+        factory = SERVICE_REGISTRY.get(service_name)
+        if factory is None:
+            return self._error_response(
+                frame,
+                "UNKNOWN_SERVICE",
+                f"지원하지 않는 서비스입니다: {service_name}",
+            )
+
+        service = factory()
+        async_method = getattr(service, f"async_{method_name}", None)
+        method = async_method or getattr(service, method_name, None)
+        if method is None:
+            return self._error_response(
+                frame,
+                "UNKNOWN_METHOD",
+                f"지원하지 않는 메서드입니다: {service_name}.{method_name}",
+            )
+
+        try:
+            if inspect.iscoroutinefunction(method):
+                result = await method(**kwargs)
+            else:
+                result = await asyncio.to_thread(method, **kwargs)
+        except Exception as exc:
+            return self._error_response(frame, "RPC_ERROR", str(exc))
 
         return self._success_response(frame, result)
 
@@ -237,11 +353,8 @@ class ControlServiceServer:
             await writer.wait_closed()
 
     async def _build_response_frame(self, frame: TCPFrame):
-        loop = asyncio.get_running_loop()
-
         try:
-            # Repository/service calls are still sync during the incremental async migration.
-            return await asyncio.to_thread(self.dispatch_frame, frame, loop=loop)
+            return await self.async_dispatch_frame(frame)
         except Exception as exc:  # pragma: no cover
             return self._error_response(frame, "INTERNAL_ERROR", str(exc))
 
