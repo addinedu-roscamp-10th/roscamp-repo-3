@@ -24,6 +24,48 @@ class FakeAsyncTransaction:
         return False
 
 
+class RecordingSyncCursor:
+    def __init__(self, row=None):
+        self.calls = []
+        self.row = row
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, query, params):
+        self.calls.append((query, params))
+
+    def fetchone(self):
+        return self.row
+
+
+class FakeSyncConnection:
+    def __init__(self, cursor):
+        self.cursor_instance = cursor
+        self.committed = False
+        self.rolled_back = False
+        self.closed = False
+        self.began = False
+
+    def begin(self):
+        self.began = True
+
+    def cursor(self):
+        return self.cursor_instance
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+    def close(self):
+        self.closed = True
+
+
 class RecordingAsyncCursor:
     lastrowid = 101
 
@@ -130,6 +172,44 @@ def test_async_record_delivery_task_cancel_result_updates_status_history_and_eve
         "CANCEL_REQUESTED",
         "action cancel request was accepted.",
     )
+
+
+def test_record_delivery_task_cancel_result_updates_status_history_and_event(monkeypatch):
+    cursor = RecordingSyncCursor(
+        row={
+            "task_id": 101,
+            "task_status": "RUNNING",
+            "phase": "DELIVERY_PICKUP",
+            "assigned_robot_id": "pinky2",
+        }
+    )
+    connection = FakeSyncConnection(cursor)
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.delivery_task_cancel_repository.get_connection",
+        lambda: connection,
+    )
+
+    response = DeliveryTaskCancelRepository().record_delivery_task_cancel_result(
+        task_id="101",
+        cancel_response={
+            "result_code": "CANCEL_REQUESTED",
+            "result_message": "action cancel request was accepted.",
+            "cancel_requested": True,
+        },
+    )
+
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert response["task_status"] == "CANCEL_REQUESTED"
+    assert [call[0].split()[0] for call in cursor.calls] == [
+        "SELECT",
+        "UPDATE",
+        "INSERT",
+        "INSERT",
+    ]
+    assert connection.began is True
+    assert connection.committed is True
+    assert connection.closed is True
 
 
 def test_async_record_delivery_task_cancel_result_logs_rejection_without_status_update(monkeypatch):
