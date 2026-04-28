@@ -108,7 +108,7 @@ class CaregiverService:
                 flow_data["READY"].append(task)
             elif task["task_status"] in ("READY", "ASSIGNED"):
                 flow_data["ASSIGNED"].append(task)
-            elif task["task_status"] == "RUNNING":
+            elif task["task_status"] in ("RUNNING", "CANCEL_REQUESTED"):
                 flow_data["RUNNING"].append(task)
             else:
                 flow_data["DONE"].append(task)

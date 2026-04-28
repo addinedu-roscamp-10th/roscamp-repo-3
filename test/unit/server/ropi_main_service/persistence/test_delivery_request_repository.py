@@ -376,6 +376,142 @@ def test_async_create_delivery_task_rejects_when_item_quantity_is_insufficient(m
     assert delivery_task_repository.created is None
 
 
+def test_async_get_delivery_task_cancel_target_rejects_terminal_task(monkeypatch):
+    async def fake_fetch_one(query, params):
+        return {
+            "task_id": 101,
+            "task_status": "COMPLETED",
+            "phase": "COMPLETED",
+            "assigned_robot_id": "pinky2",
+        }
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_fetch_one",
+        fake_fetch_one,
+    )
+
+    response = asyncio.run(
+        DeliveryRequestRepository().async_get_delivery_task_cancel_target("101")
+    )
+
+    assert response == {
+        "result_code": "REJECTED",
+        "result_message": "이미 종료되었거나 취소할 수 없는 운반 task입니다.",
+        "reason_code": "TASK_NOT_CANCELLABLE",
+        "task_id": 101,
+        "task_status": "COMPLETED",
+        "assigned_robot_id": "pinky2",
+    }
+
+
+def test_async_get_delivery_task_cancel_target_rejects_missing_task(monkeypatch):
+    async def fake_fetch_one(query, params):
+        return None
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_fetch_one",
+        fake_fetch_one,
+    )
+
+    response = asyncio.run(
+        DeliveryRequestRepository().async_get_delivery_task_cancel_target("999")
+    )
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "TASK_NOT_FOUND"
+    assert response["task_id"] == 999
+
+
+def test_async_record_delivery_task_cancel_result_updates_status_history_and_event(monkeypatch):
+    cursor = RecordingAsyncCursor(
+        row={
+            "task_id": 101,
+            "task_status": "RUNNING",
+            "phase": "DELIVERY_PICKUP",
+            "assigned_robot_id": "pinky2",
+        }
+    )
+    fake_transaction = FakeAsyncTransaction()
+    fake_transaction.cursor = cursor
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    response = asyncio.run(
+        DeliveryRequestRepository().async_record_delivery_task_cancel_result(
+            task_id="101",
+            cancel_response={
+                "result_code": "CANCEL_REQUESTED",
+                "result_message": "action cancel request was accepted.",
+                "cancel_requested": True,
+            },
+        )
+    )
+
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert response["task_status"] == "CANCEL_REQUESTED"
+    assert response["assigned_robot_id"] == "pinky2"
+    assert [call[0].split()[0] for call in cursor.calls] == [
+        "SELECT",
+        "UPDATE",
+        "INSERT",
+        "INSERT",
+    ]
+    assert "FOR UPDATE" in cursor.calls[0][0]
+    assert "UPDATE task" in cursor.calls[1][0]
+    assert "INSERT INTO task_state_history" in cursor.calls[2][0]
+    assert "INSERT INTO task_event_log" in cursor.calls[3][0]
+    assert cursor.calls[1][1][0:3] == (
+        "USER_CANCEL_REQUESTED",
+        "CANCEL_REQUESTED",
+        "action cancel request was accepted.",
+    )
+
+
+def test_async_record_delivery_task_cancel_result_logs_rejection_without_status_update(monkeypatch):
+    cursor = RecordingAsyncCursor(
+        row={
+            "task_id": 101,
+            "task_status": "RUNNING",
+            "phase": "DELIVERY_PICKUP",
+            "assigned_robot_id": "pinky2",
+        }
+    )
+    fake_transaction = FakeAsyncTransaction()
+    fake_transaction.cursor = cursor
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    response = asyncio.run(
+        DeliveryRequestRepository().async_record_delivery_task_cancel_result(
+            task_id="101",
+            cancel_response={
+                "result_code": "NOT_FOUND",
+                "result_message": "matching active action goal was not found.",
+                "cancel_requested": False,
+            },
+        )
+    )
+
+    assert response["result_code"] == "NOT_FOUND"
+    assert response["task_status"] == "RUNNING"
+    assert [call[0].split()[0] for call in cursor.calls] == [
+        "SELECT",
+        "INSERT",
+    ]
+    assert "INSERT INTO task_event_log" in cursor.calls[1][0]
+    assert cursor.calls[1][1][1:4] == (
+        "DELIVERY_TASK_CANCEL_REJECTED",
+        "WARNING",
+        "pinky2",
+    )
+
+
 def test_find_idempotent_response_rejects_key_reuse_with_different_payload():
     response = IdempotencyRepository().find_response(
         FakeExistingIdempotencyCursor(),

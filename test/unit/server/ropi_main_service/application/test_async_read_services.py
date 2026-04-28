@@ -177,6 +177,27 @@ def test_caregiver_service_async_methods_keep_response_shape():
     ]
 
 
+def test_caregiver_flow_board_keeps_cancel_requested_in_running_lane():
+    rows = [
+        {
+            "event_id": 2,
+            "task_id": 102,
+            "task_type": "DELIVERY",
+            "task_status": "CANCEL_REQUESTED",
+            "phase": "CANCEL_REQUESTED",
+            "robot_id": "pinky2",
+            "description": "cancel requested",
+        }
+    ]
+
+    flow = CaregiverService._format_flow_board_data(rows)
+
+    assert flow["RUNNING"][0]["task_id"] == 102
+    assert flow["RUNNING"][0]["task_status"] == "CANCEL_REQUESTED"
+    assert flow["RUNNING"][0]["cancellable"] is False
+    assert flow["DONE"] == []
+
+
 def test_patient_service_async_search_keeps_response_shape():
     service = PatientService(repository=FakeAsyncPatientRepository())
 
