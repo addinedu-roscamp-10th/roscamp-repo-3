@@ -437,6 +437,24 @@ QFrame#notesFieldGroup {
     border: none;
 }
 
+QFrame#patrolRouteSummaryCard {
+    background: #F8FAFC;
+    border: 1px solid #D8E0E8;
+    border-radius: 16px;
+}
+
+QLabel#patrolSummaryLabel {
+    color: #5B6775;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+QLabel#patrolSummaryValue {
+    color: #101828;
+    font-size: 14px;
+    font-weight: 900;
+}
+
 QFrame#prioritySegment {
     background: #F1F5F9;
     border: 1px solid #D8E0E8;

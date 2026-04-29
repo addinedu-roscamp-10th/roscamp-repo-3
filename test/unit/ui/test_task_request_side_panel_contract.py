@@ -79,16 +79,31 @@ def test_task_request_side_panel_cards_update_delivery_and_patrol_contexts():
                 "patrol_area_id": "patrol_ward_night_01",
                 "patrol_area_name": "야간 병동 순찰",
                 "priority": "HIGHEST",
-                "assigned_robot_id": "pinky3",
+                "assigned_robot_id": "pinky_from_db",
             }
         )
 
         assert panel.preview_item_label.text() == "순찰 구역"
         assert panel.preview_item.text() == "야간 병동 순찰"
         assert panel.preview_quantity_label.text() == "구역 ID"
-        assert panel.preview_destination.text() == "pinky3"
+        assert panel.preview_destination.text() == "pinky_from_db"
+        assert panel.robot_id_label.text() == "pinky_from_db"
         assert panel.robot_destination_text_label.text() == "waypoint"
         assert panel.robot_map_label.text() == "순찰 경로 / waypoint placeholder"
+
+        panel.update_preview(
+            {
+                "task_type": "PATROL",
+                "caregiver_id": "7",
+                "patrol_area_id": "patrol_no_robot",
+                "patrol_area_name": "로봇 미정 순찰",
+                "priority": "NORMAL",
+                "assigned_robot_id": None,
+            }
+        )
+
+        assert panel.preview_destination.text() == "미정"
+        assert panel.robot_id_label.text() == "미정"
     finally:
         panel.close()
 

@@ -16,7 +16,6 @@ class DeliveryRequestService:
     ACCEPTED = "ACCEPTED"
     INVALID_REQUEST = "INVALID_REQUEST"
     REJECTED = "REJECTED"
-    PHASE1_PATROL_ROBOT_ID = "pinky3"
 
     def __init__(
         self,
@@ -330,7 +329,9 @@ class DeliveryRequestService:
             "patrol_area_id": str(row.get("patrol_area_id") or "").strip(),
             "patrol_area_name": str(row.get("patrol_area_name") or "").strip(),
             "patrol_area_revision": row.get("patrol_area_revision"),
-            "assigned_robot_id": self.PHASE1_PATROL_ROBOT_ID,
+            "assigned_robot_id": self._optional_string(row.get("assigned_robot_id")),
+            "waypoint_count": self._optional_int(row.get("waypoint_count")),
+            "path_frame_id": self._optional_string(row.get("path_frame_id")),
             "active": True,
             "map_id": row.get("map_id"),
         }
@@ -395,6 +396,20 @@ class DeliveryRequestService:
     @staticmethod
     def _is_blank(value) -> bool:
         return not str(value or "").strip()
+
+    @staticmethod
+    def _optional_string(value):
+        normalized = str(value or "").strip()
+        return normalized or None
+
+    @staticmethod
+    def _optional_int(value):
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _run_delivery_request_precheck(self, **kwargs):
         self._sync_create_service_dependencies()

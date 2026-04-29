@@ -166,13 +166,18 @@ CREATE TABLE `operation_zone` (
     `zone_type` VARCHAR(50) NOT NULL,
     `revision` INT UNSIGNED NOT NULL DEFAULT 1,
     `path_json` JSON NULL,
+    `default_robot_id` VARCHAR(50) NULL,
     `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
     `created_at` DATETIME NOT NULL,
     `updated_at` DATETIME NOT NULL,
     CONSTRAINT `pk_operation_zone` PRIMARY KEY (`zone_id`),
     CONSTRAINT `fk_operation_zone_map_profile`
         FOREIGN KEY (`map_id`)
-        REFERENCES `map_profile` (`map_id`)
+        REFERENCES `map_profile` (`map_id`),
+    CONSTRAINT `fk_operation_zone_default_robot`
+        FOREIGN KEY (`default_robot_id`)
+        REFERENCES `robot` (`robot_id`),
+    KEY `idx_operation_zone_default_robot` (`default_robot_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `goal_pose` (

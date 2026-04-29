@@ -39,6 +39,12 @@ def _display(value):
     return str(value)
 
 
+def _display_unassigned_robot(value):
+    if value is None or str(value).strip() == "":
+        return "미정"
+    return str(value)
+
+
 def _priority_label(priority_code):
     priority_code = _display(priority_code)
     return PRIORITY_CODE_TO_LABEL.get(priority_code, priority_code)
@@ -133,7 +139,7 @@ class RequestPreviewCard(QFrame):
         self.preview_item.setText(_display(preview.get("patrol_area_name")))
         self.preview_quantity.setText(_display(preview.get("patrol_area_id")))
         self.preview_destination.setText(
-            _display(preview.get("assigned_robot_id") or "pinky3")
+            _display_unassigned_robot(preview.get("assigned_robot_id"))
         )
         self.preview_priority.setText(_priority_label(preview.get("priority")))
 
@@ -209,7 +215,7 @@ class RobotStatusCard(QFrame):
         self.robot_destination_label.setText(_display(destination_id))
 
     def update_patrol(self, assigned_robot_id):
-        self.robot_id_label.setText(_display(assigned_robot_id))
+        self.robot_id_label.setText(_display_unassigned_robot(assigned_robot_id))
         self.robot_state_label.setText("feedback 수신 전")
         self.robot_pose_label.setText("미수신")
         self.robot_destination_label.setText("미수신")
@@ -400,7 +406,7 @@ class TaskRequestSidePanel(QWidget):
         self.set_patrol_context()
         self.preview_card.update_patrol(preview)
         self.robot_status_card.update_patrol(
-            preview.get("assigned_robot_id") or "pinky3"
+            preview.get("assigned_robot_id")
         )
 
     def set_delivery_context(self):

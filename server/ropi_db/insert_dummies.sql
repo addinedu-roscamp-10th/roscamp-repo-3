@@ -164,18 +164,18 @@ VALUES
 -- operation_zone
 -- =========================
 INSERT INTO `operation_zone`
-(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `path_json`,
+(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `path_json`, `default_robot_id`,
  `is_enabled`, `created_at`, `updated_at`)
 VALUES
-('room_301', 'map_test11_0423', '301호', 'ROOM', 1, NULL, TRUE, NOW(), NOW()),
-('room_302', 'map_test11_0423', '302호', 'ROOM', 1, NULL, TRUE, NOW(), NOW()),
-('room_305', 'map_test11_0423', '305호', 'ROOM', 1, NULL, TRUE, NOW(), NOW()),
-('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1, NULL, TRUE, NOW(), NOW()),
-('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1, NULL, TRUE, NOW(), NOW()),
-('dock', 'map_test11_0423', '충전소', 'DOCK', 1, NULL, TRUE, NOW(), NOW()),
+('room_301', 'map_test11_0423', '301호', 'ROOM', 1, NULL, NULL, TRUE, NOW(), NOW()),
+('room_302', 'map_test11_0423', '302호', 'ROOM', 1, NULL, NULL, TRUE, NOW(), NOW()),
+('room_305', 'map_test11_0423', '305호', 'ROOM', 1, NULL, NULL, TRUE, NOW(), NOW()),
+('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1, NULL, NULL, TRUE, NOW(), NOW()),
+('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1, NULL, NULL, TRUE, NOW(), NOW()),
+('dock', 'map_test11_0423', '충전소', 'DOCK', 1, NULL, NULL, TRUE, NOW(), NOW()),
 ('patrol_ward_night_01', 'map_test11_0423', '야간 병동 순찰', 'PATROL_ROUTE', 7,
  '{"header":{"frame_id":"map"},"poses":[{"x":0.1665755137108074,"y":-0.4496830900440016,"yaw":1.5707963267948966},{"x":1.6946025435218914,"y":0.0043433854992070454,"yaw":0.0},{"x":0.8577123880386353,"y":0.25597259402275085,"yaw":0.0}]}',
- TRUE, NOW(), NOW());
+ 'pinky3', TRUE, NOW(), NOW());
 
 -- =========================
 -- goal_pose

@@ -84,6 +84,17 @@ def test_patrol_zone_schema_uses_path_snapshot_columns():
     assert "coverage_polygon_snapshot_json" not in seed_sql
 
 
+def test_operation_zone_contains_db_backed_patrol_robot_hint():
+    ddl = _ddl()
+    seed_sql = _seed_sql()
+
+    assert "`default_robot_id` VARCHAR(50) NULL" in ddl
+    assert "CONSTRAINT `fk_operation_zone_default_robot`" in ddl
+    assert "`default_robot_id`" in seed_sql
+    assert "'patrol_ward_night_01'" in seed_sql
+    assert "'pinky3'" in seed_sql
+
+
 def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
     seed_sql = _seed_sql()
 
