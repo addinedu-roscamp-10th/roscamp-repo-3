@@ -102,7 +102,7 @@ def test_delivery_request_preview_uses_standard_fields_and_no_task_id_before_sub
 
 
 def test_delivery_form_uses_wireframe_form_controls():
-    _app()
+    app = _app()
 
     from ui.utils.pages.caregiver.task_request_page import DeliveryRequestForm
 
@@ -140,6 +140,24 @@ def test_delivery_form_uses_wireframe_form_controls():
         notes_group = form.findChild(QFrame, "notesFieldGroup")
         assert notes_group is not None
         assert notes_group.layout().spacing() <= 2
+
+        form.resize(520, 760)
+        form.show()
+        app.processEvents()
+
+        priority_group = form.priority_segment.parentWidget()
+        notes_label = notes_group.findChild(QLabel)
+        title_label = form.findChild(QLabel, "sectionTitle")
+        rendered_gap = (
+            notes_group.geometry().top()
+            - priority_group.geometry().bottom()
+            - 1
+        )
+        assert rendered_gap <= 8
+        assert notes_group.height() <= 120
+        assert notes_label.height() <= 24
+        assert title_label.height() <= 32
+        assert grid.geometry().top() <= 56
     finally:
         form.close()
 

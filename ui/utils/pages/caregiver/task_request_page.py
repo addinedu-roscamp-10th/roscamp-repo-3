@@ -3,7 +3,7 @@ from uuid import uuid4
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGridLayout,
     QApplication, QPushButton, QComboBox, QTextEdit, QScrollArea, QSpinBox,
-    QButtonGroup, QCompleter
+    QButtonGroup, QCompleter, QSizePolicy
 )
 from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 
@@ -86,6 +86,10 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
         form_title = QLabel("운반 작업 설정")
         form_title.setObjectName("sectionTitle")
+        form_title.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
 
         self.form_grid = QGridLayout()
         self.form_grid.setObjectName("deliveryFormGrid")
@@ -179,6 +183,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         root.addWidget(self.status_label)
 
         root.addWidget(self.submit_btn)
+        root.addStretch(1)
 
         self.item_combo.currentIndexChanged.connect(self.emit_preview_changed)
         self.quantity_input.valueChanged.connect(self.emit_preview_changed)
@@ -204,12 +209,21 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
     def _field_group(label_text, widget, object_name="formFieldGroup", spacing=6):
         group = QFrame()
         group.setObjectName(object_name)
+        group.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
         layout = QVBoxLayout(group)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(spacing)
 
         label = QLabel(label_text)
         label.setObjectName("fieldLabel")
+        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        label.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
         layout.addWidget(label)
         layout.addWidget(widget)
         return group
