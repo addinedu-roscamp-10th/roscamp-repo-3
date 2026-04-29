@@ -3,7 +3,7 @@ from uuid import uuid4
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGridLayout,
     QApplication, QPushButton, QComboBox, QTextEdit, QScrollArea, QSpinBox,
-    QButtonGroup, QCompleter, QSizePolicy
+    QSizePolicy
 )
 from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 
@@ -12,6 +12,11 @@ from ui.utils.network.service_clients import DeliveryRequestRemoteService
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.admin_shell import PageHeader
 from ui.utils.widgets.common import InlineStatusMixin
+from ui.utils.widgets.form_controls import (
+    configure_searchable_combo,
+    create_priority_segment,
+    make_field_group,
+)
 
 
 class DeliveryItemsLoadWorker(QObject):
@@ -110,7 +115,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.form_grid.setColumnStretch(1, 1)
 
         self.item_combo = QComboBox()
-        self._configure_searchable_combo(self.item_combo, "물품명 또는 item_id 검색")
+        configure_searchable_combo(self.item_combo, "물품명 또는 item_id 검색")
         self.item_combo.setMinimumHeight(44)
 
         self.quantity_input = QSpinBox()
@@ -120,7 +125,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.quantity_input.setMinimumHeight(44)
 
         self.destination_combo = QComboBox()
-        self._configure_searchable_combo(self.destination_combo, "목적지 검색")
+        configure_searchable_combo(self.destination_combo, "목적지 검색")
         for label, destination_id in self.DESTINATION_OPTIONS:
             self.destination_combo.addItem(label, destination_id)
         self.destination_combo.setMinimumHeight(44)
@@ -129,25 +134,15 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.priority_combo.addItems(["일반", "긴급", "최우선"])
         self.priority_combo.hide()
 
-        self.priority_group = QButtonGroup(self)
-        self.priority_group.setExclusive(True)
-        self.priority_buttons = {}
-        self.priority_segment = QFrame()
-        self.priority_segment.setObjectName("prioritySegment")
-        priority_layout = QHBoxLayout(self.priority_segment)
-        priority_layout.setContentsMargins(4, 4, 4, 4)
-        priority_layout.setSpacing(6)
-
-        for code in ["NORMAL", "URGENT", "HIGHEST"]:
-            button = QPushButton(self.PRIORITY_CODE_TO_LABEL[code])
-            button.setObjectName("prioritySegmentButton")
-            button.setCheckable(True)
-            button.clicked.connect(
-                lambda _checked=False, priority=code: self.set_priority(priority)
-            )
-            self.priority_buttons[code] = button
-            self.priority_group.addButton(button)
-            priority_layout.addWidget(button)
+        (
+            self.priority_segment,
+            self.priority_group,
+            self.priority_buttons,
+        ) = create_priority_segment(
+            self.PRIORITY_CODE_TO_LABEL,
+            on_selected=self.set_priority,
+            parent=self,
+        )
 
         self.detail_input = QTextEdit()
         self.detail_input.setObjectName("deliveryNotesInput")
@@ -159,23 +154,23 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.submit_btn.setObjectName("primaryButton")
         self.submit_btn.clicked.connect(self.submit_request)
 
-        self.form_grid.addWidget(self._field_group("운반 물품", self.item_combo), 0, 0)
-        self.form_grid.addWidget(self._field_group("수량", self.quantity_input), 0, 1)
+        self.form_grid.addWidget(make_field_group("운반 물품", self.item_combo), 0, 0)
+        self.form_grid.addWidget(make_field_group("수량", self.quantity_input), 0, 1)
         self.form_grid.addWidget(
-            self._field_group("목적지", self.destination_combo),
+            make_field_group("목적지", self.destination_combo),
             1,
             0,
             1,
             2,
         )
         self.form_grid.addWidget(
-            self._field_group("우선순위", self.priority_segment),
+            make_field_group("우선순위", self.priority_segment),
             2,
             0,
             1,
             2,
         )
-        self.notes_field_group = self._field_group(
+        self.notes_field_group = make_field_group(
             "추가 메모",
             self.detail_input,
             object_name="notesFieldGroup",
@@ -203,40 +198,6 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         )
         self.detail_input.textChanged.connect(self.emit_preview_changed)
         self.set_priority("NORMAL")
-
-    @staticmethod
-    def _configure_searchable_combo(combo, placeholder):
-        combo.setEditable(True)
-        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        combo.lineEdit().setPlaceholderText(placeholder)
-
-        completer = QCompleter(combo.model(), combo)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        combo.setCompleter(completer)
-
-    @staticmethod
-    def _field_group(label_text, widget, object_name="formFieldGroup", spacing=6):
-        group = QFrame()
-        group.setObjectName(object_name)
-        group.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
-            QSizePolicy.Policy.Fixed,
-        )
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(spacing)
-
-        label = QLabel(label_text)
-        label.setObjectName("fieldLabel")
-        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        label.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
-            QSizePolicy.Policy.Fixed,
-        )
-        layout.addWidget(label)
-        layout.addWidget(widget)
-        return group
 
     def _handle_priority_combo_changed(self, label):
         self.set_priority(
@@ -603,7 +564,7 @@ class PatrolRequestForm(QWidget):
 
         self.patrol_area_combo = QComboBox()
         self.patrol_area_combo.setObjectName("patrolAreaCombo")
-        DeliveryRequestForm._configure_searchable_combo(
+        configure_searchable_combo(
             self.patrol_area_combo,
             "순찰 구역명 또는 patrol_area_id 검색",
         )
@@ -611,25 +572,15 @@ class PatrolRequestForm(QWidget):
             self.patrol_area_combo.addItem(label, area)
         self.patrol_area_combo.setMinimumHeight(44)
 
-        self.priority_group = QButtonGroup(self)
-        self.priority_group.setExclusive(True)
-        self.priority_buttons = {}
-        self.priority_segment = QFrame()
-        self.priority_segment.setObjectName("prioritySegment")
-        priority_layout = QHBoxLayout(self.priority_segment)
-        priority_layout.setContentsMargins(4, 4, 4, 4)
-        priority_layout.setSpacing(6)
-
-        for code in ["NORMAL", "URGENT", "HIGHEST"]:
-            button = QPushButton(DeliveryRequestForm.PRIORITY_CODE_TO_LABEL[code])
-            button.setObjectName("prioritySegmentButton")
-            button.setCheckable(True)
-            button.clicked.connect(
-                lambda _checked=False, priority=code: self.set_priority(priority)
-            )
-            self.priority_buttons[code] = button
-            self.priority_group.addButton(button)
-            priority_layout.addWidget(button)
+        (
+            self.priority_segment,
+            self.priority_group,
+            self.priority_buttons,
+        ) = create_priority_segment(
+            DeliveryRequestForm.PRIORITY_CODE_TO_LABEL,
+            on_selected=self.set_priority,
+            parent=self,
+        )
 
         self.notes_input = QTextEdit()
         self.notes_input.setObjectName("patrolNotesInput")
@@ -643,20 +594,20 @@ class PatrolRequestForm(QWidget):
         self.submit_btn.setEnabled(False)
 
         self.form_grid.addWidget(
-            DeliveryRequestForm._field_group("순찰 구역", self.patrol_area_combo),
+            make_field_group("순찰 구역", self.patrol_area_combo),
             0,
             0,
             1,
             2,
         )
         self.form_grid.addWidget(
-            DeliveryRequestForm._field_group("우선순위", self.priority_segment),
+            make_field_group("우선순위", self.priority_segment),
             1,
             0,
             1,
             2,
         )
-        self.notes_field_group = DeliveryRequestForm._field_group(
+        self.notes_field_group = make_field_group(
             "요청 메모",
             self.notes_input,
             object_name="notesFieldGroup",
