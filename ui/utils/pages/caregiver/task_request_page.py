@@ -1,10 +1,11 @@
 import logging
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QThread, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -20,6 +21,7 @@ from ui.utils.pages.caregiver.task_request_forms import (
     PatrolRequestForm,
 )
 from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
+from ui.utils.pages.caregiver.task_request_workers import DeliveryCancelWorker
 from ui.utils.widgets.admin_shell import PageHeader
 
 
@@ -31,6 +33,8 @@ class TaskRequestPage(QWidget):
         super().__init__()
         self.forms = []
         self.current_form = None
+        self.cancel_thread = None
+        self.cancel_worker = None
         self._build_ui()
         self._initialize_forms()
 
@@ -103,6 +107,7 @@ class TaskRequestPage(QWidget):
         self.patrol_btn.clicked.connect(self.show_patrol_page)
         self.guide_btn.clicked.connect(self.show_guide_page)
         self.follow_btn.clicked.connect(self.show_follow_page)
+        self.side_panel.cancel_task_btn.clicked.connect(self._request_delivery_cancel)
 
         self.content_row.addWidget(
             self.left_card,
@@ -124,6 +129,7 @@ class TaskRequestPage(QWidget):
         self.task_id_label = self.side_panel.task_id_label
         self.task_status_label = self.side_panel.task_status_label
         self.assigned_robot_id_label = self.side_panel.assigned_robot_id_label
+        self.cancel_task_btn = self.side_panel.cancel_task_btn
         self.robot_status_card = self.side_panel.robot_status_card
         self.robot_map_placeholder = self.side_panel.robot_map_placeholder
         self.robot_id_label = self.side_panel.robot_id_label
@@ -228,6 +234,80 @@ class TaskRequestPage(QWidget):
         self._show_form(self.follow_form)
         logger.debug("switched to follow page")
 
+    def _request_delivery_cancel(self):
+        task_id = self.cancel_task_btn.property("task_id")
+        if task_id is None or str(task_id).strip() in {"", "-"}:
+            return
+
+        if not self._confirm_cancel_task(task_id):
+            return
+
+        self.cancel_task_btn.setEnabled(False)
+        self.cancel_task_btn.setText("취소 요청 전송 중...")
+        self._start_cancel_delivery_task(task_id)
+
+    def _confirm_cancel_task(self, task_id):
+        result = QMessageBox.question(
+            self,
+            "작업 취소 확인",
+            (
+                "이 작업을 취소하시겠습니까?\n\n"
+                f"task_id: {task_id}\n"
+                f"상태: {self.task_status_label.text()}\n"
+                f"배정 로봇: {self.assigned_robot_id_label.text()}"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return result == QMessageBox.StandardButton.Yes
+
+    def _start_cancel_delivery_task(self, task_id):
+        if self.cancel_thread is not None:
+            return
+
+        self.cancel_thread = QThread(self)
+        self.cancel_worker = DeliveryCancelWorker(task_id=task_id)
+        self.cancel_worker.moveToThread(self.cancel_thread)
+
+        self.cancel_thread.started.connect(self.cancel_worker.run)
+        self.cancel_worker.finished.connect(self._handle_cancel_finished)
+        self.cancel_worker.finished.connect(self.cancel_thread.quit)
+        self.cancel_worker.finished.connect(self.cancel_worker.deleteLater)
+        self.cancel_thread.finished.connect(self.cancel_thread.deleteLater)
+        self.cancel_thread.finished.connect(self._clear_cancel_thread)
+
+        self.cancel_thread.start()
+
+    def _handle_cancel_finished(self, success, response):
+        response = response or {}
+        if not isinstance(response, dict):
+            response = {
+                "result_code": "CLIENT_ERROR",
+                "result_message": str(response),
+                "reason_code": "CLIENT_RESPONSE_INVALID",
+                "cancel_requested": False,
+            }
+        elif not success and not response.get("result_code"):
+            response = {
+                **response,
+                "result_code": "CLIENT_ERROR",
+                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
+            }
+
+        self.side_panel.show_delivery_result(response)
+
+    def _clear_cancel_thread(self):
+        self.cancel_thread = None
+        self.cancel_worker = None
+
+    def _stop_cancel_thread(self):
+        if self.cancel_thread is None:
+            return
+        if self.cancel_thread.isRunning():
+            self.cancel_thread.quit()
+            self.cancel_thread.wait(1000)
+        self._clear_cancel_thread()
+
     def reset_page(self):
         for form in self.forms:
             if hasattr(form, "reset_form"):
@@ -236,6 +316,10 @@ class TaskRequestPage(QWidget):
         self.form_scroll.verticalScrollBar().setValue(0)
         self._show_form(self.delivery_form)
         QTimer.singleShot(0, self.delivery_form.ensure_items_loaded)
+
+    def closeEvent(self, event):
+        self._stop_cancel_thread()
+        super().closeEvent(event)
 
 
 __all__ = [

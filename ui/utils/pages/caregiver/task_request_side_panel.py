@@ -1,11 +1,35 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 PRIORITY_CODE_TO_LABEL = {
     "NORMAL": "일반",
     "URGENT": "긴급",
     "HIGHEST": "최우선",
+}
+CANCELLABLE_TASK_STATUSES = {
+    "WAITING",
+    "WAITING_DISPATCH",
+    "READY",
+    "ASSIGNED",
+    "RUNNING",
+}
+CANCEL_IN_PROGRESS_STATUSES = {
+    "CANCEL_REQUESTED",
+    "CANCELLING",
+    "PREEMPTING",
+}
+TERMINAL_TASK_STATUSES = {
+    "CANCELLED",
+    "COMPLETED",
+    "FAILED",
 }
 
 
@@ -38,6 +62,10 @@ def _metric_row(label_text, value_text="-", value_object_name="sideMetricValue")
     row_layout.addStretch(1)
     row_layout.addWidget(value)
     return row, label, value
+
+
+def _has_task_id(value):
+    return value is not None and str(value).strip() not in {"", "-"}
 
 
 class RequestPreviewCard(QFrame):
@@ -224,6 +252,9 @@ class RequestResultCard(QFrame):
             self.assigned_robot_text_label,
             self.assigned_robot_id_label,
         ) = _metric_row("배정 로봇")
+        self.cancel_task_btn = QPushButton("작업 취소")
+        self.cancel_task_btn.setObjectName("dangerButton")
+        self.cancel_task_btn.setEnabled(False)
 
         layout.addWidget(title)
         layout.addWidget(self.result_message_label)
@@ -232,6 +263,7 @@ class RequestResultCard(QFrame):
         layout.addWidget(task_id_row)
         layout.addWidget(task_status_row)
         layout.addWidget(assigned_robot_row)
+        layout.addWidget(self.cancel_task_btn)
 
     def show_delivery_result(self, response):
         response = response or {}
@@ -243,6 +275,36 @@ class RequestResultCard(QFrame):
         self.assigned_robot_id_label.setText(
             _display(response.get("assigned_robot_id"))
         )
+        self._sync_cancel_button(response)
+
+    def _sync_cancel_button(self, response):
+        task_id = response.get("task_id")
+        task_status = str(response.get("task_status") or "").strip().upper()
+        cancellable = response.get("cancellable")
+
+        self.cancel_task_btn.setProperty("task_id", task_id)
+        self.cancel_task_btn.setProperty("task_status", task_status)
+        self.cancel_task_btn.setText("작업 취소")
+
+        if task_status in CANCEL_IN_PROGRESS_STATUSES:
+            self.cancel_task_btn.setText("취소 처리 중")
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if task_status in TERMINAL_TASK_STATUSES:
+            self.cancel_task_btn.setText("취소 불가")
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if not _has_task_id(task_id):
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if cancellable is not None:
+            self.cancel_task_btn.setEnabled(bool(cancellable))
+            return
+
+        self.cancel_task_btn.setEnabled(task_status in CANCELLABLE_TASK_STATUSES)
 
 
 class NoticeCard(QFrame):
@@ -323,6 +385,7 @@ class TaskRequestSidePanel(QWidget):
         self.task_status_label = self.result_card.task_status_label
         self.assigned_robot_text_label = self.result_card.assigned_robot_text_label
         self.assigned_robot_id_label = self.result_card.assigned_robot_id_label
+        self.cancel_task_btn = self.result_card.cancel_task_btn
 
     def update_preview(self, preview):
         preview = preview or {}

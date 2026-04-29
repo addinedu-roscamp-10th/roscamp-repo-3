@@ -67,3 +67,44 @@ def test_task_request_options_worker_name_matches_shared_options_role(monkeypatc
             },
         )
     ]
+
+
+def test_delivery_cancel_worker_calls_remote_cancel_service(monkeypatch):
+    from ui.utils.pages.caregiver import task_request_workers
+    from ui.utils.pages.caregiver.task_request_workers import DeliveryCancelWorker
+
+    calls = []
+
+    class FakeService:
+        def cancel_delivery_task(self, task_id):
+            calls.append(task_id)
+            return {
+                "result_code": "CANCEL_REQUESTED",
+                "task_id": task_id,
+                "task_status": "CANCEL_REQUESTED",
+                "cancel_requested": True,
+            }
+
+    monkeypatch.setattr(
+        task_request_workers,
+        "DeliveryRequestRemoteService",
+        FakeService,
+    )
+
+    emitted = []
+    worker = DeliveryCancelWorker(task_id=1001)
+    worker.finished.connect(lambda ok, payload: emitted.append((ok, payload)))
+    worker.run()
+
+    assert calls == [1001]
+    assert emitted == [
+        (
+            True,
+            {
+                "result_code": "CANCEL_REQUESTED",
+                "task_id": 1001,
+                "task_status": "CANCEL_REQUESTED",
+                "cancel_requested": True,
+            },
+        )
+    ]

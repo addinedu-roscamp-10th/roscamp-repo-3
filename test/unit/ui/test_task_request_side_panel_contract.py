@@ -93,6 +93,47 @@ def test_task_request_side_panel_cards_update_delivery_and_patrol_contexts():
         panel.close()
 
 
+def test_request_result_card_exposes_cancel_button_by_task_status():
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
+
+    panel = TaskRequestSidePanel()
+
+    try:
+        assert panel.cancel_task_btn.text() == "작업 취소"
+        assert panel.cancel_task_btn.isEnabled() is False
+
+        panel.show_delivery_result(
+            {
+                "result_code": "ACCEPTED",
+                "result_message": "작업이 접수되었습니다.",
+                "task_id": 1001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky2",
+            }
+        )
+
+        assert panel.cancel_task_btn.isEnabled() is True
+        assert panel.cancel_task_btn.property("task_id") == 1001
+
+        panel.show_delivery_result(
+            {
+                "result_code": "CANCEL_REQUESTED",
+                "result_message": "취소 요청이 접수되었습니다.",
+                "task_id": 1001,
+                "task_status": "CANCEL_REQUESTED",
+                "assigned_robot_id": "pinky2",
+                "cancel_requested": True,
+            }
+        )
+
+        assert panel.cancel_task_btn.isEnabled() is False
+        assert panel.cancel_task_btn.text() == "취소 처리 중"
+    finally:
+        panel.close()
+
+
 def test_task_request_page_imports_side_panel_instead_of_defining_it_inline():
     source = (
         PROJECT_ROOT / "ui/utils/pages/caregiver/task_request_page.py"

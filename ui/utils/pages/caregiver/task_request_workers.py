@@ -50,4 +50,41 @@ class DeliverySubmitWorker(QObject):
             )
 
 
-__all__ = ["DeliverySubmitWorker", "TaskRequestOptionsLoadWorker"]
+class DeliveryCancelWorker(QObject):
+    finished = pyqtSignal(bool, object)
+
+    def __init__(self, task_id):
+        super().__init__()
+        self.task_id = task_id
+
+    def run(self):
+        service = DeliveryRequestRemoteService()
+
+        try:
+            response = service.cancel_delivery_task(self.task_id) or {}
+            result_code = str(response.get("result_code", "")).upper()
+            success = bool(response.get("cancel_requested")) or result_code in {
+                "CANCEL_REQUESTED",
+                "CANCELLED",
+            }
+            self.finished.emit(success, response)
+        except Exception as exc:
+            self.finished.emit(
+                False,
+                {
+                    "result_code": "CLIENT_ERROR",
+                    "result_message": f"작업 취소 요청 중 오류가 발생했습니다.\n{exc}",
+                    "reason_code": "CLIENT_EXCEPTION",
+                    "task_id": self.task_id,
+                    "task_status": None,
+                    "assigned_robot_id": None,
+                    "cancel_requested": False,
+                },
+            )
+
+
+__all__ = [
+    "DeliveryCancelWorker",
+    "DeliverySubmitWorker",
+    "TaskRequestOptionsLoadWorker",
+]

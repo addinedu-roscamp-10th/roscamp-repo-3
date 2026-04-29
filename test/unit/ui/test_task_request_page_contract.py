@@ -511,6 +511,72 @@ def test_delivery_submit_result_panel_displays_if_del_001_response_fields(monkey
         page.close()
 
 
+def test_task_request_page_cancel_button_updates_result_panel(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import (
+        DeliveryRequestForm,
+        TaskRequestPage,
+    )
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+
+    page = TaskRequestPage()
+    page.delivery_form.refresh_data = lambda: None
+    requested_task_ids = []
+
+    monkeypatch.setattr(page, "_confirm_cancel_task", lambda task_id: True)
+    monkeypatch.setattr(
+        page,
+        "_start_cancel_delivery_task",
+        lambda task_id: requested_task_ids.append(task_id),
+    )
+
+    try:
+        page.delivery_form._handle_submit_finished(
+            True,
+            {
+                "result_code": "ACCEPTED",
+                "result_message": "작업이 접수되었습니다.",
+                "reason_code": None,
+                "task_id": 1001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky2",
+                "cancellable": True,
+            },
+        )
+
+        assert page.cancel_task_btn.isEnabled() is True
+
+        page.cancel_task_btn.click()
+
+        assert requested_task_ids == [1001]
+        assert page.cancel_task_btn.isEnabled() is False
+        assert page.cancel_task_btn.text() == "취소 요청 전송 중..."
+
+        page._handle_cancel_finished(
+            True,
+            {
+                "result_code": "CANCEL_REQUESTED",
+                "result_message": "취소 요청이 접수되었습니다.",
+                "reason_code": "USER_CANCEL_REQUESTED",
+                "task_id": 1001,
+                "task_status": "CANCEL_REQUESTED",
+                "assigned_robot_id": "pinky2",
+                "cancel_requested": True,
+            },
+        )
+
+        assert page.result_code_label.text() == "CANCEL_REQUESTED"
+        assert page.result_message_label.text() == "취소 요청이 접수되었습니다."
+        assert page.reason_code_label.text() == "USER_CANCEL_REQUESTED"
+        assert page.task_status_label.text() == "CANCEL_REQUESTED"
+        assert page.cancel_task_btn.isEnabled() is False
+        assert page.cancel_task_btn.text() == "취소 처리 중"
+    finally:
+        page.close()
+
+
 def test_delivery_create_payload_uses_numeric_ui_api_ids():
     _app()
 
