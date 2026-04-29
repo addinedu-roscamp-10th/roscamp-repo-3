@@ -51,24 +51,15 @@ class LoginAuthWindow(QWidget):
         root.setContentsMargins(72, 56, 72, 56)
         root.setSpacing(36)
 
+        root.addWidget(self._build_hero_panel(), 3)
+        root.addLayout(self._build_card_column(), 2)
+
+    def _build_hero_panel(self):
         hero = QFrame()
         hero.setObjectName("loginHeroPanel")
         hero_layout = QVBoxLayout(hero)
         hero_layout.setContentsMargins(34, 34, 34, 34)
         hero_layout.setSpacing(20)
-
-        brand_row = QHBoxLayout()
-        brand_row.setSpacing(12)
-
-        brand = QLabel("ROPI")
-        brand.setObjectName("loginBrandTitle")
-
-        brand_tag = QLabel("CARE OPERATIONS")
-        brand_tag.setObjectName("loginBrandTag")
-
-        brand_row.addWidget(brand)
-        brand_row.addWidget(brand_tag)
-        brand_row.addStretch()
 
         hero_title = QLabel("요양보호사 운영 콘솔")
         hero_title.setObjectName("loginHeroTitle")
@@ -87,22 +78,53 @@ class LoginAuthWindow(QWidget):
             ("상태 확인", "로봇과 관제 서버 상태 추적"),
             ("운영 기록", "알림, 오류, 처리 결과 확인"),
         ]:
-            feature = QFrame()
-            feature.setObjectName("loginFeatureCard")
-            feature_layout = QVBoxLayout(feature)
-            feature_layout.setContentsMargins(16, 14, 16, 14)
-            feature_layout.setSpacing(6)
+            feature_row.addWidget(self._build_feature_card(title, desc))
 
-            feature_title = QLabel(title)
-            feature_title.setObjectName("loginFeatureTitle")
-            feature_desc = QLabel(desc)
-            feature_desc.setObjectName("loginFeatureDesc")
-            feature_desc.setWordWrap(True)
+        hero_layout.addLayout(self._build_brand_row())
+        hero_layout.addStretch()
+        hero_layout.addWidget(hero_title)
+        hero_layout.addWidget(hero_description)
+        hero_layout.addLayout(feature_row)
+        hero_layout.addStretch()
+        hero_layout.addWidget(self._build_status_chip())
 
-            feature_layout.addWidget(feature_title)
-            feature_layout.addWidget(feature_desc)
-            feature_row.addWidget(feature)
+        return hero
 
+    def _build_brand_row(self):
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(12)
+
+        brand = QLabel("ROPI")
+        brand.setObjectName("loginBrandTitle")
+
+        brand_tag = QLabel("CARE OPERATIONS")
+        brand_tag.setObjectName("loginBrandTag")
+
+        brand_row.addWidget(brand)
+        brand_row.addWidget(brand_tag)
+        brand_row.addStretch()
+
+        return brand_row
+
+    def _build_feature_card(self, title: str, desc: str):
+        feature = QFrame()
+        feature.setObjectName("loginFeatureCard")
+        feature_layout = QVBoxLayout(feature)
+        feature_layout.setContentsMargins(16, 14, 16, 14)
+        feature_layout.setSpacing(6)
+
+        feature_title = QLabel(title)
+        feature_title.setObjectName("loginFeatureTitle")
+        feature_desc = QLabel(desc)
+        feature_desc.setObjectName("loginFeatureDesc")
+        feature_desc.setWordWrap(True)
+
+        feature_layout.addWidget(feature_title)
+        feature_layout.addWidget(feature_desc)
+
+        return feature
+
+    def _build_status_chip(self):
         status_chip = QFrame()
         status_chip.setObjectName("loginStatusChip")
         status_layout = QHBoxLayout(status_chip)
@@ -119,18 +141,20 @@ class LoginAuthWindow(QWidget):
         status_layout.addStretch()
         status_layout.addWidget(self.status_text)
 
-        hero_layout.addLayout(brand_row)
-        hero_layout.addStretch()
-        hero_layout.addWidget(hero_title)
-        hero_layout.addWidget(hero_description)
-        hero_layout.addLayout(feature_row)
-        hero_layout.addStretch()
-        hero_layout.addWidget(status_chip)
+        return status_chip
 
+    def _build_card_column(self):
         card_wrap = QVBoxLayout()
         card_wrap.setContentsMargins(0, 0, 0, 0)
         card_wrap.setSpacing(0)
 
+        card_wrap.addStretch()
+        card_wrap.addWidget(self._build_login_card())
+        card_wrap.addStretch()
+
+        return card_wrap
+
+    def _build_login_card(self):
         role_text = "요양보호사" if self.role == "caregiver" else "방문객"
 
         panel = QFrame()
@@ -192,12 +216,7 @@ class LoginAuthWindow(QWidget):
         panel_layout.addSpacing(8)
         panel_layout.addLayout(btn_row)
 
-        card_wrap.addStretch()
-        card_wrap.addWidget(panel)
-        card_wrap.addStretch()
-
-        root.addWidget(hero, 3)
-        root.addLayout(card_wrap, 2)
+        return panel
 
     def handle_login(self):
         login_id = self.id_input.text().strip()

@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -7,7 +6,6 @@ from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 
 _APP = None
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _app():
@@ -25,12 +23,22 @@ def _visible_texts(widget) -> list[str]:
     return texts
 
 
-def test_admin_app_entrypoint_uses_caregiver_login_not_role_picker():
-    source = (PROJECT_ROOT / "ui/admin_ui/main.py").read_text()
+def test_admin_app_entrypoint_uses_caregiver_login_not_role_picker(monkeypatch):
+    _app()
 
-    assert "LoginAuthWindow" in source
-    assert "LoginRoleWindow" not in source
-    assert 'role="caregiver"' in source
+    from ui.admin_ui import main as admin_main
+    from ui.admin_ui.login_auth_window import LoginAuthWindow
+    from ui.utils.network.heartbeat import HeartbeatMonitor
+
+    monkeypatch.setattr(HeartbeatMonitor, "start", lambda self: None)
+
+    window = admin_main.create_initial_window()
+
+    try:
+        assert isinstance(window, LoginAuthWindow)
+        assert window.role == "caregiver"
+    finally:
+        window.close()
 
 
 def test_caregiver_login_window_is_caregiver_only_product_entry(monkeypatch):

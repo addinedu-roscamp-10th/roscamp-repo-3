@@ -11,11 +11,15 @@ from ui.admin_ui.login_auth_window import LoginAuthWindow
 from ui.utils.core.styles import load_stylesheet
 
 
+def create_initial_window():
+    return LoginAuthWindow(role="caregiver")
+
+
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(load_stylesheet())
 
-    window = LoginAuthWindow(role="caregiver")
+    window = create_initial_window()
     window.show()
 
     sys.exit(app.exec())
