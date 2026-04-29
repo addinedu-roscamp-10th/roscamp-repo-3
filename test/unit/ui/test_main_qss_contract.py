@@ -48,6 +48,31 @@ def test_main_qss_defines_task_request_page_components():
     assert "QLabel#resultMessage" in qss
 
 
+def test_main_qss_overrides_native_input_subcontrols():
+    qss = _stylesheet()
+
+    assert "QComboBox::drop-down" in qss
+    assert "QComboBox::down-arrow" in qss
+    assert "QComboBox QAbstractItemView" in qss
+    assert "QComboBox QLineEdit" in qss
+    assert "QSpinBox::up-button" in qss
+    assert "QSpinBox::down-button" in qss
+    assert "QSpinBox::up-arrow" in qss
+    assert "QSpinBox::down-arrow" in qss
+    assert "__STYLE_ASSET_DIR__/chevron-down.svg" in qss
+    assert "__STYLE_ASSET_DIR__/chevron-up.svg" in qss
+
+
+def test_stylesheet_loader_resolves_asset_placeholder():
+    from ui.utils.core.styles import load_stylesheet
+
+    qss = load_stylesheet()
+
+    assert "__STYLE_ASSET_DIR__" not in qss
+    assert "chevron-down.svg" in qss
+    assert "chevron-up.svg" in qss
+
+
 def test_main_qss_has_single_app_root_rule():
     qss = _stylesheet()
 

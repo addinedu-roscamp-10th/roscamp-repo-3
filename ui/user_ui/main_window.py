@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, QDateTime, pyqtSignal
 
-from ui.utils.core.paths import STYLE_PATH
+from ui.utils.core.styles import load_stylesheet
 from ui.utils.pages.visitor.staff_call_page import StaffCallPage
 from ui.utils.pages.visitor.visit_guide_page import VisitGuidePage
 from ui.utils.session.session_manager import SessionManager
@@ -269,14 +269,7 @@ class VisitorMainWindow(QMainWindow):
         self.close()
 
 
-__all__ = ["VisitorMainWindow"]
-
-
-def load_stylesheet() -> str:
-    try:
-        return STYLE_PATH.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return ""
+__all__ = ["VisitorMainWindow", "load_stylesheet"]
 
 
 def main():

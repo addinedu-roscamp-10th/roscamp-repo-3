@@ -90,7 +90,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.form_grid = QGridLayout()
         self.form_grid.setObjectName("deliveryFormGrid")
         self.form_grid.setHorizontalSpacing(18)
-        self.form_grid.setVerticalSpacing(16)
+        self.form_grid.setVerticalSpacing(10)
         self.form_grid.setColumnStretch(0, 1)
         self.form_grid.setColumnStretch(1, 1)
 
@@ -124,7 +124,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         priority_layout.setSpacing(6)
 
         for code in ["NORMAL", "URGENT", "HIGHEST"]:
-            button = QPushButton(code)
+            button = QPushButton(self.PRIORITY_CODE_TO_LABEL[code])
             button.setObjectName("prioritySegmentButton")
             button.setCheckable(True)
             button.clicked.connect(
@@ -160,8 +160,14 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
             1,
             2,
         )
+        self.notes_field_group = self._field_group(
+            "추가 메모",
+            self.detail_input,
+            object_name="notesFieldGroup",
+            spacing=4,
+        )
         self.form_grid.addWidget(
-            self._field_group("추가 메모", self.detail_input),
+            self.notes_field_group,
             3,
             0,
             1,
@@ -195,12 +201,12 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         combo.setCompleter(completer)
 
     @staticmethod
-    def _field_group(label_text, widget):
+    def _field_group(label_text, widget, object_name="formFieldGroup", spacing=6):
         group = QFrame()
-        group.setObjectName("formFieldGroup")
+        group.setObjectName(object_name)
         layout = QVBoxLayout(group)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(spacing)
 
         label = QLabel(label_text)
         label.setObjectName("fieldLabel")

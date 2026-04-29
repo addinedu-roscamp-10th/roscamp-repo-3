@@ -320,7 +320,8 @@ QPushButton#scenarioTabButton:checked {
     color: #FFFFFF;
 }
 
-QFrame#formFieldGroup {
+QFrame#formFieldGroup,
+QFrame#notesFieldGroup {
     background: transparent;
     border: none;
 }
@@ -396,6 +397,7 @@ QPushButton#cardButtonGreen:hover {
 QLineEdit,
 QTextEdit,
 QComboBox,
+QSpinBox,
 QTimeEdit,
 QTableWidget,
 QListWidget {
@@ -409,13 +411,97 @@ QListWidget {
 QLineEdit:focus,
 QTextEdit:focus,
 QComboBox:focus,
+QSpinBox:focus,
 QTimeEdit:focus {
     border: 1px solid #005C55;
 }
 
-QAbstractSpinBox::up-button,
-QAbstractSpinBox::down-button {
-    width: 20px;
+QComboBox {
+    padding: 12px 42px 12px 12px;
+}
+
+QComboBox QLineEdit {
+    background: transparent;
+    border: none;
+    color: #16202A;
+    padding: 0;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 38px;
+    background: #F8FAFC;
+    border: none;
+    border-left: 1px solid #E2E8F0;
+    border-top-right-radius: 14px;
+    border-bottom-right-radius: 14px;
+}
+
+QComboBox::drop-down:hover {
+    background: #EEF4F7;
+}
+
+QComboBox::down-arrow {
+    image: url("__STYLE_ASSET_DIR__/chevron-down.svg");
+    width: 16px;
+    height: 16px;
+}
+
+QComboBox::down-arrow:on {
+    top: 1px;
+}
+
+QComboBox QAbstractItemView {
+    background: #FFFFFF;
+    border: 1px solid #B9D8D3;
+    border-radius: 14px;
+    color: #16202A;
+    outline: 0;
+    padding: 6px;
+    selection-background-color: #DDEDEA;
+    selection-color: #005C55;
+}
+
+QSpinBox {
+    padding: 12px 42px 12px 12px;
+}
+
+QSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 36px;
+    background: #F8FAFC;
+    border: none;
+    border-left: 1px solid #E2E8F0;
+    border-top-right-radius: 14px;
+}
+
+QSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 36px;
+    background: #F8FAFC;
+    border: none;
+    border-left: 1px solid #E2E8F0;
+    border-bottom-right-radius: 14px;
+}
+
+QSpinBox::up-button:hover,
+QSpinBox::down-button:hover {
+    background: #EEF4F7;
+}
+
+QSpinBox::up-arrow {
+    image: url("__STYLE_ASSET_DIR__/chevron-up.svg");
+    width: 12px;
+    height: 12px;
+}
+
+QSpinBox::down-arrow {
+    image: url("__STYLE_ASSET_DIR__/chevron-down.svg");
+    width: 12px;
+    height: 12px;
 }
 
 QTableWidget {

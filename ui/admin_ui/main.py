@@ -8,14 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ui.admin_ui.login_role_window import LoginRoleWindow
-from ui.utils.core.paths import STYLE_PATH
-
-
-def load_stylesheet() -> str:
-    try:
-        return STYLE_PATH.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return ""
+from ui.utils.core.styles import load_stylesheet
 
 
 def main():

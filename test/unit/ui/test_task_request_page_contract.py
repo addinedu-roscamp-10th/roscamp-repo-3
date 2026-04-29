@@ -2,7 +2,14 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QGridLayout, QTextEdit
+from PyQt6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QGridLayout,
+    QTextEdit,
+)
 
 from ui.utils.session.session_manager import SessionManager, UserSession
 
@@ -113,17 +120,26 @@ def test_delivery_form_uses_wireframe_form_controls():
             for button in form.findChildren(QPushButton)
             if button.objectName() == "prioritySegmentButton"
         ]
-        assert priority_buttons == ["NORMAL", "URGENT", "HIGHEST"]
+        assert priority_buttons == ["일반", "긴급", "최우선"]
+        assert list(form.priority_buttons.keys()) == ["NORMAL", "URGENT", "HIGHEST"]
         assert form.get_priority_code() == "NORMAL"
 
         form.set_priority("URGENT")
         assert form.get_priority_code() == "URGENT"
         assert form.priority_buttons["URGENT"].isChecked() is True
+        assert form.priority_buttons["URGENT"].text() == "긴급"
 
         notes = form.findChild(QTextEdit, "deliveryNotesInput")
         assert notes is form.detail_input
         assert notes.minimumHeight() <= 88
         assert notes.maximumHeight() <= 88
+
+        grid = form.findChild(QGridLayout, "deliveryFormGrid")
+        assert grid.verticalSpacing() <= 12
+
+        notes_group = form.findChild(QFrame, "notesFieldGroup")
+        assert notes_group is not None
+        assert notes_group.layout().spacing() <= 4
     finally:
         form.close()
 
