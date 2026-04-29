@@ -4,6 +4,7 @@ from importlib import import_module
 _EXPORTS = {
     "AuthService": ("auth", "AuthService"),
     "CaregiverService": ("caregiver", "CaregiverService"),
+    "DeliveryCancelService": ("delivery_cancel", "DeliveryCancelService"),
     "DeliveryOrchestrator": ("delivery_orchestrator", "DeliveryOrchestrator"),
     "DeliveryRequestService": ("task_request", "DeliveryRequestService"),
     "DeliveryRuntimeConfig": ("delivery_config", "DeliveryRuntimeConfig"),

@@ -2,8 +2,8 @@ import asyncio
 
 from server.ropi_main_service.application.command_execution import (
     CommandExecutionRecorder,
-    CommandExecutionSpec,
 )
+from server.ropi_main_service.application.delivery_cancel import DeliveryCancelService
 from server.ropi_main_service.application.delivery_task_create import DeliveryTaskCreateService
 from server.ropi_main_service.application.fall_response_command import (
     FallResponseCommandService,
@@ -37,6 +37,7 @@ class TaskRequestService:
         command_client=None,
         command_execution_recorder=None,
         fall_response_command_service=None,
+        delivery_cancel_service=None,
         cancel_timeout_sec=5.0,
     ):
         self.repository = repository or _new_task_request_repository()
@@ -50,6 +51,15 @@ class TaskRequestService:
         self.fall_response_command_service = (
             fall_response_command_service
             or FallResponseCommandService(
+                command_client=self.command_client,
+                command_execution_recorder=self.command_execution_recorder,
+                timeout_sec=self.cancel_timeout_sec,
+            )
+        )
+        self.delivery_cancel_service = (
+            delivery_cancel_service
+            or DeliveryCancelService(
+                repository=self.repository,
                 command_client=self.command_client,
                 command_execution_recorder=self.command_execution_recorder,
                 timeout_sec=self.cancel_timeout_sec,
@@ -313,112 +323,17 @@ class TaskRequestService:
         )
 
     def cancel_delivery_task(self, task_id, action_name=None):
-        invalid_response = self._validate_cancel_delivery_task_request(task_id=task_id)
-        if invalid_response is not None:
-            return invalid_response
-
-        target_response = self.repository.get_delivery_task_cancel_target(task_id)
-        if target_response.get("result_code") != self.ACCEPTED:
-            return target_response
-
-        payload = self._build_cancel_action_payload(task_id=task_id, action_name=action_name)
-        spec = self._build_cancel_command_execution_spec(
+        self._sync_cancel_service_dependencies()
+        return self.delivery_cancel_service.cancel_delivery_task(
             task_id=task_id,
             action_name=action_name,
-            assigned_robot_id=target_response.get("assigned_robot_id"),
-            payload=payload,
-        )
-        try:
-            cancel_response = self.command_execution_recorder.record(
-                spec,
-                lambda: self.command_client.send_command(
-                    "cancel_action",
-                    payload,
-                    timeout=self.cancel_timeout_sec,
-                ),
-            )
-        except RosServiceCommandError as exc:
-            cancel_response = self._rejected(
-                f"ROS service cancel 요청에 실패했습니다: {exc}",
-                "ROS_SERVICE_UNAVAILABLE",
-            )
-            cancel_response["cancel_requested"] = False
-
-        return self.repository.record_delivery_task_cancel_result(
-            task_id=task_id,
-            cancel_response=cancel_response,
         )
 
     async def async_cancel_delivery_task(self, task_id, action_name=None):
-        invalid_response = self._validate_cancel_delivery_task_request(task_id=task_id)
-        if invalid_response is not None:
-            return invalid_response
-
-        async_cancel_target = getattr(self.repository, "async_get_delivery_task_cancel_target", None)
-        if async_cancel_target is not None:
-            target_response = await async_cancel_target(task_id)
-        else:
-            target_response = await asyncio.to_thread(
-                self.repository.get_delivery_task_cancel_target,
-                task_id,
-            )
-        if target_response.get("result_code") != self.ACCEPTED:
-            return target_response
-
-        payload = self._build_cancel_action_payload(task_id=task_id, action_name=action_name)
-        async_send_command = getattr(self.command_client, "async_send_command", None)
-        spec = self._build_cancel_command_execution_spec(
+        self._sync_cancel_service_dependencies()
+        return await self.delivery_cancel_service.async_cancel_delivery_task(
             task_id=task_id,
             action_name=action_name,
-            assigned_robot_id=target_response.get("assigned_robot_id"),
-            payload=payload,
-        )
-
-        try:
-            if async_send_command is not None:
-                async def _send_async_cancel_command():
-                    return await async_send_command(
-                        "cancel_action",
-                        payload,
-                        timeout=self.cancel_timeout_sec,
-                    )
-
-                cancel_response = await self.command_execution_recorder.async_record(
-                    spec,
-                    _send_async_cancel_command,
-                )
-            else:
-                async def _send_sync_cancel_command_in_thread():
-                    return await asyncio.to_thread(
-                        self.command_client.send_command,
-                        "cancel_action",
-                        payload,
-                        timeout=self.cancel_timeout_sec,
-                    )
-
-                cancel_response = await self.command_execution_recorder.async_record(
-                    spec,
-                    _send_sync_cancel_command_in_thread,
-                )
-
-        except RosServiceCommandError as exc:
-            cancel_response = self._rejected(
-                f"ROS service cancel 요청에 실패했습니다: {exc}",
-                "ROS_SERVICE_UNAVAILABLE",
-            )
-            cancel_response["cancel_requested"] = False
-
-        async_record_cancel_result = getattr(self.repository, "async_record_delivery_task_cancel_result", None)
-        if async_record_cancel_result is not None:
-            return await async_record_cancel_result(
-                task_id=task_id,
-                cancel_response=cancel_response,
-            )
-
-        return await asyncio.to_thread(
-            self.repository.record_delivery_task_cancel_result,
-            task_id=task_id,
-            cancel_response=cancel_response,
         )
 
     def submit_delivery_request(
@@ -607,43 +522,13 @@ class TaskRequestService:
             "map_id": row.get("map_id"),
         }
 
-    def _validate_cancel_delivery_task_request(self, *, task_id):
-        if self._is_blank(task_id):
-            return self._invalid_request("task_id가 필요합니다.", "TASK_ID_INVALID")
-
-        return None
-
     @staticmethod
-    def _build_cancel_action_payload(*, task_id, action_name=None):
-        payload = {
-            "task_id": str(task_id).strip(),
-        }
-        normalized_action_name = str(action_name or "").strip()
-        if normalized_action_name:
-            payload["action_name"] = normalized_action_name
-        return payload
-
-    @staticmethod
-    def _build_cancel_command_execution_spec(*, task_id, action_name=None, assigned_robot_id=None, payload):
-        normalized_action_name = str(action_name or "").strip()
-        return CommandExecutionSpec(
-            task_id=str(task_id).strip(),
-            transport="ROS_ACTION",
-            command_type="CANCEL_ACTION",
-            command_phase="CANCEL",
-            target_component="ros_service",
-            target_robot_id=str(assigned_robot_id or "").strip() or None,
-            target_endpoint=normalized_action_name or "active_action_for_task",
-            request_payload=payload,
-        )
+    def _rejected(message: str, reason_code: str):
+        return DeliveryTaskCreateService._rejected(message, reason_code)
 
     @staticmethod
     def _invalid_request(message: str, reason_code: str):
         return DeliveryTaskCreateService._invalid_request(message, reason_code)
-
-    @staticmethod
-    def _rejected(message: str, reason_code: str):
-        return DeliveryTaskCreateService._rejected(message, reason_code)
 
     @staticmethod
     def _build_delivery_task_response(
@@ -762,6 +647,13 @@ class TaskRequestService:
         self.create_service.async_delivery_request_precheck = self.async_delivery_request_precheck
         self.patrol_create_service.repository = self.repository
         self.patrol_create_service.patrol_workflow_starter = self.patrol_workflow_starter
+
+    def _sync_cancel_service_dependencies(self):
+        self.delivery_cancel_service.repository = self.repository
+        self.delivery_cancel_service.command_client = self.command_client
+        self.delivery_cancel_service.command_execution_recorder = self.command_execution_recorder
+        self.delivery_cancel_service.timeout_sec = self.cancel_timeout_sec
+
 
 DeliveryRequestService = TaskRequestService
 
