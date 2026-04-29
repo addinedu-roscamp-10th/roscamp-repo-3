@@ -9,6 +9,7 @@ from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 
 from ui.utils.network.service_clients import DeliveryRequestRemoteService
 from ui.utils.session.session_manager import SessionManager
+from ui.utils.widgets.admin_shell import PageHeader
 from ui.utils.widgets.common import InlineStatusMixin
 
 
@@ -451,24 +452,6 @@ class TaskRequestPage(QWidget):
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(18)
 
-        header = QHBoxLayout()
-        title_box = QVBoxLayout()
-
-        title = QLabel("작업 요청")
-        title.setObjectName("pageTitle")
-        subtitle = QLabel("작업 종류를 선택하여 해당 요청을 등록하세요.")
-        subtitle.setObjectName("pageSubtitle")
-
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
-
-        chip = QLabel("Task Request")
-        chip.setObjectName("chipBlue")
-
-        header.addLayout(title_box)
-        header.addStretch()
-        header.addWidget(chip)
-
         top_tabs = QHBoxLayout()
         top_tabs.setSpacing(12)
 
@@ -513,7 +496,9 @@ class TaskRequestPage(QWidget):
         content_row.addWidget(left_card, 2)
         content_row.addWidget(right_card, 1)
 
-        root.addLayout(header)
+        root.addWidget(
+            PageHeader("작업 요청", "작업 종류를 선택하여 해당 요청을 등록하세요.")
+        )
         root.addLayout(top_tabs)
         root.addLayout(content_row, 1)
 

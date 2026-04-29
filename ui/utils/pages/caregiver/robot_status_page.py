@@ -4,6 +4,8 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem
 )
 
+from ui.utils.widgets.admin_shell import PageHeader
+
 
 class RobotStatusPage(QWidget):
     def __init__(self):
@@ -16,24 +18,6 @@ class RobotStatusPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(18)
-
-        header = QHBoxLayout()
-        title_box = QVBoxLayout()
-
-        title = QLabel("로봇 상태 조회")
-        title.setObjectName("pageTitle")
-        subtitle = QLabel("운영 중인 로봇의 위치, 배터리, 작업 상태를 확인합니다.")
-        subtitle.setObjectName("pageSubtitle")
-
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
-
-        chip = QLabel("실시간 연결")
-        chip.setObjectName("chipGreen")
-
-        header.addLayout(title_box)
-        header.addStretch()
-        header.addWidget(chip)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(16)
@@ -71,7 +55,9 @@ class RobotStatusPage(QWidget):
 
         tc.addWidget(self.table)
 
-        root.addLayout(header)
+        root.addWidget(
+            PageHeader("로봇 상태 조회", "운영 중인 로봇의 위치, 배터리, 작업 상태를 확인합니다.")
+        )
         root.addLayout(status_row)
         root.addWidget(table_card, 1)
 

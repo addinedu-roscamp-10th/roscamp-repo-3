@@ -6,7 +6,7 @@ from PyQt6.QtCore import Qt, QTimer, QDateTime, QObject, QThread, pyqtSignal
 
 from ui.utils.network.service_clients import CaregiverRemoteService
 from ui.utils.session.session_manager import SessionManager
-from ui.utils.widgets.admin_shell import AdminShell, PlaceholderPage
+from ui.utils.widgets.admin_shell import AdminShell, PageHeader, PlaceholderPage
 
 
 class DashboardLoadWorker(QObject):
@@ -153,14 +153,6 @@ class CaregiverHomePage(QWidget):
 
         top = QHBoxLayout()
 
-        title_wrap = QVBoxLayout()
-        title = QLabel("보호사 메인 화면")
-        title.setObjectName("pageTitle")
-        subtitle = QLabel("현재 로봇 상태와 작업 흐름을 한눈에 확인하세요.")
-        subtitle.setObjectName("pageSubtitle")
-        title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
-
         time_box = QFrame()
         time_box.setObjectName("card")
         tb = QVBoxLayout(time_box)
@@ -174,7 +166,13 @@ class CaregiverHomePage(QWidget):
         tb.addWidget(self.t1, alignment=Qt.AlignmentFlag.AlignRight)
         tb.addWidget(self.t2, alignment=Qt.AlignmentFlag.AlignRight)
 
-        top.addLayout(title_wrap, 1)
+        top.addWidget(
+            PageHeader(
+                "보호사 메인 화면",
+                "현재 로봇 상태와 작업 흐름을 한눈에 확인하세요.",
+            ),
+            1,
+        )
         top.addWidget(time_box)
 
         def update_time():

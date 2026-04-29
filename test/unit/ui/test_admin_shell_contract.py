@@ -120,3 +120,41 @@ def test_caregiver_common_shell_routes_placeholder_pages():
         assert window.system_health_btn.isChecked()
     finally:
         window.close()
+
+
+def test_caregiver_shell_pages_use_common_page_header():
+    _app()
+
+    from ui.admin_ui.main_window import CaregiverMainWindow
+    from ui.utils.widgets.admin_shell import PageHeader
+
+    window = CaregiverMainWindow()
+
+    window.home_page.load_dashboard_data = lambda: None
+
+    routes = [
+        ("home", None),
+        ("task_request", window.task_btn),
+        ("task_monitor", window.task_monitor_btn),
+        ("robot_status", window.robot_status_btn),
+        ("inventory", window.inventory_btn),
+        ("patient", window.patient_btn),
+        ("alerts", window.alert_btn),
+        ("system_health", window.system_health_btn),
+    ]
+
+    try:
+        for _key, button in routes:
+            if button is not None:
+                button.click()
+            current_page = window.stack.currentWidget()
+            assert current_page.findChild(PageHeader, "pageHeader") is not None
+
+        labels = _label_texts(window)
+        assert "Task Request" not in labels
+        assert "Inventory" not in labels
+        assert "Patient Info" not in labels
+        assert "실시간 연결" not in labels
+        assert "date / 알림 / 오류 확인" not in labels
+    finally:
+        window.close()

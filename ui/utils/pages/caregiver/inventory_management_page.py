@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QComboBox
 )
 from ui.utils.network.service_clients import InventoryRemoteService
+from ui.utils.widgets.admin_shell import PageHeader
 from ui.utils.widgets.common import InlineStatusMixin
 
 
@@ -17,24 +18,6 @@ class InventoryManagementPage(QWidget, InlineStatusMixin):
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(18)
-
-        header = QHBoxLayout()
-        title_box = QVBoxLayout()
-
-        title = QLabel("재고 관리")
-        title.setObjectName("pageTitle")
-        subtitle = QLabel("보급품 종류와 수량을 관리하고 표 형태로 확인합니다.")
-        subtitle.setObjectName("pageSubtitle")
-
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
-
-        chip = QLabel("Inventory")
-        chip.setObjectName("chipGreen")
-
-        header.addLayout(title_box)
-        header.addStretch()
-        header.addWidget(chip)
 
         content_row = QHBoxLayout()
         content_row.setSpacing(18)
@@ -87,7 +70,9 @@ class InventoryManagementPage(QWidget, InlineStatusMixin):
         content_row.addWidget(table_card, 2)
         content_row.addWidget(form_card, 1)
 
-        root.addLayout(header)
+        root.addWidget(
+            PageHeader("재고 관리", "보급품 종류와 수량을 관리하고 표 형태로 확인합니다.")
+        )
         root.addLayout(content_row, 1)
 
     def load_inventory_data(self):
