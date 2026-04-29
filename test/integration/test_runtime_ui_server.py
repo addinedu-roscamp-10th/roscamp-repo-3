@@ -214,11 +214,7 @@ def control_server(qapp, ros_service_stub):
             **os.environ,
             "PYTHONUNBUFFERED": "1",
             "ROPI_ROS_SERVICE_SOCKET_PATH": ros_service_stub["socket_path"],
-            "ROPI_DELIVERY_PICKUP_GOAL_POSE": "1.5,2.5,1.57",
-            "ROPI_DELIVERY_DESTINATION_GOAL_POSES": (
-                "delivery_room_301=12.0,2.0,0.0"
-            ),
-            "ROPI_RETURN_TO_DOCK_GOAL_POSE": "0.5,0.5,3.14",
+            "ROPI_DELIVERY_GOAL_POSE_SOURCE": "db",
         },
     )
 

@@ -171,7 +171,10 @@ VALUES
 ('room_305', 'map_test11_0423', '305호', 'ROOM', 1, NULL, TRUE, NOW(), NOW()),
 ('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1, NULL, TRUE, NOW(), NOW()),
 ('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1, NULL, TRUE, NOW(), NOW()),
-('dock', 'map_test11_0423', '충전소', 'DOCK', 1, NULL, TRUE, NOW(), NOW());
+('dock', 'map_test11_0423', '충전소', 'DOCK', 1, NULL, TRUE, NOW(), NOW()),
+('patrol_ward_night_01', 'map_test11_0423', '야간 병동 순찰', 'PATROL_ROUTE', 7,
+ '{"header":{"frame_id":"map"},"poses":[{"x":0.1665755137108074,"y":-0.4496830900440016,"yaw":1.5707963267948966},{"x":1.6946025435218914,"y":0.0043433854992070454,"yaw":0.0},{"x":0.8577123880386353,"y":0.25597259402275085,"yaw":0.0}]}',
+ TRUE, NOW(), NOW());
 
 -- =========================
 -- goal_pose
@@ -180,10 +183,10 @@ INSERT INTO `goal_pose`
 (`goal_pose_id`, `map_id`, `zone_id`, `purpose`, `pose_x`, `pose_y`, `pose_yaw`,
  `frame_id`, `is_enabled`, `created_at`, `updated_at`)
 VALUES
-('pickup_supply', 'map_test11_0423', 'supply_station', 'PICKUP', 5.0, 5.0, 0.0,
+('pickup_supply', 'map_test11_0423', 'supply_station', 'PICKUP', 0.1665755137108074, -0.4496830900440016, 1.5707963267948966,
  'map', TRUE, NOW(), NOW()),
 
-('delivery_room_301', 'map_test11_0423', 'room_301', 'DESTINATION', 1.0, 1.0, 0.0,
+('delivery_room_301', 'map_test11_0423', 'room_301', 'DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0,
  'map', TRUE, NOW(), NOW()),
 
 ('delivery_room_302', 'map_test11_0423', 'room_302', 'DESTINATION', 3.0, 1.0, 0.0,
@@ -192,7 +195,7 @@ VALUES
 ('delivery_room_305', 'map_test11_0423', 'room_305', 'DESTINATION', 1.0, 4.0, 0.0,
  'map', TRUE, NOW(), NOW()),
 
-('dock_home', 'map_test11_0423', 'dock', 'DOCK', 0.0, 0.0, 0.0,
+('dock_home', 'map_test11_0423', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0,
  'map', TRUE, NOW(), NOW());
 
 -- =========================

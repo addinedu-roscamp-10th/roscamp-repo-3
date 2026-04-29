@@ -162,6 +162,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(
             **os.environ,
             "PYTHONUNBUFFERED": "1",
             "ROPI_ROS_SERVICE_SOCKET_PATH": str(socket_path),
+            "ROPI_DELIVERY_GOAL_POSE_SOURCE": "env",
             "ROPI_DELIVERY_PICKUP_GOAL_POSE_JSON": json.dumps(pickup_goal_pose),
             "ROPI_DELIVERY_DESTINATION_GOAL_POSES_JSON": json.dumps(destination_goal_poses),
             "ROPI_RETURN_TO_DOCK_GOAL_POSE_JSON": json.dumps(return_to_dock_goal_pose),

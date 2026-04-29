@@ -78,6 +78,24 @@ def test_patrol_zone_schema_uses_path_snapshot_columns():
     assert "coverage_polygon_snapshot_json" not in seed_sql
 
 
+def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
+    seed_sql = _seed_sql()
+
+    assert "delivery_room_301" in seed_sql
+    assert "room2" not in seed_sql
+    assert "('pickup_supply', 'map_test11_0423', 'supply_station', 'PICKUP', 0.1665755137108074, -0.4496830900440016, 1.5707963267948966," in seed_sql
+    assert "('delivery_room_301', 'map_test11_0423', 'room_301', 'DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0," in seed_sql
+    assert "('dock_home', 'map_test11_0423', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0," in seed_sql
+
+
+def test_dummy_operation_zone_contains_path_backed_patrol_candidate():
+    seed_sql = _seed_sql()
+
+    assert "patrol_ward_night_01" in seed_sql
+    assert "야간 병동 순찰" in seed_sql
+    assert '"poses"' in seed_sql
+
+
 def test_schema_contains_expected_indexes():
     ddl = _ddl()
 

@@ -16,6 +16,7 @@ class DeliveryRequestService:
     ACCEPTED = "ACCEPTED"
     INVALID_REQUEST = "INVALID_REQUEST"
     REJECTED = "REJECTED"
+    PHASE1_PATROL_ROBOT_ID = "pinky3"
 
     def __init__(
         self,
@@ -54,6 +55,26 @@ class DeliveryRequestService:
 
     async def async_get_delivery_items(self):
         return await self.repository.async_get_all_products()
+
+    def get_delivery_destinations(self):
+        return [
+            self._format_delivery_destination(row)
+            for row in self.repository.get_delivery_destinations()
+        ]
+
+    async def async_get_delivery_destinations(self):
+        rows = await self.repository.async_get_delivery_destinations()
+        return [self._format_delivery_destination(row) for row in rows]
+
+    def get_patrol_areas(self):
+        return [
+            self._format_patrol_area(row)
+            for row in self.repository.get_patrol_areas()
+        ]
+
+    async def async_get_patrol_areas(self):
+        rows = await self.repository.async_get_patrol_areas()
+        return [self._format_patrol_area(row) for row in rows]
 
     def create_delivery_task(
         self,
@@ -289,6 +310,30 @@ class DeliveryRequestService:
             destination_id=destination_id,
             idempotency_key=idempotency_key,
         )
+
+    @staticmethod
+    def _format_delivery_destination(row):
+        destination_name = str(
+            row.get("destination_name") or row.get("destination_id") or ""
+        ).strip()
+        destination_id = str(row.get("destination_id") or "").strip()
+        return {
+            "destination_id": destination_id,
+            "destination_name": destination_name,
+            "display_name": destination_name or destination_id,
+            "zone_id": row.get("zone_id"),
+            "map_id": row.get("map_id"),
+        }
+
+    def _format_patrol_area(self, row):
+        return {
+            "patrol_area_id": str(row.get("patrol_area_id") or "").strip(),
+            "patrol_area_name": str(row.get("patrol_area_name") or "").strip(),
+            "patrol_area_revision": row.get("patrol_area_revision"),
+            "assigned_robot_id": self.PHASE1_PATROL_ROBOT_ID,
+            "active": True,
+            "map_id": row.get("map_id"),
+        }
 
     def _validate_cancel_delivery_task_request(self, *, task_id):
         if self._is_blank(task_id):

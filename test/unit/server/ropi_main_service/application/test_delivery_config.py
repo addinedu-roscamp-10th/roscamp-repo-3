@@ -61,6 +61,7 @@ def test_delivery_runtime_config_reads_robot_values_from_env(monkeypatch):
 
 
 def test_delivery_navigation_config_reads_return_to_dock_goal_pose_from_env(monkeypatch):
+    monkeypatch.setenv("ROPI_DELIVERY_GOAL_POSE_SOURCE", "env")
     monkeypatch.setenv(
         "ROPI_RETURN_TO_DOCK_GOAL_POSE_JSON",
         '{"header":{"frame_id":"map","stamp":{"sec":0,"nanosec":0}},"pose":{"position":{"x":0.5,"y":0.5,"z":0.0},"orientation":{"x":0.0,"y":0.0,"z":0.0,"w":1.0}}}',
@@ -81,6 +82,7 @@ def test_delivery_navigation_config_reads_return_to_dock_goal_pose_from_env(monk
 
 
 def test_delivery_navigation_config_converts_simple_2d_pose_specs_to_pose_stamped(monkeypatch):
+    monkeypatch.setenv("ROPI_DELIVERY_GOAL_POSE_SOURCE", "env")
     monkeypatch.setenv(
         "ROPI_DELIVERY_PICKUP_GOAL_POSE_JSON",
         '{"x":1.5,"y":2.5,"yaw":1.5707963267948966}',
@@ -120,6 +122,7 @@ def test_delivery_navigation_config_converts_simple_2d_pose_specs_to_pose_stampe
 
 
 def test_delivery_navigation_config_reads_plain_string_envs_without_json(monkeypatch):
+    monkeypatch.setenv("ROPI_DELIVERY_GOAL_POSE_SOURCE", "env")
     monkeypatch.delenv("ROPI_DELIVERY_PICKUP_GOAL_POSE_JSON", raising=False)
     monkeypatch.delenv("ROPI_DELIVERY_DESTINATION_GOAL_POSES_JSON", raising=False)
     monkeypatch.delenv("ROPI_RETURN_TO_DOCK_GOAL_POSE_JSON", raising=False)
@@ -146,6 +149,7 @@ def test_delivery_navigation_config_reads_plain_string_envs_without_json(monkeyp
 
 
 def test_delivery_navigation_config_reads_key_value_pose_string_envs(monkeypatch):
+    monkeypatch.setenv("ROPI_DELIVERY_GOAL_POSE_SOURCE", "env")
     monkeypatch.delenv("ROPI_DELIVERY_PICKUP_GOAL_POSE_JSON", raising=False)
     monkeypatch.delenv("ROPI_DELIVERY_DESTINATION_GOAL_POSES_JSON", raising=False)
     monkeypatch.delenv("ROPI_RETURN_TO_DOCK_GOAL_POSE_JSON", raising=False)
@@ -181,3 +185,54 @@ def test_delivery_navigation_config_reads_key_value_pose_string_envs(monkeypatch
     assert return_to_dock_goal_pose["pose"]["position"]["y"] == pytest.approx(0.25597259402275085)
     assert return_to_dock_goal_pose["pose"]["orientation"]["z"] == pytest.approx(0.0)
     assert return_to_dock_goal_pose["pose"]["orientation"]["w"] == pytest.approx(1.0)
+
+
+def test_delivery_navigation_config_defaults_to_db_goal_pose_rows(monkeypatch):
+    monkeypatch.delenv("ROPI_DELIVERY_GOAL_POSE_SOURCE", raising=False)
+
+    class FakeGoalPoseRepository:
+        def get_enabled_goal_poses(self):
+            return [
+                {
+                    "goal_pose_id": "pickup_supply",
+                    "purpose": "PICKUP",
+                    "pose_x": 0.1665755137108074,
+                    "pose_y": -0.4496830900440016,
+                    "pose_yaw": 1.5707963267948966,
+                    "frame_id": "map",
+                },
+                {
+                    "goal_pose_id": "delivery_room_301",
+                    "purpose": "DESTINATION",
+                    "pose_x": 1.6946025435218914,
+                    "pose_y": 0.0043433854992070454,
+                    "pose_yaw": 0.0,
+                    "frame_id": "map",
+                },
+                {
+                    "goal_pose_id": "dock_home",
+                    "purpose": "DOCK",
+                    "pose_x": 0.8577123880386353,
+                    "pose_y": 0.25597259402275085,
+                    "pose_yaw": 0.0,
+                    "frame_id": "map",
+                },
+            ]
+
+    config = get_delivery_navigation_config(repository=FakeGoalPoseRepository())
+
+    assert config["pickup_goal_pose"]["pose"]["position"]["x"] == pytest.approx(
+        0.1665755137108074
+    )
+    assert config["pickup_goal_pose"]["pose"]["orientation"]["z"] == pytest.approx(
+        math.sqrt(0.5)
+    )
+    assert list(config["destination_goal_poses"]) == ["delivery_room_301"]
+    assert config["destination_goal_poses"]["delivery_room_301"]["pose"]["position"] == {
+        "x": 1.6946025435218914,
+        "y": 0.0043433854992070454,
+        "z": 0.0,
+    }
+    assert config["return_to_dock_goal_pose"]["pose"]["position"]["x"] == pytest.approx(
+        0.8577123880386353
+    )

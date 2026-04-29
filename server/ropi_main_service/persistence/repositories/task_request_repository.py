@@ -51,6 +51,28 @@ class DeliveryRequestRepository:
     async def async_get_all_products(self):
         return await async_fetch_all(load_sql("task_request/list_items.sql"))
 
+    def get_enabled_goal_poses(self):
+        return fetch_all(load_sql("task_request/list_enabled_goal_poses.sql"))
+
+    async def async_get_enabled_goal_poses(self):
+        return await async_fetch_all(
+            load_sql("task_request/list_enabled_goal_poses.sql")
+        )
+
+    def get_delivery_destinations(self):
+        return fetch_all(load_sql("task_request/list_delivery_destinations.sql"))
+
+    async def async_get_delivery_destinations(self):
+        return await async_fetch_all(
+            load_sql("task_request/list_delivery_destinations.sql")
+        )
+
+    def get_patrol_areas(self):
+        return fetch_all(load_sql("task_request/list_patrol_areas.sql"))
+
+    async def async_get_patrol_areas(self):
+        return await async_fetch_all(load_sql("task_request/list_patrol_areas.sql"))
+
     def get_product_by_id(self, item_id, conn=None):
         numeric_item_id = self._parse_numeric_identifier(item_id)
         if numeric_item_id is None:

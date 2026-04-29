@@ -33,8 +33,14 @@ class DeliveryItemsLoadWorker(QObject):
         service = DeliveryRequestRemoteService()
 
         try:
-            items = service.get_delivery_items()
-            self.finished.emit(True, items)
+            self.finished.emit(
+                True,
+                {
+                    "items": service.get_delivery_items(),
+                    "destinations": service.get_delivery_destinations(),
+                    "patrol_areas": service.get_patrol_areas(),
+                },
+            )
         except Exception as exc:
             self.finished.emit(False, str(exc))
 
@@ -70,10 +76,8 @@ class DeliverySubmitWorker(QObject):
 class DeliveryRequestForm(QWidget, InlineStatusMixin):
     preview_changed = pyqtSignal(object)
     result_received = pyqtSignal(object)
+    options_loaded = pyqtSignal(object)
 
-    DESTINATION_OPTIONS = (
-        ("301호", "delivery_room_301"),
-    )
     PRIORITY_LABEL_TO_CODE = {
         "일반": "NORMAL",
         "긴급": "URGENT",
@@ -133,8 +137,8 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
         self.destination_combo = QComboBox()
         configure_searchable_combo(self.destination_combo, "목적지 검색")
-        for label, destination_id in self.DESTINATION_OPTIONS:
-            self.destination_combo.addItem(label, destination_id)
+        self.destination_combo.addItem("목적지 목록 불러오는 중...")
+        self.destination_combo.setEnabled(False)
         self.destination_combo.setMinimumHeight(44)
 
         self.priority_combo = QComboBox(self)
@@ -264,24 +268,34 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
     def _handle_items_loaded(self, ok, payload):
         print(f"[task_request] delivery items load finished: ok={ok}")
         self.item_combo.clear()
+        self.destination_combo.clear()
 
         if not ok:
             self._items_loaded = False
             self.item_combo.addItem("물품 목록 불러오기 실패")
+            self.destination_combo.addItem("목적지 목록 불러오기 실패")
+            self.destination_combo.setEnabled(False)
             self.show_inline_status(f"물품 목록을 불러오지 못했습니다. {payload}", "error")
             self.submit_btn.setText("물품 요청 등록")
             return
 
-        items = payload
+        options = payload if isinstance(payload, dict) else {"items": payload}
+        items = options.get("items") or []
+        destinations = options.get("destinations") or []
 
-        if not items:
+        if not items or not destinations:
             self.item_combo.addItem("등록된 물품 없음")
+            if not destinations:
+                self.destination_combo.addItem("등록된 목적지 없음")
             self.item_combo.setEnabled(False)
+            self.destination_combo.setEnabled(False)
             self.submit_btn.setEnabled(False)
             self.submit_btn.setText("물품 요청 등록")
+            self.options_loaded.emit(options)
             return
 
         self.item_combo.setEnabled(True)
+        self.destination_combo.setEnabled(True)
         self.submit_btn.setEnabled(True)
         self.submit_btn.setText("물품 요청 등록")
         for item in items:
@@ -291,6 +305,17 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
             display_name = self._build_item_display_name(item)
             self.item_combo.addItem(display_name, item)
+        for destination in destinations:
+            destination_id = str(destination.get("destination_id") or "").strip()
+            if not destination_id:
+                continue
+            display_name = str(
+                destination.get("display_name")
+                or destination.get("destination_name")
+                or destination_id
+            ).strip()
+            self.destination_combo.addItem(display_name, destination_id)
+        self.options_loaded.emit(options)
         self.emit_preview_changed()
 
     def _clear_load_thread(self):
@@ -482,19 +507,6 @@ class NotReadyScenarioForm(QWidget):
 class PatrolRequestForm(QWidget):
     preview_changed = pyqtSignal(object)
 
-    PATROL_AREA_OPTIONS = (
-        (
-            "야간 병동 순찰 (rev 7, 활성)",
-            {
-                "patrol_area_id": "patrol_ward_night_01",
-                "patrol_area_name": "야간 병동 순찰",
-                "patrol_area_revision": 7,
-                "active": True,
-                "assigned_robot_id": "pinky3",
-            },
-        ),
-    )
-
     def __init__(self):
         super().__init__()
         self._build_ui()
@@ -529,8 +541,8 @@ class PatrolRequestForm(QWidget):
             self.patrol_area_combo,
             "순찰 구역명 또는 patrol_area_id 검색",
         )
-        for label, area in self.PATROL_AREA_OPTIONS:
-            self.patrol_area_combo.addItem(label, area)
+        self.patrol_area_combo.addItem("순찰 구역 목록 불러오는 중...")
+        self.patrol_area_combo.setEnabled(False)
         self.patrol_area_combo.setMinimumHeight(44)
 
         (
@@ -589,6 +601,40 @@ class PatrolRequestForm(QWidget):
         self.patrol_area_combo.currentIndexChanged.connect(self.emit_preview_changed)
         self.notes_input.textChanged.connect(self.emit_preview_changed)
         self.set_priority("NORMAL")
+
+    def set_patrol_areas(self, patrol_areas):
+        self.patrol_area_combo.clear()
+        areas = patrol_areas or []
+
+        if not areas:
+            self.patrol_area_combo.addItem("등록된 순찰 구역 없음")
+            self.patrol_area_combo.setEnabled(False)
+            self.emit_preview_changed()
+            return
+
+        self.patrol_area_combo.setEnabled(True)
+        for area in areas:
+            patrol_area_id = str(area.get("patrol_area_id") or "").strip()
+            if not patrol_area_id:
+                continue
+            self.patrol_area_combo.addItem(
+                self._build_patrol_area_display_name(area),
+                area,
+            )
+        self.emit_preview_changed()
+
+    @staticmethod
+    def _build_patrol_area_display_name(area):
+        name = str(
+            area.get("patrol_area_name")
+            or area.get("patrol_area_id")
+            or ""
+        ).strip()
+        revision = area.get("patrol_area_revision")
+        active = "활성" if area.get("active", True) else "비활성"
+        if revision is None:
+            return f"{name} ({active})"
+        return f"{name} (rev {revision}, {active})"
 
     def set_priority(self, priority_code):
         normalized = str(priority_code or "NORMAL").upper()
@@ -775,6 +821,7 @@ class TaskRequestPage(QWidget):
 
         self.delivery_form.preview_changed.connect(self.side_panel.update_preview)
         self.delivery_form.result_received.connect(self.side_panel.show_delivery_result)
+        self.delivery_form.options_loaded.connect(self._handle_request_options_loaded)
         self.patrol_form.preview_changed.connect(self.side_panel.update_preview)
 
         for form in self.forms:
@@ -806,6 +853,11 @@ class TaskRequestPage(QWidget):
         self.current_form = form
         self._resize_form_container(form)
         self._set_active_tab(form)
+
+    def _handle_request_options_loaded(self, options):
+        if not isinstance(options, dict):
+            return
+        self.patrol_form.set_patrol_areas(options.get("patrol_areas") or [])
 
     def _resize_form_container(self, form):
         form.adjustSize()

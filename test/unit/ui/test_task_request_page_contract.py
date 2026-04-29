@@ -89,6 +89,8 @@ def test_delivery_request_preview_uses_standard_fields_and_no_task_id_before_sub
             "세면도구 세트 (재고 4)",
             {"item_id": 1, "item_name": "세면도구 세트", "quantity": 4},
         )
+        page.delivery_form.destination_combo.clear()
+        page.delivery_form.destination_combo.addItem("301호", "delivery_room_301")
         page.delivery_form.quantity_input.setValue(2)
         page.delivery_form.destination_combo.setCurrentIndex(0)
         page.delivery_form.set_priority("URGENT")
@@ -119,6 +121,9 @@ def test_task_request_page_uses_content_height_form_card_and_robot_placeholder(m
     page = TaskRequestPage()
 
     try:
+        page.delivery_form.destination_combo.clear()
+        page.delivery_form.destination_combo.addItem("301호", "delivery_room_301")
+        page.delivery_form.emit_preview_changed()
         page.resize(1200, 800)
         page.show()
         app.processEvents()
@@ -163,6 +168,17 @@ def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
     page = TaskRequestPage()
 
     try:
+        page.patrol_form.set_patrol_areas(
+            [
+                {
+                    "patrol_area_id": "patrol_ward_night_01",
+                    "patrol_area_name": "야간 병동 순찰",
+                    "patrol_area_revision": 7,
+                    "assigned_robot_id": "pinky3",
+                    "active": True,
+                }
+            ]
+        )
         page.patrol_btn.click()
 
         form = page.patrol_form
@@ -298,6 +314,81 @@ def test_delivery_items_load_failure_allows_retry(monkeypatch):
         form.close()
 
 
+def test_delivery_form_loads_items_and_destinations_from_server_options():
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import DeliveryRequestForm
+
+    form = DeliveryRequestForm()
+    emitted_options = []
+    form.options_loaded.connect(emitted_options.append)
+
+    try:
+        assert not hasattr(DeliveryRequestForm, "DESTINATION_OPTIONS")
+
+        form._handle_items_loaded(
+            True,
+            {
+                "items": [
+                    {"item_id": 1, "item_name": "세면도구 세트", "quantity": 4}
+                ],
+                "destinations": [
+                    {
+                        "destination_id": "delivery_room_301",
+                        "display_name": "301호",
+                    }
+                ],
+                "patrol_areas": [
+                    {
+                        "patrol_area_id": "patrol_ward_night_01",
+                        "patrol_area_name": "야간 병동 순찰",
+                        "patrol_area_revision": 7,
+                        "assigned_robot_id": "pinky3",
+                    }
+                ],
+            },
+        )
+
+        assert form.item_combo.currentData()["item_id"] == 1
+        assert form.destination_combo.currentText() == "301호"
+        assert form.destination_combo.currentData() == "delivery_room_301"
+        assert emitted_options[0]["patrol_areas"][0]["patrol_area_id"] == (
+            "patrol_ward_night_01"
+        )
+    finally:
+        form.close()
+
+
+def test_patrol_form_loads_area_options_from_server_options():
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import PatrolRequestForm
+
+    form = PatrolRequestForm()
+
+    try:
+        assert not hasattr(PatrolRequestForm, "PATROL_AREA_OPTIONS")
+
+        form.set_patrol_areas(
+            [
+                {
+                    "patrol_area_id": "patrol_ward_night_01",
+                    "patrol_area_name": "야간 병동 순찰",
+                    "patrol_area_revision": 7,
+                    "assigned_robot_id": "pinky3",
+                    "active": True,
+                }
+            ]
+        )
+
+        assert form.patrol_area_combo.currentText() == "야간 병동 순찰 (rev 7, 활성)"
+        assert form.patrol_area_combo.currentData()["patrol_area_id"] == (
+            "patrol_ward_night_01"
+        )
+    finally:
+        form.close()
+
+
 class _FakeThread:
     def __init__(self):
         self.quit_count = 0
@@ -413,6 +504,8 @@ def test_delivery_create_payload_uses_numeric_ui_api_ids():
             "세면도구 세트 (재고 4)",
             {"item_id": "1", "item_name": "세면도구 세트", "quantity": 4},
         )
+        form.destination_combo.clear()
+        form.destination_combo.addItem("301호", "delivery_room_301")
         form.set_priority("URGENT")
         payload = form._build_create_delivery_task_payload(SessionManager.current_user())
 

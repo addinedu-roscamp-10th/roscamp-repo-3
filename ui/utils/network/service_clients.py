@@ -70,6 +70,12 @@ class DeliveryRequestRemoteService:
     def get_delivery_items(self):
         return self._rpc("get_delivery_items")
 
+    def get_delivery_destinations(self):
+        return self._rpc("get_delivery_destinations")
+
+    def get_patrol_areas(self):
+        return self._rpc("get_patrol_areas")
+
     def get_product_names(self):
         return self._rpc("get_product_names")
 
