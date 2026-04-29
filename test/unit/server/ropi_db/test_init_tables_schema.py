@@ -39,6 +39,12 @@ def test_schema_uses_item_table_and_unsigned_delivery_quantities():
     assert "`delivered_quantity` INT UNSIGNED NOT NULL" in ddl
 
 
+def test_dummy_item_seed_includes_food_example():
+    seed_sql = _seed_sql()
+
+    assert "(6, '식료품', '두유', 60, NOW(), NOW())" in seed_sql
+
+
 def test_schema_contains_control_task_and_log_tables():
     ddl = _ddl()
 
