@@ -32,10 +32,12 @@ def test_execute_patrol_path_action_matches_if_pat_003_contract():
 def test_ropi_patrol_launch_exposes_control_managed_patrol_action_server():
     setup_py = (PATROL_ROOT / "setup.py").read_text(encoding="utf-8")
     launch_py = (PATROL_ROOT / "launch" / "patrol.launch.py").read_text(encoding="utf-8")
+    package_xml = (PATROL_ROOT / "package.xml").read_text(encoding="utf-8")
     config = (PATROL_ROOT / "config" / "pinky3" / "patrol.yaml").read_text(
         encoding="utf-8"
     )
 
+    assert "<depend>ropi_interface</depend>" in package_xml
     assert "patrol_path_action_server = ropi_patrol.patrol_path_action_server:main" in setup_py
     assert 'executable="patrol_path_action_server"' in launch_py
     assert "patrol_path_action_server:" in config

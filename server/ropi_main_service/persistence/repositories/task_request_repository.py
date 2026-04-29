@@ -22,6 +22,9 @@ from server.ropi_main_service.persistence.repositories.idempotency_repository im
 from server.ropi_main_service.persistence.repositories.patrol_task_repository import (
     PatrolTaskRepository,
 )
+from server.ropi_main_service.persistence.repositories.patrol_task_result_repository import (
+    PatrolTaskResultRepository,
+)
 from server.ropi_main_service.persistence.async_connection import (
     async_execute,
     async_fetch_all,
@@ -43,6 +46,7 @@ class DeliveryRequestRepository:
         delivery_task_result_repository=None,
         patrol_runtime_config=None,
         patrol_task_repository=None,
+        patrol_task_result_repository=None,
         idempotency_repository=None,
     ):
         self.runtime_config = runtime_config or get_delivery_runtime_config()
@@ -53,6 +57,7 @@ class DeliveryRequestRepository:
         self.delivery_task_cancel_repository = delivery_task_cancel_repository or DeliveryTaskCancelRepository()
         self.delivery_task_result_repository = delivery_task_result_repository or DeliveryTaskResultRepository()
         self.patrol_task_repository = patrol_task_repository or PatrolTaskRepository()
+        self.patrol_task_result_repository = patrol_task_result_repository or PatrolTaskResultRepository()
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
 
     def get_all_products(self):
@@ -560,6 +565,12 @@ class DeliveryRequestRepository:
 
     async def async_record_delivery_task_workflow_result(self, *, task_id, workflow_response):
         return await self.delivery_task_result_repository.async_record_delivery_task_workflow_result(
+            task_id=task_id,
+            workflow_response=workflow_response,
+        )
+
+    async def async_record_patrol_task_workflow_result(self, *, task_id, workflow_response):
+        return await self.patrol_task_result_repository.async_record_patrol_task_workflow_result(
             task_id=task_id,
             workflow_response=workflow_response,
         )

@@ -12,8 +12,8 @@ from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.action_feedback import RosActionFeedbackService
 from server.ropi_main_service.application.caregiver import CaregiverService
 from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
-from server.ropi_main_service.application.delivery_workflow_task_manager import (
-    get_default_delivery_workflow_task_manager,
+from server.ropi_main_service.application.workflow_task_manager import (
+    get_default_workflow_task_manager,
 )
 from server.ropi_main_service.application.patrol_runtime import build_patrol_request_service
 from server.ropi_main_service.application.inventory import InventoryService
@@ -176,7 +176,7 @@ class ControlServiceServer:
         self.port = port
         self._server = None
         self.db_writer = get_default_background_db_writer()
-        self.delivery_workflow_task_manager = get_default_delivery_workflow_task_manager()
+        self.delivery_workflow_task_manager = get_default_workflow_task_manager()
         self.task_event_stream_hub = TaskEventStreamHub()
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:

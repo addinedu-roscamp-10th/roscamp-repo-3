@@ -42,10 +42,20 @@ class FakeOrchestrator:
         }
 
 
+class FakeTaskRequestRepository:
+    def __init__(self):
+        self.workflow_result_calls = []
+
+    async def async_record_patrol_task_workflow_result(self, **kwargs):
+        self.workflow_result_calls.append(kwargs)
+        return {"result_code": "SUCCESS", "task_status": "COMPLETED"}
+
+
 def test_build_patrol_request_service_starts_background_patrol_workflow():
     workflow_task_manager = DeliveryWorkflowTaskManager()
     repository = FakeRepository()
     orchestrator = FakeOrchestrator()
+    task_request_repository = FakeTaskRequestRepository()
 
     async def scenario():
         service = patrol_runtime.build_patrol_request_service(
@@ -53,6 +63,7 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
             workflow_task_manager=workflow_task_manager,
             patrol_execution_repository=repository,
             patrol_orchestrator=orchestrator,
+            task_request_repository=task_request_repository,
         )
         service.patrol_workflow_starter(task_id="2001")
         await workflow_task_manager.join(timeout_sec=1.0)
@@ -77,6 +88,15 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
                         }
                     }
                 ],
+            },
+        }
+    ]
+    assert task_request_repository.workflow_result_calls == [
+        {
+            "task_id": "2001",
+            "workflow_response": {
+                "result_code": "SUCCESS",
+                "result_message": "patrol completed",
             },
         }
     ]

@@ -15,12 +15,14 @@ _EXPORTS = {
     "MappedGoalPoseResolver": ("goal_pose_resolvers", "MappedGoalPoseResolver"),
     "ManipulationCommandService": ("manipulation_command", "ManipulationCommandService"),
     "PatientService": ("patient", "PatientService"),
+    "PatrolTaskCreateService": ("patrol_task_create", "PatrolTaskCreateService"),
     "RosRuntimeReadinessService": ("runtime_readiness", "RosRuntimeReadinessService"),
     "StaffCallService": ("staff_call", "StaffCallService"),
     "TaskRequestService": ("task_request", "TaskRequestService"),
     "VisitGuideService": ("visit_guide", "VisitGuideService"),
     "VisitorInfoService": ("visitor_info", "VisitorInfoService"),
     "VisitorRegisterService": ("visitor_register", "VisitorRegisterService"),
+    "WorkflowTaskManager": ("workflow_task_manager", "WorkflowTaskManager"),
     "build_delivery_request_service": ("delivery_runtime", "build_delivery_request_service"),
     "build_patrol_request_service": ("patrol_runtime", "build_patrol_request_service"),
     "get_delivery_navigation_config": ("delivery_config", "get_delivery_navigation_config"),
@@ -28,6 +30,10 @@ _EXPORTS = {
     "get_default_delivery_workflow_task_manager": (
         "delivery_workflow_task_manager",
         "get_default_delivery_workflow_task_manager",
+    ),
+    "get_default_workflow_task_manager": (
+        "workflow_task_manager",
+        "get_default_workflow_task_manager",
     ),
 }
 

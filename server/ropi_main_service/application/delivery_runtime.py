@@ -6,8 +6,8 @@ from server.ropi_main_service.application.delivery_config import (
     get_delivery_runtime_config,
 )
 from server.ropi_main_service.application.delivery_orchestrator import DeliveryOrchestrator
-from server.ropi_main_service.application.delivery_workflow_task_manager import (
-    get_default_delivery_workflow_task_manager,
+from server.ropi_main_service.application.workflow_task_manager import (
+    get_default_workflow_task_manager,
 )
 from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.goal_pose_resolvers import (
@@ -240,7 +240,7 @@ def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> 
         )
 
     if pickup_goal_pose is not None and destination_goal_poses and loop is not None:
-        workflow_task_manager = workflow_task_manager or get_default_delivery_workflow_task_manager()
+        workflow_task_manager = workflow_task_manager or get_default_workflow_task_manager()
         goal_pose_navigation_service = GoalPoseNavigationService(runtime_config=runtime_config)
         manipulation_command_service = ManipulationCommandService(runtime_config=runtime_config)
         orchestrator = DeliveryOrchestrator(

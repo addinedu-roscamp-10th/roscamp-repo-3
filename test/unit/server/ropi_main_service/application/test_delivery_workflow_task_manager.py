@@ -3,6 +3,11 @@ import asyncio
 from server.ropi_main_service.application.delivery_workflow_task_manager import (
     DeliveryWorkflowTaskManager,
 )
+from server.ropi_main_service.application.workflow_task_manager import WorkflowTaskManager
+
+
+def test_delivery_workflow_task_manager_is_backward_compatible_alias():
+    assert DeliveryWorkflowTaskManager is WorkflowTaskManager
 
 
 def test_delivery_workflow_task_manager_tracks_and_drains_tasks():

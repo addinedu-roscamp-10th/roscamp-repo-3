@@ -5,6 +5,7 @@ from server.ropi_main_service.application.command_execution import (
     CommandExecutionSpec,
 )
 from server.ropi_main_service.application.delivery_task_create import DeliveryTaskCreateService
+from server.ropi_main_service.application.patrol_task_create import PatrolTaskCreateService
 from server.ropi_main_service.ipc.uds_client import (
     RosServiceCommandError,
     UnixDomainSocketCommandClient,
@@ -41,6 +42,10 @@ class DeliveryRequestService:
             delivery_workflow_starter=delivery_workflow_starter,
             delivery_request_precheck=delivery_request_precheck,
             async_delivery_request_precheck=async_delivery_request_precheck,
+        )
+        self.patrol_create_service = PatrolTaskCreateService(
+            repository=self.repository,
+            patrol_workflow_starter=patrol_workflow_starter,
         )
 
     def get_product_names(self):
@@ -131,25 +136,14 @@ class DeliveryRequestService:
         priority,
         idempotency_key,
     ):
-        invalid_response = self._validate_create_patrol_task_request(
+        self._sync_create_service_dependencies()
+        return self.patrol_create_service.create_patrol_task(
             request_id=request_id,
             caregiver_id=caregiver_id,
             patrol_area_id=patrol_area_id,
             priority=priority,
             idempotency_key=idempotency_key,
         )
-        if invalid_response is not None:
-            return invalid_response
-
-        response = self.repository.create_patrol_task(
-            request_id=request_id,
-            caregiver_id=caregiver_id,
-            patrol_area_id=patrol_area_id,
-            priority=priority,
-            idempotency_key=idempotency_key,
-        )
-        self._start_patrol_workflow_if_needed(response=response)
-        return response
 
     async def async_create_patrol_task(
         self,
@@ -159,38 +153,14 @@ class DeliveryRequestService:
         priority,
         idempotency_key,
     ):
-        invalid_response = self._validate_create_patrol_task_request(
+        self._sync_create_service_dependencies()
+        return await self.patrol_create_service.async_create_patrol_task(
             request_id=request_id,
             caregiver_id=caregiver_id,
             patrol_area_id=patrol_area_id,
             priority=priority,
             idempotency_key=idempotency_key,
         )
-        if invalid_response is not None:
-            return invalid_response
-
-        async_create = getattr(self.repository, "async_create_patrol_task", None)
-        if async_create is not None:
-            response = await async_create(
-                request_id=request_id,
-                caregiver_id=caregiver_id,
-                patrol_area_id=patrol_area_id,
-                priority=priority,
-                idempotency_key=idempotency_key,
-            )
-            self._start_patrol_workflow_if_needed(response=response)
-            return response
-
-        response = await asyncio.to_thread(
-            self.repository.create_patrol_task,
-            request_id=request_id,
-            caregiver_id=caregiver_id,
-            patrol_area_id=patrol_area_id,
-            priority=priority,
-            idempotency_key=idempotency_key,
-        )
-        self._start_patrol_workflow_if_needed(response=response)
-        return response
 
     def cancel_delivery_task(self, task_id, action_name=None):
         invalid_response = self._validate_cancel_delivery_task_request(task_id=task_id)
@@ -390,39 +360,14 @@ class DeliveryRequestService:
         priority,
         idempotency_key,
     ):
-        if self._is_blank(request_id):
-            return self._build_patrol_task_response(
-                result_code=self.INVALID_REQUEST,
-                result_message="request_id가 필요합니다.",
-                reason_code="REQUEST_ID_INVALID",
-            )
-        if self._is_blank(caregiver_id):
-            return self._build_patrol_task_response(
-                result_code=self.REJECTED,
-                result_message="caregiver_id가 필요합니다.",
-                reason_code="REQUESTER_NOT_AUTHORIZED",
-            )
-        if self._is_blank(patrol_area_id):
-            return self._build_patrol_task_response(
-                result_code=self.INVALID_REQUEST,
-                result_message="patrol_area_id가 필요합니다.",
-                reason_code="PATROL_AREA_ID_INVALID",
-            )
-        normalized_priority = str(priority or "").strip().upper()
-        if normalized_priority not in {"NORMAL", "URGENT", "HIGHEST"}:
-            return self._build_patrol_task_response(
-                result_code=self.INVALID_REQUEST,
-                result_message=f"지원하지 않는 priority입니다: {priority}",
-                reason_code="PRIORITY_INVALID",
-            )
-        if self._is_blank(idempotency_key):
-            return self._build_patrol_task_response(
-                result_code=self.INVALID_REQUEST,
-                result_message="idempotency_key가 필요합니다.",
-                reason_code="IDEMPOTENCY_KEY_INVALID",
-            )
-
-        return None
+        self._sync_create_service_dependencies()
+        return self.patrol_create_service._validate_create_patrol_task_request(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            patrol_area_id=patrol_area_id,
+            priority=priority,
+            idempotency_key=idempotency_key,
+        )
 
     @staticmethod
     def _format_delivery_destination(row):
@@ -519,17 +464,17 @@ class DeliveryRequestService:
         patrol_area_name=None,
         patrol_area_revision=None,
     ):
-        return {
-            "result_code": result_code,
-            "result_message": result_message,
-            "reason_code": reason_code,
-            "task_id": task_id,
-            "task_status": task_status,
-            "assigned_robot_id": assigned_robot_id,
-            "patrol_area_id": patrol_area_id,
-            "patrol_area_name": patrol_area_name,
-            "patrol_area_revision": patrol_area_revision,
-        }
+        return PatrolTaskCreateService._build_patrol_task_response(
+            result_code=result_code,
+            result_message=result_message,
+            reason_code=reason_code,
+            task_id=task_id,
+            task_status=task_status,
+            assigned_robot_id=assigned_robot_id,
+            patrol_area_id=patrol_area_id,
+            patrol_area_name=patrol_area_name,
+            patrol_area_revision=patrol_area_revision,
+        )
 
     @staticmethod
     def _is_blank(value) -> bool:
@@ -571,23 +516,16 @@ class DeliveryRequestService:
         )
 
     def _start_patrol_workflow_if_needed(self, *, response):
-        if response.get("result_code") != self.ACCEPTED:
-            return
-
-        if self.patrol_workflow_starter is None:
-            return
-
-        task_id = str(response.get("task_id") or "").strip()
-        if not task_id:
-            return
-
-        self.patrol_workflow_starter(task_id=task_id)
+        self._sync_create_service_dependencies()
+        return self.patrol_create_service._start_patrol_workflow_if_needed(response=response)
 
     def _sync_create_service_dependencies(self):
         self.create_service.repository = self.repository
         self.create_service.delivery_workflow_starter = self.delivery_workflow_starter
         self.create_service.delivery_request_precheck = self.delivery_request_precheck
         self.create_service.async_delivery_request_precheck = self.async_delivery_request_precheck
+        self.patrol_create_service.repository = self.repository
+        self.patrol_create_service.patrol_workflow_starter = self.patrol_workflow_starter
 
 TaskRequestService = DeliveryRequestService
 

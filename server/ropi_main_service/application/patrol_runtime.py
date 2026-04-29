@@ -1,8 +1,8 @@
 import asyncio
 import logging
 
-from server.ropi_main_service.application.delivery_workflow_task_manager import (
-    get_default_delivery_workflow_task_manager,
+from server.ropi_main_service.application.workflow_task_manager import (
+    get_default_workflow_task_manager,
 )
 from server.ropi_main_service.application.patrol_orchestrator import PatrolOrchestrator
 from server.ropi_main_service.application.task_request import DeliveryRequestService
@@ -34,12 +34,13 @@ def build_patrol_request_service(
     workflow_task_manager=None,
     patrol_execution_repository=None,
     patrol_orchestrator=None,
+    task_request_repository=None,
 ) -> DeliveryRequestService:
-    task_request_repository = DeliveryRequestRepository()
+    task_request_repository = task_request_repository or DeliveryRequestRepository()
     patrol_workflow_starter = None
 
     if loop is not None:
-        workflow_task_manager = workflow_task_manager or get_default_delivery_workflow_task_manager()
+        workflow_task_manager = workflow_task_manager or get_default_workflow_task_manager()
         patrol_execution_repository = patrol_execution_repository or PatrolTaskExecutionRepository()
         patrol_orchestrator = patrol_orchestrator or PatrolOrchestrator()
 
@@ -56,6 +57,18 @@ def build_patrol_request_service(
                 task_id=str(task_id),
                 path_snapshot_json=snapshot["path_snapshot_json"],
             )
+
+        async def _record_workflow_result(*, task_id, workflow_response):
+            try:
+                await task_request_repository.async_record_patrol_task_workflow_result(
+                    task_id=task_id,
+                    workflow_response=workflow_response,
+                )
+            except Exception:
+                logger.exception(
+                    "patrol workflow result persistence failed",
+                    extra={"task_id": task_id},
+                )
 
         def _start_patrol_workflow(**kwargs):
             task_id = str(kwargs.get("task_id") or "").strip()
@@ -92,6 +105,15 @@ def build_patrol_request_service(
                     result_code=result.get("result_code"),
                     result_message=result.get("result_message"),
                     reason_code=result.get("reason_code"),
+                )
+                workflow_task_manager.create_task(
+                    _record_workflow_result(
+                        task_id=task_id,
+                        workflow_response=result,
+                    ),
+                    name=f"patrol_workflow_result_{task_id}",
+                    loop=loop,
+                    cancel_on_shutdown=False,
                 )
 
             background_task.add_done_callback(_handle_background_task_done)
