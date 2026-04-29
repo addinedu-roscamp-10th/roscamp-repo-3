@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -26,6 +27,21 @@ def _app():
 
 def _label_texts(widget) -> list[str]:
     return [label.text() for label in widget.findChildren(QLabel)]
+
+
+def test_task_request_page_uses_logger_instead_of_direct_print():
+    source_path = (
+        Path(__file__).resolve().parents[3]
+        / "ui"
+        / "utils"
+        / "pages"
+        / "caregiver"
+        / "task_request_page.py"
+    )
+    source = source_path.read_text(encoding="utf-8")
+
+    assert "logger = logging.getLogger(__name__)" in source
+    assert "print(" not in source
 
 
 def test_task_request_page_exposes_scenario_tabs_and_preparation_states(monkeypatch):
@@ -302,14 +318,18 @@ def test_delivery_items_load_failure_allows_retry(monkeypatch):
     monkeypatch.setattr(form, "_load_items", fake_load_items)
 
     try:
+        assert form.items_load_state == "idle"
+
         form.ensure_items_loaded()
         assert load_calls == ["load"]
+        assert form.items_load_state == "loading"
 
         form._handle_items_loaded(False, "server down")
-        assert form._items_loaded is False
+        assert form.items_load_state == "failed"
 
         form.ensure_items_loaded()
         assert load_calls == ["load", "load"]
+        assert form.items_load_state == "loading"
     finally:
         form.close()
 

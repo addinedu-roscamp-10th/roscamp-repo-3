@@ -1,3 +1,5 @@
+import logging
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGridLayout,
     QApplication, QPushButton, QComboBox, QTextEdit, QScrollArea, QSpinBox,
@@ -24,6 +26,9 @@ from ui.utils.pages.caregiver.task_request_builders import (
     normalize_delivery_response,
 )
 from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
+
+
+logger = logging.getLogger(__name__)
 
 
 class DeliveryItemsLoadWorker(QObject):
@@ -77,6 +82,10 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
     preview_changed = pyqtSignal(object)
     result_received = pyqtSignal(object)
     options_loaded = pyqtSignal(object)
+    LOAD_STATE_IDLE = "idle"
+    LOAD_STATE_LOADING = "loading"
+    LOAD_STATE_LOADED = "loaded"
+    LOAD_STATE_FAILED = "failed"
 
     PRIORITY_LABEL_TO_CODE = {
         "일반": "NORMAL",
@@ -90,7 +99,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
     def __init__(self):
         super().__init__()
-        self._items_loaded = False
+        self._items_load_state = self.LOAD_STATE_IDLE
         self.load_thread = None
         self.load_worker = None
         self.submit_thread = None
@@ -100,6 +109,10 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
             int((CONTROL_SERVER_TIMEOUT * 2 + 0.5) * 1000),
         )
         self._build_ui()
+
+    @property
+    def items_load_state(self):
+        return self._items_load_state
 
     def _build_ui(self):
         self.setSizePolicy(
@@ -237,15 +250,20 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         return getattr(self, "_priority_code", "NORMAL")
 
     def ensure_items_loaded(self):
-        if not self._items_loaded and self.load_thread is None:
-            self._items_loaded = True
-            self._load_items()
+        if self.load_thread is not None:
+            return
+
+        if self._items_load_state == self.LOAD_STATE_LOADED:
+            return
+
+        self._items_load_state = self.LOAD_STATE_LOADING
+        self._load_items()
 
     def _load_items(self):
         if self.load_thread is not None:
             return
 
-        print("[task_request] delivery items load started")
+        logger.debug("delivery items load started")
         self.item_combo.clear()
         self.item_combo.addItem("물품 목록 불러오는 중...")
         self.item_combo.setEnabled(False)
@@ -266,12 +284,12 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.load_thread.start()
 
     def _handle_items_loaded(self, ok, payload):
-        print(f"[task_request] delivery items load finished: ok={ok}")
+        logger.debug("delivery items load finished: ok=%s", ok)
         self.item_combo.clear()
         self.destination_combo.clear()
 
         if not ok:
-            self._items_loaded = False
+            self._items_load_state = self.LOAD_STATE_FAILED
             self.item_combo.addItem("물품 목록 불러오기 실패")
             self.destination_combo.addItem("목적지 목록 불러오기 실패")
             self.destination_combo.setEnabled(False)
@@ -282,6 +300,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         options = payload if isinstance(payload, dict) else {"items": payload}
         items = options.get("items") or []
         destinations = options.get("destinations") or []
+        self._items_load_state = self.LOAD_STATE_LOADED
 
         if not items or not destinations:
             self.item_combo.addItem("등록된 물품 없음")
@@ -323,7 +342,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.load_worker = None
 
     def refresh_data(self):
-        self._items_loaded = False
+        self._items_load_state = self.LOAD_STATE_IDLE
         self.ensure_items_loaded()
 
     def submit_request(self):
@@ -342,7 +361,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
         self.submit_btn.setEnabled(False)
         self.submit_btn.setText("등록 중...")
-        print("[task_request] delivery submit started")
+        logger.debug("delivery submit started")
 
         self.submit_thread = QThread(self)
         self.submit_worker = DeliverySubmitWorker(payload)
@@ -358,7 +377,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.submit_thread.start()
 
     def _handle_submit_finished(self, success, response):
-        print(f"[task_request] delivery submit finished: success={success}")
+        logger.debug("delivery submit finished: success=%s", success)
         self.submit_btn.setText("물품 요청 등록")
         self.submit_btn.setEnabled(self.item_combo.isEnabled())
 
@@ -807,7 +826,7 @@ class TaskRequestPage(QWidget):
         root.addLayout(self.content_row, 1)
 
     def _initialize_forms(self):
-        print("[task_request] initialize forms")
+        logger.debug("initialize task request forms")
         self.delivery_form = DeliveryRequestForm()
         self.patrol_form = PatrolRequestForm()
         self.guide_form = GuideRequestForm()
@@ -881,20 +900,20 @@ class TaskRequestPage(QWidget):
         self.side_panel.set_delivery_context()
         self.delivery_form.emit_preview_changed()
         QTimer.singleShot(0, self.delivery_form.ensure_items_loaded)
-        print("[task_request] switched to delivery page")
+        logger.debug("switched to delivery page")
 
     def show_patrol_page(self):
         self._show_form(self.patrol_form)
         self.patrol_form.emit_preview_changed()
-        print("[task_request] switched to patrol page")
+        logger.debug("switched to patrol page")
 
     def show_guide_page(self):
         self._show_form(self.guide_form)
-        print("[task_request] switched to guide page")
+        logger.debug("switched to guide page")
 
     def show_follow_page(self):
         self._show_form(self.follow_form)
-        print("[task_request] switched to follow page")
+        logger.debug("switched to follow page")
 
     def reset_page(self):
         for form in self.forms:
