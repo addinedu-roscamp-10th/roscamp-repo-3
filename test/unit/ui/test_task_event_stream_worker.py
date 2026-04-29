@@ -59,3 +59,32 @@ def test_task_event_stream_worker_emits_pushed_batches(monkeypatch):
         }
     ]
     assert worker.last_seq == 1
+
+
+def test_task_event_stream_worker_stop_before_run_skips_listen(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver import task_event_stream_worker
+    from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
+
+    class FakeClient:
+        def listen(self, *, consumer_id, last_seq, on_batch):
+            raise AssertionError("stopped worker must not open event stream")
+
+    monkeypatch.setattr(
+        task_event_stream_worker,
+        "TaskEventStreamClient",
+        FakeClient,
+    )
+
+    finished = []
+    failures = []
+    worker = TaskEventStreamWorker(consumer_id="ui-admin", last_seq=0)
+    worker.finished.connect(lambda: finished.append(True))
+    worker.failed.connect(failures.append)
+
+    worker.stop()
+    worker.run()
+
+    assert failures == []
+    assert finished == [True]

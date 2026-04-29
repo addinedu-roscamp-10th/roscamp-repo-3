@@ -10,6 +10,38 @@ TASK_REQUEST_PAGE = (
     / "caregiver"
     / "task_request_page.py"
 )
+TASK_REQUEST_FORMS = (
+    REPO_ROOT
+    / "ui"
+    / "utils"
+    / "pages"
+    / "caregiver"
+    / "task_request_forms.py"
+)
+DELIVERY_REQUEST_FORM = (
+    REPO_ROOT
+    / "ui"
+    / "utils"
+    / "pages"
+    / "caregiver"
+    / "delivery_request_form.py"
+)
+PATROL_REQUEST_FORM = (
+    REPO_ROOT
+    / "ui"
+    / "utils"
+    / "pages"
+    / "caregiver"
+    / "patrol_request_form.py"
+)
+NOT_READY_SCENARIO_FORM = (
+    REPO_ROOT
+    / "ui"
+    / "utils"
+    / "pages"
+    / "caregiver"
+    / "not_ready_scenario_form.py"
+)
 
 
 def test_task_request_page_keeps_only_page_orchestration_classes():
@@ -29,6 +61,30 @@ def test_task_request_page_keeps_only_page_orchestration_classes():
     assert "class NotReadyScenarioForm" not in source
     assert "class DeliveryItemsLoadWorker" not in source
     assert "class DeliverySubmitWorker" not in source
+
+
+def test_task_request_forms_module_only_reexports_scenario_forms():
+    from ui.utils.pages.caregiver.task_request_forms import (
+        DeliveryRequestForm,
+        FollowRequestForm,
+        GuideRequestForm,
+        NotReadyScenarioForm,
+        PatrolRequestForm,
+    )
+
+    source = TASK_REQUEST_FORMS.read_text(encoding="utf-8")
+
+    assert DeliveryRequestForm.__module__.endswith("delivery_request_form")
+    assert PatrolRequestForm.__module__.endswith("patrol_request_form")
+    assert NotReadyScenarioForm.__module__.endswith("not_ready_scenario_form")
+    assert GuideRequestForm.__module__.endswith("not_ready_scenario_form")
+    assert FollowRequestForm.__module__.endswith("not_ready_scenario_form")
+    assert "class DeliveryRequestForm" not in source
+    assert "class PatrolRequestForm" not in source
+    assert "class NotReadyScenarioForm" not in source
+    assert DELIVERY_REQUEST_FORM.exists()
+    assert PATROL_REQUEST_FORM.exists()
+    assert NOT_READY_SCENARIO_FORM.exists()
 
 
 def test_task_request_options_worker_name_matches_shared_options_role(monkeypatch):

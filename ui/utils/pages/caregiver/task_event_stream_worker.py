@@ -13,9 +13,15 @@ class TaskEventStreamWorker(QObject):
         self.consumer_id = str(consumer_id or "").strip()
         self.last_seq = int(last_seq or 0)
         self.client = client
+        self._stop_requested = False
 
     def run(self):
         self.client = self.client or TaskEventStreamClient()
+
+        if self._stop_requested:
+            self._close_client()
+            self.finished.emit()
+            return
 
         try:
             self.client.listen(
@@ -38,7 +44,11 @@ class TaskEventStreamWorker(QObject):
         self.batch_received.emit(batch)
 
     def stop(self):
-        if self.client is not None:
+        self._stop_requested = True
+        self._close_client()
+
+    def _close_client(self):
+        if self.client is not None and hasattr(self.client, "close"):
             self.client.close()
 
 

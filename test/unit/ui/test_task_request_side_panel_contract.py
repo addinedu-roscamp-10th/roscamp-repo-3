@@ -108,6 +108,22 @@ def test_task_request_side_panel_cards_update_delivery_and_patrol_contexts():
         panel.close()
 
 
+def test_delivery_context_does_not_rewrite_existing_robot_id():
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
+
+    panel = TaskRequestSidePanel()
+
+    try:
+        panel.robot_id_label.setText("pinky3")
+        panel.set_delivery_context()
+
+        assert panel.robot_id_label.text() == "pinky3"
+    finally:
+        panel.close()
+
+
 def test_request_result_card_exposes_cancel_button_by_task_status():
     _app()
 

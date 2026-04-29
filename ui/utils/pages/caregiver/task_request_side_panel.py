@@ -201,8 +201,6 @@ class RobotStatusCard(QFrame):
         self.robot_pose_text_label.setText("위치")
         self.robot_destination_text_label.setText("목적지")
         self.robot_map_label.setText("지도 / 위치 placeholder")
-        if self.robot_id_label.text() == "pinky3":
-            self.robot_id_label.setText("pinky2")
 
     def set_patrol_context(self):
         self.robot_id_text_label.setText("로봇")
