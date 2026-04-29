@@ -12,6 +12,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
 from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Path
 
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 from rclpy.executors import SingleThreadedExecutor
@@ -39,13 +40,16 @@ class FallenDetectionClient(Node):
         # Nav2 제어용 객체
         self.navigator = BasicNavigator()
 
-        self.goals = self._build_goals_from_waypoints(self.waypoints)
+        self.segment_paths = self._build_segment_paths(self.waypoints)
 
-        # 현재 이동해야 하는 goal 번호
-        # 예: goal2 이동 중 낙상이 발생하면 current_goal_index는 1로 유지됨
-        self.current_goal_index = 0
+        # 현재 추종해야 하는 path 구간 번호
+        # 예: 2번째 구간 추종 중 낙상이 발생하면 current_segment_index는 유지됨
+        self.current_segment_index = 0
 
-        # 현재 Nav2에 goal을 보낸 상태인지 여부
+        # 현재 path 구간의 재시도 횟수
+        self.current_segment_retry_count = 0
+
+        # 현재 Nav2에 path 추종 작업을 보낸 상태인지 여부
         self.navigation_running = False
 
         # 낙상 때문에 주행이 중지된 상태인지 여부
@@ -68,7 +72,7 @@ class FallenDetectionClient(Node):
         self.timer = self.create_timer(1.0 / self.send_fps, self.send_frame_udp)
 
         # navigation 상태 확인 timer
-        # goal 도착 여부를 주기적으로 확인하고 다음 goal로 이동함
+        # path 구간 완료 여부를 주기적으로 확인하고 다음 구간으로 이동함
         self.nav_timer = self.create_timer(
             self.nav_check_interval_sec,
             self.check_navigation,
@@ -79,7 +83,7 @@ class FallenDetectionClient(Node):
         self.get_logger().info(f"TCP alarm server: {self.server_ip}:{self.tcp_port}")
 
         # 순찰 시작
-        self.start_current_goal()
+        self.start_current_segment()
 
     def _declare_and_load_parameters(self):
         self.declare_parameter("server_ip", "")
@@ -94,6 +98,9 @@ class FallenDetectionClient(Node):
         self.declare_parameter("jpeg_quality", 70)
         self.declare_parameter("tcp_connect_timeout_sec", 5.0)
         self.declare_parameter("tcp_reconnect_delay_sec", 1.0)
+        self.declare_parameter("path_interpolation_step_m", 0.1)
+        self.declare_parameter("segment_retry_count", 3)
+        self.declare_parameter("segment_retry_delay_sec", 0.5)
         self.declare_parameter("waypoints", [""])
 
         self.server_ip = str(self.get_parameter("server_ip").value).strip()
@@ -108,6 +115,9 @@ class FallenDetectionClient(Node):
         self.jpeg_quality = int(self.get_parameter("jpeg_quality").value)
         self.tcp_connect_timeout_sec = float(self.get_parameter("tcp_connect_timeout_sec").value)
         self.tcp_reconnect_delay_sec = float(self.get_parameter("tcp_reconnect_delay_sec").value)
+        self.path_interpolation_step_m = float(self.get_parameter("path_interpolation_step_m").value)
+        self.segment_retry_count = int(self.get_parameter("segment_retry_count").value)
+        self.segment_retry_delay_sec = float(self.get_parameter("segment_retry_delay_sec").value)
         self.waypoints = [
             str(waypoint).strip()
             for waypoint in list(self.get_parameter("waypoints").value)
@@ -122,15 +132,29 @@ class FallenDetectionClient(Node):
             raise ValueError("tcp_port must be greater than 0.")
         if not self.alarm_topic:
             raise ValueError("alarm_topic parameter is required.")
-        if not self.waypoints:
-            raise ValueError("At least one waypoint is required.")
+        if len(self.waypoints) < 2:
+            raise ValueError("At least two waypoints are required for path following.")
         if self.send_fps <= 0:
             raise ValueError("send_fps must be greater than 0.")
         if self.nav_check_interval_sec <= 0:
             raise ValueError("nav_check_interval_sec must be greater than 0.")
+        if self.path_interpolation_step_m <= 0:
+            raise ValueError("path_interpolation_step_m must be greater than 0.")
+        if self.segment_retry_count < 0:
+            raise ValueError("segment_retry_count must be 0 or greater.")
+        if self.segment_retry_delay_sec < 0:
+            raise ValueError("segment_retry_delay_sec must be 0 or greater.")
 
-    def _build_goals_from_waypoints(self, waypoints):
-        return [self.make_pose(*self._parse_waypoint(waypoint)) for waypoint in waypoints]
+    def _build_segment_paths(self, waypoints):
+        parsed_waypoints = [self._parse_waypoint(waypoint) for waypoint in waypoints]
+        segment_paths = []
+
+        for index in range(len(parsed_waypoints) - 1):
+            start = parsed_waypoints[index]
+            end = parsed_waypoints[index + 1]
+            segment_paths.append(self._build_straight_path_segment(start, end))
+
+        return segment_paths
 
     @staticmethod
     def _parse_waypoint(waypoint):
@@ -148,7 +172,7 @@ class FallenDetectionClient(Node):
         """
         x, y, yaw_deg 값을 PoseStamped로 변환함.
 
-        Nav2의 goToPose()는 PoseStamped를 사용하므로
+        Nav2의 goal/path pose는 PoseStamped를 사용하므로
         사용자가 입력한 좌표를 PoseStamped 형태로 만들어줌.
         """
         pose = PoseStamped()
@@ -169,35 +193,73 @@ class FallenDetectionClient(Node):
 
         return pose
 
-    def start_current_goal(self):
-        """
-        현재 current_goal_index에 해당하는 goal로 주행 시작.
+    def _build_straight_path_segment(self, start, end):
+        start_x, start_y, _ = start
+        end_x, end_y, end_yaw_deg = end
 
-        예:
-        current_goal_index = 0 -> goal1로 이동
-        current_goal_index = 1 -> goal2로 이동
-        current_goal_index = 2 -> goal3로 이동
+        dx = end_x - start_x
+        dy = end_y - start_y
+        distance = math.hypot(dx, dy)
+        segment_yaw_deg = math.degrees(math.atan2(dy, dx)) if distance > 0.0 else end_yaw_deg
+
+        path = Path()
+        path.header.frame_id = "map"
+        path.header.stamp = self.get_clock().now().to_msg()
+
+        steps = max(1, int(math.ceil(distance / self.path_interpolation_step_m)))
+
+        for step_index in range(steps + 1):
+            ratio = step_index / steps
+            x = start_x + dx * ratio
+            y = start_y + dy * ratio
+            yaw_deg = end_yaw_deg if step_index == steps else segment_yaw_deg
+
+            pose = self.make_pose(x, y, yaw_deg)
+            pose.header.stamp = path.header.stamp
+            path.poses.append(pose)
+
+        return path
+
+    def start_current_segment(self):
+        """
+        현재 current_segment_index에 해당하는 직선 path 구간 추종 시작.
         """
         if self.alarm_active:
             self.get_logger().warn("Alarm is active. Navigation will not start.")
             return
 
-        if len(self.goals) == 0:
-            self.get_logger().warn("No goals are defined.")
+        if len(self.segment_paths) == 0:
+            self.get_logger().warn("No path segments are defined.")
             return
 
-        goal = self.goals[self.current_goal_index]
+        path = self.segment_paths[self.current_segment_index]
+        path.header.stamp = self.get_clock().now().to_msg()
+        for pose in path.poses:
+            pose.header.stamp = path.header.stamp
 
-        # goal을 보낼 때 stamp를 현재 시간으로 갱신
-        goal.header.stamp = self.get_clock().now().to_msg()
-
-        self.navigator.goToPose(goal)
+        self.navigator.followPath(path)
         self.navigation_running = True
         self.navigation_paused_by_alarm = False
 
         self.get_logger().info(
-            f"Navigation started: goal {self.current_goal_index + 1}"
+            f"Path following started: segment {self.current_segment_index + 1}/{len(self.segment_paths)}"
         )
+
+    def retry_current_segment(self):
+        """
+        현재 path 구간을 재시도함.
+        """
+        self.current_segment_retry_count += 1
+
+        self.get_logger().warn(
+            f"Retrying path segment {self.current_segment_index + 1} "
+            f"({self.current_segment_retry_count}/{self.segment_retry_count})."
+        )
+
+        if self.segment_retry_delay_sec > 0:
+            time.sleep(self.segment_retry_delay_sec)
+
+        self.start_current_segment()
 
     def check_navigation(self):
         """
@@ -206,8 +268,8 @@ class FallenDetectionClient(Node):
         동작:
         1. alarm 중이면 아무것도 하지 않음
         2. 주행 중이 아니면 아무것도 하지 않음
-        3. 현재 goal에 도착하면 다음 goal로 이동
-        4. 마지막 goal에 도착하면 다시 goal1부터 반복
+        3. 현재 path 구간 추종이 끝나면 다음 구간으로 이동
+        4. 마지막 구간까지 완료하면 순찰 종료
         """
         with self.nav_lock:
             if self.alarm_active:
@@ -216,7 +278,7 @@ class FallenDetectionClient(Node):
             if not self.navigation_running:
                 return
 
-            # 아직 goal 이동 중이면 그대로 둠
+            # 아직 path 구간 추종 중이면 그대로 둠
             if not self.navigator.isTaskComplete():
                 return
 
@@ -224,30 +286,44 @@ class FallenDetectionClient(Node):
 
             if result == TaskResult.SUCCEEDED:
                 self.get_logger().info(
-                    f"Goal {self.current_goal_index + 1} reached."
+                    f"Path segment {self.current_segment_index + 1} completed."
                 )
+                self.current_segment_retry_count = 0
+                self.navigation_running = False
+                self.current_segment_index += 1
+
+                if self.current_segment_index < len(self.segment_paths):
+                    self.start_current_segment()
+                    return
             elif result == TaskResult.CANCELED:
                 self.get_logger().warn(
-                    f"Goal {self.current_goal_index + 1} was canceled."
+                    f"Path segment {self.current_segment_index + 1} was canceled."
                 )
+                self.navigation_running = False
+                return
             elif result == TaskResult.FAILED:
                 self.get_logger().warn(
-                    f"Goal {self.current_goal_index + 1} failed."
+                    f"Path segment {self.current_segment_index + 1} failed."
                 )
+                self.navigation_running = False
+
+                if self.current_segment_retry_count < self.segment_retry_count:
+                    self.retry_current_segment()
+                    return
+
+                self.get_logger().warn(
+                    "Stopping patrol because the current path segment exceeded the retry limit."
+                )
+                return
             else:
                 self.get_logger().warn(
-                    f"Goal {self.current_goal_index + 1} finished with unknown result."
+                    f"Path segment {self.current_segment_index + 1} finished with unknown result."
                 )
+                self.navigation_running = False
+                return
 
-            self.navigation_running = False
-
-            # 다음 goal index로 이동
-            # goal3까지 갔다면 다시 goal1로 돌아감
-            self.current_goal_index += 1
-
-            # 모든 goal을 완료한 경우 순찰 종료
-        if self.current_goal_index >= len(self.goals):
-            self.get_logger().info("All patrol goals completed. Patrol finished.")
+        if self.current_segment_index >= len(self.segment_paths):
+            self.get_logger().info("All patrol path segments completed. Patrol finished.")
 
             # 더 이상 navigation을 재시작하지 않음
             self.navigation_running = False
@@ -276,8 +352,6 @@ class FallenDetectionClient(Node):
                 pass
 
             return
-
-        self.start_current_goal()
 
     def send_frame_udp(self):
         """
@@ -327,7 +401,7 @@ class FallenDetectionClient(Node):
 
         alarm=False:
             - /fall_alarm 토픽으로 False 발행
-            - 낙상 때문에 멈췄던 goal부터 다시 주행
+            - 낙상 때문에 멈췄던 path 구간부터 다시 주행
         """
         while not self.stop_event.is_set():
             sock = None
@@ -385,12 +459,12 @@ class FallenDetectionClient(Node):
         alarm 상태에 따라 Nav2 주행을 제어함.
 
         alarm=True가 처음 들어온 경우:
-            - 현재 주행 중인 goal을 cancelTask()로 중지
-            - current_goal_index는 증가시키지 않음
-            - 따라서 goal2 이동 중 멈췄다면 goal2 번호가 그대로 유지됨
+            - 현재 추종 중인 path 구간을 cancelTask()로 중지
+            - current_segment_index는 증가시키지 않음
+            - 따라서 2번째 구간 추종 중 멈췄다면 같은 구간 번호가 유지됨
 
         alarm=False가 처음 들어온 경우:
-            - 낙상 때문에 멈췄던 goal부터 다시 goToPose()
+            - 낙상 때문에 멈췄던 path 구간부터 다시 followPath()
         """
         with self.nav_lock:
             # 같은 alarm 상태가 반복해서 들어오면 무시
@@ -410,8 +484,8 @@ class FallenDetectionClient(Node):
         낙상 감지 시 현재 주행을 중지함.
 
         중요한 점:
-        - current_goal_index를 증가시키지 않음
-        - 따라서 alarm이 해제되면 같은 goal로 다시 주행할 수 있음
+        - current_segment_index를 증가시키지 않음
+        - 따라서 alarm이 해제되면 같은 path 구간부터 다시 추종할 수 있음
         """
         if not self.navigation_running:
             self.get_logger().warn("Alarm ON, but navigation is not running.")
@@ -424,7 +498,7 @@ class FallenDetectionClient(Node):
             self.navigation_paused_by_alarm = True
 
             self.get_logger().warn(
-                f"Alarm ON: navigation canceled at goal {self.current_goal_index + 1}."
+                f"Alarm ON: navigation canceled at path segment {self.current_segment_index + 1}."
             )
 
         except Exception as e:
@@ -432,20 +506,20 @@ class FallenDetectionClient(Node):
 
     def resume_navigation_after_alarm(self):
         """
-        낙상 미감지 상태가 되면 중지했던 goal부터 다시 주행함.
+        낙상 미감지 상태가 되면 중지했던 path 구간부터 다시 추종함.
 
         서버에서 3초 이상 낙상 미감지 시 alarm=False를 보내므로,
-        여기서는 alarm=False를 받으면 현재 current_goal_index의 goal로 다시 이동함.
+        여기서는 alarm=False를 받으면 현재 current_segment_index의 path 구간을 다시 추종함.
         """
         if not self.navigation_paused_by_alarm:
             self.get_logger().info("Alarm OFF, but navigation was not paused.")
             return
 
         self.get_logger().info(
-            f"Alarm OFF: resume navigation from goal {self.current_goal_index + 1}."
+            f"Alarm OFF: resume navigation from path segment {self.current_segment_index + 1}."
         )
 
-        self.start_current_goal()
+        self.start_current_segment()
 
     def close(self):
         """
@@ -463,7 +537,7 @@ class FallenDetectionClient(Node):
         except Exception:
             pass
 
-        # 종료 시 주행 중이면 Nav2 goal 취소
+        # 종료 시 주행 중이면 Nav2 작업 취소
         try:
             if self.navigation_running:
                 self.navigator.cancelTask()
