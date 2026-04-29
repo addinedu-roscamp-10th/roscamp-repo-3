@@ -1,6 +1,10 @@
 from .caregiver_repository import CaregiverRepository
 from .inventory_repository import InventoryRepository
 from .patient_repository import PatientRepository
+from .patrol_task_create_repository import (
+    PatrolPathSnapshotBuilder,
+    PatrolTaskCreateRepository,
+)
 from .patrol_task_resume_repository import PatrolTaskResumeRepository
 from .staff_call_repository import StaffCallRepository
 from .stream_metrics_log_repository import StreamMetricsLogRepository
@@ -19,6 +23,8 @@ __all__ = [
     "DeliveryRequestRepository",
     "InventoryRepository",
     "PatientRepository",
+    "PatrolPathSnapshotBuilder",
+    "PatrolTaskCreateRepository",
     "PatrolTaskResumeRepository",
     "StaffCallRepository",
     "StreamMetricsLogRepository",
