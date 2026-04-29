@@ -17,6 +17,7 @@ _EXPORTS = {
     "MappedGoalPoseResolver": ("goal_pose_resolvers", "MappedGoalPoseResolver"),
     "ManipulationCommandService": ("manipulation_command", "ManipulationCommandService"),
     "PatientService": ("patient", "PatientService"),
+    "PatrolResumeService": ("patrol_resume", "PatrolResumeService"),
     "PatrolTaskCreateService": ("patrol_task_create", "PatrolTaskCreateService"),
     "RosRuntimeReadinessService": ("runtime_readiness", "RosRuntimeReadinessService"),
     "StaffCallService": ("staff_call", "StaffCallService"),
