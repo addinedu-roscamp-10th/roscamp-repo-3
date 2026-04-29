@@ -14,26 +14,53 @@ class IdempotencyRepository:
         )
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
-    def find_response(self, cur, *, requester_id, idempotency_key, request_hash):
+    def find_response(
+        self,
+        cur,
+        *,
+        requester_id,
+        idempotency_key,
+        request_hash,
+        scope="DELIVERY_CREATE_TASK",
+    ):
         cur.execute(
-            load_sql("idempotency/find_delivery_create_task_response.sql"),
-            (requester_id, idempotency_key),
+            load_sql("idempotency/find_task_create_response.sql"),
+            (scope, requester_id, idempotency_key),
         )
         row = cur.fetchone()
         return self._response_from_row(row, request_hash)
 
-    async def async_find_response(self, cur, *, requester_id, idempotency_key, request_hash):
+    async def async_find_response(
+        self,
+        cur,
+        *,
+        requester_id,
+        idempotency_key,
+        request_hash,
+        scope="DELIVERY_CREATE_TASK",
+    ):
         await cur.execute(
-            load_sql("idempotency/find_delivery_create_task_response.sql"),
-            (requester_id, idempotency_key),
+            load_sql("idempotency/find_task_create_response.sql"),
+            (scope, requester_id, idempotency_key),
         )
         row = await cur.fetchone()
         return self._response_from_row(row, request_hash)
 
-    def insert_record(self, cur, *, requester_id, idempotency_key, request_hash, response, task_id):
+    def insert_record(
+        self,
+        cur,
+        *,
+        requester_id,
+        idempotency_key,
+        request_hash,
+        response,
+        task_id,
+        scope="DELIVERY_CREATE_TASK",
+    ):
         cur.execute(
-            load_sql("idempotency/insert_delivery_create_task_record.sql"),
+            load_sql("idempotency/insert_task_create_record.sql"),
             (
+                scope,
                 requester_id,
                 idempotency_key,
                 request_hash,
@@ -42,10 +69,21 @@ class IdempotencyRepository:
             ),
         )
 
-    async def async_insert_record(self, cur, *, requester_id, idempotency_key, request_hash, response, task_id):
+    async def async_insert_record(
+        self,
+        cur,
+        *,
+        requester_id,
+        idempotency_key,
+        request_hash,
+        response,
+        task_id,
+        scope="DELIVERY_CREATE_TASK",
+    ):
         await cur.execute(
-            load_sql("idempotency/insert_delivery_create_task_record.sql"),
+            load_sql("idempotency/insert_task_create_record.sql"),
             (
+                scope,
                 requester_id,
                 idempotency_key,
                 request_hash,

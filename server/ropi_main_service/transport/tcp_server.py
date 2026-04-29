@@ -33,6 +33,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
+    MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     TCPFrame,
     TCPFrameError,
@@ -229,6 +230,9 @@ class ControlServiceServer:
         if frame.message_code == MESSAGE_CODE_DELIVERY_CREATE_TASK:
             return self._dispatch_delivery_create_task(frame, payload, loop=loop)
 
+        if frame.message_code == MESSAGE_CODE_PATROL_CREATE_TASK:
+            return self._dispatch_patrol_create_task(frame, payload)
+
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return self._dispatch_rpc(frame, payload)
 
@@ -257,6 +261,9 @@ class ControlServiceServer:
         if frame.message_code == MESSAGE_CODE_DELIVERY_CREATE_TASK:
             loop = asyncio.get_running_loop()
             return await self._dispatch_delivery_create_task_async(frame, payload, loop=loop)
+
+        if frame.message_code == MESSAGE_CODE_PATROL_CREATE_TASK:
+            return await self._dispatch_patrol_create_task_async(frame, payload)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return await self._dispatch_rpc_async(frame, payload)
@@ -333,6 +340,35 @@ class ControlServiceServer:
         await self._publish_task_updated_from_response(
             result,
             source="DELIVERY_CREATE",
+        )
+        return self._success_response(frame, result)
+
+    def _dispatch_patrol_create_task(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        service = DeliveryRequestService()
+
+        try:
+            result = service.create_patrol_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "PATROL_CREATE_ERROR", str(exc))
+
+        if isinstance(result, dict):
+            result = {**result, "cancellable": bool(result.get("cancellable", False))}
+        return self._success_response(frame, result)
+
+    async def _dispatch_patrol_create_task_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        service = DeliveryRequestService()
+
+        try:
+            result = await service.async_create_patrol_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "PATROL_CREATE_ERROR", str(exc))
+
+        if isinstance(result, dict):
+            result = {**result, "cancellable": bool(result.get("cancellable", False))}
+        await self._publish_task_updated_from_response(
+            result,
+            source="PATROL_CREATE",
+            task_type="PATROL",
         )
         return self._success_response(frame, result)
 
@@ -520,7 +556,7 @@ class ControlServiceServer:
             last_seq=payload.get("last_seq", 0),
         )
 
-    async def _publish_task_updated_from_response(self, response, *, source):
+    async def _publish_task_updated_from_response(self, response, *, source, task_type=None):
         if not isinstance(response, dict):
             return
 
@@ -528,12 +564,17 @@ class ControlServiceServer:
         if task_id in (None, ""):
             return
 
+        cancellable = response.get("cancellable")
+        resolved_task_type = task_type or response.get("task_type") or "DELIVERY"
+        if resolved_task_type == "PATROL" and cancellable is None:
+            cancellable = False
+
         await self.task_event_stream_hub.publish(
             "TASK_UPDATED",
             {
                 "source": source,
                 "task_id": task_id,
-                "task_type": response.get("task_type") or "DELIVERY",
+                "task_type": resolved_task_type,
                 "task_status": response.get("task_status"),
                 "phase": response.get("phase") or response.get("task_status"),
                 "assigned_robot_id": response.get("assigned_robot_id"),
@@ -541,7 +582,7 @@ class ControlServiceServer:
                 "result_code": response.get("result_code"),
                 "result_message": response.get("result_message"),
                 "cancel_requested": response.get("cancel_requested"),
-                "cancellable": response.get("cancellable"),
+                "cancellable": cancellable,
             },
         )
 

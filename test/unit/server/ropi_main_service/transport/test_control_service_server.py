@@ -11,6 +11,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
+    MESSAGE_CODE_PATROL_CREATE_TASK,
     TCPFrame,
 )
 
@@ -410,6 +411,51 @@ def test_async_delivery_create_task_uses_native_async_service(control_service_se
     assert response.payload["task_id"] == 101
 
 
+def test_async_patrol_create_task_uses_native_async_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_PATROL_CREATE_TASK,
+        sequence_no=30,
+        payload={
+            "request_id": "req_patrol_001",
+            "caregiver_id": 1,
+            "patrol_area_id": "patrol_ward_night_01",
+            "priority": "NORMAL",
+            "idempotency_key": "idem_patrol_001",
+        },
+    )
+
+    class FakeAsyncTaskRequestService:
+        async def async_create_patrol_task(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 2001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky3",
+                "patrol_area_id": payload["patrol_area_id"],
+                "patrol_area_name": "야간 병동 순찰",
+                "patrol_area_revision": 7,
+            }
+
+    async def scenario():
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.DeliveryRequestService",
+            return_value=FakeAsyncTaskRequestService(),
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("patrol create should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_PATROL_CREATE_TASK
+    assert response.payload["result_code"] == "ACCEPTED"
+    assert response.payload["task_id"] == 2001
+    assert response.payload["assigned_robot_id"] == "pinky3"
+    assert response.payload["patrol_area_revision"] == 7
+
+
 def test_async_delivery_create_task_publishes_task_update(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
@@ -467,6 +513,68 @@ def test_async_delivery_create_task_publishes_task_update(control_service_server
                 "result_message": "작업이 접수되었습니다.",
                 "cancel_requested": None,
                 "cancellable": None,
+            },
+        )
+    ]
+
+
+def test_async_patrol_create_task_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_PATROL_CREATE_TASK,
+        sequence_no=31,
+        payload={
+            "request_id": "req_patrol_001",
+            "caregiver_id": 1,
+            "patrol_area_id": "patrol_ward_night_01",
+            "priority": "NORMAL",
+            "idempotency_key": "idem_patrol_001",
+        },
+    )
+    published_events = []
+
+    class FakeAsyncTaskRequestService:
+        async def async_create_patrol_task(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "순찰 요청이 접수되었습니다.",
+                "task_id": 2001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky3",
+                "patrol_area_id": payload["patrol_area_id"],
+                "patrol_area_name": "야간 병동 순찰",
+                "patrol_area_revision": 7,
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.DeliveryRequestService",
+            return_value=FakeAsyncTaskRequestService(),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert published_events == [
+        (
+            "TASK_UPDATED",
+            {
+                "source": "PATROL_CREATE",
+                "task_id": 2001,
+                "task_type": "PATROL",
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky3",
+                "latest_reason_code": None,
+                "result_code": "ACCEPTED",
+                "result_message": "순찰 요청이 접수되었습니다.",
+                "cancel_requested": None,
+                "cancellable": False,
             },
         )
     ]

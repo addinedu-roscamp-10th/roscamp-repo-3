@@ -136,23 +136,43 @@ class FakeIdempotencyRepository:
         self.hash_payload = payload
         return "request_hash"
 
-    def find_response(self, cur, *, requester_id, idempotency_key, request_hash):
+    def find_response(
+        self,
+        cur,
+        *,
+        requester_id,
+        idempotency_key,
+        request_hash,
+        scope="DELIVERY_CREATE_TASK",
+    ):
         self.find_args = {
             "requester_id": requester_id,
             "idempotency_key": idempotency_key,
             "request_hash": request_hash,
         }
+        if scope != "DELIVERY_CREATE_TASK":
+            self.find_args["scope"] = scope
         return None
 
     def insert_record(self, cur, **kwargs):
         self.inserted = kwargs
 
-    async def async_find_response(self, cur, *, requester_id, idempotency_key, request_hash):
+    async def async_find_response(
+        self,
+        cur,
+        *,
+        requester_id,
+        idempotency_key,
+        request_hash,
+        scope="DELIVERY_CREATE_TASK",
+    ):
         self.find_args = {
             "requester_id": requester_id,
             "idempotency_key": idempotency_key,
             "request_hash": request_hash,
         }
+        if scope != "DELIVERY_CREATE_TASK":
+            self.find_args["scope"] = scope
         return None
 
     async def async_insert_record(self, cur, **kwargs):
@@ -170,6 +190,19 @@ class FakeDeliveryTaskRepository:
     async def async_create_delivery_task_records(self, cur, **kwargs):
         self.created = kwargs
         return 101
+
+
+class FakePatrolTaskRepository:
+    def __init__(self):
+        self.created = None
+
+    def create_patrol_task_records(self, cur, **kwargs):
+        self.created = kwargs
+        return 2001
+
+    async def async_create_patrol_task_records(self, cur, **kwargs):
+        self.created = kwargs
+        return 2001
 
 
 class FakeDeliveryTaskCancelRepository:
@@ -203,6 +236,22 @@ class CollaboratorBackedDeliveryRequestRepository(DeliveryRequestRepository):
 
     async def _async_goal_pose_exists(self, cur, goal_pose_id):
         return True
+
+    def _fetch_patrol_area_by_id(self, cur, patrol_area_id):
+        return {
+            "patrol_area_id": patrol_area_id,
+            "patrol_area_name": "야간 병동 순찰",
+            "revision": 7,
+            "map_id": "map_test11_0423",
+            "path_json": {
+                "header": {"frame_id": "map"},
+                "poses": [{"pose": {"position": {"x": 1.0, "y": 2.0}}}],
+            },
+            "is_enabled": 1,
+        }
+
+    async def _async_fetch_patrol_area_by_id(self, cur, patrol_area_id):
+        return self._fetch_patrol_area_by_id(cur, patrol_area_id)
 
 
 class AsyncInsufficientItemRepository(CollaboratorBackedDeliveryRequestRepository):
@@ -286,6 +335,81 @@ def test_async_create_delivery_task_delegates_persistence_to_collaborators(monke
         "request_hash": "request_hash",
     }
     assert idempotency_repository.inserted["task_id"] == 101
+    assert fake_transaction.entered is True
+    assert fake_transaction.exited is True
+
+
+def test_create_patrol_task_snapshots_area_to_collaborator():
+    fake_conn = FakeConnection()
+    idempotency_repository = FakeIdempotencyRepository()
+    patrol_task_repository = FakePatrolTaskRepository()
+    repository = CollaboratorBackedDeliveryRequestRepository(
+        idempotency_repository=idempotency_repository,
+        patrol_task_repository=patrol_task_repository,
+    )
+
+    with patch(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.get_connection",
+        return_value=fake_conn,
+    ):
+        response = repository.create_patrol_task(
+            request_id="req_patrol_001",
+            caregiver_id=1,
+            patrol_area_id="patrol_ward_night_01",
+            priority="NORMAL",
+            idempotency_key="idem_patrol_001",
+        )
+
+    assert response == {
+        "result_code": "ACCEPTED",
+        "result_message": None,
+        "reason_code": None,
+        "task_id": 2001,
+        "task_status": "WAITING_DISPATCH",
+        "assigned_robot_id": "pinky3",
+        "patrol_area_id": "patrol_ward_night_01",
+        "patrol_area_name": "야간 병동 순찰",
+        "patrol_area_revision": 7,
+    }
+    assert patrol_task_repository.created["patrol_area_id"] == "patrol_ward_night_01"
+    assert patrol_task_repository.created["patrol_area_revision"] == 7
+    assert patrol_task_repository.created["frame_id"] == "map"
+    assert patrol_task_repository.created["waypoint_count"] == 1
+    assert patrol_task_repository.created["assigned_robot_id"] == "pinky3"
+    assert idempotency_repository.find_args["scope"] == "PATROL_CREATE_TASK"
+    assert idempotency_repository.inserted["scope"] == "PATROL_CREATE_TASK"
+    assert fake_conn.committed is True
+
+
+def test_async_create_patrol_task_snapshots_area_to_collaborator(monkeypatch):
+    fake_transaction = FakeAsyncTransaction()
+    idempotency_repository = FakeIdempotencyRepository()
+    patrol_task_repository = FakePatrolTaskRepository()
+    repository = CollaboratorBackedDeliveryRequestRepository(
+        idempotency_repository=idempotency_repository,
+        patrol_task_repository=patrol_task_repository,
+    )
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    response = asyncio.run(
+        repository.async_create_patrol_task(
+            request_id="req_patrol_001",
+            caregiver_id=1,
+            patrol_area_id="patrol_ward_night_01",
+            priority="URGENT",
+            idempotency_key="idem_patrol_001",
+        )
+    )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_id"] == 2001
+    assert response["assigned_robot_id"] == "pinky3"
+    assert patrol_task_repository.created["priority"] == "URGENT"
+    assert patrol_task_repository.created["path_snapshot_json"]["poses"]
     assert fake_transaction.entered is True
     assert fake_transaction.exited is True
 

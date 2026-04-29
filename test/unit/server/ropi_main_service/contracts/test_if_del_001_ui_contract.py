@@ -69,3 +69,4 @@ def test_cancel_delivery_task_uses_internal_rpc_contract():
     )
     assert response["result_code"] == "CANCEL_REQUESTED"
     assert response["cancel_requested"] is True
+

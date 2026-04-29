@@ -2,6 +2,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
+    MESSAGE_CODE_PATROL_CREATE_TASK,
 )
 from ui.utils.network.tcp_client import TcpClientError, send_request
 
@@ -81,6 +82,14 @@ class DeliveryRequestRemoteService:
 
     def create_delivery_task(self, **payload):
         response = send_request(MESSAGE_CODE_DELIVERY_CREATE_TASK, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+
+        return response.get("payload")
+
+    def create_patrol_task(self, **payload):
+        response = send_request(MESSAGE_CODE_PATROL_CREATE_TASK, payload)
 
         if not response.get("ok"):
             raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))

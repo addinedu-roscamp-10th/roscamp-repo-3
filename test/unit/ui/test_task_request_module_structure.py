@@ -164,3 +164,51 @@ def test_delivery_cancel_worker_calls_remote_cancel_service(monkeypatch):
             },
         )
     ]
+
+
+def test_patrol_submit_worker_calls_remote_patrol_create_service(monkeypatch):
+    from ui.utils.pages.caregiver import task_request_workers
+    from ui.utils.pages.caregiver.task_request_workers import PatrolSubmitWorker
+
+    payload = {
+        "request_id": "req_patrol_001",
+        "caregiver_id": 1,
+        "patrol_area_id": "patrol_ward_night_01",
+        "priority": "NORMAL",
+        "idempotency_key": "idem_patrol_001",
+    }
+    calls = []
+
+    class FakeService:
+        def create_patrol_task(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 2001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky3",
+            }
+
+    monkeypatch.setattr(
+        task_request_workers,
+        "DeliveryRequestRemoteService",
+        FakeService,
+    )
+
+    emitted = []
+    worker = PatrolSubmitWorker(payload)
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted == [
+        (
+            True,
+            {
+                "result_code": "ACCEPTED",
+                "task_id": 2001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky3",
+            },
+        )
+    ]

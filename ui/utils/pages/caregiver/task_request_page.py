@@ -165,6 +165,7 @@ class TaskRequestPage(QWidget):
         self.delivery_form.result_received.connect(self.side_panel.show_delivery_result)
         self.delivery_form.options_loaded.connect(self._handle_request_options_loaded)
         self.patrol_form.preview_changed.connect(self.side_panel.update_preview)
+        self.patrol_form.result_received.connect(self.side_panel.show_delivery_result)
 
         for form in self.forms:
             form.hide()

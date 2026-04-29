@@ -73,7 +73,7 @@ def test_task_request_page_exposes_scenario_tabs_and_preparation_states(monkeypa
         page.patrol_btn.click()
         assert page.current_form is page.patrol_form
         assert page.patrol_form.submit_btn.isEnabled() is False
-        assert page.patrol_form.submit_btn.text() == "순찰 요청 연동 준비 중"
+        assert page.patrol_form.submit_btn.text() == "순찰 요청 등록"
 
         for button, form in [
             (page.guide_btn, page.guide_form),
@@ -200,6 +200,8 @@ def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
         page.patrol_btn.click()
 
         form = page.patrol_form
+        assert form.submit_btn.isEnabled() is True
+        assert form.submit_btn.text() == "순찰 요청 등록"
         assert form.findChild(QGridLayout, "patrolFormGrid") is not None
         assert form.patrol_area_combo.isEditable() is True
         assert form.patrol_area_combo.completer() is not None

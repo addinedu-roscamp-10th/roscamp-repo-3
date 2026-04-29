@@ -4,6 +4,9 @@ from server.ropi_main_service.application.task_request import DeliveryRequestSer
 
 
 class FakeTaskRequestOptionRepository:
+    def __init__(self):
+        self.patrol_create_payload = None
+
     def get_delivery_destinations(self):
         return [
             {
@@ -31,6 +34,21 @@ class FakeTaskRequestOptionRepository:
 
     async def async_get_patrol_areas(self):
         return self.get_patrol_areas()
+
+    def create_patrol_task(self, **payload):
+        self.patrol_create_payload = payload
+        return {
+            "result_code": "ACCEPTED",
+            "task_id": 2001,
+            "task_status": "WAITING_DISPATCH",
+            "assigned_robot_id": "pinky3",
+            "patrol_area_id": payload["patrol_area_id"],
+            "patrol_area_name": "야간 병동 순찰",
+            "patrol_area_revision": 7,
+        }
+
+    async def async_create_patrol_task(self, **payload):
+        return self.create_patrol_task(**payload)
 
 
 def test_task_request_service_exposes_db_backed_delivery_destinations():
@@ -80,3 +98,48 @@ def test_task_request_service_option_methods_have_async_variants():
 
     assert destinations[0]["destination_id"] == "delivery_room_301"
     assert patrol_areas[0]["waypoint_count"] == 3
+
+
+def test_task_request_service_creates_patrol_task_from_pat_001_payload():
+    repository = FakeTaskRequestOptionRepository()
+    service = DeliveryRequestService(repository=repository)
+
+    response = service.create_patrol_task(
+        request_id="req_patrol_001",
+        caregiver_id=1,
+        patrol_area_id="patrol_ward_night_01",
+        priority="NORMAL",
+        idempotency_key="idem_patrol_001",
+    )
+
+    assert response == {
+        "result_code": "ACCEPTED",
+        "task_id": 2001,
+        "task_status": "WAITING_DISPATCH",
+        "assigned_robot_id": "pinky3",
+        "patrol_area_id": "patrol_ward_night_01",
+        "patrol_area_name": "야간 병동 순찰",
+        "patrol_area_revision": 7,
+    }
+    assert repository.patrol_create_payload == {
+        "request_id": "req_patrol_001",
+        "caregiver_id": 1,
+        "patrol_area_id": "patrol_ward_night_01",
+        "priority": "NORMAL",
+        "idempotency_key": "idem_patrol_001",
+    }
+
+
+def test_task_request_service_rejects_invalid_patrol_create_payload():
+    service = DeliveryRequestService(repository=FakeTaskRequestOptionRepository())
+
+    response = service.create_patrol_task(
+        request_id="req_patrol_001",
+        caregiver_id=1,
+        patrol_area_id="",
+        priority="NORMAL",
+        idempotency_key="idem_patrol_001",
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "PATROL_AREA_ID_INVALID"

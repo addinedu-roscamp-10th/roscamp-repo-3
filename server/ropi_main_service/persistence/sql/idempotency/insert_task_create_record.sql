@@ -10,7 +10,7 @@ INSERT INTO idempotency_record (
     created_at
 )
 VALUES (
-    'DELIVERY_CREATE_TASK',
+    %s,
     'CAREGIVER',
     %s,
     %s,
