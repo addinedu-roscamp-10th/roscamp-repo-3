@@ -120,14 +120,10 @@ class RequestPreviewCard(QFrame):
         self.preview_destination_label.setText("배정 후보")
 
     def update_delivery(self, preview):
-        item_id = _display(preview.get("item_id"))
         item_name = _display(preview.get("item_name"))
-        item_text = "-"
-        if item_id != "-" or item_name != "-":
-            item_text = f"{item_name} (item_id: {item_id})"
 
         self.preview_caregiver_id.setText(_display(preview.get("caregiver_id")))
-        self.preview_item.setText(item_text)
+        self.preview_item.setText(item_name)
         self.preview_quantity.setText(f"{_display(preview.get('quantity'))}개")
         self.preview_destination.setText(_display(preview.get("destination_id")))
         self.preview_priority.setText(_priority_label(preview.get("priority")))

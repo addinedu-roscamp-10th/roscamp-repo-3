@@ -99,7 +99,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.form_grid.setColumnStretch(1, 1)
 
         self.item_combo = QComboBox()
-        configure_searchable_combo(self.item_combo, "물품명 또는 item_id 검색")
+        configure_searchable_combo(self.item_combo, "물품명 검색")
         self.item_combo.setMinimumHeight(44)
 
         self.quantity_input = QSpinBox()
@@ -403,17 +403,11 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
     @staticmethod
     def _build_item_display_name(item):
         item_name = str(item.get("item_name", "")).strip()
-        item_id = str(item.get("item_id") or "").strip()
         quantity = item.get("quantity")
-        parts = [item_name]
-        if item_id:
-            parts.append(f"item_id {item_id}")
-
         if quantity is None:
-            return " / ".join(parts)
+            return item_name
 
-        parts.append(f"재고 {quantity}")
-        return " / ".join(parts)
+        return f"{item_name} / 재고 {quantity}개"
 
     def emit_preview_changed(self, *_args):
         self.preview_changed.emit(self._build_preview_payload())

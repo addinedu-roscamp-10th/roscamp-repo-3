@@ -68,7 +68,7 @@ def test_task_request_side_panel_cards_update_delivery_and_patrol_contexts():
         )
 
         assert panel.preview_item_label.text() == "물품"
-        assert panel.preview_item.text() == "세면도구 세트 (item_id: 1)"
+        assert panel.preview_item.text() == "세면도구 세트"
         assert panel.preview_quantity.text() == "2개"
         assert panel.robot_destination_label.text() == "delivery_room_301"
 

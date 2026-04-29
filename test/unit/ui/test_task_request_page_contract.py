@@ -102,7 +102,7 @@ def test_delivery_request_preview_uses_standard_fields_and_no_task_id_before_sub
 
     try:
         page.delivery_form.item_combo.addItem(
-            "세면도구 세트 (재고 4)",
+            "세면도구 세트 / 재고 4개",
             {"item_id": 1, "item_name": "세면도구 세트", "quantity": 4},
         )
         page.delivery_form.destination_combo.clear()
@@ -113,7 +113,7 @@ def test_delivery_request_preview_uses_standard_fields_and_no_task_id_before_sub
         page.delivery_form.emit_preview_changed()
 
         assert page.preview_caregiver_id.text() == "7"
-        assert page.preview_item.text() == "세면도구 세트 (item_id: 1)"
+        assert page.preview_item.text() == "세면도구 세트"
         assert page.preview_quantity.text() == "2개"
         assert page.preview_destination.text() == "delivery_room_301"
         assert page.preview_priority.text() == "긴급"
@@ -253,6 +253,7 @@ def test_delivery_form_uses_wireframe_form_controls():
         assert form.findChild(QGridLayout, "deliveryFormGrid") is not None
         assert form.item_combo.isEditable() is True
         assert form.item_combo.completer() is not None
+        assert form.item_combo.lineEdit().placeholderText() == "물품명 검색"
         assert form.destination_combo.isEditable() is True
         assert form.destination_combo.completer() is not None
 
@@ -370,6 +371,7 @@ def test_delivery_form_loads_items_and_destinations_from_server_options():
         )
 
         assert form.item_combo.currentData()["item_id"] == 1
+        assert form.item_combo.currentText() == "세면도구 세트 / 재고 4개"
         assert form.destination_combo.currentText() == "301호"
         assert form.destination_combo.currentData() == "delivery_room_301"
         assert emitted_options[0]["patrol_areas"][0]["patrol_area_id"] == (
@@ -587,7 +589,7 @@ def test_delivery_create_payload_uses_numeric_ui_api_ids():
 
     try:
         form.item_combo.addItem(
-            "세면도구 세트 (재고 4)",
+            "세면도구 세트 / 재고 4개",
             {"item_id": "1", "item_name": "세면도구 세트", "quantity": 4},
         )
         form.destination_combo.clear()
