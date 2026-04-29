@@ -1,5 +1,3 @@
-from uuid import uuid4
-
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGridLayout,
     QApplication, QPushButton, QComboBox, QTextEdit, QScrollArea, QSpinBox,
@@ -16,6 +14,14 @@ from ui.utils.widgets.form_controls import (
     configure_searchable_combo,
     create_priority_segment,
     make_field_group,
+)
+from ui.utils.pages.caregiver.task_request_builders import (
+    PayloadValidationError,
+    build_delivery_create_payload,
+    build_delivery_preview,
+    build_patrol_create_payload,
+    build_patrol_preview,
+    normalize_delivery_response,
 )
 
 
@@ -376,37 +382,18 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         super().closeEvent(event)
 
     def _build_create_delivery_task_payload(self, current_user):
-        item = self.item_combo.currentData()
-        if not isinstance(item, dict):
-            self.show_inline_status("유효한 물품을 선택하세요.", "warning")
+        try:
+            return build_delivery_create_payload(
+                current_user=current_user,
+                item=self.item_combo.currentData(),
+                quantity=self.quantity_input.value(),
+                destination_id=self.destination_combo.currentData(),
+                priority=self.get_priority_code(),
+                notes=self.detail_input.toPlainText(),
+            )
+        except PayloadValidationError as exc:
+            self.show_inline_status(str(exc), "warning")
             return None
-
-        item_id = str(item.get("item_id") or "").strip()
-        if not item_id or not item_id.isdecimal():
-            self.show_inline_status("물품 식별자를 확인할 수 없습니다.", "warning")
-            return None
-
-        caregiver_id = str(current_user.user_id or "").strip()
-        if not caregiver_id or not caregiver_id.isdecimal():
-            self.show_inline_status("caregiver_id를 확인할 수 없습니다.", "warning")
-            return None
-
-        destination_id = str(self.destination_combo.currentData() or "").strip()
-        if not destination_id:
-            self.show_inline_status("목적지를 선택하세요.", "warning")
-            return None
-
-        request_id = f"req_{uuid4().hex}"
-        return {
-            "request_id": request_id,
-            "caregiver_id": int(caregiver_id),
-            "item_id": int(item_id),
-            "quantity": self.quantity_input.value(),
-            "destination_id": destination_id,
-            "priority": self.get_priority_code(),
-            "notes": self.detail_input.toPlainText().strip() or None,
-            "idempotency_key": f"idem_{uuid4().hex}",
-        }
 
     @staticmethod
     def _build_item_display_name(item):
@@ -427,44 +414,17 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.preview_changed.emit(self._build_preview_payload())
 
     def _build_preview_payload(self):
-        current_user = SessionManager.current_user()
-        item = self.item_combo.currentData()
-        destination_id = str(self.destination_combo.currentData() or "-")
-        priority = self.get_priority_code()
-
-        if isinstance(item, dict):
-            item_id = str(item.get("item_id") or "-")
-            item_name = str(item.get("item_name") or "-")
-        else:
-            item_id = "-"
-            item_name = "-"
-
-        return {
-            "caregiver_id": str(current_user.user_id) if current_user else "-",
-            "item_id": item_id,
-            "item_name": item_name,
-            "quantity": self.quantity_input.value(),
-            "destination_id": destination_id,
-            "priority": priority,
-        }
+        return build_delivery_preview(
+            current_user=SessionManager.current_user(),
+            item=self.item_combo.currentData(),
+            quantity=self.quantity_input.value(),
+            destination_id=self.destination_combo.currentData(),
+            priority=self.get_priority_code(),
+        )
 
     @staticmethod
     def _normalize_delivery_response(success, response):
-        if isinstance(response, dict):
-            payload = dict(response)
-        else:
-            payload = {
-                "result_code": "ACCEPTED" if success else "REJECTED",
-                "result_message": str(response or ""),
-            }
-
-        payload.setdefault("result_code", "ACCEPTED" if success else "REJECTED")
-        payload.setdefault("result_message", None)
-        payload.setdefault("reason_code", None)
-        payload.setdefault("task_id", None)
-        payload.setdefault("task_status", None)
-        payload.setdefault("assigned_robot_id", None)
-        return payload
+        return normalize_delivery_response(success, response)
 
     def reset_form(self):
         self.quantity_input.setValue(1)
@@ -646,37 +606,21 @@ class PatrolRequestForm(QWidget):
         return area if isinstance(area, dict) else {}
 
     def _build_create_patrol_task_payload(self, current_user):
-        if current_user is None:
-            raise ValueError("로그인 사용자가 없습니다.")
-
-        area = self._selected_area()
-        patrol_area_id = str(area.get("patrol_area_id") or "").strip()
-        if not patrol_area_id:
-            raise ValueError("순찰 구역을 선택하세요.")
-
-        return {
-            "request_id": f"req_patrol_{uuid4().hex}",
-            "caregiver_id": int(current_user.user_id),
-            "patrol_area_id": patrol_area_id,
-            "priority": self.get_priority_code(),
-            "idempotency_key": f"idem_patrol_{uuid4().hex}",
-        }
+        return build_patrol_create_payload(
+            current_user=current_user,
+            area=self._selected_area(),
+            priority=self.get_priority_code(),
+        )
 
     def emit_preview_changed(self):
         self.preview_changed.emit(self._build_preview_payload())
 
     def _build_preview_payload(self):
-        current_user = SessionManager.current_user()
-        area = self._selected_area()
-        return {
-            "task_type": "PATROL",
-            "caregiver_id": current_user.user_id if current_user else None,
-            "patrol_area_id": area.get("patrol_area_id"),
-            "patrol_area_name": area.get("patrol_area_name"),
-            "patrol_area_revision": area.get("patrol_area_revision"),
-            "priority": self.get_priority_code(),
-            "assigned_robot_id": area.get("assigned_robot_id") or "pinky3",
-        }
+        return build_patrol_preview(
+            SessionManager.current_user(),
+            self._selected_area(),
+            self.get_priority_code(),
+        )
 
     def reset_form(self):
         self.patrol_area_combo.setCurrentIndex(0)
