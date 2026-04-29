@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from ui.admin_ui.login_role_window import LoginRoleWindow
+from ui.admin_ui.login_auth_window import LoginAuthWindow
 from ui.utils.core.styles import load_stylesheet
 
 
@@ -15,7 +15,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(load_stylesheet())
 
-    window = LoginRoleWindow()
+    window = LoginAuthWindow(role="caregiver")
     window.show()
 
     sys.exit(app.exec())

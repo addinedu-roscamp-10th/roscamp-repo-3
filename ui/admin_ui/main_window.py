@@ -469,9 +469,9 @@ class CaregiverMainWindow(QMainWindow):
             handler()
 
     def logout(self):
-        from ui.admin_ui.login_role_window import LoginRoleWindow
+        from ui.admin_ui.login_auth_window import LoginAuthWindow
         SessionManager.logout()
-        self.login_window = LoginRoleWindow()
+        self.login_window = LoginAuthWindow(role="caregiver")
         self.login_window.show()
         self.close()
 

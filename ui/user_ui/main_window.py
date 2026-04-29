@@ -261,12 +261,9 @@ class VisitorMainWindow(QMainWindow):
         self.date_label.setText(now.toString("yyyy.MM.dd"))
 
     def logout(self):
-        from ui.admin_ui.login_role_window import LoginRoleWindow
-
         SessionManager.logout()
-        self.login_window = LoginRoleWindow()
-        self.login_window.show()
-        self.close()
+        self.login_window = None
+        self.stack.setCurrentWidget(self.home_page)
 
 
 __all__ = ["VisitorMainWindow", "load_stylesheet"]

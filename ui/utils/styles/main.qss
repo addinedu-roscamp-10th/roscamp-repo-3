@@ -35,6 +35,116 @@ QWidget#kioskRoot {
     color: #1E293B;
 }
 
+QFrame#loginHeroPanel {
+    background: #DDEDEA;
+    border: 1px solid #B9D8D3;
+    border-radius: 30px;
+}
+
+QFrame#loginCard {
+    background: #FFFFFF;
+    border: 1px solid #D8E0E8;
+    border-radius: 28px;
+}
+
+QFrame#loginFeatureCard {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid #B9D8D3;
+    border-radius: 18px;
+}
+
+QFrame#loginStatusChip {
+    background: #FFFFFF;
+    border: 1px solid #B9D8D3;
+    border-radius: 18px;
+}
+
+QLabel#loginBrandTitle {
+    color: #005C55;
+    font-size: 34px;
+    font-weight: 900;
+}
+
+QLabel#loginBrandTag {
+    background: #FFFFFF;
+    color: #005C55;
+    border: 1px solid #B9D8D3;
+    border-radius: 14px;
+    font-size: 12px;
+    font-weight: 900;
+    padding: 7px 12px;
+}
+
+QLabel#loginHeroTitle {
+    color: #102A27;
+    font-size: 36px;
+    font-weight: 900;
+}
+
+QLabel#loginHeroDescription {
+    color: #365450;
+    font-size: 16px;
+}
+
+QLabel#loginFeatureTitle {
+    color: #005C55;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+QLabel#loginFeatureDesc {
+    color: #4B635F;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+QLabel#loginStatusLabel {
+    color: #5B6775;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+QLabel#loginServerStatus {
+    color: #475569;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+QLabel#loginServerStatus[state="online"] {
+    color: #15803D;
+}
+
+QLabel#loginServerStatus[state="offline"] {
+    color: #B91C1C;
+}
+
+QLabel#loginCardTitle {
+    color: #16202A;
+    font-size: 28px;
+    font-weight: 900;
+}
+
+QLabel#loginCardSubtitle {
+    color: #5B6775;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+QLabel#loginInlineStatus {
+    color: #64748B;
+    font-size: 13px;
+    font-weight: 700;
+    min-height: 20px;
+}
+
+QLabel#loginInlineStatus[state="info"] {
+    color: #005C55;
+}
+
+QLabel#loginInlineStatus[state="warning"] {
+    color: #B91C1C;
+}
+
 QStackedWidget {
     background: transparent;
     border: none;
