@@ -1,7 +1,9 @@
 from .caregiver_repository import CaregiverRepository
 from .inventory_repository import InventoryRepository
 from .patient_repository import PatientRepository
+from .patrol_task_resume_repository import PatrolTaskResumeRepository
 from .staff_call_repository import StaffCallRepository
+from .stream_metrics_log_repository import StreamMetricsLogRepository
 from .task_request_repository import (
     DeliveryRequestRepository,
     DeliveryRequestRepository as TaskRequestRepository,
@@ -16,7 +18,9 @@ __all__ = [
     "DeliveryRequestRepository",
     "InventoryRepository",
     "PatientRepository",
+    "PatrolTaskResumeRepository",
     "StaffCallRepository",
+    "StreamMetricsLogRepository",
     "TaskRequestRepository",
     "UserRepository",
     "VisitGuideRepository",

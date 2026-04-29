@@ -3,7 +3,9 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +32,10 @@ TERMINAL_TASK_STATUSES = {
     "CANCELLED",
     "COMPLETED",
     "FAILED",
+}
+WAITING_FALL_RESPONSE_PHASES = {
+    "WAIT_FALL_RESPONSE",
+    "WAITING_FALL_RESPONSE",
 }
 
 
@@ -254,6 +260,37 @@ class RequestResultCard(QFrame):
         self.cancel_task_btn.setObjectName("dangerButton")
         self.cancel_task_btn.setEnabled(False)
 
+        self.patrol_resume_action_panel = QFrame()
+        self.patrol_resume_action_panel.setObjectName("patrolResumeActionPanel")
+        resume_layout = QVBoxLayout(self.patrol_resume_action_panel)
+        resume_layout.setContentsMargins(14, 14, 14, 14)
+        resume_layout.setSpacing(8)
+
+        resume_title = QLabel("낙상 대응 후 재개")
+        resume_title.setObjectName("fieldLabel")
+        self.patrol_resume_member_input = QLineEdit()
+        self.patrol_resume_member_input.setObjectName("patrolResumeMemberIdInput")
+        self.patrol_resume_member_input.setPlaceholderText("member_id")
+        self.patrol_resume_memo_input = QTextEdit()
+        self.patrol_resume_memo_input.setObjectName("patrolResumeActionMemoInput")
+        self.patrol_resume_memo_input.setPlaceholderText("현장 조치 내용을 입력하세요.")
+        self.patrol_resume_memo_input.setFixedHeight(74)
+        self.patrol_resume_btn = QPushButton("현장 조치 완료 후 순찰 재개")
+        self.patrol_resume_btn.setObjectName("patrolResumeButton")
+        self.patrol_resume_btn.setEnabled(False)
+
+        resume_layout.addWidget(resume_title)
+        resume_layout.addWidget(self.patrol_resume_member_input)
+        resume_layout.addWidget(self.patrol_resume_memo_input)
+        resume_layout.addWidget(self.patrol_resume_btn)
+        self.patrol_resume_action_panel.setHidden(True)
+        self.patrol_resume_member_input.textChanged.connect(
+            self._sync_patrol_resume_button
+        )
+        self.patrol_resume_memo_input.textChanged.connect(
+            self._sync_patrol_resume_button
+        )
+
         layout.addWidget(title)
         layout.addWidget(self.result_message_label)
         layout.addWidget(result_code_row)
@@ -262,6 +299,7 @@ class RequestResultCard(QFrame):
         layout.addWidget(task_status_row)
         layout.addWidget(assigned_robot_row)
         layout.addWidget(self.cancel_task_btn)
+        layout.addWidget(self.patrol_resume_action_panel)
 
     def show_delivery_result(self, response):
         response = response or {}
@@ -274,6 +312,7 @@ class RequestResultCard(QFrame):
             _display(response.get("assigned_robot_id"))
         )
         self._sync_cancel_button(response)
+        self._sync_patrol_resume_panel(response)
 
     def _sync_cancel_button(self, response):
         task_id = response.get("task_id")
@@ -303,6 +342,62 @@ class RequestResultCard(QFrame):
             return
 
         self.cancel_task_btn.setEnabled(task_status in CANCELLABLE_TASK_STATUSES)
+
+    def _sync_patrol_resume_panel(self, response):
+        task_id = response.get("task_id")
+        phase = str(
+            response.get("phase")
+            or response.get("patrol_status")
+            or response.get("task_status")
+            or ""
+        ).strip().upper()
+        task_type = str(response.get("task_type") or "").strip().upper()
+        is_patrol_context = task_type in {"", "PATROL"}
+        should_show = (
+            is_patrol_context
+            and _has_task_id(task_id)
+            and phase in WAITING_FALL_RESPONSE_PHASES
+        )
+
+        self.patrol_resume_action_panel.setHidden(not should_show)
+        self.patrol_resume_btn.setProperty("task_id", task_id)
+        self.patrol_resume_btn.setProperty("task_status", phase)
+        if should_show:
+            self.patrol_resume_btn.setText("현장 조치 완료 후 순찰 재개")
+        self._sync_patrol_resume_button()
+
+    def _sync_patrol_resume_button(self):
+        if self.patrol_resume_action_panel.isHidden():
+            self.patrol_resume_btn.setEnabled(False)
+            return
+
+        task_id = self.patrol_resume_btn.property("task_id")
+        member_id = self.patrol_resume_member_input.text().strip()
+        action_memo = self.patrol_resume_memo_input.toPlainText().strip()
+        self.patrol_resume_btn.setEnabled(
+            _has_task_id(task_id) and member_id.isdigit() and bool(action_memo)
+        )
+
+    def build_patrol_resume_payload(self, *, caregiver_id):
+        member_id = self.patrol_resume_member_input.text().strip()
+        action_memo = self.patrol_resume_memo_input.toPlainText().strip()
+        task_id = self.patrol_resume_btn.property("task_id")
+
+        if not _has_task_id(task_id):
+            raise ValueError("재개할 순찰 task_id가 없습니다.")
+        if not str(caregiver_id or "").strip():
+            raise ValueError("caregiver_id가 없습니다.")
+        if not member_id.isdigit():
+            raise ValueError("member_id를 숫자로 입력하세요.")
+        if not action_memo:
+            raise ValueError("현장 조치 메모를 입력하세요.")
+
+        return {
+            "task_id": str(task_id).strip(),
+            "caregiver_id": int(caregiver_id),
+            "member_id": int(member_id),
+            "action_memo": action_memo,
+        }
 
 
 class NoticeCard(QFrame):
@@ -384,6 +479,12 @@ class TaskRequestSidePanel(QWidget):
         self.assigned_robot_text_label = self.result_card.assigned_robot_text_label
         self.assigned_robot_id_label = self.result_card.assigned_robot_id_label
         self.cancel_task_btn = self.result_card.cancel_task_btn
+        self.patrol_resume_action_panel = (
+            self.result_card.patrol_resume_action_panel
+        )
+        self.patrol_resume_member_input = self.result_card.patrol_resume_member_input
+        self.patrol_resume_memo_input = self.result_card.patrol_resume_memo_input
+        self.patrol_resume_btn = self.result_card.patrol_resume_btn
 
     def update_preview(self, preview):
         preview = preview or {}
@@ -420,6 +521,11 @@ class TaskRequestSidePanel(QWidget):
             _display(response.get("assigned_robot_id") or "pinky2")
         )
 
+    def build_patrol_resume_payload(self, *, caregiver_id):
+        return self.result_card.build_patrol_resume_payload(
+            caregiver_id=caregiver_id
+        )
+
     def apply_stream_event(self, event):
         event = event or {}
         event_type = str(event.get("event_type") or "").strip().upper()
@@ -440,7 +546,9 @@ class TaskRequestSidePanel(QWidget):
             "result_message": payload.get("result_message") or "작업 상태가 갱신되었습니다.",
             "reason_code": payload.get("latest_reason_code"),
             "task_id": payload.get("task_id"),
+            "task_type": payload.get("task_type"),
             "task_status": payload.get("task_status"),
+            "phase": payload.get("phase"),
             "assigned_robot_id": payload.get("assigned_robot_id"),
             "cancel_requested": payload.get("cancel_requested"),
             "cancellable": payload.get("cancellable"),

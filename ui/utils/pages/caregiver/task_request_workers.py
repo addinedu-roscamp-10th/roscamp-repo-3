@@ -78,6 +78,34 @@ class PatrolSubmitWorker(QObject):
             )
 
 
+class PatrolResumeWorker(QObject):
+    finished = pyqtSignal(bool, object)
+
+    def __init__(self, payload):
+        super().__init__()
+        self.payload = payload
+
+    def run(self):
+        service = DeliveryRequestRemoteService()
+
+        try:
+            response = service.resume_patrol_task(**self.payload) or {}
+            result_code = str(response.get("result_code", "")).upper()
+            self.finished.emit(result_code == "ACCEPTED", response)
+        except Exception as exc:
+            self.finished.emit(
+                False,
+                {
+                    "result_code": "CLIENT_ERROR",
+                    "result_message": f"순찰 재개 요청 중 오류가 발생했습니다.\n{exc}",
+                    "reason_code": "CLIENT_EXCEPTION",
+                    "task_id": self.payload.get("task_id"),
+                    "task_status": None,
+                    "assigned_robot_id": None,
+                },
+            )
+
+
 class DeliveryCancelWorker(QObject):
     finished = pyqtSignal(bool, object)
 
@@ -114,6 +142,7 @@ class DeliveryCancelWorker(QObject):
 __all__ = [
     "DeliveryCancelWorker",
     "DeliverySubmitWorker",
+    "PatrolResumeWorker",
     "PatrolSubmitWorker",
     "TaskRequestOptionsLoadWorker",
 ]

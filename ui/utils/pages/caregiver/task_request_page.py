@@ -22,7 +22,11 @@ from ui.utils.pages.caregiver.task_request_forms import (
 )
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
-from ui.utils.pages.caregiver.task_request_workers import DeliveryCancelWorker
+from ui.utils.pages.caregiver.task_request_workers import (
+    DeliveryCancelWorker,
+    PatrolResumeWorker,
+)
+from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.admin_shell import PageHeader
 
 
@@ -36,6 +40,8 @@ class TaskRequestPage(QWidget):
         self.current_form = None
         self.cancel_thread = None
         self.cancel_worker = None
+        self.patrol_resume_thread = None
+        self.patrol_resume_worker = None
         self.task_event_thread = None
         self.task_event_worker = None
         self._build_ui()
@@ -112,6 +118,7 @@ class TaskRequestPage(QWidget):
         self.guide_btn.clicked.connect(self.show_guide_page)
         self.follow_btn.clicked.connect(self.show_follow_page)
         self.side_panel.cancel_task_btn.clicked.connect(self._request_delivery_cancel)
+        self.side_panel.patrol_resume_btn.clicked.connect(self._request_patrol_resume)
 
         self.content_row.addWidget(
             self.left_card,
@@ -305,6 +312,74 @@ class TaskRequestPage(QWidget):
         self.cancel_thread = None
         self.cancel_worker = None
 
+    def _request_patrol_resume(self):
+        current_user = SessionManager.current_user()
+        caregiver_id = getattr(current_user, "user_id", None)
+
+        try:
+            payload = self.side_panel.build_patrol_resume_payload(
+                caregiver_id=caregiver_id
+            )
+        except ValueError as exc:
+            self.side_panel.show_delivery_result(
+                {
+                    "result_code": "CLIENT_ERROR",
+                    "result_message": str(exc),
+                    "reason_code": "PATROL_RESUME_PAYLOAD_INVALID",
+                    "task_id": self.task_id_label.text(),
+                    "task_status": self.task_status_label.text(),
+                    "assigned_robot_id": self.assigned_robot_id_label.text(),
+                    "cancellable": self.cancel_task_btn.isEnabled(),
+                }
+            )
+            return
+
+        self.side_panel.patrol_resume_btn.setEnabled(False)
+        self.side_panel.patrol_resume_btn.setText("재개 요청 전송 중...")
+        self._start_patrol_resume_task(payload)
+
+    def _start_patrol_resume_task(self, payload):
+        if self.patrol_resume_thread is not None:
+            return
+
+        self.patrol_resume_thread = QThread(self)
+        self.patrol_resume_worker = PatrolResumeWorker(payload=payload)
+        self.patrol_resume_worker.moveToThread(self.patrol_resume_thread)
+
+        self.patrol_resume_thread.started.connect(self.patrol_resume_worker.run)
+        self.patrol_resume_worker.finished.connect(self._handle_patrol_resume_finished)
+        self.patrol_resume_worker.finished.connect(self.patrol_resume_thread.quit)
+        self.patrol_resume_worker.finished.connect(
+            self.patrol_resume_worker.deleteLater
+        )
+        self.patrol_resume_thread.finished.connect(
+            self.patrol_resume_thread.deleteLater
+        )
+        self.patrol_resume_thread.finished.connect(self._clear_patrol_resume_thread)
+
+        self.patrol_resume_thread.start()
+
+    def _handle_patrol_resume_finished(self, success, response):
+        response = response or {}
+        if not isinstance(response, dict):
+            response = {
+                "result_code": "CLIENT_ERROR",
+                "result_message": str(response),
+                "reason_code": "CLIENT_RESPONSE_INVALID",
+            }
+        elif not success and not response.get("result_code"):
+            response = {
+                **response,
+                "result_code": "CLIENT_ERROR",
+                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
+            }
+
+        self.side_panel.show_delivery_result(response)
+
+    def _clear_patrol_resume_thread(self):
+        self.patrol_resume_thread = None
+        self.patrol_resume_worker = None
+
     def _start_task_event_stream(self):
         if self.task_event_thread is not None:
             return
@@ -359,6 +434,14 @@ class TaskRequestPage(QWidget):
             self.cancel_thread.wait(1000)
         self._clear_cancel_thread()
 
+    def _stop_patrol_resume_thread(self):
+        if self.patrol_resume_thread is None:
+            return
+        if self.patrol_resume_thread.isRunning():
+            self.patrol_resume_thread.quit()
+            self.patrol_resume_thread.wait(1000)
+        self._clear_patrol_resume_thread()
+
     def reset_page(self):
         for form in self.forms:
             if hasattr(form, "reset_form"):
@@ -371,6 +454,7 @@ class TaskRequestPage(QWidget):
     def shutdown(self):
         self._stop_task_event_stream_thread()
         self._stop_cancel_thread()
+        self._stop_patrol_resume_thread()
 
     def closeEvent(self, event):
         self.shutdown()

@@ -4,6 +4,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
     MESSAGE_CODE_PATROL_CREATE_TASK,
+    MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     TCPFrame,
     decode_frame_bytes,
@@ -62,6 +63,26 @@ def test_patrol_create_task_message_code_is_if_pat_001():
 
     assert decoded.message_code == 0x3001
     assert decoded.payload["patrol_area_id"] == "patrol_ward_night_01"
+
+
+def test_patrol_resume_task_message_code_is_if_pat_002():
+    frame = TCPFrame(
+        message_code=MESSAGE_CODE_PATROL_RESUME_TASK,
+        sequence_no=31,
+        payload={
+            "task_id": "2001",
+            "caregiver_id": 1,
+            "member_id": 301,
+            "action_memo": "119 신고 후 병원 이송",
+        },
+    )
+
+    decoded = decode_frame_bytes(encode_frame(frame))
+
+    assert decoded.message_code == 0x3002
+    assert decoded.payload["task_id"] == "2001"
+    assert decoded.payload["member_id"] == 301
+    assert decoded.payload["action_memo"] == "119 신고 후 병원 이송"
 
 
 def test_fall_inference_result_subscribe_message_code_is_if_pat_005():

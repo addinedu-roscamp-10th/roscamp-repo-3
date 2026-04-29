@@ -611,6 +611,56 @@ def test_task_request_page_cancel_button_updates_result_panel(monkeypatch):
         page.close()
 
 
+def test_task_request_page_builds_pat_002_resume_payload(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import (
+        DeliveryRequestForm,
+        TaskRequestPage,
+    )
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+    SessionManager.login(UserSession(user_id="7", name="김보호", role="caregiver"))
+
+    page = TaskRequestPage()
+    started_payloads = []
+
+    try:
+        page.side_panel.show_delivery_result(
+            {
+                "result_code": "TASK_UPDATED",
+                "task_id": "2001",
+                "task_type": "PATROL",
+                "task_status": "RUNNING",
+                "phase": "WAIT_FALL_RESPONSE",
+                "assigned_robot_id": "pinky3",
+                "cancellable": True,
+            }
+        )
+        page.side_panel.patrol_resume_member_input.setText("301")
+        page.side_panel.patrol_resume_memo_input.setPlainText("119 신고 후 병원 이송")
+        monkeypatch.setattr(
+            page,
+            "_start_patrol_resume_task",
+            lambda payload: started_payloads.append(payload),
+        )
+
+        page._request_patrol_resume()
+
+        assert started_payloads == [
+            {
+                "task_id": "2001",
+                "caregiver_id": 7,
+                "member_id": 301,
+                "action_memo": "119 신고 후 병원 이송",
+            }
+        ]
+        assert page.side_panel.patrol_resume_btn.text() == "재개 요청 전송 중..."
+    finally:
+        SessionManager.logout()
+        page.close()
+
+
 def test_delivery_create_payload_uses_numeric_ui_api_ids():
     _app()
 

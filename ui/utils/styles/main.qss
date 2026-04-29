@@ -406,7 +406,15 @@ QPushButton#primaryButton {
     font-weight: 900;
 }
 
-QPushButton#primaryButton:hover {
+QPushButton#patrolResumeButton {
+    background: #005C55;
+    border: none;
+    color: #FFFFFF;
+    font-weight: 900;
+}
+
+QPushButton#primaryButton:hover,
+QPushButton#patrolResumeButton:hover {
     background: #004C46;
     color: #FFFFFF;
 }
@@ -716,6 +724,12 @@ QFrame#robotMapPlaceholder {
     border: 1px dashed #B9D8D3;
     border-radius: 16px;
     min-height: 116px;
+}
+
+QFrame#patrolResumeActionPanel {
+    background: #F8FAFC;
+    border: 1px solid #D8E0E8;
+    border-radius: 14px;
 }
 
 QFrame#sideMetricRow {

@@ -12,6 +12,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
+    MESSAGE_CODE_PATROL_RESUME_TASK,
     TCPFrame,
 )
 
@@ -575,6 +576,83 @@ def test_async_patrol_create_task_publishes_task_update(control_service_server):
                 "result_message": "순찰 요청이 접수되었습니다.",
                 "cancel_requested": None,
                 "cancellable": False,
+            },
+        )
+    ]
+
+
+def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_update(
+    control_service_server,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_PATROL_RESUME_TASK,
+        sequence_no=32,
+        payload={
+            "task_id": "2001",
+            "caregiver_id": 1,
+            "member_id": 301,
+            "action_memo": "119 신고 후 병원 이송",
+        },
+    )
+    published_events = []
+    calls = []
+
+    class FakeAsyncTaskRequestService:
+        async def async_resume_patrol_task(self, **payload):
+            calls.append(payload)
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "순찰을 재개합니다.",
+                "task_id": payload["task_id"],
+                "task_status": "RUNNING",
+                "phase": "FOLLOW_PATROL_PATH",
+                "assigned_robot_id": "pinky3",
+                "cancellable": True,
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.build_patrol_request_service",
+            return_value=FakeAsyncTaskRequestService(),
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("patrol resume should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_PATROL_RESUME_TASK
+    assert response.payload["result_code"] == "ACCEPTED"
+    assert calls == [
+        {
+            "task_id": "2001",
+            "caregiver_id": 1,
+            "member_id": 301,
+            "action_memo": "119 신고 후 병원 이송",
+        }
+    ]
+    assert published_events == [
+        (
+            "TASK_UPDATED",
+            {
+                "source": "PATROL_RESUME",
+                "task_id": "2001",
+                "task_type": "PATROL",
+                "task_status": "RUNNING",
+                "phase": "FOLLOW_PATROL_PATH",
+                "assigned_robot_id": "pinky3",
+                "latest_reason_code": None,
+                "result_code": "ACCEPTED",
+                "result_message": "순찰을 재개합니다.",
+                "cancel_requested": None,
+                "cancellable": True,
             },
         )
     ]

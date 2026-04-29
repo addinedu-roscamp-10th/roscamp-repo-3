@@ -212,3 +212,52 @@ def test_patrol_submit_worker_calls_remote_patrol_create_service(monkeypatch):
             },
         )
     ]
+
+
+def test_patrol_resume_worker_calls_remote_patrol_resume_service(monkeypatch):
+    from ui.utils.pages.caregiver import task_request_workers
+    from ui.utils.pages.caregiver.task_request_workers import PatrolResumeWorker
+
+    payload = {
+        "task_id": "2001",
+        "caregiver_id": 7,
+        "member_id": 301,
+        "action_memo": "119 신고 후 병원 이송",
+    }
+    calls = []
+
+    class FakeService:
+        def resume_patrol_task(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": "2001",
+                "task_status": "RUNNING",
+                "phase": "FOLLOW_PATROL_PATH",
+                "assigned_robot_id": "pinky3",
+            }
+
+    monkeypatch.setattr(
+        task_request_workers,
+        "DeliveryRequestRemoteService",
+        FakeService,
+    )
+
+    emitted = []
+    worker = PatrolResumeWorker(payload)
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted == [
+        (
+            True,
+            {
+                "result_code": "ACCEPTED",
+                "task_id": "2001",
+                "task_status": "RUNNING",
+                "phase": "FOLLOW_PATROL_PATH",
+                "assigned_robot_id": "pinky3",
+            },
+        )
+    ]

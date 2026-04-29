@@ -25,6 +25,9 @@ from server.ropi_main_service.persistence.repositories.patrol_task_repository im
 from server.ropi_main_service.persistence.repositories.patrol_task_result_repository import (
     PatrolTaskResultRepository,
 )
+from server.ropi_main_service.persistence.repositories.patrol_task_resume_repository import (
+    PatrolTaskResumeRepository,
+)
 from server.ropi_main_service.persistence.async_connection import (
     async_execute,
     async_fetch_all,
@@ -47,6 +50,7 @@ class DeliveryRequestRepository:
         patrol_runtime_config=None,
         patrol_task_repository=None,
         patrol_task_result_repository=None,
+        patrol_task_resume_repository=None,
         idempotency_repository=None,
     ):
         self.runtime_config = runtime_config or get_delivery_runtime_config()
@@ -58,6 +62,7 @@ class DeliveryRequestRepository:
         self.delivery_task_result_repository = delivery_task_result_repository or DeliveryTaskResultRepository()
         self.patrol_task_repository = patrol_task_repository or PatrolTaskRepository()
         self.patrol_task_result_repository = patrol_task_result_repository or PatrolTaskResultRepository()
+        self.patrol_task_resume_repository = patrol_task_resume_repository or PatrolTaskResumeRepository()
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
 
     def get_all_products(self):
@@ -543,6 +548,46 @@ class DeliveryRequestRepository:
         return await self.delivery_task_cancel_repository.async_record_delivery_task_cancel_result(
             task_id=task_id,
             cancel_response=cancel_response,
+        )
+
+    def get_patrol_task_resume_target(self, task_id):
+        return self.patrol_task_resume_repository.get_patrol_task_resume_target(task_id)
+
+    async def async_get_patrol_task_resume_target(self, task_id):
+        return await self.patrol_task_resume_repository.async_get_patrol_task_resume_target(task_id)
+
+    def record_patrol_task_resume_result(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        member_id,
+        action_memo,
+        resume_command_response,
+    ):
+        return self.patrol_task_resume_repository.record_patrol_task_resume_result(
+            task_id=task_id,
+            caregiver_id=caregiver_id,
+            member_id=member_id,
+            action_memo=action_memo,
+            resume_command_response=resume_command_response,
+        )
+
+    async def async_record_patrol_task_resume_result(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        member_id,
+        action_memo,
+        resume_command_response,
+    ):
+        return await self.patrol_task_resume_repository.async_record_patrol_task_resume_result(
+            task_id=task_id,
+            caregiver_id=caregiver_id,
+            member_id=member_id,
+            action_memo=action_memo,
+            resume_command_response=resume_command_response,
         )
 
     def record_delivery_task_cancelled_result(self, *, task_id, workflow_response):

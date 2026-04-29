@@ -3,7 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QFrame
+from PyQt6.QtWidgets import QApplication, QFrame, QLineEdit, QPushButton, QTextEdit
 
 
 _APP = None
@@ -160,6 +160,55 @@ def test_request_result_card_exposes_cancel_button_by_task_status():
 
         assert panel.cancel_task_btn.isEnabled() is False
         assert panel.cancel_task_btn.text() == "취소 처리 중"
+    finally:
+        panel.close()
+
+
+def test_patrol_waiting_fall_response_exposes_pat_002_resume_action():
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
+
+    panel = TaskRequestSidePanel()
+
+    try:
+        panel.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "2001",
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_FALL_RESPONSE",
+                    "assigned_robot_id": "pinky3",
+                    "cancellable": True,
+                },
+            }
+        )
+
+        action_panel = panel.findChild(QFrame, "patrolResumeActionPanel")
+        member_input = panel.findChild(QLineEdit, "patrolResumeMemberIdInput")
+        memo_input = panel.findChild(QTextEdit, "patrolResumeActionMemoInput")
+        resume_btn = panel.findChild(QPushButton, "patrolResumeButton")
+
+        assert action_panel is panel.patrol_resume_action_panel
+        assert action_panel.isHidden() is False
+        assert member_input is panel.patrol_resume_member_input
+        assert memo_input is panel.patrol_resume_memo_input
+        assert resume_btn is panel.patrol_resume_btn
+        assert resume_btn.text() == "현장 조치 완료 후 순찰 재개"
+        assert resume_btn.isEnabled() is False
+
+        member_input.setText("301")
+        memo_input.setPlainText("119 신고 후 병원 이송")
+
+        assert resume_btn.isEnabled() is True
+        assert panel.build_patrol_resume_payload(caregiver_id=7) == {
+            "task_id": "2001",
+            "caregiver_id": 7,
+            "member_id": 301,
+            "action_memo": "119 신고 후 병원 이송",
+        }
     finally:
         panel.close()
 

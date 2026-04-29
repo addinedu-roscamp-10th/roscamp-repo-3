@@ -38,6 +38,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
+    MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     TCPFrame,
     TCPFrameError,
@@ -238,6 +239,9 @@ class ControlServiceServer:
         if frame.message_code == MESSAGE_CODE_PATROL_CREATE_TASK:
             return self._dispatch_patrol_create_task(frame, payload, loop=loop)
 
+        if frame.message_code == MESSAGE_CODE_PATROL_RESUME_TASK:
+            return self._dispatch_patrol_resume_task(frame, payload, loop=loop)
+
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return self._dispatch_rpc(frame, payload)
 
@@ -269,6 +273,9 @@ class ControlServiceServer:
 
         if frame.message_code == MESSAGE_CODE_PATROL_CREATE_TASK:
             return await self._dispatch_patrol_create_task_async(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_PATROL_RESUME_TASK:
+            return await self._dispatch_patrol_resume_task_async(frame, payload)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return await self._dispatch_rpc_async(frame, payload)
@@ -373,6 +380,31 @@ class ControlServiceServer:
         await self._publish_task_updated_from_response(
             result,
             source="PATROL_CREATE",
+            task_type="PATROL",
+        )
+        return self._success_response(frame, result)
+
+    def _dispatch_patrol_resume_task(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
+        service = build_patrol_request_service(loop=loop)
+
+        try:
+            result = service.resume_patrol_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "PATROL_RESUME_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def _dispatch_patrol_resume_task_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        service = build_patrol_request_service(loop=asyncio.get_running_loop())
+
+        try:
+            result = await service.async_resume_patrol_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "PATROL_RESUME_ERROR", str(exc))
+
+        await self._publish_task_updated_from_response(
+            result,
+            source="PATROL_RESUME",
             task_type="PATROL",
         )
         return self._success_response(frame, result)
