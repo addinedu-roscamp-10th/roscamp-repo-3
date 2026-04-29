@@ -2,6 +2,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MAGIC,
     VERSION,
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     TCPFrame,
     decode_frame_bytes,
     encode_frame,
@@ -25,3 +26,18 @@ def test_encode_and_decode_preserve_header_fields_and_payload():
     assert decoded.payload == {"request_id": "req_001", "item_id": "1"}
     assert decoded.is_response is False
     assert decoded.is_error is False
+
+
+def test_task_event_subscribe_message_code_and_push_flag_are_encoded():
+    frame = TCPFrame(
+        message_code=MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
+        sequence_no=3,
+        payload={"batch_end_seq": 1, "events": []},
+        is_push=True,
+    )
+
+    decoded = decode_frame_bytes(encode_frame(frame))
+
+    assert decoded.message_code == 0x1003
+    assert decoded.is_push is True
+    assert decoded.is_response is False

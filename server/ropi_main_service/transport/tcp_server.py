@@ -33,12 +33,14 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
+    MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     TCPFrame,
     TCPFrameError,
     build_frame,
     encode_frame,
     read_frame_from_stream,
 )
+from server.ropi_main_service.transport.task_event_stream import TaskEventStreamHub
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SERVER_ROOT = PROJECT_ROOT / "server"
@@ -173,6 +175,7 @@ class ControlServiceServer:
         self._server = None
         self.db_writer = get_default_background_db_writer()
         self.delivery_workflow_task_manager = get_default_delivery_workflow_task_manager()
+        self.task_event_stream_hub = TaskEventStreamHub()
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         payload = frame.payload or {}
@@ -258,6 +261,13 @@ class ControlServiceServer:
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return await self._dispatch_rpc_async(frame, payload)
 
+        if frame.message_code == MESSAGE_CODE_TASK_EVENT_SUBSCRIBE:
+            return self._error_response(
+                frame,
+                "STREAM_REQUIRED",
+                "task event subscribe는 persistent TCP stream에서만 처리됩니다.",
+            )
+
         return self._error_response(
             frame,
             "UNKNOWN_MESSAGE_CODE",
@@ -320,6 +330,10 @@ class ControlServiceServer:
         except Exception as exc:
             return self._error_response(frame, "DELIVERY_CREATE_ERROR", str(exc))
 
+        await self._publish_task_updated_from_response(
+            result,
+            source="DELIVERY_CREATE",
+        )
         return self._success_response(frame, result)
 
     async def _dispatch_rpc_async(self, frame: TCPFrame, payload: dict):
@@ -352,6 +366,12 @@ class ControlServiceServer:
                 result = await asyncio.to_thread(method, **kwargs)
         except Exception as exc:
             return self._error_response(frame, "RPC_ERROR", str(exc))
+
+        if service_name == "task_request" and method_name == "cancel_delivery_task":
+            await self._publish_task_updated_from_response(
+                result,
+                source="DELIVERY_CANCEL",
+            )
 
         return self._success_response(frame, result)
 
@@ -445,12 +465,85 @@ class ControlServiceServer:
                 except TCPFrameError:
                     break
 
+                if request_frame.message_code == MESSAGE_CODE_TASK_EVENT_SUBSCRIBE:
+                    response_frame = await self._handle_task_event_subscribe(
+                        request_frame,
+                        writer,
+                    )
+                    writer.write(self._encode_response(response_frame))
+                    await writer.drain()
+                    await self._replay_task_events_after_subscribe(
+                        request_frame,
+                        response_frame,
+                    )
+                    continue
+
                 response_frame = await self._build_response_frame(request_frame)
                 writer.write(self._encode_response(response_frame))
                 await writer.drain()
         finally:
+            await self.task_event_stream_hub.unsubscribe(writer=writer)
             writer.close()
             await writer.wait_closed()
+
+    async def _handle_task_event_subscribe(
+        self,
+        frame: TCPFrame,
+        writer: asyncio.StreamWriter,
+    ) -> TCPFrame:
+        payload = frame.payload or {}
+        ack = await self.task_event_stream_hub.subscribe(
+            consumer_id=payload.get("consumer_id"),
+            last_seq=payload.get("last_seq", 0),
+            writer=writer,
+            replay=False,
+        )
+        if ack.get("result_code") != "ACCEPTED":
+            return self._error_response(
+                frame,
+                "TASK_EVENT_SUBSCRIBE_ERROR",
+                ack.get("result_message") or "task event 구독 요청이 거부되었습니다.",
+            )
+        return self._success_response(frame, ack)
+
+    async def _replay_task_events_after_subscribe(
+        self,
+        frame: TCPFrame,
+        response_frame: TCPFrame,
+    ):
+        if response_frame.is_error:
+            return
+
+        payload = frame.payload or {}
+        await self.task_event_stream_hub.replay(
+            consumer_id=payload.get("consumer_id"),
+            last_seq=payload.get("last_seq", 0),
+        )
+
+    async def _publish_task_updated_from_response(self, response, *, source):
+        if not isinstance(response, dict):
+            return
+
+        task_id = response.get("task_id")
+        if task_id in (None, ""):
+            return
+
+        await self.task_event_stream_hub.publish(
+            "TASK_UPDATED",
+            {
+                "source": source,
+                "task_id": task_id,
+                "task_type": response.get("task_type") or "DELIVERY",
+                "task_status": response.get("task_status"),
+                "phase": response.get("phase") or response.get("task_status"),
+                "assigned_robot_id": response.get("assigned_robot_id"),
+                "latest_reason_code": response.get("reason_code"),
+                "result_code": response.get("result_code"),
+                "result_message": response.get("result_message"),
+                "cancel_requested": response.get("cancel_requested"),
+                "cancellable": response.get("cancellable"),
+            },
+        )
 
     async def _build_response_frame(self, frame: TCPFrame):
         try:

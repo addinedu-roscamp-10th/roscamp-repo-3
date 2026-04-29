@@ -134,6 +134,53 @@ def test_request_result_card_exposes_cancel_button_by_task_status():
         panel.close()
 
 
+def test_side_panel_updates_task_status_and_feedback_from_push_events():
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
+
+    panel = TaskRequestSidePanel()
+
+    try:
+        panel.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": 1001,
+                    "task_status": "RUNNING",
+                    "phase": "MOVE_TO_DESTINATION",
+                    "assigned_robot_id": "pinky2",
+                    "latest_reason_code": None,
+                },
+            }
+        )
+
+        assert panel.task_id_label.text() == "1001"
+        assert panel.task_status_label.text() == "RUNNING"
+        assert panel.assigned_robot_id_label.text() == "pinky2"
+        assert panel.robot_state_label.text() == "MOVE_TO_DESTINATION"
+
+        panel.apply_stream_event(
+            {
+                "event_type": "ACTION_FEEDBACK_UPDATED",
+                "payload": {
+                    "task_id": 1001,
+                    "feedback_summary": "MOVING / 남은 거리 1.25m",
+                    "pose": {
+                        "x": 1.2,
+                        "y": 0.4,
+                        "yaw": 0.0,
+                    },
+                },
+            }
+        )
+
+        assert panel.robot_state_label.text() == "MOVING / 남은 거리 1.25m"
+        assert panel.robot_pose_label.text() == "x=1.20, y=0.40, yaw=0.00"
+    finally:
+        panel.close()
+
+
 def test_task_request_page_imports_side_panel_instead_of_defining_it_inline():
     source = (
         PROJECT_ROOT / "ui/utils/pages/caregiver/task_request_page.py"

@@ -520,5 +520,18 @@ class CaregiverMainWindow(QMainWindow):
             "system_health",
         )
 
+    def closeEvent(self, event):
+        for page in [
+            self.task_page,
+            self.robot_status_page,
+            self.inventory_page,
+            self.patient_page,
+            self.alert_page,
+        ]:
+            shutdown = getattr(page, "shutdown", None)
+            if shutdown is not None:
+                shutdown()
+        super().closeEvent(event)
+
 
 __all__ = ["CaregiverMainWindow"]

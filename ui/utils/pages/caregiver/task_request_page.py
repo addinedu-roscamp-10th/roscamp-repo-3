@@ -20,6 +20,7 @@ from ui.utils.pages.caregiver.task_request_forms import (
     NotReadyScenarioForm,
     PatrolRequestForm,
 )
+from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
 from ui.utils.pages.caregiver.task_request_workers import DeliveryCancelWorker
 from ui.utils.widgets.admin_shell import PageHeader
@@ -35,8 +36,11 @@ class TaskRequestPage(QWidget):
         self.current_form = None
         self.cancel_thread = None
         self.cancel_worker = None
+        self.task_event_thread = None
+        self.task_event_worker = None
         self._build_ui()
         self._initialize_forms()
+        self._start_task_event_stream()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -300,6 +304,52 @@ class TaskRequestPage(QWidget):
         self.cancel_thread = None
         self.cancel_worker = None
 
+    def _start_task_event_stream(self):
+        if self.task_event_thread is not None:
+            return
+
+        self.task_event_thread = QThread(self)
+        self.task_event_worker = TaskEventStreamWorker(
+            consumer_id="ui-admin-task-request",
+            last_seq=0,
+        )
+        self.task_event_worker.moveToThread(self.task_event_thread)
+
+        self.task_event_thread.started.connect(self.task_event_worker.run)
+        self.task_event_worker.batch_received.connect(self._handle_task_event_batch)
+        self.task_event_worker.failed.connect(self._handle_task_event_stream_failed)
+        self.task_event_worker.finished.connect(self.task_event_thread.quit)
+        self.task_event_worker.finished.connect(self.task_event_worker.deleteLater)
+        self.task_event_thread.finished.connect(self.task_event_thread.deleteLater)
+        self.task_event_thread.finished.connect(self._clear_task_event_stream_thread)
+
+        self.task_event_thread.start()
+
+    def _handle_task_event_batch(self, batch):
+        if not isinstance(batch, dict):
+            return
+
+        for event in batch.get("events") or []:
+            if isinstance(event, dict):
+                self.side_panel.apply_stream_event(event)
+
+    def _handle_task_event_stream_failed(self, error):
+        logger.debug("task event stream stopped: %s", error)
+
+    def _clear_task_event_stream_thread(self):
+        self.task_event_thread = None
+        self.task_event_worker = None
+
+    def _stop_task_event_stream_thread(self):
+        worker = self.task_event_worker
+        thread = self.task_event_thread
+        if worker is not None:
+            worker.stop()
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(1000)
+        self._clear_task_event_stream_thread()
+
     def _stop_cancel_thread(self):
         if self.cancel_thread is None:
             return
@@ -317,8 +367,12 @@ class TaskRequestPage(QWidget):
         self._show_form(self.delivery_form)
         QTimer.singleShot(0, self.delivery_form.ensure_items_loaded)
 
-    def closeEvent(self, event):
+    def shutdown(self):
+        self._stop_task_event_stream_thread()
         self._stop_cancel_thread()
+
+    def closeEvent(self, event):
+        self.shutdown()
         super().closeEvent(event)
 
 

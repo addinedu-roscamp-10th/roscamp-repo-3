@@ -410,6 +410,68 @@ def test_async_delivery_create_task_uses_native_async_service(control_service_se
     assert response.payload["task_id"] == 101
 
 
+def test_async_delivery_create_task_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
+        sequence_no=21,
+        payload={
+            "request_id": "req_001",
+            "caregiver_id": "1",
+            "item_id": "1",
+            "quantity": 1,
+            "destination_id": "delivery_room_301",
+            "priority": "NORMAL",
+            "notes": "delivery test",
+            "idempotency_key": "idem_001",
+        },
+    )
+    published_events = []
+
+    class FakeAsyncDeliveryRequestService:
+        async def async_create_delivery_task(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "작업이 접수되었습니다.",
+                "task_id": 101,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky2",
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.build_delivery_request_service",
+            return_value=FakeAsyncDeliveryRequestService(),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert published_events == [
+        (
+            "TASK_UPDATED",
+            {
+                "source": "DELIVERY_CREATE",
+                "task_id": 101,
+                "task_type": "DELIVERY",
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky2",
+                "latest_reason_code": None,
+                "result_code": "ACCEPTED",
+                "result_message": "작업이 접수되었습니다.",
+                "cancel_requested": None,
+                "cancellable": None,
+            },
+        )
+    ]
+
+
 def test_async_rpc_dispatch_routes_delivery_cancel_to_async_service(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,
@@ -452,6 +514,54 @@ def test_async_rpc_dispatch_routes_delivery_cancel_to_async_service(control_serv
         "task_id": "101",
         "cancel_requested": True,
     }
+
+
+def test_async_delivery_cancel_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=22,
+        payload={
+            "service": "task_request",
+            "method": "cancel_delivery_task",
+            "kwargs": {
+                "task_id": "101",
+            },
+        },
+    )
+    published_events = []
+
+    class FakeDeliveryRequestService:
+        async def async_cancel_delivery_task(self, **kwargs):
+            return {
+                "result_code": "CANCEL_REQUESTED",
+                "result_message": "취소 요청이 접수되었습니다.",
+                "reason_code": "USER_CANCEL_REQUESTED",
+                "task_id": kwargs["task_id"],
+                "task_status": "CANCEL_REQUESTED",
+                "assigned_robot_id": "pinky2",
+                "cancel_requested": True,
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"task_request": FakeDeliveryRequestService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "DELIVERY_CANCEL"
+    assert published_events[0][1]["task_id"] == "101"
+    assert published_events[0][1]["task_status"] == "CANCEL_REQUESTED"
+    assert published_events[0][1]["latest_reason_code"] == "USER_CANCEL_REQUESTED"
 
 
 def test_async_response_build_does_not_block_event_loop(control_service_server):

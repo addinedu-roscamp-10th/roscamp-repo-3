@@ -417,3 +417,71 @@ class TaskRequestSidePanel(QWidget):
         self.robot_id_label.setText(
             _display(response.get("assigned_robot_id") or "pinky2")
         )
+
+    def apply_stream_event(self, event):
+        event = event or {}
+        event_type = str(event.get("event_type") or "").strip().upper()
+        payload = event.get("payload") or {}
+        if not isinstance(payload, dict):
+            return
+
+        if event_type == "TASK_UPDATED":
+            self._apply_task_updated(payload)
+            return
+
+        if event_type == "ACTION_FEEDBACK_UPDATED":
+            self._apply_action_feedback_updated(payload)
+
+    def _apply_task_updated(self, payload):
+        response = {
+            "result_code": payload.get("result_code") or "TASK_UPDATED",
+            "result_message": payload.get("result_message") or "작업 상태가 갱신되었습니다.",
+            "reason_code": payload.get("latest_reason_code"),
+            "task_id": payload.get("task_id"),
+            "task_status": payload.get("task_status"),
+            "assigned_robot_id": payload.get("assigned_robot_id"),
+            "cancel_requested": payload.get("cancel_requested"),
+            "cancellable": payload.get("cancellable"),
+        }
+        self.result_card.show_delivery_result(response)
+
+        assigned_robot_id = payload.get("assigned_robot_id")
+        if assigned_robot_id:
+            self.robot_id_label.setText(_display(assigned_robot_id))
+
+        phase = payload.get("phase") or payload.get("task_status")
+        if phase:
+            self.robot_state_label.setText(_display(phase))
+
+    def _apply_action_feedback_updated(self, payload):
+        if not self._matches_current_task(payload.get("task_id")):
+            return
+
+        feedback_summary = payload.get("feedback_summary")
+        if feedback_summary:
+            self.robot_state_label.setText(_display(feedback_summary))
+
+        pose = payload.get("pose")
+        if isinstance(pose, dict):
+            self.robot_pose_label.setText(self._format_pose(pose))
+
+    def _matches_current_task(self, task_id):
+        if task_id in (None, ""):
+            return True
+
+        current_task_id = self.task_id_label.text().strip()
+        if current_task_id in {"", "-"}:
+            return True
+
+        return current_task_id == str(task_id).strip()
+
+    @staticmethod
+    def _format_pose(pose):
+        try:
+            x = float(pose.get("x"))
+            y = float(pose.get("y"))
+            yaw = float(pose.get("yaw", 0.0))
+        except (TypeError, ValueError):
+            return _display(pose)
+
+        return f"x={x:.2f}, y={y:.2f}, yaw={yaw:.2f}"
