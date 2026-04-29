@@ -163,7 +163,7 @@ VALUES
 -- operation_zone
 -- =========================
 INSERT INTO `operation_zone`
-(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `polygon_json`,
+(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `path_json`,
  `is_enabled`, `created_at`, `updated_at`)
 VALUES
 ('room_301', 'map_test11_0423', '301호', 'ROOM', 1, NULL, TRUE, NOW(), NOW()),

@@ -64,6 +64,20 @@ def test_schema_contains_control_task_and_log_tables():
     assert "CREATE TABLE `map_table`" not in ddl
 
 
+def test_patrol_zone_schema_uses_path_snapshot_columns():
+    ddl = _ddl()
+    seed_sql = _seed_sql()
+
+    assert "`path_json` JSON NULL" in ddl
+    assert "`path_snapshot_json` JSON NULL" in ddl
+    assert "`path_json`" in seed_sql
+
+    assert "polygon_json" not in ddl
+    assert "polygon_json" not in seed_sql
+    assert "coverage_polygon_snapshot_json" not in ddl
+    assert "coverage_polygon_snapshot_json" not in seed_sql
+
+
 def test_schema_contains_expected_indexes():
     ddl = _ddl()
 
