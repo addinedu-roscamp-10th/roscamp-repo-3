@@ -12,6 +12,9 @@ from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.action_feedback import RosActionFeedbackService
 from server.ropi_main_service.application.caregiver import CaregiverService
 from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
+from server.ropi_main_service.application.fall_inference_runtime import (
+    start_fall_inference_stream_if_enabled,
+)
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
@@ -178,6 +181,7 @@ class ControlServiceServer:
         self.db_writer = get_default_background_db_writer()
         self.delivery_workflow_task_manager = get_default_workflow_task_manager()
         self.task_event_stream_hub = TaskEventStreamHub()
+        self.fall_inference_stream_task = None
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         payload = frame.payload or {}
@@ -442,6 +446,11 @@ class ControlServiceServer:
 
     async def start(self):
         self.db_writer.start()
+        self.fall_inference_stream_task = start_fall_inference_stream_if_enabled(
+            loop=asyncio.get_running_loop(),
+            task_event_publisher=self.task_event_stream_hub,
+            workflow_task_manager=self.delivery_workflow_task_manager,
+        )
         try:
             self._server = await asyncio.start_server(
                 self._handle_client,
