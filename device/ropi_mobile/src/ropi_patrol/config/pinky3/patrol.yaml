@@ -1,17 +1,10 @@
-fallen_detection_client_tcp:
+fallen_detection_client:
   ros__parameters:
-    server_ip: "192.168.0.89"
-    udp_port: 5005
-    tcp_port: 6000
     alarm_topic: "/fall_alarm"
-    max_udp_packet_size: 60000
-    send_fps: 10.0
+    pinky_id: "pinky3"
+    patrol_action_name: ""
+    fall_response_service_name: ""
     nav_check_interval_sec: 0.2
-    camera_width: 480
-    camera_height: 320
-    jpeg_quality: 70
-    tcp_connect_timeout_sec: 5.0
-    tcp_reconnect_delay_sec: 1.0
     path_interpolation_step_m: 0.1
     segment_retry_count: 3
     segment_retry_delay_sec: 0.5
@@ -29,3 +22,16 @@ fallen_detection_client_tcp:
       - "1.693160,-0.494979,0.0" # 11, same as 9 position / original 8
       - "0.977322,-0.484411,0.0" # 12
       - "0.946082,0.270139,0.0" # 13, same as 1
+
+ropi_camera:
+  ros__parameters:
+    server_ip: "192.168.0.89"
+    udp_port: 5005
+    stream_name: "pinky03_cam"
+    udp_packet_size: 1200
+    udp_send_buffer_size: 4194304
+    session_id: 0
+    send_fps: 10.0
+    camera_width: 480
+    camera_height: 320
+    jpeg_quality: 70

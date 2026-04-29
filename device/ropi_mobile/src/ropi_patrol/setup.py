@@ -29,7 +29,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            "fallen_detection_client_tcp = ropi_patrol.fallen_detection_client_tcp:main",
+            "fallen_detection_client = ropi_patrol.fallen_detection_client:main",
+            "ropi_camera = ropi_patrol.ropi_camera:main",
             "fallen_alarm_buzzer = ropi_patrol.fallen_alarm_buzzer:main",
         ],
     },

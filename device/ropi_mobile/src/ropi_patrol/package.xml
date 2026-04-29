@@ -12,7 +12,9 @@
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>nav2_simple_commander</depend>
+  <depend>ropi_interface</depend>
 
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>launch</exec_depend>
