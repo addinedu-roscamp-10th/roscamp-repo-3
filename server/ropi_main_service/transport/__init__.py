@@ -1,5 +1,6 @@
 from .tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
@@ -14,11 +15,20 @@ from .tcp_protocol import (
     read_frame_from_stream,
     resolve_message_code,
 )
+from .fall_inference_stream import (
+    FallInferenceStreamClient,
+    FallInferenceStreamConfig,
+    FallInferenceStreamError,
+)
 from .tcp_server import ControlServiceServer, main
 
 __all__ = [
     "ControlServiceServer",
+    "FallInferenceStreamClient",
+    "FallInferenceStreamConfig",
+    "FallInferenceStreamError",
     "MESSAGE_CODE_DELIVERY_CREATE_TASK",
+    "MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE",
     "MESSAGE_CODE_HEARTBEAT",
     "MESSAGE_CODE_INTERNAL_RPC",
     "MESSAGE_CODE_LOGIN",

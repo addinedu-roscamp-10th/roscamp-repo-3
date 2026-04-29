@@ -2,6 +2,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MAGIC,
     VERSION,
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     TCPFrame,
@@ -61,3 +62,22 @@ def test_patrol_create_task_message_code_is_if_pat_001():
 
     assert decoded.message_code == 0x3001
     assert decoded.payload["patrol_area_id"] == "patrol_ward_night_01"
+
+
+def test_fall_inference_result_subscribe_message_code_is_if_pat_005():
+    frame = TCPFrame(
+        message_code=MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
+        sequence_no=50,
+        payload={
+            "consumer_id": "control_service_ai_fall",
+            "last_seq": 540,
+            "pinky_id": "pinky3",
+        },
+    )
+
+    decoded = decode_frame_bytes(encode_frame(frame))
+
+    assert decoded.message_code == 0x5001
+    assert decoded.payload["consumer_id"] == "control_service_ai_fall"
+    assert decoded.payload["last_seq"] == 540
+    assert decoded.payload["pinky_id"] == "pinky3"
