@@ -20,10 +20,10 @@ NavItem = tuple[str, str]
 
 class SystemStatusStrip(QFrame):
     DEFAULT_STATUSES: Mapping[str, str] = {
-        "Control Service": "unknown",
-        "DB": "unknown",
+        "관제 서버": "unknown",
+        "데이터베이스": "unknown",
         "ROS2": "unknown",
-        "AI Server": "unknown",
+        "AI 서버": "unknown",
     }
 
     _STATUS_TEXT = {
@@ -84,6 +84,7 @@ class PageHeader(QFrame):
         title: str,
         subtitle: str = "",
         statuses: Mapping[str, str] | None = None,
+        show_status: bool = False,
     ):
         super().__init__()
         self.setObjectName("pageHeader")
@@ -104,10 +105,12 @@ class PageHeader(QFrame):
         title_box.addWidget(self.title_label)
         title_box.addWidget(self.subtitle_label)
 
-        self.status_strip = SystemStatusStrip(statuses)
-
         root.addLayout(title_box, 1)
-        root.addWidget(self.status_strip, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.status_strip = None
+        if show_status or statuses is not None:
+            self.status_strip = SystemStatusStrip(statuses)
+            root.addWidget(self.status_strip, 0, Qt.AlignmentFlag.AlignTop)
 
     def set_text(self, title: str, subtitle: str = "") -> None:
         self.title_label.setText(title)
@@ -247,13 +250,15 @@ class AdminShell(QWidget):
 
 
 class PlaceholderPage(QWidget):
-    def __init__(self, title: str, subtitle: str):
+    def __init__(self, title: str, subtitle: str, show_status: bool = False):
         super().__init__()
         root = QVBoxLayout(self)
         root.setContentsMargins(34, 34, 34, 34)
         root.setSpacing(18)
 
-        root.addWidget(PageHeader(title=title, subtitle=subtitle))
+        root.addWidget(
+            PageHeader(title=title, subtitle=subtitle, show_status=show_status)
+        )
 
         card = QFrame()
         card.setObjectName("card")

@@ -170,6 +170,7 @@ class CaregiverHomePage(QWidget):
             PageHeader(
                 "보호사 메인 화면",
                 "현재 로봇 상태와 작업 흐름을 한눈에 확인하세요.",
+                show_status=True,
             ),
             1,
         )
@@ -514,6 +515,7 @@ class CaregiverMainWindow(QMainWindow):
             lambda: PlaceholderPage(
                 "시스템 상태",
                 "관제 서버, 데이터베이스, ROS2, AI 서버의 연결 상태를 확인합니다.",
+                show_status=True,
             ),
             "system_health",
         )
