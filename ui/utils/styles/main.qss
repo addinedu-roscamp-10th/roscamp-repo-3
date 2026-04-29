@@ -163,6 +163,7 @@ QFrame#infoBox,
 QFrame#formCard,
 QFrame#timeCard,
 QFrame#actionCard,
+QFrame#robotStatusCard,
 QFrame#noticeCard {
     background: #FFFFFF;
     border: 1px solid #D8E0E8;
@@ -579,6 +580,19 @@ QFrame#resultPanel {
     background: #FFFFFF;
     border: 1px solid #D8E0E8;
     border-radius: 18px;
+}
+
+QFrame#robotStatusCard {
+    background: #F8FAFC;
+    border: 1px solid #D8E0E8;
+    border-radius: 18px;
+}
+
+QFrame#robotMapPlaceholder {
+    background: #EEF4F7;
+    border: 1px dashed #B9D8D3;
+    border-radius: 16px;
+    min-height: 116px;
 }
 
 QLabel#previewValue {

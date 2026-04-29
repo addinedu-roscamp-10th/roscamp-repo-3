@@ -101,6 +101,43 @@ def test_delivery_request_preview_uses_standard_fields_and_no_task_id_before_sub
         page.close()
 
 
+def test_task_request_page_uses_content_height_form_card_and_robot_placeholder(monkeypatch):
+    app = _app()
+
+    from ui.utils.pages.caregiver.task_request_page import (
+        DeliveryRequestForm,
+        TaskRequestPage,
+    )
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+
+    page = TaskRequestPage()
+
+    try:
+        page.resize(1200, 800)
+        page.show()
+        app.processEvents()
+
+        form = page.delivery_form
+        blank_below_submit = form.height() - form.submit_btn.geometry().bottom() - 1
+
+        assert blank_below_submit <= 16
+        assert form.height() <= form.sizeHint().height() + 12
+        assert page.form_scroll.height() <= form.sizeHint().height() + 12
+        assert page.left_card.height() <= page.form_scroll.height() + 60
+
+        assert page.robot_status_card.objectName() == "robotStatusCard"
+        assert page.robot_map_placeholder.objectName() == "robotMapPlaceholder"
+        assert page.robot_id_label.text() == "assigned_robot_id: pinky2"
+        assert page.robot_state_label.text() == "state: feedback 수신 전"
+        assert page.robot_pose_label.text() == "pose: 미수신"
+        assert page.robot_destination_label.text() == "destination_id: delivery_room_301"
+        assert page.side_scroll.widget() is page.side_panel
+        assert page.side_scroll.height() < page.side_panel.height()
+    finally:
+        page.close()
+
+
 def test_delivery_form_uses_wireframe_form_controls():
     app = _app()
 

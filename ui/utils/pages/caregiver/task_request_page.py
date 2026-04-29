@@ -81,8 +81,14 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self._build_ui()
 
     def _build_ui(self):
+        self.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
+
         root = QVBoxLayout(self)
         root.setSpacing(16)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         form_title = QLabel("운반 작업 설정")
         form_title.setObjectName("sectionTitle")
@@ -183,7 +189,6 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         root.addWidget(self.status_label)
 
         root.addWidget(self.submit_btn)
-        root.addStretch(1)
 
         self.item_combo.currentIndexChanged.connect(self.emit_preview_changed)
         self.quantity_input.valueChanged.connect(self.emit_preview_changed)
@@ -597,6 +602,51 @@ class TaskRequestSidePanel(QWidget):
         preview_layout.addWidget(self.preview_destination)
         preview_layout.addWidget(self.preview_priority)
 
+        self.robot_status_card = QFrame()
+        self.robot_status_card.setObjectName("robotStatusCard")
+        robot_layout = QVBoxLayout(self.robot_status_card)
+        robot_layout.setContentsMargins(22, 22, 22, 22)
+        robot_layout.setSpacing(10)
+
+        robot_title = QLabel("실시간 로봇 상태")
+        robot_title.setObjectName("sectionTitle")
+        robot_desc = QLabel(
+            "작업 생성 후 로봇 feedback 수신 시 위치와 상태를 갱신합니다."
+        )
+        robot_desc.setObjectName("mutedText")
+        robot_desc.setWordWrap(True)
+
+        self.robot_id_label = QLabel("assigned_robot_id: pinky2")
+        self.robot_state_label = QLabel("state: feedback 수신 전")
+        self.robot_pose_label = QLabel("pose: 미수신")
+        self.robot_destination_label = QLabel("destination_id: -")
+
+        for label in [
+            self.robot_id_label,
+            self.robot_state_label,
+            self.robot_pose_label,
+            self.robot_destination_label,
+        ]:
+            label.setObjectName("previewValue")
+            label.setWordWrap(True)
+
+        self.robot_map_placeholder = QFrame()
+        self.robot_map_placeholder.setObjectName("robotMapPlaceholder")
+        map_layout = QVBoxLayout(self.robot_map_placeholder)
+        map_layout.setContentsMargins(16, 16, 16, 16)
+        map_label = QLabel("지도 / 위치 placeholder")
+        map_label.setObjectName("mutedText")
+        map_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        map_layout.addWidget(map_label)
+
+        robot_layout.addWidget(robot_title)
+        robot_layout.addWidget(robot_desc)
+        robot_layout.addWidget(self.robot_id_label)
+        robot_layout.addWidget(self.robot_state_label)
+        robot_layout.addWidget(self.robot_pose_label)
+        robot_layout.addWidget(self.robot_destination_label)
+        robot_layout.addWidget(self.robot_map_placeholder)
+
         self.result_card = QFrame()
         self.result_card.setObjectName("resultPanel")
         result_layout = QVBoxLayout(self.result_card)
@@ -657,6 +707,7 @@ class TaskRequestSidePanel(QWidget):
         notice_layout.addWidget(notice_text)
 
         root.addWidget(self.preview_card)
+        root.addWidget(self.robot_status_card)
         root.addWidget(self.result_card)
         root.addWidget(notice_card)
         root.addStretch()
@@ -679,6 +730,9 @@ class TaskRequestSidePanel(QWidget):
         self.preview_priority.setText(
             f"priority: {self._display(preview.get('priority'))}"
         )
+        self.robot_destination_label.setText(
+            f"destination_id: {self._display(preview.get('destination_id'))}"
+        )
 
     def show_delivery_result(self, response):
         response = response or {}
@@ -697,6 +751,10 @@ class TaskRequestSidePanel(QWidget):
         )
         self.assigned_robot_id_label.setText(
             f"assigned_robot_id: {self._display(response.get('assigned_robot_id'))}"
+        )
+        assigned_robot_id = response.get("assigned_robot_id") or "pinky2"
+        self.robot_id_label.setText(
+            f"assigned_robot_id: {self._display(assigned_robot_id)}"
         )
 
     @staticmethod
@@ -737,12 +795,16 @@ class TaskRequestPage(QWidget):
             btn.setCheckable(True)
             top_tabs.addWidget(btn)
 
-        content_row = QHBoxLayout()
-        content_row.setSpacing(18)
+        self.content_row = QHBoxLayout()
+        self.content_row.setSpacing(18)
 
-        left_card = QFrame()
-        left_card.setObjectName("formCard")
-        lc = QVBoxLayout(left_card)
+        self.left_card = QFrame()
+        self.left_card.setObjectName("formCard")
+        self.left_card.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
+        lc = QVBoxLayout(self.left_card)
         lc.setContentsMargins(24, 24, 24, 24)
         lc.setSpacing(16)
 
@@ -751,25 +813,41 @@ class TaskRequestPage(QWidget):
         self.form_layout = QVBoxLayout(self.form_host)
         self.form_layout.setContentsMargins(0, 0, 0, 0)
         self.form_layout.setSpacing(0)
+        self.form_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.form_scroll = QScrollArea()
         self.form_scroll.setWidgetResizable(True)
+        self.form_scroll.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
         self.form_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.form_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self.form_scroll.setWidget(self.form_host)
-        lc.addWidget(self.form_scroll, 1)
+        lc.addWidget(self.form_scroll)
 
         self.side_panel = TaskRequestSidePanel()
+        self.side_scroll = QScrollArea()
+        self.side_scroll.setWidgetResizable(True)
+        self.side_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.side_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.side_scroll.setWidget(self.side_panel)
 
         self.delivery_btn.clicked.connect(self.show_delivery_page)
         self.patrol_btn.clicked.connect(self.show_patrol_page)
         self.guide_btn.clicked.connect(self.show_guide_page)
         self.follow_btn.clicked.connect(self.show_follow_page)
 
-        content_row.addWidget(left_card, 2)
-        content_row.addWidget(self.side_panel, 1)
+        self.content_row.addWidget(
+            self.left_card,
+            2,
+            alignment=Qt.AlignmentFlag.AlignTop,
+        )
+        self.content_row.addWidget(self.side_scroll, 1)
 
         self.preview_card = self.side_panel.preview_card
         self.preview_caregiver_id = self.side_panel.preview_caregiver_id
@@ -783,12 +861,18 @@ class TaskRequestPage(QWidget):
         self.task_id_label = self.side_panel.task_id_label
         self.task_status_label = self.side_panel.task_status_label
         self.assigned_robot_id_label = self.side_panel.assigned_robot_id_label
+        self.robot_status_card = self.side_panel.robot_status_card
+        self.robot_map_placeholder = self.side_panel.robot_map_placeholder
+        self.robot_id_label = self.side_panel.robot_id_label
+        self.robot_state_label = self.side_panel.robot_state_label
+        self.robot_pose_label = self.side_panel.robot_pose_label
+        self.robot_destination_label = self.side_panel.robot_destination_label
 
         root.addWidget(
             PageHeader("작업 요청", "작업 종류를 선택하여 해당 요청을 등록하세요.")
         )
         root.addLayout(top_tabs)
-        root.addLayout(content_row, 1)
+        root.addLayout(self.content_row, 1)
 
     def _initialize_forms(self):
         print("[task_request] initialize forms")
@@ -808,6 +892,10 @@ class TaskRequestPage(QWidget):
 
         for form in self.forms:
             form.hide()
+            form.setSizePolicy(
+                QSizePolicy.Policy.Preferred,
+                QSizePolicy.Policy.Fixed,
+            )
             self.form_layout.addWidget(form)
 
         self._show_form(self.delivery_form)
@@ -816,6 +904,7 @@ class TaskRequestPage(QWidget):
 
     def _show_form(self, form):
         if self.current_form is form:
+            self._resize_form_container(form)
             self._set_active_tab(form)
             return
 
@@ -828,7 +917,15 @@ class TaskRequestPage(QWidget):
 
         form.show()
         self.current_form = form
+        self._resize_form_container(form)
         self._set_active_tab(form)
+
+    def _resize_form_container(self, form):
+        form.adjustSize()
+        form_height = form.sizeHint().height()
+        self.form_scroll.setFixedHeight(form_height)
+        self.form_host.setFixedHeight(form_height)
+        self.left_card.updateGeometry()
 
     def _set_active_tab(self, form):
         form_to_button = {
