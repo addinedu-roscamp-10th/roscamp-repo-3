@@ -347,10 +347,14 @@ class BaseRclpyActionClient:
             return "navigation"
         if "execute_manipulation" in action_name or "processed_quantity" in payload:
             return "manipulation"
+        if "execute_patrol_path" in action_name or "patrol_status" in payload:
+            return "patrol"
         return "unknown"
 
     @staticmethod
     def _infer_feedback_type(payload):
+        if "patrol_status" in payload or "current_waypoint_index" in payload:
+            return "PATROL_FEEDBACK"
         if "nav_status" in payload or "distance_remaining_m" in payload:
             return "NAVIGATION_FEEDBACK"
         if "processed_quantity" in payload:

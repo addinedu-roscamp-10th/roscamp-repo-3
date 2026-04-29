@@ -23,5 +23,12 @@ def generate_launch_description():
                 output="screen",
                 parameters=[params_file],
             ),
+            Node(
+                package="ropi_patrol",
+                executable="patrol_path_action_server",
+                name="patrol_path_action_server",
+                output="screen",
+                parameters=[params_file],
+            ),
         ]
     )

@@ -12,6 +12,7 @@ fallen_detection_client_tcp:
     jpeg_quality: 70
     tcp_connect_timeout_sec: 5.0
     tcp_reconnect_delay_sec: 1.0
+    auto_start_patrol: false
     waypoints:
       - "0.9576985239982605,-0.0647413358092308,0.0"
       - "0.9576985239982605,0.27063360810279846,0.0"
@@ -19,3 +20,9 @@ fallen_detection_client_tcp:
       - "1.706827998161316,-0.4991105794906616,0.0"
       - "1.6835060119628906,-0.06778506189584732,0.0"
       - "0.8961023688316345,0.248088538646698,0.0"
+
+patrol_path_action_server:
+  ros__parameters:
+    robot_id: "pinky3"
+    action_name: "/ropi/control/pinky3/execute_patrol_path"
+    nav_check_interval_sec: 0.2

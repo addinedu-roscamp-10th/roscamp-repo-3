@@ -15,6 +15,7 @@ from server.ropi_main_service.application.delivery_runtime import build_delivery
 from server.ropi_main_service.application.delivery_workflow_task_manager import (
     get_default_delivery_workflow_task_manager,
 )
+from server.ropi_main_service.application.patrol_runtime import build_patrol_request_service
 from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
@@ -231,7 +232,7 @@ class ControlServiceServer:
             return self._dispatch_delivery_create_task(frame, payload, loop=loop)
 
         if frame.message_code == MESSAGE_CODE_PATROL_CREATE_TASK:
-            return self._dispatch_patrol_create_task(frame, payload)
+            return self._dispatch_patrol_create_task(frame, payload, loop=loop)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return self._dispatch_rpc(frame, payload)
@@ -343,8 +344,8 @@ class ControlServiceServer:
         )
         return self._success_response(frame, result)
 
-    def _dispatch_patrol_create_task(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        service = DeliveryRequestService()
+    def _dispatch_patrol_create_task(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
+        service = build_patrol_request_service(loop=loop)
 
         try:
             result = service.create_patrol_task(**payload)
@@ -356,7 +357,7 @@ class ControlServiceServer:
         return self._success_response(frame, result)
 
     async def _dispatch_patrol_create_task_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        service = DeliveryRequestService()
+        service = build_patrol_request_service(loop=asyncio.get_running_loop())
 
         try:
             result = await service.async_create_patrol_task(**payload)

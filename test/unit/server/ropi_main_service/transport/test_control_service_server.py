@@ -438,7 +438,7 @@ def test_async_patrol_create_task_uses_native_async_service(control_service_serv
 
     async def scenario():
         with patch(
-            "server.ropi_main_service.transport.tcp_server.DeliveryRequestService",
+            "server.ropi_main_service.transport.tcp_server.build_patrol_request_service",
             return_value=FakeAsyncTaskRequestService(),
         ), patch(
             "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
@@ -552,7 +552,7 @@ def test_async_patrol_create_task_publishes_task_update(control_service_server):
     async def scenario():
         control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
         with patch(
-            "server.ropi_main_service.transport.tcp_server.DeliveryRequestService",
+            "server.ropi_main_service.transport.tcp_server.build_patrol_request_service",
             return_value=FakeAsyncTaskRequestService(),
         ):
             return await control_service_server.async_dispatch_frame(request)

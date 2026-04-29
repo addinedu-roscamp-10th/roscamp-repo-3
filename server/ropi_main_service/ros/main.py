@@ -7,6 +7,7 @@ from contextlib import suppress
 from server.ropi_main_service.observability import configure_logging
 from server.ropi_main_service.ros.goal_pose_action_client import RclpyGoalPoseActionClient
 from server.ropi_main_service.ros.manipulation_action_client import RclpyManipulationActionClient
+from server.ropi_main_service.ros.patrol_path_action_client import RclpyPatrolPathActionClient
 from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
 
 
@@ -27,9 +28,11 @@ async def _run_ros_service(node_name: str):
 
     goal_pose_action_client = RclpyGoalPoseActionClient(node=node)
     manipulation_action_client = RclpyManipulationActionClient(node=node)
+    patrol_path_action_client = RclpyPatrolPathActionClient(node=node)
     uds_server = RosServiceUdsServer(
         goal_pose_action_client=goal_pose_action_client,
         manipulation_action_client=manipulation_action_client,
+        patrol_path_action_client=patrol_path_action_client,
     )
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()

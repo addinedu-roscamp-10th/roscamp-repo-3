@@ -78,8 +78,8 @@ class FallenDetectionClient(Node):
         self.get_logger().info(f"UDP image target: {self.server_ip}:{self.udp_port}")
         self.get_logger().info(f"TCP alarm server: {self.server_ip}:{self.tcp_port}")
 
-        # 순찰 시작
-        self.start_current_goal()
+        if self.auto_start_patrol:
+            self.start_current_goal()
 
     def _declare_and_load_parameters(self):
         self.declare_parameter("server_ip", "")
@@ -94,6 +94,7 @@ class FallenDetectionClient(Node):
         self.declare_parameter("jpeg_quality", 70)
         self.declare_parameter("tcp_connect_timeout_sec", 5.0)
         self.declare_parameter("tcp_reconnect_delay_sec", 1.0)
+        self.declare_parameter("auto_start_patrol", True)
         self.declare_parameter("waypoints", [""])
 
         self.server_ip = str(self.get_parameter("server_ip").value).strip()
@@ -108,6 +109,7 @@ class FallenDetectionClient(Node):
         self.jpeg_quality = int(self.get_parameter("jpeg_quality").value)
         self.tcp_connect_timeout_sec = float(self.get_parameter("tcp_connect_timeout_sec").value)
         self.tcp_reconnect_delay_sec = float(self.get_parameter("tcp_reconnect_delay_sec").value)
+        self.auto_start_patrol = bool(self.get_parameter("auto_start_patrol").value)
         self.waypoints = [
             str(waypoint).strip()
             for waypoint in list(self.get_parameter("waypoints").value)

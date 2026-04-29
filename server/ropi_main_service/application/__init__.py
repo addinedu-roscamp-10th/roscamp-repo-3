@@ -22,6 +22,7 @@ _EXPORTS = {
     "VisitorInfoService": ("visitor_info", "VisitorInfoService"),
     "VisitorRegisterService": ("visitor_register", "VisitorRegisterService"),
     "build_delivery_request_service": ("delivery_runtime", "build_delivery_request_service"),
+    "build_patrol_request_service": ("patrol_runtime", "build_patrol_request_service"),
     "get_delivery_navigation_config": ("delivery_config", "get_delivery_navigation_config"),
     "get_delivery_runtime_config": ("delivery_config", "get_delivery_runtime_config"),
     "get_default_delivery_workflow_task_manager": (

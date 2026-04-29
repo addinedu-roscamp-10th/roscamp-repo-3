@@ -3,7 +3,7 @@ import asyncio
 from server.ropi_main_service.ros.command_dispatcher import RosServiceCommandDispatcher
 
 
-class FakeAsyncGoalPoseActionClient:
+class FakeAsyncActionClient:
     def __init__(self):
         self.goal_calls = []
         self.ready_calls = []
@@ -50,6 +50,10 @@ class FakeAsyncGoalPoseActionClient:
                 },
             }
         ]
+
+
+class FakeAsyncGoalPoseActionClient(FakeAsyncActionClient):
+    pass
 
 
 class FakeAsyncManipulationActionClient:
@@ -158,6 +162,56 @@ def test_async_dispatch_prefers_async_manipulation_action_client():
     assert manipulation_client.goal_calls[0]["result_wait_timeout_sec"] == 30.0
 
 
+def test_async_dispatch_execute_patrol_path_uses_patrol_action_client():
+    patrol_client = FakeAsyncActionClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        patrol_path_action_client=patrol_client,
+    )
+    path = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {
+                "pose": {
+                    "position": {"x": 1.0, "y": 2.0, "z": 0.0},
+                    "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                }
+            }
+        ],
+    }
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "execute_patrol_path",
+                {
+                    "pinky_id": "pinky3",
+                    "goal": {
+                        "task_id": "2001",
+                        "path": path,
+                        "timeout_sec": 180,
+                    },
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "SUCCESS"
+    assert patrol_client.goal_calls == [
+        {
+            "action_name": "/ropi/control/pinky3/execute_patrol_path",
+            "goal": {
+                "task_id": "2001",
+                "path": path,
+                "timeout_sec": 180,
+            },
+            "result_wait_timeout_sec": 185.0,
+        }
+    ]
+
+
 def test_async_dispatch_runtime_status_prefers_async_readiness_checks():
     goal_client = FakeAsyncGoalPoseActionClient()
     manipulation_client = FakeAsyncManipulationActionClient()
@@ -193,6 +247,58 @@ def test_async_dispatch_runtime_status_prefers_async_readiness_checks():
             "wait_timeout_sec": 0.0,
         }
     ]
+
+
+def test_async_dispatch_runtime_status_checks_patrol_only_when_requested():
+    goal_client = FakeAsyncGoalPoseActionClient()
+    patrol_client = FakeAsyncActionClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=goal_client,
+        patrol_path_action_client=patrol_client,
+    )
+
+    async def scenario():
+        try:
+            first = await dispatcher.async_dispatch(
+                "get_runtime_status",
+                {
+                    "pinky_id": "pinky2",
+                    "arm_ids": [],
+                },
+            )
+            second = await dispatcher.async_dispatch(
+                "get_runtime_status",
+                {
+                    "pinky_id": "pinky2",
+                    "include_patrol": True,
+                    "patrol_pinky_id": "pinky3",
+                    "arm_ids": [],
+                },
+            )
+            return first, second
+        finally:
+            dispatcher.close()
+
+    first, second = asyncio.run(scenario())
+
+    assert first["checks"] == [
+        {
+            "name": "pinky2.navigate_to_goal",
+            "ready": True,
+            "action_name": "/ropi/control/pinky2/navigate_to_goal",
+        }
+    ]
+    assert patrol_client.ready_calls == [
+        {
+            "action_name": "/ropi/control/pinky3/execute_patrol_path",
+            "wait_timeout_sec": 0.0,
+        }
+    ]
+    assert second["checks"][1] == {
+        "name": "pinky3.execute_patrol_path",
+        "ready": True,
+        "action_name": "/ropi/control/pinky3/execute_patrol_path",
+    }
 
 
 def test_async_dispatch_cancel_action_cancels_matching_goal_by_task_id():

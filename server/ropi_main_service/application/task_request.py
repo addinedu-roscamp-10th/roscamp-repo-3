@@ -21,6 +21,7 @@ class DeliveryRequestService:
         self,
         repository=None,
         delivery_workflow_starter=None,
+        patrol_workflow_starter=None,
         delivery_request_precheck=None,
         async_delivery_request_precheck=None,
         command_client=None,
@@ -29,6 +30,7 @@ class DeliveryRequestService:
     ):
         self.repository = repository or DeliveryRequestRepository()
         self.delivery_workflow_starter = delivery_workflow_starter
+        self.patrol_workflow_starter = patrol_workflow_starter
         self.delivery_request_precheck = delivery_request_precheck
         self.async_delivery_request_precheck = async_delivery_request_precheck
         self.command_client = command_client or UnixDomainSocketCommandClient()
@@ -139,13 +141,15 @@ class DeliveryRequestService:
         if invalid_response is not None:
             return invalid_response
 
-        return self.repository.create_patrol_task(
+        response = self.repository.create_patrol_task(
             request_id=request_id,
             caregiver_id=caregiver_id,
             patrol_area_id=patrol_area_id,
             priority=priority,
             idempotency_key=idempotency_key,
         )
+        self._start_patrol_workflow_if_needed(response=response)
+        return response
 
     async def async_create_patrol_task(
         self,
@@ -167,15 +171,17 @@ class DeliveryRequestService:
 
         async_create = getattr(self.repository, "async_create_patrol_task", None)
         if async_create is not None:
-            return await async_create(
+            response = await async_create(
                 request_id=request_id,
                 caregiver_id=caregiver_id,
                 patrol_area_id=patrol_area_id,
                 priority=priority,
                 idempotency_key=idempotency_key,
             )
+            self._start_patrol_workflow_if_needed(response=response)
+            return response
 
-        return await asyncio.to_thread(
+        response = await asyncio.to_thread(
             self.repository.create_patrol_task,
             request_id=request_id,
             caregiver_id=caregiver_id,
@@ -183,6 +189,8 @@ class DeliveryRequestService:
             priority=priority,
             idempotency_key=idempotency_key,
         )
+        self._start_patrol_workflow_if_needed(response=response)
+        return response
 
     def cancel_delivery_task(self, task_id, action_name=None):
         invalid_response = self._validate_cancel_delivery_task_request(task_id=task_id)
@@ -561,6 +569,19 @@ class DeliveryRequestService:
             quantity=quantity,
             destination_id=destination_id,
         )
+
+    def _start_patrol_workflow_if_needed(self, *, response):
+        if response.get("result_code") != self.ACCEPTED:
+            return
+
+        if self.patrol_workflow_starter is None:
+            return
+
+        task_id = str(response.get("task_id") or "").strip()
+        if not task_id:
+            return
+
+        self.patrol_workflow_starter(task_id=task_id)
 
     def _sync_create_service_dependencies(self):
         self.create_service.repository = self.repository

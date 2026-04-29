@@ -1,0 +1,15 @@
+string task_id
+nav_msgs/Path path
+int32 timeout_sec
+---
+string result_code
+string result_message
+uint32 completed_waypoint_count
+geometry_msgs/PoseStamped final_pose
+builtin_interfaces/Time finished_at
+---
+string patrol_status
+uint32 current_waypoint_index
+uint32 total_waypoints
+geometry_msgs/PoseStamped current_pose
+float32 distance_remaining_m

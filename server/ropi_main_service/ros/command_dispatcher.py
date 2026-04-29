@@ -19,10 +19,12 @@ class RosServiceCommandDispatcher:
         *,
         goal_pose_action_client,
         manipulation_action_client=None,
+        patrol_path_action_client=None,
         runtime_config=None,
     ):
         self.goal_pose_action_client = goal_pose_action_client
         self.manipulation_action_client = manipulation_action_client
+        self.patrol_path_action_client = patrol_path_action_client
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self._dispatch_executor = ThreadPoolExecutor(
             max_workers=1,
@@ -34,6 +36,7 @@ class RosServiceCommandDispatcher:
             "get_runtime_status": self._dispatch_get_runtime_status,
             "navigate_to_goal": self._dispatch_navigate_to_goal,
             "execute_manipulation": self._dispatch_execute_manipulation,
+            "execute_patrol_path": self._dispatch_execute_patrol_path,
         }
         self._async_command_handlers = {
             "cancel_action": self._async_dispatch_cancel_action,
@@ -41,6 +44,7 @@ class RosServiceCommandDispatcher:
             "get_runtime_status": self._async_dispatch_get_runtime_status,
             "navigate_to_goal": self._async_dispatch_navigate_to_goal,
             "execute_manipulation": self._async_dispatch_execute_manipulation,
+            "execute_patrol_path": self._async_dispatch_execute_patrol_path,
         }
 
     def dispatch(self, command: str, payload: dict | None = None) -> dict:
@@ -105,6 +109,26 @@ class RosServiceCommandDispatcher:
             result_wait_timeout_sec=self.DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC,
         )
 
+    def _dispatch_execute_patrol_path(self, payload: dict) -> dict:
+        pinky_id = self._get_required_identifier(
+            payload,
+            field_name="pinky_id",
+            error_code="PINKY_ID_REQUIRED",
+            error_message="execute_patrol_path command requires pinky_id.",
+        )
+        goal = payload.get("goal") or {}
+        action_client = self._require_action_client(
+            self.patrol_path_action_client,
+            error_code="PATROL_SERVICE_UNAVAILABLE",
+            error_message="execute_patrol_path command requires patrol path action client.",
+        )
+
+        return action_client.send_goal(
+            action_name=f"/ropi/control/{pinky_id}/execute_patrol_path",
+            goal=goal,
+            result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
+        )
+
     def _dispatch_cancel_action(self, payload: dict) -> dict:
         task_id = self._get_required_identifier(
             payload,
@@ -129,6 +153,16 @@ class RosServiceCommandDispatcher:
                 self._cancel_goal(
                     self.manipulation_action_client,
                     client_name="manipulation",
+                    task_id=task_id,
+                    action_name=action_name,
+                )
+            )
+
+        if self.patrol_path_action_client is not None:
+            details.append(
+                self._cancel_goal(
+                    self.patrol_path_action_client,
+                    client_name="patrol",
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -164,6 +198,16 @@ class RosServiceCommandDispatcher:
                 self._get_latest_feedback(
                     self.manipulation_action_client,
                     client_name="manipulation",
+                    task_id=task_id,
+                    action_name=action_name,
+                )
+            )
+
+        if self.patrol_path_action_client is not None:
+            feedback.extend(
+                self._get_latest_feedback(
+                    self.patrol_path_action_client,
+                    client_name="patrol",
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -212,6 +256,27 @@ class RosServiceCommandDispatcher:
             result_wait_timeout_sec=self.DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC,
         )
 
+    async def _async_dispatch_execute_patrol_path(self, payload: dict) -> dict:
+        pinky_id = self._get_required_identifier(
+            payload,
+            field_name="pinky_id",
+            error_code="PINKY_ID_REQUIRED",
+            error_message="execute_patrol_path command requires pinky_id.",
+        )
+        goal = payload.get("goal") or {}
+        action_client = self._require_action_client(
+            self.patrol_path_action_client,
+            error_code="PATROL_SERVICE_UNAVAILABLE",
+            error_message="execute_patrol_path command requires patrol path action client.",
+        )
+
+        return await self._async_send_goal(
+            action_client,
+            action_name=f"/ropi/control/{pinky_id}/execute_patrol_path",
+            goal=goal,
+            result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
+        )
+
     async def _async_dispatch_cancel_action(self, payload: dict) -> dict:
         task_id = self._get_required_identifier(
             payload,
@@ -236,6 +301,16 @@ class RosServiceCommandDispatcher:
                 await self._async_cancel_goal(
                     self.manipulation_action_client,
                     client_name="manipulation",
+                    task_id=task_id,
+                    action_name=action_name,
+                )
+            )
+
+        if self.patrol_path_action_client is not None:
+            details.append(
+                await self._async_cancel_goal(
+                    self.patrol_path_action_client,
+                    client_name="patrol",
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -276,6 +351,16 @@ class RosServiceCommandDispatcher:
                 )
             )
 
+        if self.patrol_path_action_client is not None:
+            feedback.extend(
+                self._get_latest_feedback(
+                    self.patrol_path_action_client,
+                    client_name="patrol",
+                    task_id=task_id,
+                    action_name=action_name,
+                )
+            )
+
         return self._build_action_feedback_response(
             task_id=task_id,
             action_name=action_name,
@@ -285,6 +370,8 @@ class RosServiceCommandDispatcher:
     def _dispatch_get_runtime_status(self, payload: dict) -> dict:
         default_pinky_id = self.runtime_config.pinky_id
         pinky_id = str(payload.get("pinky_id") or default_pinky_id).strip() or default_pinky_id
+        include_patrol = bool(payload.get("include_patrol"))
+        patrol_pinky_id = str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
         arm_ids = payload.get("arm_ids") or []
         checks = []
 
@@ -299,6 +386,19 @@ class RosServiceCommandDispatcher:
                 "action_name": navigate_action_name,
             }
         )
+
+        if include_patrol and self.patrol_path_action_client is not None:
+            patrol_action_name = f"/ropi/control/{patrol_pinky_id}/execute_patrol_path"
+            checks.append(
+                {
+                    "name": f"{patrol_pinky_id}.execute_patrol_path",
+                    "ready": self.patrol_path_action_client.is_server_ready(
+                        action_name=patrol_action_name,
+                        wait_timeout_sec=0.0,
+                    ),
+                    "action_name": patrol_action_name,
+                }
+            )
 
         for arm_id in arm_ids:
             action_name = f"/ropi/arm/{arm_id}/execute_manipulation"
@@ -343,6 +443,8 @@ class RosServiceCommandDispatcher:
     async def _async_dispatch_get_runtime_status(self, payload: dict) -> dict:
         default_pinky_id = self.runtime_config.pinky_id
         pinky_id = str(payload.get("pinky_id") or default_pinky_id).strip() or default_pinky_id
+        include_patrol = bool(payload.get("include_patrol"))
+        patrol_pinky_id = str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
         arm_ids = payload.get("arm_ids") or []
         checks = []
 
@@ -358,6 +460,20 @@ class RosServiceCommandDispatcher:
                 "action_name": navigate_action_name,
             }
         )
+
+        if include_patrol and self.patrol_path_action_client is not None:
+            patrol_action_name = f"/ropi/control/{patrol_pinky_id}/execute_patrol_path"
+            checks.append(
+                {
+                    "name": f"{patrol_pinky_id}.execute_patrol_path",
+                    "ready": await self._async_is_server_ready(
+                        self.patrol_path_action_client,
+                        action_name=patrol_action_name,
+                        wait_timeout_sec=0.0,
+                    ),
+                    "action_name": patrol_action_name,
+                }
+            )
 
         for arm_id in arm_ids:
             action_name = f"/ropi/arm/{arm_id}/execute_manipulation"

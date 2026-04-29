@@ -21,6 +21,14 @@ class FakeDeliveryRequestRepository:
         self.calls.append(kwargs)
         return dict(self.response)
 
+    def create_patrol_task(self, **kwargs):
+        self.calls.append(kwargs)
+        return dict(self.response)
+
+    async def async_create_patrol_task(self, **kwargs):
+        self.calls.append(kwargs)
+        return dict(self.response)
+
 
 class FakeDeliveryWorkflowStarter:
     def __init__(self):
@@ -40,6 +48,16 @@ def build_request_payload():
         "priority": "NORMAL",
         "notes": "Medication after meals",
         "idempotency_key": "idem_delivery_001",
+    }
+
+
+def build_patrol_request_payload():
+    return {
+        "request_id": "req_patrol_001",
+        "caregiver_id": 1,
+        "patrol_area_id": "patrol_ward_night_01",
+        "priority": "NORMAL",
+        "idempotency_key": "idem_patrol_001",
     }
 
 
@@ -101,6 +119,54 @@ def test_async_create_delivery_task_starts_delivery_workflow_after_acceptance():
             "destination_id": "delivery_room_301",
         }
     ]
+
+
+def test_create_patrol_task_starts_patrol_workflow_after_acceptance():
+    repository = FakeDeliveryRequestRepository(
+        response={
+            "result_code": "ACCEPTED",
+            "task_id": 2001,
+            "task_status": "WAITING_DISPATCH",
+            "assigned_robot_id": "pinky3",
+            "patrol_area_id": "patrol_ward_night_01",
+            "patrol_area_name": "야간 병동 순찰",
+            "patrol_area_revision": 7,
+        }
+    )
+    workflow_starter = FakeDeliveryWorkflowStarter()
+    service = DeliveryRequestService(
+        repository=repository,
+        patrol_workflow_starter=workflow_starter,
+    )
+
+    response = service.create_patrol_task(**build_patrol_request_payload())
+
+    assert response["result_code"] == "ACCEPTED"
+    assert workflow_starter.calls == [{"task_id": "2001"}]
+
+
+def test_async_create_patrol_task_starts_patrol_workflow_after_acceptance():
+    repository = FakeDeliveryRequestRepository(
+        response={
+            "result_code": "ACCEPTED",
+            "task_id": 2001,
+            "task_status": "WAITING_DISPATCH",
+            "assigned_robot_id": "pinky3",
+            "patrol_area_id": "patrol_ward_night_01",
+            "patrol_area_name": "야간 병동 순찰",
+            "patrol_area_revision": 7,
+        }
+    )
+    workflow_starter = FakeDeliveryWorkflowStarter()
+    service = DeliveryRequestService(
+        repository=repository,
+        patrol_workflow_starter=workflow_starter,
+    )
+
+    response = asyncio.run(service.async_create_patrol_task(**build_patrol_request_payload()))
+
+    assert response["result_code"] == "ACCEPTED"
+    assert workflow_starter.calls == [{"task_id": "2001"}]
 
 
 def test_async_create_delivery_task_awaits_async_precheck_without_thread_offload():

@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 set(
@@ -23,6 +24,7 @@ set(
   ACTION_FILES
   "action/NavigateToGoal.action"
   "action/ArmManipulation.action"
+  "action/ExecutePatrolPath.action"
 )
 
 rosidl_generate_interfaces(
@@ -30,7 +32,7 @@ rosidl_generate_interfaces(
   ${MSG_FILES}
   ${SRV_FILES}
   ${ACTION_FILES}
-  DEPENDENCIES builtin_interfaces action_msgs geometry_msgs
+  DEPENDENCIES builtin_interfaces action_msgs geometry_msgs nav_msgs
 )
 
 

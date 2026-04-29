@@ -30,6 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             "fallen_detection_client_tcp = ropi_patrol.fallen_detection_client_tcp:main",
+            "patrol_path_action_server = ropi_patrol.patrol_path_action_server:main",
             # "fallen_alarm = ropi_patrol.fallen_alarm:main",
             "fallen_alarm_buzzer = ropi_patrol.fallen_alarm_buzzer:main",
         ],

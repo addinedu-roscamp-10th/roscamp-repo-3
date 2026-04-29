@@ -64,6 +64,11 @@ class FakeGoalPoseActionClient:
         ]
 
 
+class FakePatrolPathActionClient(FakeGoalPoseActionClient):
+    def get_latest_feedback(self, *, task_id, action_name=None):
+        return []
+
+
 def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
     socket_path = tmp_path / "ropi_ros_service.sock"
     action_client = FakeGoalPoseActionClient()
@@ -136,6 +141,71 @@ def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
             "result_message": "navigation done",
         },
     }
+
+
+def test_ros_service_uds_server_dispatches_execute_patrol_path_command(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    patrol_action_client = FakePatrolPathActionClient()
+    path = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {
+                "pose": {
+                    "position": {"x": 1.0, "y": 2.0, "z": 0.0},
+                    "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                }
+            }
+        ],
+    }
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=FakeGoalPoseActionClient(),
+            patrol_path_action_client=patrol_action_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "execute_patrol_path",
+                        "payload": {
+                            "pinky_id": "pinky3",
+                            "goal": {
+                                "task_id": "2001",
+                                "path": path,
+                                "timeout_sec": 180,
+                            },
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert patrol_action_client.calls == [
+        {
+            "action_name": "/ropi/control/pinky3/execute_patrol_path",
+            "goal": {
+                "task_id": "2001",
+                "path": path,
+                "timeout_sec": 180,
+            },
+            "result_wait_timeout_sec": 185.0,
+        }
+    ]
+    assert response["ok"] is True
+    assert response["payload"]["result_code"] == "SUCCESS"
 
 
 def test_ros_service_uds_server_dispatch_request_is_awaitable(tmp_path):
