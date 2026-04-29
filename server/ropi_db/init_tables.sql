@@ -465,7 +465,7 @@ CREATE TABLE `ai_inference_log` (
     `task_id` BIGINT UNSIGNED NULL,
     `robot_id` VARCHAR(50) NULL,
     `stream_name` VARCHAR(50) NOT NULL,
-    `frame_id` BIGINT UNSIGNED NULL,
+    `frame_id` VARCHAR(100) NULL,
     `inference_type` VARCHAR(50) NOT NULL,
     `confidence` FLOAT NULL,
     `result_json` JSON NULL,

@@ -70,6 +70,18 @@ def test_schema_contains_control_task_and_log_tables():
     assert "CREATE TABLE `map_table`" not in ddl
 
 
+def test_ai_inference_log_uses_string_frame_id_for_pat_005():
+    ddl = _ddl()
+
+    ai_inference_section = ddl.split("CREATE TABLE `ai_inference_log`", 1)[1].split(
+        "CREATE TABLE `stream_metrics_log`",
+        1,
+    )[0]
+
+    assert "`frame_id` VARCHAR(100) NULL" in ai_inference_section
+    assert "`frame_id` BIGINT UNSIGNED" not in ai_inference_section
+
+
 def test_patrol_schema_separates_area_from_operation_zone():
     ddl = _ddl()
     seed_sql = _seed_sql()
