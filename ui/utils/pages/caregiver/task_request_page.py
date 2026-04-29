@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 
+from ui.utils.config.network_config import CONTROL_SERVER_TIMEOUT
 from ui.utils.network.service_clients import DeliveryRequestRemoteService
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.admin_shell import PageHeader
@@ -78,6 +79,10 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.load_worker = None
         self.submit_thread = None
         self.submit_worker = None
+        self._worker_stop_wait_ms = max(
+            1000,
+            int((CONTROL_SERVER_TIMEOUT * 2 + 0.5) * 1000),
+        )
         self._build_ui()
 
     def _build_ui(self):
@@ -293,6 +298,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.item_combo.clear()
 
         if not ok:
+            self._items_loaded = False
             self.item_combo.addItem("물품 목록 불러오기 실패")
             self.show_inline_status(f"물품 목록을 불러오지 못했습니다. {payload}", "error")
             self.submit_btn.setText("물품 요청 등록")
@@ -389,6 +395,24 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
     def _clear_submit_thread(self):
         self.submit_thread = None
         self.submit_worker = None
+
+    def _stop_thread(self, thread):
+        if thread is None:
+            return True
+        if thread.isRunning():
+            thread.quit()
+            return bool(thread.wait(self._worker_stop_wait_ms))
+        return True
+
+    def _stop_worker_threads(self):
+        if self._stop_thread(self.load_thread):
+            self._clear_load_thread()
+        if self._stop_thread(self.submit_thread):
+            self._clear_submit_thread()
+
+    def closeEvent(self, event):
+        self._stop_worker_threads()
+        super().closeEvent(event)
 
     def _build_create_delivery_task_payload(self, current_user):
         item = self.item_combo.currentData()

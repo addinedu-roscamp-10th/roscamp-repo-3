@@ -271,6 +271,81 @@ def test_delivery_form_uses_wireframe_form_controls():
         form.close()
 
 
+def test_delivery_items_load_failure_allows_retry(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import DeliveryRequestForm
+
+    form = DeliveryRequestForm()
+    load_calls = []
+
+    def fake_load_items():
+        load_calls.append("load")
+        form.load_thread = None
+
+    monkeypatch.setattr(form, "_load_items", fake_load_items)
+
+    try:
+        form.ensure_items_loaded()
+        assert load_calls == ["load"]
+
+        form._handle_items_loaded(False, "server down")
+        assert form._items_loaded is False
+
+        form.ensure_items_loaded()
+        assert load_calls == ["load", "load"]
+    finally:
+        form.close()
+
+
+class _FakeThread:
+    def __init__(self):
+        self.quit_count = 0
+        self.wait_count = 0
+        self.wait_timeout = None
+        self._running = True
+
+    def isRunning(self):
+        return self._running
+
+    def quit(self):
+        self.quit_count += 1
+        self._running = False
+
+    def wait(self, timeout_ms):
+        self.wait_count += 1
+        self.wait_timeout = timeout_ms
+        return True
+
+
+def test_delivery_form_close_stops_running_worker_threads():
+    app = _app()
+
+    from ui.utils.pages.caregiver.task_request_page import DeliveryRequestForm
+
+    form = DeliveryRequestForm()
+    load_thread = _FakeThread()
+    submit_thread = _FakeThread()
+    form.load_thread = load_thread
+    form.load_worker = object()
+    form.submit_thread = submit_thread
+    form.submit_worker = object()
+
+    form.show()
+    app.processEvents()
+    form.close()
+    app.processEvents()
+
+    assert load_thread.quit_count == 1
+    assert load_thread.wait_count == 1
+    assert submit_thread.quit_count == 1
+    assert submit_thread.wait_count == 1
+    assert form.load_thread is None
+    assert form.load_worker is None
+    assert form.submit_thread is None
+    assert form.submit_worker is None
+
+
 def test_delivery_submit_result_panel_displays_if_del_001_response_fields(monkeypatch):
     _app()
 
