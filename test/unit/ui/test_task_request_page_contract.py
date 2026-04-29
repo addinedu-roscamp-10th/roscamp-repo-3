@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QLabel,
     QPushButton,
+    QComboBox,
     QFrame,
     QGridLayout,
     QTextEdit,
@@ -47,15 +48,18 @@ def test_task_request_page_exposes_scenario_tabs_and_preparation_states(monkeypa
         ]
         assert tabs == [
             "물품 운반",
-            "순찰 (준비 중)",
+            "순찰",
             "안내 (준비 중)",
             "추종 (준비 중)",
         ]
 
         assert page.delivery_form.submit_btn.isEnabled() is True
+        page.patrol_btn.click()
+        assert page.current_form is page.patrol_form
+        assert page.patrol_form.submit_btn.isEnabled() is False
+        assert page.patrol_form.submit_btn.text() == "순찰 요청 연동 준비 중"
 
         for button, form in [
-            (page.patrol_btn, page.patrol_form),
             (page.guide_btn, page.guide_form),
             (page.follow_btn, page.follow_form),
         ]:
@@ -142,6 +146,67 @@ def test_task_request_page_uses_content_height_form_card_and_robot_placeholder(m
         assert page.side_scroll.widget() is page.side_panel
         assert page.side_scroll.height() < page.side_panel.height()
     finally:
+        page.close()
+
+
+def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import (
+        DeliveryRequestForm,
+        TaskRequestPage,
+    )
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+    SessionManager.login(UserSession(user_id="7", name="김보호", role="caregiver"))
+
+    page = TaskRequestPage()
+
+    try:
+        page.patrol_btn.click()
+
+        form = page.patrol_form
+        assert form.findChild(QGridLayout, "patrolFormGrid") is not None
+        assert form.patrol_area_combo.isEditable() is True
+        assert form.patrol_area_combo.completer() is not None
+
+        area_combo = form.findChild(QComboBox, "patrolAreaCombo")
+        assert area_combo is form.patrol_area_combo
+
+        priority_buttons = [
+            button.text()
+            for button in form.findChildren(QPushButton)
+            if button.objectName() == "prioritySegmentButton"
+        ]
+        assert priority_buttons == ["일반", "긴급", "최우선"]
+
+        form.set_priority("URGENT")
+        form.emit_preview_changed()
+
+        assert page.preview_caregiver_id.text() == "7"
+        assert page.preview_item.text() == "야간 병동 순찰"
+        assert page.preview_quantity.text() == "patrol_ward_night_01"
+        assert page.preview_destination.text() == "pinky3"
+        assert page.preview_priority.text() == "긴급"
+        assert page.robot_id_label.text() == "pinky3"
+        assert page.robot_state_label.text() == "feedback 수신 전"
+        assert page.robot_pose_label.text() == "미수신"
+        assert page.robot_destination_label.text() == "미수신"
+        assert page.robot_map_label.text() == "순찰 경로 / waypoint placeholder"
+
+        payload = form._build_create_patrol_task_payload(SessionManager.current_user())
+        assert payload["caregiver_id"] == 7
+        assert payload["patrol_area_id"] == "patrol_ward_night_01"
+        assert payload["priority"] == "URGENT"
+        assert "notes" not in payload
+        assert payload["request_id"].startswith("req_patrol_")
+        assert payload["idempotency_key"].startswith("idem_patrol_")
+
+        notes = form.findChild(QTextEdit, "patrolNotesInput")
+        assert notes is form.notes_input
+        assert notes.maximumHeight() <= 88
+    finally:
+        SessionManager.logout()
         page.close()
 
 

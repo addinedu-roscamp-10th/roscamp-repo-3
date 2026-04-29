@@ -533,13 +533,181 @@ class NotReadyScenarioForm(QWidget):
         return
 
 
-class PatrolRequestForm(NotReadyScenarioForm):
+class PatrolRequestForm(QWidget):
+    preview_changed = pyqtSignal(object)
+
+    PATROL_AREA_OPTIONS = (
+        (
+            "야간 병동 순찰 (rev 7, 활성)",
+            {
+                "patrol_area_id": "patrol_ward_night_01",
+                "patrol_area_name": "야간 병동 순찰",
+                "patrol_area_revision": 7,
+                "active": True,
+                "assigned_robot_id": "pinky3",
+            },
+        ),
+    )
+
     def __init__(self):
-        super().__init__(
-            "순찰",
-            ["patrol_area_id", "patrol_area_name", "priority", "notes"],
-            "pinky3 순찰 workflow가 서버와 연결되면 이 입력 구조를 실제 폼으로 전환합니다.",
+        super().__init__()
+        self._build_ui()
+
+    def _build_ui(self):
+        self.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
         )
+
+        root = QVBoxLayout(self)
+        root.setSpacing(16)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        form_title = QLabel("순찰 작업 설정")
+        form_title.setObjectName("sectionTitle")
+        form_title.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
+
+        self.form_grid = QGridLayout()
+        self.form_grid.setObjectName("patrolFormGrid")
+        self.form_grid.setHorizontalSpacing(18)
+        self.form_grid.setVerticalSpacing(6)
+        self.form_grid.setColumnStretch(0, 1)
+        self.form_grid.setColumnStretch(1, 1)
+
+        self.patrol_area_combo = QComboBox()
+        self.patrol_area_combo.setObjectName("patrolAreaCombo")
+        DeliveryRequestForm._configure_searchable_combo(
+            self.patrol_area_combo,
+            "순찰 구역명 또는 patrol_area_id 검색",
+        )
+        for label, area in self.PATROL_AREA_OPTIONS:
+            self.patrol_area_combo.addItem(label, area)
+        self.patrol_area_combo.setMinimumHeight(44)
+
+        self.priority_group = QButtonGroup(self)
+        self.priority_group.setExclusive(True)
+        self.priority_buttons = {}
+        self.priority_segment = QFrame()
+        self.priority_segment.setObjectName("prioritySegment")
+        priority_layout = QHBoxLayout(self.priority_segment)
+        priority_layout.setContentsMargins(4, 4, 4, 4)
+        priority_layout.setSpacing(6)
+
+        for code in ["NORMAL", "URGENT", "HIGHEST"]:
+            button = QPushButton(DeliveryRequestForm.PRIORITY_CODE_TO_LABEL[code])
+            button.setObjectName("prioritySegmentButton")
+            button.setCheckable(True)
+            button.clicked.connect(
+                lambda _checked=False, priority=code: self.set_priority(priority)
+            )
+            self.priority_buttons[code] = button
+            self.priority_group.addButton(button)
+            priority_layout.addWidget(button)
+
+        self.notes_input = QTextEdit()
+        self.notes_input.setObjectName("patrolNotesInput")
+        self.notes_input.setPlaceholderText(
+            "순찰 요청 메모를 입력하세요. PAT-001 payload에는 포함하지 않습니다."
+        )
+        self.notes_input.setFixedHeight(84)
+
+        self.submit_btn = QPushButton("순찰 요청 연동 준비 중")
+        self.submit_btn.setObjectName("secondaryButton")
+        self.submit_btn.setEnabled(False)
+
+        self.form_grid.addWidget(
+            DeliveryRequestForm._field_group("순찰 구역", self.patrol_area_combo),
+            0,
+            0,
+            1,
+            2,
+        )
+        self.form_grid.addWidget(
+            DeliveryRequestForm._field_group("우선순위", self.priority_segment),
+            1,
+            0,
+            1,
+            2,
+        )
+        self.notes_field_group = DeliveryRequestForm._field_group(
+            "요청 메모",
+            self.notes_input,
+            object_name="notesFieldGroup",
+            spacing=2,
+        )
+        self.form_grid.addWidget(
+            self.notes_field_group,
+            2,
+            0,
+            1,
+            2,
+        )
+
+        root.addWidget(form_title)
+        root.addLayout(self.form_grid)
+        root.addWidget(self.submit_btn)
+
+        self.patrol_area_combo.currentIndexChanged.connect(self.emit_preview_changed)
+        self.notes_input.textChanged.connect(self.emit_preview_changed)
+        self.set_priority("NORMAL")
+
+    def set_priority(self, priority_code):
+        normalized = str(priority_code or "NORMAL").upper()
+        if normalized not in self.priority_buttons:
+            normalized = "NORMAL"
+
+        self._priority_code = normalized
+        self.priority_buttons[normalized].setChecked(True)
+        self.emit_preview_changed()
+
+    def get_priority_code(self):
+        return getattr(self, "_priority_code", "NORMAL")
+
+    def _selected_area(self):
+        area = self.patrol_area_combo.currentData()
+        return area if isinstance(area, dict) else {}
+
+    def _build_create_patrol_task_payload(self, current_user):
+        if current_user is None:
+            raise ValueError("로그인 사용자가 없습니다.")
+
+        area = self._selected_area()
+        patrol_area_id = str(area.get("patrol_area_id") or "").strip()
+        if not patrol_area_id:
+            raise ValueError("순찰 구역을 선택하세요.")
+
+        return {
+            "request_id": f"req_patrol_{uuid4().hex}",
+            "caregiver_id": int(current_user.user_id),
+            "patrol_area_id": patrol_area_id,
+            "priority": self.get_priority_code(),
+            "idempotency_key": f"idem_patrol_{uuid4().hex}",
+        }
+
+    def emit_preview_changed(self):
+        self.preview_changed.emit(self._build_preview_payload())
+
+    def _build_preview_payload(self):
+        current_user = SessionManager.current_user()
+        area = self._selected_area()
+        return {
+            "task_type": "PATROL",
+            "caregiver_id": current_user.user_id if current_user else None,
+            "patrol_area_id": area.get("patrol_area_id"),
+            "patrol_area_name": area.get("patrol_area_name"),
+            "patrol_area_revision": area.get("patrol_area_revision"),
+            "priority": self.get_priority_code(),
+            "assigned_robot_id": area.get("assigned_robot_id") or "pinky3",
+        }
+
+    def reset_form(self):
+        self.patrol_area_combo.setCurrentIndex(0)
+        self.set_priority("NORMAL")
+        self.notes_input.clear()
+        self.emit_preview_changed()
 
 
 class GuideRequestForm(NotReadyScenarioForm):
@@ -582,11 +750,23 @@ class TaskRequestSidePanel(QWidget):
         preview_title = QLabel("요청 미리보기")
         preview_title.setObjectName("sectionTitle")
 
-        caregiver_row, self.preview_caregiver_id = self._metric_row("요청자")
-        item_row, self.preview_item = self._metric_row("물품")
-        quantity_row, self.preview_quantity = self._metric_row("수량", "1개")
-        destination_row, self.preview_destination = self._metric_row("목적지")
-        priority_row, self.preview_priority = self._metric_row(
+        (
+            caregiver_row,
+            self.preview_caregiver_label,
+            self.preview_caregiver_id,
+        ) = self._metric_row("요청자")
+        item_row, self.preview_item_label, self.preview_item = self._metric_row("물품")
+        (
+            quantity_row,
+            self.preview_quantity_label,
+            self.preview_quantity,
+        ) = self._metric_row("수량", "1개")
+        (
+            destination_row,
+            self.preview_destination_label,
+            self.preview_destination,
+        ) = self._metric_row("목적지")
+        priority_row, self.preview_priority_label, self.preview_priority = self._metric_row(
             "우선순위",
             "일반",
             "priorityChip",
@@ -608,23 +788,36 @@ class TaskRequestSidePanel(QWidget):
         robot_title = QLabel("실시간 로봇 상태")
         robot_title.setObjectName("sectionTitle")
 
-        robot_id_row, self.robot_id_label = self._metric_row("로봇", "pinky2")
-        robot_state_row, self.robot_state_label = self._metric_row(
+        robot_id_row, self.robot_id_text_label, self.robot_id_label = self._metric_row(
+            "로봇",
+            "pinky2",
+        )
+        (
+            robot_state_row,
+            self.robot_state_text_label,
+            self.robot_state_label,
+        ) = self._metric_row(
             "상태",
             "feedback 수신 전",
             "robotStateChip",
         )
-        robot_pose_row, self.robot_pose_label = self._metric_row("위치", "미수신")
-        robot_destination_row, self.robot_destination_label = self._metric_row("목적지")
+        robot_pose_row, self.robot_pose_text_label, self.robot_pose_label = (
+            self._metric_row("위치", "미수신")
+        )
+        (
+            robot_destination_row,
+            self.robot_destination_text_label,
+            self.robot_destination_label,
+        ) = self._metric_row("목적지")
 
         self.robot_map_placeholder = QFrame()
         self.robot_map_placeholder.setObjectName("robotMapPlaceholder")
         map_layout = QVBoxLayout(self.robot_map_placeholder)
         map_layout.setContentsMargins(16, 16, 16, 16)
-        map_label = QLabel("지도 / 위치 placeholder")
-        map_label.setObjectName("mutedText")
-        map_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        map_layout.addWidget(map_label)
+        self.robot_map_label = QLabel("지도 / 위치 placeholder")
+        self.robot_map_label.setObjectName("mutedText")
+        self.robot_map_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        map_layout.addWidget(self.robot_map_label)
 
         robot_layout.addWidget(robot_title)
         robot_layout.addWidget(robot_id_row)
@@ -646,11 +839,23 @@ class TaskRequestSidePanel(QWidget):
         self.result_message_label.setObjectName("resultMessage")
         self.result_message_label.setWordWrap(True)
 
-        result_code_row, self.result_code_label = self._metric_row("결과")
-        reason_row, self.reason_code_label = self._metric_row("사유")
-        task_id_row, self.task_id_label = self._metric_row("task_id")
-        task_status_row, self.task_status_label = self._metric_row("상태")
-        assigned_robot_row, self.assigned_robot_id_label = self._metric_row("배정 로봇")
+        result_code_row, self.result_code_text_label, self.result_code_label = (
+            self._metric_row("결과")
+        )
+        reason_row, self.reason_code_text_label, self.reason_code_label = (
+            self._metric_row("사유")
+        )
+        task_id_row, self.task_id_text_label, self.task_id_label = (
+            self._metric_row("task_id")
+        )
+        task_status_row, self.task_status_text_label, self.task_status_label = (
+            self._metric_row("상태")
+        )
+        (
+            assigned_robot_row,
+            self.assigned_robot_text_label,
+            self.assigned_robot_id_label,
+        ) = self._metric_row("배정 로봇")
 
         result_layout.addWidget(result_title)
         result_layout.addWidget(self.result_message_label)
@@ -702,10 +907,15 @@ class TaskRequestSidePanel(QWidget):
         row_layout.addWidget(label)
         row_layout.addStretch(1)
         row_layout.addWidget(value)
-        return row, value
+        return row, label, value
 
     def update_preview(self, preview):
         preview = preview or {}
+        if preview.get("task_type") == "PATROL":
+            self.update_patrol_preview(preview)
+            return
+
+        self.set_delivery_context()
         item_id = self._display(preview.get("item_id"))
         item_name = self._display(preview.get("item_name"))
         item_text = "-"
@@ -721,6 +931,46 @@ class TaskRequestSidePanel(QWidget):
             self._priority_label(preview.get("priority"))
         )
         self.robot_destination_label.setText(destination_id)
+
+    def update_patrol_preview(self, preview):
+        self.set_patrol_context()
+        area_name = self._display(preview.get("patrol_area_name"))
+        area_id = self._display(preview.get("patrol_area_id"))
+        assigned_robot_id = self._display(preview.get("assigned_robot_id") or "pinky3")
+
+        self.preview_caregiver_id.setText(self._display(preview.get("caregiver_id")))
+        self.preview_item.setText(area_name)
+        self.preview_quantity.setText(area_id)
+        self.preview_destination.setText(assigned_robot_id)
+        self.preview_priority.setText(
+            self._priority_label(preview.get("priority"))
+        )
+        self.robot_id_label.setText(assigned_robot_id)
+        self.robot_state_label.setText("feedback 수신 전")
+        self.robot_pose_label.setText("미수신")
+        self.robot_destination_label.setText("미수신")
+
+    def set_delivery_context(self):
+        self.preview_item_label.setText("물품")
+        self.preview_quantity_label.setText("수량")
+        self.preview_destination_label.setText("목적지")
+        self.robot_id_text_label.setText("로봇")
+        self.robot_state_text_label.setText("상태")
+        self.robot_pose_text_label.setText("위치")
+        self.robot_destination_text_label.setText("목적지")
+        self.robot_map_label.setText("지도 / 위치 placeholder")
+        if self.robot_id_label.text() == "pinky3":
+            self.robot_id_label.setText("pinky2")
+
+    def set_patrol_context(self):
+        self.preview_item_label.setText("순찰 구역")
+        self.preview_quantity_label.setText("구역 ID")
+        self.preview_destination_label.setText("배정 후보")
+        self.robot_id_text_label.setText("로봇")
+        self.robot_state_text_label.setText("상태")
+        self.robot_pose_text_label.setText("위치")
+        self.robot_destination_text_label.setText("waypoint")
+        self.robot_map_label.setText("순찰 경로 / waypoint placeholder")
 
     def show_delivery_result(self, response):
         response = response or {}
@@ -767,7 +1017,7 @@ class TaskRequestPage(QWidget):
         top_tabs.setSpacing(12)
 
         self.delivery_btn = QPushButton("물품 운반")
-        self.patrol_btn = QPushButton("순찰 (준비 중)")
+        self.patrol_btn = QPushButton("순찰")
         self.guide_btn = QPushButton("안내 (준비 중)")
         self.follow_btn = QPushButton("추종 (준비 중)")
 
@@ -854,6 +1104,7 @@ class TaskRequestPage(QWidget):
         self.robot_state_label = self.side_panel.robot_state_label
         self.robot_pose_label = self.side_panel.robot_pose_label
         self.robot_destination_label = self.side_panel.robot_destination_label
+        self.robot_map_label = self.side_panel.robot_map_label
 
         root.addWidget(
             PageHeader("작업 요청", "작업 종류를 선택하여 해당 요청을 등록하세요.")
@@ -876,6 +1127,7 @@ class TaskRequestPage(QWidget):
 
         self.delivery_form.preview_changed.connect(self.side_panel.update_preview)
         self.delivery_form.result_received.connect(self.side_panel.show_delivery_result)
+        self.patrol_form.preview_changed.connect(self.side_panel.update_preview)
 
         for form in self.forms:
             form.hide()
@@ -926,11 +1178,14 @@ class TaskRequestPage(QWidget):
 
     def show_delivery_page(self):
         self._show_form(self.delivery_form)
+        self.side_panel.set_delivery_context()
+        self.delivery_form.emit_preview_changed()
         QTimer.singleShot(0, self.delivery_form.ensure_items_loaded)
         print("[task_request] switched to delivery page")
 
     def show_patrol_page(self):
         self._show_form(self.patrol_form)
+        self.patrol_form.emit_preview_changed()
         print("[task_request] switched to patrol page")
 
     def show_guide_page(self):
