@@ -65,6 +65,21 @@ class FakeGoalPoseActionClient:
 
 
 class FakePatrolPathActionClient(FakeGoalPoseActionClient):
+    def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
+        self.calls.append(
+            {
+                "action_name": action_name,
+                "goal": goal,
+                "result_wait_timeout_sec": result_wait_timeout_sec,
+            }
+        )
+        return {
+            "accepted": True,
+            "status": 4,
+            "result_code": "SUCCEEDED",
+            "result_message": "patrol done",
+        }
+
     def get_latest_feedback(self, *, task_id, action_name=None):
         return []
 
@@ -205,7 +220,7 @@ def test_ros_service_uds_server_dispatches_execute_patrol_path_command(tmp_path)
         }
     ]
     assert response["ok"] is True
-    assert response["payload"]["result_code"] == "SUCCESS"
+    assert response["payload"]["result_code"] == "SUCCEEDED"
 
 
 def test_ros_service_uds_server_dispatch_request_is_awaitable(tmp_path):

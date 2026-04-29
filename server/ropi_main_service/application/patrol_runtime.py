@@ -28,6 +28,13 @@ def _normalize_workflow_response(result):
     }
 
 
+def _is_successful_patrol_result(result):
+    return str((result or {}).get("result_code") or "").upper() in {
+        "SUCCEEDED",
+        "SUCCESS",
+    }
+
+
 def build_patrol_request_service(
     *,
     loop=None,
@@ -96,7 +103,7 @@ def build_patrol_request_service(
                         "reason_code": "WORKFLOW_UNHANDLED_EXCEPTION",
                     }
 
-                level = logging.INFO if str(result.get("result_code") or "").upper() == "SUCCESS" else logging.WARNING
+                level = logging.INFO if _is_successful_patrol_result(result) else logging.WARNING
                 log_event(
                     logger,
                     level,

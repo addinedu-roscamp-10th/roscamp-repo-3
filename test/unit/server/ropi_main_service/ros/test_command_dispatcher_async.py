@@ -56,6 +56,17 @@ class FakeAsyncGoalPoseActionClient(FakeAsyncActionClient):
     pass
 
 
+class FakeAsyncPatrolActionClient(FakeAsyncActionClient):
+    async def async_send_goal(self, **kwargs):
+        self.goal_calls.append(kwargs)
+        return {
+            "accepted": True,
+            "status": 4,
+            "result_code": "SUCCEEDED",
+            "result_message": "patrol done",
+        }
+
+
 class FakeAsyncManipulationActionClient:
     def __init__(self):
         self.goal_calls = []
@@ -163,7 +174,7 @@ def test_async_dispatch_prefers_async_manipulation_action_client():
 
 
 def test_async_dispatch_execute_patrol_path_uses_patrol_action_client():
-    patrol_client = FakeAsyncActionClient()
+    patrol_client = FakeAsyncPatrolActionClient()
     dispatcher = RosServiceCommandDispatcher(
         goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
         patrol_path_action_client=patrol_client,
@@ -198,7 +209,7 @@ def test_async_dispatch_execute_patrol_path_uses_patrol_action_client():
 
     response = asyncio.run(scenario())
 
-    assert response["result_code"] == "SUCCESS"
+    assert response["result_code"] == "SUCCEEDED"
     assert patrol_client.goal_calls == [
         {
             "action_name": "/ropi/control/pinky3/execute_patrol_path",

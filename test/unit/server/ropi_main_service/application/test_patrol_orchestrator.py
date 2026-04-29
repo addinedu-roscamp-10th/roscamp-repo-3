@@ -7,7 +7,7 @@ class FakePatrolPathExecutionService:
     def __init__(self, result=None):
         self.calls = []
         self.result = result or {
-            "result_code": "SUCCESS",
+            "result_code": "SUCCEEDED",
             "result_message": "patrol completed",
             "completed_waypoint_count": 2,
         }
@@ -51,7 +51,7 @@ def test_patrol_orchestrator_executes_patrol_path_once():
         )
     )
 
-    assert response["result_code"] == "SUCCESS"
+    assert response["result_code"] == "SUCCEEDED"
     assert execution_service.calls == [
         {
             "task_id": 2001,
@@ -82,3 +82,7 @@ def test_patrol_orchestrator_normalizes_failure_response():
 
     assert response["result_code"] == "FAILED"
     assert response["reason_code"] == "PATROL_PATH_ACTION_FAILED"
+
+
+def test_patrol_orchestrator_accepts_legacy_success_code_for_old_robot_adapter():
+    assert PatrolOrchestrator._is_success({"result_code": "SUCCESS"}) is True

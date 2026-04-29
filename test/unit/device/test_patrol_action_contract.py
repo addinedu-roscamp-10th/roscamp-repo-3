@@ -28,6 +28,12 @@ def test_execute_patrol_path_action_matches_if_pat_003_contract():
     assert "nav_msgs" in cmake
     assert "<depend>nav_msgs</depend>" in package_xml
 
+    action_server = (PATROL_ROOT / "ropi_patrol" / "patrol_path_action_server.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'result.result_code = "SUCCEEDED"' in action_server
+    assert 'result.result_code = "SUCCESS"' not in action_server
+
 
 def test_ropi_patrol_launch_exposes_control_managed_patrol_action_server():
     setup_py = (PATROL_ROOT / "setup.py").read_text(encoding="utf-8")

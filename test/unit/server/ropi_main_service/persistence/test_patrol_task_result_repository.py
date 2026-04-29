@@ -45,7 +45,7 @@ def test_async_record_patrol_task_workflow_result_finalizes_success(monkeypatch)
     )
 
     workflow_response = {
-        "result_code": "SUCCESS",
+        "result_code": "SUCCEEDED",
         "result_message": "patrol completed",
         "completed_waypoint_count": 3,
     }
@@ -56,7 +56,7 @@ def test_async_record_patrol_task_workflow_result_finalizes_success(monkeypatch)
         )
     )
 
-    assert response["result_code"] == "SUCCESS"
+    assert response["result_code"] == "SUCCEEDED"
     assert response["task_status"] == "COMPLETED"
     assert response["assigned_robot_id"] == "pinky3"
     assert response["workflow_result"] == workflow_response
@@ -76,7 +76,7 @@ def test_async_record_patrol_task_workflow_result_finalizes_success(monkeypatch)
         "COMPLETED",
         "COMPLETED",
         None,
-        "SUCCESS",
+        "SUCCEEDED",
         "patrol completed",
     )
     assert cursor.calls[2][1] == ("COMPLETED", 2, 2001)
@@ -84,10 +84,38 @@ def test_async_record_patrol_task_workflow_result_finalizes_success(monkeypatch)
         "PATROL_TASK_COMPLETED",
         "INFO",
         "pinky3",
-        "SUCCESS",
+        "SUCCEEDED",
         None,
         "patrol completed",
     )
+
+
+def test_async_record_patrol_task_workflow_result_normalizes_legacy_success(monkeypatch):
+    cursor = RecordingAsyncCursor(
+        row={
+            "task_id": 2001,
+            "task_status": "RUNNING",
+            "phase": "PATROL_PATH_EXECUTION",
+            "assigned_robot_id": "pinky3",
+            "patrol_status": "RUNNING",
+            "waypoint_count": 3,
+        }
+    )
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.patrol_task_result_repository.async_transaction",
+        lambda: FakeAsyncTransaction(cursor),
+    )
+
+    response = asyncio.run(
+        PatrolTaskResultRepository().async_record_patrol_task_workflow_result(
+            task_id="2001",
+            workflow_response={"result_code": "SUCCESS"},
+        )
+    )
+
+    assert response["result_code"] == "SUCCEEDED"
+    assert response["task_status"] == "COMPLETED"
+    assert cursor.calls[1][1][3] == "SUCCEEDED"
 
 
 def test_async_record_patrol_task_workflow_result_finalizes_failure(monkeypatch):
@@ -159,7 +187,7 @@ def test_async_record_patrol_task_workflow_result_ignores_terminal_task(monkeypa
     response = asyncio.run(
         PatrolTaskResultRepository().async_record_patrol_task_workflow_result(
             task_id="2001",
-            workflow_response={"result_code": "SUCCESS"},
+            workflow_response={"result_code": "SUCCEEDED"},
         )
     )
 

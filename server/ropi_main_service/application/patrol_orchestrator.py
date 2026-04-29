@@ -70,7 +70,10 @@ class PatrolOrchestrator:
 
     @staticmethod
     def _is_success(response):
-        return str((response or {}).get("result_code") or "").upper() == "SUCCESS"
+        return str((response or {}).get("result_code") or "").upper() in {
+            "SUCCEEDED",
+            "SUCCESS",
+        }
 
     @staticmethod
     async def _await_if_needed(value):

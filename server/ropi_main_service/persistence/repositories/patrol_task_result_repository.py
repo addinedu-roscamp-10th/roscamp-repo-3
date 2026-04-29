@@ -192,14 +192,14 @@ class PatrolTaskResultRepository:
         result_message = workflow_response.get("result_message")
         reason_code = workflow_response.get("reason_code")
 
-        if result_code == "SUCCESS":
+        if result_code in {"SUCCEEDED", "SUCCESS"}:
             return {
                 "task_status": TASK_STATUS_COMPLETED,
                 "phase": TASK_STATUS_COMPLETED,
                 "patrol_status": TASK_STATUS_COMPLETED,
                 "event_name": "PATROL_TASK_COMPLETED",
                 "severity": "INFO",
-                "result_code": result_code,
+                "result_code": "SUCCEEDED",
                 "reason_code": reason_code,
                 "result_message": result_message or "순찰 task가 완료되었습니다.",
             }

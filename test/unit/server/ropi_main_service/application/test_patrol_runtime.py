@@ -37,7 +37,7 @@ class FakeOrchestrator:
     async def async_run(self, **kwargs):
         self.calls.append(kwargs)
         return {
-            "result_code": "SUCCESS",
+            "result_code": "SUCCEEDED",
             "result_message": "patrol completed",
         }
 
@@ -48,7 +48,7 @@ class FakeTaskRequestRepository:
 
     async def async_record_patrol_task_workflow_result(self, **kwargs):
         self.workflow_result_calls.append(kwargs)
-        return {"result_code": "SUCCESS", "task_status": "COMPLETED"}
+        return {"result_code": "SUCCEEDED", "task_status": "COMPLETED"}
 
 
 def test_build_patrol_request_service_starts_background_patrol_workflow():
@@ -95,7 +95,7 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
         {
             "task_id": "2001",
             "workflow_response": {
-                "result_code": "SUCCESS",
+                "result_code": "SUCCEEDED",
                 "result_message": "patrol completed",
             },
         }

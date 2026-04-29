@@ -12,7 +12,7 @@ class FakeRosCommandClient:
     def __init__(self, result=None):
         self.calls = []
         self.result = result or {
-            "result_code": "SUCCESS",
+            "result_code": "SUCCEEDED",
             "result_message": "patrol done",
             "completed_waypoint_count": 2,
         }
@@ -94,7 +94,7 @@ def test_execute_patrol_path_sends_if_pat_003_command_to_ros_service():
         timeout_sec=180,
     )
 
-    assert response["result_code"] == "SUCCESS"
+    assert response["result_code"] == "SUCCEEDED"
     assert command_client.calls == [
         {
             "command": "execute_patrol_path",
@@ -169,7 +169,7 @@ def test_async_execute_patrol_path_uses_async_ros_command_client():
         )
     )
 
-    assert response["result_code"] == "SUCCESS"
+    assert response["result_code"] == "SUCCEEDED"
     assert command_client.calls[0]["command"] == "execute_patrol_path"
 
 
@@ -181,6 +181,25 @@ def test_execute_patrol_path_rejects_empty_path_snapshot():
 
     with pytest.raises(ValueError, match="waypoint"):
         service.execute(task_id=2001, path_snapshot_json={"poses": []}, timeout_sec=180)
+
+
+def test_execute_patrol_path_allows_zero_timeout_for_no_explicit_action_timeout():
+    command_client = FakeRosCommandClient()
+    service = PatrolPathExecutionService(
+        command_client=command_client,
+        runtime_config=PatrolRuntimeConfig(pinky_id="pinky3"),
+        command_execution_recorder=RecordingCommandExecutionRecorder(),
+    )
+
+    response = service.execute(
+        task_id=2001,
+        path_snapshot_json=build_path_snapshot(),
+        timeout_sec=0,
+    )
+
+    assert response["result_code"] == "SUCCEEDED"
+    assert command_client.calls[0]["payload"]["goal"]["timeout_sec"] == 0
+    assert command_client.calls[0]["timeout"] == 30.0
 
 
 def test_execute_patrol_path_converts_config_waypoints_to_pose_stamped_path():

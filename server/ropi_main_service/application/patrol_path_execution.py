@@ -209,8 +209,8 @@ class PatrolPathExecutionService:
     def _validate_request(*, task_id, timeout_sec):
         if not str(task_id or "").strip():
             raise ValueError("task_id가 필요합니다.")
-        if int(timeout_sec) <= 0:
-            raise ValueError("timeout_sec는 1 이상이어야 합니다.")
+        if int(timeout_sec) < 0:
+            raise ValueError("timeout_sec는 0 이상이어야 합니다.")
 
     def _get_command_client(self):
         if self.command_client is None:

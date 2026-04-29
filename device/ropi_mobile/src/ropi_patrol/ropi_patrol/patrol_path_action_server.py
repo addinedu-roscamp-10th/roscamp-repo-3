@@ -49,12 +49,17 @@ class PatrolPathActionServer(Node):
         self.get_logger().info(f"READY robot_id={self.robot_id} action={self.action_name}")
 
     def goal_callback(self, goal_request):
+        waypoint_count = len(getattr(goal_request.path, "poses", []) or [])
         with self.lock:
             if self.is_busy:
                 return GoalResponse.REJECT
+            if waypoint_count <= 0:
+                self.get_logger().warning(
+                    f"PATROL GOAL REJECTED task_id={goal_request.task_id}, waypoints=0"
+                )
+                return GoalResponse.REJECT
             self.is_busy = True
 
-        waypoint_count = len(getattr(goal_request.path, "poses", []) or [])
         self.get_logger().info(
             f"PATROL GOAL RECEIVED task_id={goal_request.task_id}, waypoints={waypoint_count}"
         )
@@ -74,7 +79,7 @@ class PatrolPathActionServer(Node):
             poses = list(path.poses or [])
             if not poses:
                 goal_handle.abort()
-                result.result_code = "FAILED"
+                result.result_code = "REJECTED"
                 result.result_message = "patrol path has no waypoint."
                 result.completed_waypoint_count = 0
                 result.final_pose = final_pose
@@ -128,7 +133,7 @@ class PatrolPathActionServer(Node):
                 return result
 
             goal_handle.succeed()
-            result.result_code = "SUCCESS"
+            result.result_code = "SUCCEEDED"
             result.result_message = "patrol path completed."
             result.completed_waypoint_count = completed_count
             result.final_pose = final_pose
