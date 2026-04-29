@@ -2,8 +2,7 @@ from uuid import uuid4
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QApplication, QPushButton, QComboBox, QLineEdit, QTextEdit, QScrollArea,
-    QListWidget, QListWidgetItem, QSpinBox
+    QApplication, QPushButton, QComboBox, QTextEdit, QScrollArea, QSpinBox
 )
 from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 
@@ -27,7 +26,7 @@ class DeliveryItemsLoadWorker(QObject):
 
 
 class DeliverySubmitWorker(QObject):
-    finished = pyqtSignal(bool, str)
+    finished = pyqtSignal(bool, object)
 
     def __init__(self, payload):
         super().__init__()
@@ -37,26 +36,27 @@ class DeliverySubmitWorker(QObject):
         service = DeliveryRequestRemoteService()
 
         try:
-            response = service.create_delivery_task(**self.payload)
-            result_code = str(response.get("result_code", ""))
-
-            if result_code == "ACCEPTED":
-                task_id = response.get("task_id")
-                message = response.get("result_message") or "물품 요청이 접수되었습니다."
-                if task_id:
-                    message = f"{message} (task_id={task_id})"
-                self.finished.emit(True, message)
-                return
-
-            message = response.get("result_message") or str(
-                response.get("reason_code", "물품 요청 처리에 실패했습니다.")
-            )
-            self.finished.emit(False, message)
+            response = service.create_delivery_task(**self.payload) or {}
+            result_code = str(response.get("result_code", "")).upper()
+            self.finished.emit(result_code == "ACCEPTED", response)
         except Exception as exc:
-            self.finished.emit(False, f"물품 요청 처리 중 오류가 발생했습니다.\n{exc}")
+            self.finished.emit(
+                False,
+                {
+                    "result_code": "CLIENT_ERROR",
+                    "result_message": f"물품 요청 처리 중 오류가 발생했습니다.\n{exc}",
+                    "reason_code": "CLIENT_EXCEPTION",
+                    "task_id": None,
+                    "task_status": None,
+                    "assigned_robot_id": None,
+                },
+            )
 
 
 class DeliveryRequestForm(QWidget, InlineStatusMixin):
+    preview_changed = pyqtSignal(object)
+    result_received = pyqtSignal(object)
+
     DESTINATION_OPTIONS = (
         ("301호", "delivery_room_301"),
     )
@@ -98,7 +98,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.priority_combo.setMinimumHeight(44)
 
         self.detail_input = QTextEdit()
-        self.detail_input.setPlaceholderText("요청 상세 내용을 입력하세요.")
+        self.detail_input.setPlaceholderText("배송 시 주의사항이나 수령인 정보를 입력하세요.")
         self.detail_input.setMinimumHeight(120)
         self.init_inline_status()
 
@@ -123,6 +123,12 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         root.addWidget(self.status_label)
 
         root.addWidget(self.submit_btn)
+
+        self.item_combo.currentIndexChanged.connect(self.emit_preview_changed)
+        self.quantity_input.valueChanged.connect(self.emit_preview_changed)
+        self.destination_combo.currentIndexChanged.connect(self.emit_preview_changed)
+        self.priority_combo.currentIndexChanged.connect(self.emit_preview_changed)
+        self.detail_input.textChanged.connect(self.emit_preview_changed)
 
     def ensure_items_loaded(self):
         if not self._items_loaded and self.load_thread is None:
@@ -182,6 +188,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
             display_name = self._build_item_display_name(item)
             self.item_combo.addItem(display_name, item)
+        self.emit_preview_changed()
 
     def _clear_load_thread(self):
         self.load_thread = None
@@ -222,12 +229,26 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
         self.submit_thread.start()
 
-    def _handle_submit_finished(self, success, message):
+    def _handle_submit_finished(self, success, response):
         print(f"[task_request] delivery submit finished: success={success}")
         self.submit_btn.setText("물품 요청 등록")
         self.submit_btn.setEnabled(self.item_combo.isEnabled())
 
+        response_payload = self._normalize_delivery_response(success, response)
+        self.result_received.emit(response_payload)
+
+        message = response_payload.get("result_message")
+        if not message and success:
+            message = "물품 요청이 접수되었습니다."
+        if not message:
+            message = str(
+                response_payload.get("reason_code") or "물품 요청 처리에 실패했습니다."
+            )
+
         if success:
+            task_id = response_payload.get("task_id")
+            if task_id is not None and "task_id" not in str(message):
+                message = f"{message} (task_id={task_id})"
             self.show_inline_status(message, "success")
             self.quantity_input.setValue(1)
             self.detail_input.clear()
@@ -247,8 +268,13 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
             return None
 
         item_id = str(item.get("item_id") or "").strip()
-        if not item_id:
+        if not item_id or not item_id.isdecimal():
             self.show_inline_status("물품 식별자를 확인할 수 없습니다.", "warning")
+            return None
+
+        caregiver_id = str(current_user.user_id or "").strip()
+        if not caregiver_id or not caregiver_id.isdecimal():
+            self.show_inline_status("caregiver_id를 확인할 수 없습니다.", "warning")
             return None
 
         destination_id = str(self.destination_combo.currentData() or "").strip()
@@ -259,8 +285,8 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         request_id = f"req_{uuid4().hex}"
         return {
             "request_id": request_id,
-            "caregiver_id": current_user.user_id,
-            "item_id": item_id,
+            "caregiver_id": int(caregiver_id),
+            "item_id": int(item_id),
             "quantity": self.quantity_input.value(),
             "destination_id": destination_id,
             "priority": self.PRIORITY_LABEL_TO_CODE.get(
@@ -274,12 +300,63 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
     @staticmethod
     def _build_item_display_name(item):
         item_name = str(item.get("item_name", "")).strip()
+        item_id = str(item.get("item_id") or "").strip()
         quantity = item.get("quantity")
+        parts = [item_name]
+        if item_id:
+            parts.append(f"item_id {item_id}")
 
         if quantity is None:
-            return item_name
+            return " / ".join(parts)
 
-        return f"{item_name} (재고 {quantity})"
+        parts.append(f"재고 {quantity}")
+        return " / ".join(parts)
+
+    def emit_preview_changed(self, *_args):
+        self.preview_changed.emit(self._build_preview_payload())
+
+    def _build_preview_payload(self):
+        current_user = SessionManager.current_user()
+        item = self.item_combo.currentData()
+        destination_id = str(self.destination_combo.currentData() or "-")
+        priority = self.PRIORITY_LABEL_TO_CODE.get(
+            self.priority_combo.currentText(),
+            "NORMAL",
+        )
+
+        if isinstance(item, dict):
+            item_id = str(item.get("item_id") or "-")
+            item_name = str(item.get("item_name") or "-")
+        else:
+            item_id = "-"
+            item_name = "-"
+
+        return {
+            "caregiver_id": str(current_user.user_id) if current_user else "-",
+            "item_id": item_id,
+            "item_name": item_name,
+            "quantity": self.quantity_input.value(),
+            "destination_id": destination_id,
+            "priority": priority,
+        }
+
+    @staticmethod
+    def _normalize_delivery_response(success, response):
+        if isinstance(response, dict):
+            payload = dict(response)
+        else:
+            payload = {
+                "result_code": "ACCEPTED" if success else "REJECTED",
+                "result_message": str(response or ""),
+            }
+
+        payload.setdefault("result_code", "ACCEPTED" if success else "REJECTED")
+        payload.setdefault("result_message", None)
+        payload.setdefault("reason_code", None)
+        payload.setdefault("task_id", None)
+        payload.setdefault("task_status", None)
+        payload.setdefault("assigned_robot_id", None)
+        return payload
 
     def reset_form(self):
         self.quantity_input.setValue(1)
@@ -289,154 +366,226 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         if self.item_combo.count() > 0:
             self.item_combo.setCurrentIndex(0)
         self.hide_inline_status()
+        self.emit_preview_changed()
 
-class FollowRequestForm(QWidget, InlineStatusMixin):
-    def __init__(self):
+
+class NotReadyScenarioForm(QWidget):
+    def __init__(self, scenario_name: str, field_labels: list[str], note: str):
         super().__init__()
         self.submit_btn = None
         root = QVBoxLayout(self)
         root.setSpacing(12)
 
-        self.target_combo = QComboBox()
-        self.target_combo.addItems(["어르신 추종", "보호사 추종", "방문객 안내 추종"])
-        self.target_combo.setMinimumHeight(44)
+        title = QLabel(f"{scenario_name} 요청 구조")
+        title.setObjectName("sectionTitle")
+        description = QLabel(note)
+        description.setObjectName("mutedText")
+        description.setWordWrap(True)
 
-        self.robot_combo = QComboBox()
-        self.robot_combo.addItems(["자동 선택", "Pinky-01", "Pinky-02", "Pinky-03"])
-        self.robot_combo.setMinimumHeight(44)
+        self.not_ready_label = QLabel(
+            f"{scenario_name} 요청은 현재 서버 workflow 연동 전입니다. "
+            "현재 제출 가능한 시나리오는 물품 운반입니다."
+        )
+        self.not_ready_label.setObjectName("noticeText")
+        self.not_ready_label.setWordWrap(True)
 
-        self.detail_input = QTextEdit()
-        self.detail_input.setPlaceholderText("추종 시작 위치, 대상, 특이사항을 입력하세요.")
-        self.detail_input.setMinimumHeight(120)
-        self.init_inline_status()
+        root.addWidget(title)
+        root.addWidget(description)
+        root.addWidget(self.not_ready_label)
 
-        self.submit_btn = QPushButton("추종 요청 등록")
-        self.submit_btn.setObjectName("primaryButton")
-        self.submit_btn.clicked.connect(self.submit_request)
+        for label in field_labels:
+            value = QLabel("준비 중")
+            value.setObjectName("mutedText")
+            root.addWidget(QLabel(label))
+            root.addWidget(value)
 
-        root.addWidget(QLabel("추종 유형"))
-        root.addWidget(self.target_combo)
-        root.addWidget(QLabel("배정 로봇"))
-        root.addWidget(self.robot_combo)
-        root.addWidget(QLabel("설명"))
-        root.addWidget(self.detail_input)
-        root.addWidget(self.status_label)
+        root.addStretch()
+
+        self.submit_btn = QPushButton(f"{scenario_name} 요청 준비 중")
+        self.submit_btn.setObjectName("secondaryButton")
+        self.submit_btn.setEnabled(False)
         root.addWidget(self.submit_btn)
-
-    def submit_request(self):
-        self.show_inline_status("추종 요청이 접수되었습니다.", "success")
 
     def reset_form(self):
-        self.target_combo.setCurrentIndex(0)
-        self.robot_combo.setCurrentIndex(0)
-        self.detail_input.clear()
-        self.hide_inline_status()
+        return
 
 
-class PatrolRequestForm(QWidget, InlineStatusMixin):
+class PatrolRequestForm(NotReadyScenarioForm):
     def __init__(self):
-        super().__init__()
-        self.submit_btn = None
-        root = QVBoxLayout(self)
-        root.setSpacing(12)
-
-        self.zone_combo = QComboBox()
-        self.zone_combo.addItems([
-            "3층 복도",
-            "간호 스테이션 주변",
-            "면회실 구역",
-            "엘리베이터 앞",
-            "야간 순찰 구역",
-        ])
-        self.zone_combo.setMinimumHeight(44)
-
-        self.robot_combo = QComboBox()
-        self.robot_combo.addItems(["자동 선택", "Pinky-01", "Pinky-02", "Pinky-03"])
-        self.robot_combo.setMinimumHeight(44)
-
-        self.priority_combo = QComboBox()
-        self.priority_combo.addItems(["일반", "긴급", "최우선"])
-        self.priority_combo.setMinimumHeight(44)
-
-        self.schedule_combo = QComboBox()
-        self.schedule_combo.addItems([
-            "즉시 시작",
-            "오전 순찰",
-            "점심 전 순찰",
-            "오후 순찰",
-            "야간 순찰",
-        ])
-        self.schedule_combo.setMinimumHeight(44)
-
-        self.detail_input = QTextEdit()
-        self.detail_input.setPlaceholderText("순찰 메모를 입력하세요.")
-        self.detail_input.setMinimumHeight(120)
-        self.init_inline_status()
-
-        self.submit_btn = QPushButton("순찰 요청 등록")
-        self.submit_btn.setObjectName("primaryButton")
-        self.submit_btn.clicked.connect(self.submit_request)
-
-        root.addWidget(QLabel("순찰 구역"))
-        root.addWidget(self.zone_combo)
-        root.addWidget(QLabel("배정 로봇"))
-        root.addWidget(self.robot_combo)
-        root.addWidget(QLabel("우선순위"))
-        root.addWidget(self.priority_combo)
-        root.addWidget(QLabel("순찰 일정"))
-        root.addWidget(self.schedule_combo)
-        root.addWidget(QLabel("설명"))
-        root.addWidget(self.detail_input)
-        root.addWidget(self.status_label)
-        root.addWidget(self.submit_btn)
-
-    def submit_request(self):
-        zone = self.zone_combo.currentText()
-        robot = self.robot_combo.currentText()
-        priority = self.priority_combo.currentText()
-        schedule = self.schedule_combo.currentText()
-
-        self.show_inline_status(
-            f"{zone} 순찰 요청이 접수되었습니다. 일정: {schedule}, 로봇: {robot}, 우선순위: {priority}",
-            "success",
+        super().__init__(
+            "순찰",
+            ["patrol_area_id", "patrol_area_name", "priority", "notes"],
+            "pinky3 순찰 workflow가 서버와 연결되면 이 입력 구조를 실제 폼으로 전환합니다.",
         )
 
-    def reset_form(self):
-        self.zone_combo.setCurrentIndex(0)
-        self.robot_combo.setCurrentIndex(0)
-        self.priority_combo.setCurrentIndex(0)
-        self.schedule_combo.setCurrentIndex(0)
-        self.detail_input.clear()
-        self.hide_inline_status()
+
+class GuideRequestForm(NotReadyScenarioForm):
+    def __init__(self):
+        super().__init__(
+            "안내",
+            ["member_id", "visitor_id", "start_location_id", "destination_id"],
+            "방문자 키오스크와 안내 workflow가 연결되면 이 입력 구조를 실제 폼으로 전환합니다.",
+        )
 
 
-class SchedulerCard(QFrame):
+class FollowRequestForm(NotReadyScenarioForm):
+    def __init__(self):
+        super().__init__(
+            "추종",
+            ["target_caregiver_id", "follow_mode", "start_location_id", "priority"],
+            "추종 시나리오의 phase 1 포함 여부가 확정되면 실제 요청 API와 연결합니다.",
+        )
+
+
+class TaskRequestSidePanel(QWidget):
     def __init__(self):
         super().__init__()
-        self.setObjectName("formCard")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(16)
 
-        title = QLabel("로봇 스케쥴러")
-        title.setObjectName("sectionTitle")
+        self.preview_card = QFrame()
+        self.preview_card.setObjectName("requestPreviewCard")
+        preview_layout = QVBoxLayout(self.preview_card)
+        preview_layout.setContentsMargins(22, 22, 22, 22)
+        preview_layout.setSpacing(10)
 
-        subtitle = QLabel("현재 예약된 작업 예시")
-        subtitle.setObjectName("mutedText")
+        preview_title = QLabel("요청 미리보기")
+        preview_title.setObjectName("sectionTitle")
+        preview_desc = QLabel("전송 전 payload 기준 필드를 확인합니다.")
+        preview_desc.setObjectName("mutedText")
 
-        schedule_list = QListWidget()
-        items = [
-            "09:00  Pinky-01  3층 복도 순찰",
-            "10:30  Pinky-02  약품 키트 305호 전달",
-            "13:00  Pinky-03  방문객 안내 추종",
-            "15:30  Pinky-01  면회실 주변 순찰",
-        ]
-        for item in items:
-            QListWidgetItem(item, schedule_list)
+        self.preview_caregiver_id = QLabel("caregiver_id: -")
+        self.preview_item = QLabel("item_id: - / -")
+        self.preview_quantity = QLabel("quantity: 1")
+        self.preview_destination = QLabel("destination_id: -")
+        self.preview_priority = QLabel("priority: NORMAL")
 
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
-        layout.addWidget(schedule_list)
+        for label in [
+            self.preview_caregiver_id,
+            self.preview_item,
+            self.preview_quantity,
+            self.preview_destination,
+            self.preview_priority,
+        ]:
+            label.setObjectName("previewValue")
+            label.setWordWrap(True)
+
+        preview_layout.addWidget(preview_title)
+        preview_layout.addWidget(preview_desc)
+        preview_layout.addWidget(self.preview_caregiver_id)
+        preview_layout.addWidget(self.preview_item)
+        preview_layout.addWidget(self.preview_quantity)
+        preview_layout.addWidget(self.preview_destination)
+        preview_layout.addWidget(self.preview_priority)
+
+        self.result_card = QFrame()
+        self.result_card.setObjectName("resultPanel")
+        result_layout = QVBoxLayout(self.result_card)
+        result_layout.setContentsMargins(22, 22, 22, 22)
+        result_layout.setSpacing(10)
+
+        result_title = QLabel("최근 요청 결과")
+        result_title.setObjectName("sectionTitle")
+        result_desc = QLabel("서버가 반환한 IF-DEL-001 응답 필드를 그대로 표시합니다.")
+        result_desc.setObjectName("mutedText")
+        result_desc.setWordWrap(True)
+
+        self.result_code_label = QLabel("result_code: -")
+        self.result_message_label = QLabel("아직 요청 결과가 없습니다.")
+        self.reason_code_label = QLabel("reason_code: -")
+        self.task_id_label = QLabel("task_id: -")
+        self.task_status_label = QLabel("task_status: -")
+        self.assigned_robot_id_label = QLabel("assigned_robot_id: -")
+
+        self.result_message_label.setObjectName("resultMessage")
+        self.result_message_label.setWordWrap(True)
+
+        for label in [
+            self.result_code_label,
+            self.reason_code_label,
+            self.task_id_label,
+            self.task_status_label,
+            self.assigned_robot_id_label,
+        ]:
+            label.setObjectName("previewValue")
+            label.setWordWrap(True)
+
+        result_layout.addWidget(result_title)
+        result_layout.addWidget(result_desc)
+        result_layout.addWidget(self.result_code_label)
+        result_layout.addWidget(self.result_message_label)
+        result_layout.addWidget(self.reason_code_label)
+        result_layout.addWidget(self.task_id_label)
+        result_layout.addWidget(self.task_status_label)
+        result_layout.addWidget(self.assigned_robot_id_label)
+
+        notice_card = QFrame()
+        notice_card.setObjectName("noticeCard")
+        notice_layout = QVBoxLayout(notice_card)
+        notice_layout.setContentsMargins(20, 18, 20, 18)
+        notice_layout.setSpacing(8)
+
+        notice_title = QLabel("주의사항")
+        notice_title.setObjectName("noticeTitle")
+        notice_text = QLabel(
+            "로봇 경로에 장애물이 없는지 확인하세요. 중량이 큰 물품이나 "
+            "응급 상황은 운영 절차에 따라 별도 처리해야 합니다."
+        )
+        notice_text.setObjectName("noticeText")
+        notice_text.setWordWrap(True)
+
+        notice_layout.addWidget(notice_title)
+        notice_layout.addWidget(notice_text)
+
+        root.addWidget(self.preview_card)
+        root.addWidget(self.result_card)
+        root.addWidget(notice_card)
+        root.addStretch()
+
+    def update_preview(self, preview):
+        preview = preview or {}
+        item_id = self._display(preview.get("item_id"))
+        item_name = self._display(preview.get("item_name"))
+
+        self.preview_caregiver_id.setText(
+            f"caregiver_id: {self._display(preview.get('caregiver_id'))}"
+        )
+        self.preview_item.setText(f"item_id: {item_id} / {item_name}")
+        self.preview_quantity.setText(
+            f"quantity: {self._display(preview.get('quantity'))}"
+        )
+        self.preview_destination.setText(
+            f"destination_id: {self._display(preview.get('destination_id'))}"
+        )
+        self.preview_priority.setText(
+            f"priority: {self._display(preview.get('priority'))}"
+        )
+
+    def show_delivery_result(self, response):
+        response = response or {}
+        self.result_code_label.setText(
+            f"result_code: {self._display(response.get('result_code'))}"
+        )
+        self.result_message_label.setText(
+            self._display(response.get("result_message"))
+        )
+        self.reason_code_label.setText(
+            f"reason_code: {self._display(response.get('reason_code'))}"
+        )
+        self.task_id_label.setText(f"task_id: {self._display(response.get('task_id'))}")
+        self.task_status_label.setText(
+            f"task_status: {self._display(response.get('task_status'))}"
+        )
+        self.assigned_robot_id_label.setText(
+            f"assigned_robot_id: {self._display(response.get('assigned_robot_id'))}"
+        )
+
+    @staticmethod
+    def _display(value):
+        if value is None or value == "":
+            return "-"
+        return str(value)
 
 
 class TaskRequestPage(QWidget):
@@ -455,12 +604,19 @@ class TaskRequestPage(QWidget):
         top_tabs = QHBoxLayout()
         top_tabs.setSpacing(12)
 
-        self.delivery_btn = QPushButton("물품 요청")
-        self.follow_btn = QPushButton("추종")
-        self.patrol_btn = QPushButton("순찰")
+        self.delivery_btn = QPushButton("물품 운반")
+        self.patrol_btn = QPushButton("순찰 (준비 중)")
+        self.guide_btn = QPushButton("안내 (준비 중)")
+        self.follow_btn = QPushButton("추종 (준비 중)")
 
-        for btn in [self.delivery_btn, self.follow_btn, self.patrol_btn]:
-            btn.setObjectName("secondaryButton")
+        for btn in [
+            self.delivery_btn,
+            self.patrol_btn,
+            self.guide_btn,
+            self.follow_btn,
+        ]:
+            btn.setObjectName("scenarioTabButton")
+            btn.setCheckable(True)
             top_tabs.addWidget(btn)
 
         content_row = QHBoxLayout()
@@ -487,14 +643,28 @@ class TaskRequestPage(QWidget):
         self.form_scroll.setWidget(self.form_host)
         lc.addWidget(self.form_scroll, 1)
 
-        right_card = SchedulerCard()
+        self.side_panel = TaskRequestSidePanel()
 
         self.delivery_btn.clicked.connect(self.show_delivery_page)
-        self.follow_btn.clicked.connect(self.show_follow_page)
         self.patrol_btn.clicked.connect(self.show_patrol_page)
+        self.guide_btn.clicked.connect(self.show_guide_page)
+        self.follow_btn.clicked.connect(self.show_follow_page)
 
         content_row.addWidget(left_card, 2)
-        content_row.addWidget(right_card, 1)
+        content_row.addWidget(self.side_panel, 1)
+
+        self.preview_card = self.side_panel.preview_card
+        self.preview_caregiver_id = self.side_panel.preview_caregiver_id
+        self.preview_item = self.side_panel.preview_item
+        self.preview_quantity = self.side_panel.preview_quantity
+        self.preview_destination = self.side_panel.preview_destination
+        self.preview_priority = self.side_panel.preview_priority
+        self.result_code_label = self.side_panel.result_code_label
+        self.result_message_label = self.side_panel.result_message_label
+        self.reason_code_label = self.side_panel.reason_code_label
+        self.task_id_label = self.side_panel.task_id_label
+        self.task_status_label = self.side_panel.task_status_label
+        self.assigned_robot_id_label = self.side_panel.assigned_robot_id_label
 
         root.addWidget(
             PageHeader("작업 요청", "작업 종류를 선택하여 해당 요청을 등록하세요.")
@@ -505,19 +675,30 @@ class TaskRequestPage(QWidget):
     def _initialize_forms(self):
         print("[task_request] initialize forms")
         self.delivery_form = DeliveryRequestForm()
-        self.follow_form = FollowRequestForm()
         self.patrol_form = PatrolRequestForm()
-        self.forms = [self.delivery_form, self.follow_form, self.patrol_form]
+        self.guide_form = GuideRequestForm()
+        self.follow_form = FollowRequestForm()
+        self.forms = [
+            self.delivery_form,
+            self.patrol_form,
+            self.guide_form,
+            self.follow_form,
+        ]
+
+        self.delivery_form.preview_changed.connect(self.side_panel.update_preview)
+        self.delivery_form.result_received.connect(self.side_panel.show_delivery_result)
 
         for form in self.forms:
             form.hide()
             self.form_layout.addWidget(form)
 
         self._show_form(self.delivery_form)
+        self.delivery_form.emit_preview_changed()
         QTimer.singleShot(0, self.delivery_form.ensure_items_loaded)
 
     def _show_form(self, form):
         if self.current_form is form:
+            self._set_active_tab(form)
             return
 
         focused_widget = QApplication.focusWidget()
@@ -529,19 +710,34 @@ class TaskRequestPage(QWidget):
 
         form.show()
         self.current_form = form
+        self._set_active_tab(form)
+
+    def _set_active_tab(self, form):
+        form_to_button = {
+            self.delivery_form: self.delivery_btn,
+            self.patrol_form: self.patrol_btn,
+            self.guide_form: self.guide_btn,
+            self.follow_form: self.follow_btn,
+        }
+        for target_form, button in form_to_button.items():
+            button.setChecked(target_form is form)
 
     def show_delivery_page(self):
         self._show_form(self.delivery_form)
         QTimer.singleShot(0, self.delivery_form.ensure_items_loaded)
         print("[task_request] switched to delivery page")
 
-    def show_follow_page(self):
-        self._show_form(self.follow_form)
-        print("[task_request] switched to follow page")
-
     def show_patrol_page(self):
         self._show_form(self.patrol_form)
         print("[task_request] switched to patrol page")
+
+    def show_guide_page(self):
+        self._show_form(self.guide_form)
+        print("[task_request] switched to guide page")
+
+    def show_follow_page(self):
+        self._show_form(self.follow_form)
+        print("[task_request] switched to follow page")
 
     def reset_page(self):
         for form in self.forms:

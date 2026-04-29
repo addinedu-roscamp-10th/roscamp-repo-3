@@ -307,6 +307,19 @@ QPushButton#secondaryButton {
     font-weight: 800;
 }
 
+QPushButton#scenarioTabButton {
+    background: #F8FAFC;
+    border: 1px solid #D8E0E8;
+    color: #344054;
+    font-weight: 800;
+}
+
+QPushButton#scenarioTabButton:checked {
+    background: #005C55;
+    border: 1px solid #005C55;
+    color: #FFFFFF;
+}
+
 QPushButton#dangerButton {
     background: #DC2626;
     border: none;
@@ -428,6 +441,39 @@ QPushButton#cardButton:hover {
 QFrame#noticeCard {
     background: #FFFBEB;
     border: 1px solid #FDE68A;
+}
+
+QFrame#requestPreviewCard {
+    background: #004C46;
+    border: 1px solid #005C55;
+    border-radius: 18px;
+}
+
+QFrame#requestPreviewCard QLabel#sectionTitle,
+QFrame#requestPreviewCard QLabel#previewValue {
+    color: #FFFFFF;
+}
+
+QFrame#requestPreviewCard QLabel#mutedText {
+    color: #CCFBF1;
+}
+
+QFrame#resultPanel {
+    background: #FFFFFF;
+    border: 1px solid #D8E0E8;
+    border-radius: 18px;
+}
+
+QLabel#previewValue {
+    color: #344054;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+QLabel#resultMessage {
+    color: #16202A;
+    font-size: 15px;
+    font-weight: 900;
 }
 
 QLabel#noticeTitle {
