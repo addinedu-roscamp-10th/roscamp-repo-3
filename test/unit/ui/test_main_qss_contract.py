@@ -45,6 +45,11 @@ def test_main_qss_defines_task_request_page_components():
     assert "QFrame#requestPreviewCard" in qss
     assert "QFrame#robotStatusCard" in qss
     assert "QFrame#robotMapPlaceholder" in qss
+    assert "QFrame#sideMetricRow" in qss
+    assert "QLabel#sideMetricLabel" in qss
+    assert "QLabel#sideMetricValue" in qss
+    assert "QLabel#priorityChip" in qss
+    assert "QLabel#robotStateChip" in qss
     assert "QFrame#resultPanel" in qss
     assert "QLabel#previewValue" in qss
     assert "QLabel#resultMessage" in qss

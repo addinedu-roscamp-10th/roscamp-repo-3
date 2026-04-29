@@ -561,6 +561,12 @@ class FollowRequestForm(NotReadyScenarioForm):
 
 
 class TaskRequestSidePanel(QWidget):
+    PRIORITY_CODE_TO_LABEL = {
+        "NORMAL": "일반",
+        "URGENT": "긴급",
+        "HIGHEST": "최우선",
+    }
+
     def __init__(self):
         super().__init__()
         root = QVBoxLayout(self)
@@ -575,32 +581,23 @@ class TaskRequestSidePanel(QWidget):
 
         preview_title = QLabel("요청 미리보기")
         preview_title.setObjectName("sectionTitle")
-        preview_desc = QLabel("전송 전 payload 기준 필드를 확인합니다.")
-        preview_desc.setObjectName("mutedText")
 
-        self.preview_caregiver_id = QLabel("caregiver_id: -")
-        self.preview_item = QLabel("item_id: - / -")
-        self.preview_quantity = QLabel("quantity: 1")
-        self.preview_destination = QLabel("destination_id: -")
-        self.preview_priority = QLabel("priority: NORMAL")
-
-        for label in [
-            self.preview_caregiver_id,
-            self.preview_item,
-            self.preview_quantity,
-            self.preview_destination,
-            self.preview_priority,
-        ]:
-            label.setObjectName("previewValue")
-            label.setWordWrap(True)
+        caregiver_row, self.preview_caregiver_id = self._metric_row("요청자")
+        item_row, self.preview_item = self._metric_row("물품")
+        quantity_row, self.preview_quantity = self._metric_row("수량", "1개")
+        destination_row, self.preview_destination = self._metric_row("목적지")
+        priority_row, self.preview_priority = self._metric_row(
+            "우선순위",
+            "일반",
+            "priorityChip",
+        )
 
         preview_layout.addWidget(preview_title)
-        preview_layout.addWidget(preview_desc)
-        preview_layout.addWidget(self.preview_caregiver_id)
-        preview_layout.addWidget(self.preview_item)
-        preview_layout.addWidget(self.preview_quantity)
-        preview_layout.addWidget(self.preview_destination)
-        preview_layout.addWidget(self.preview_priority)
+        preview_layout.addWidget(caregiver_row)
+        preview_layout.addWidget(item_row)
+        preview_layout.addWidget(quantity_row)
+        preview_layout.addWidget(destination_row)
+        preview_layout.addWidget(priority_row)
 
         self.robot_status_card = QFrame()
         self.robot_status_card.setObjectName("robotStatusCard")
@@ -610,25 +607,15 @@ class TaskRequestSidePanel(QWidget):
 
         robot_title = QLabel("실시간 로봇 상태")
         robot_title.setObjectName("sectionTitle")
-        robot_desc = QLabel(
-            "작업 생성 후 로봇 feedback 수신 시 위치와 상태를 갱신합니다."
+
+        robot_id_row, self.robot_id_label = self._metric_row("로봇", "pinky2")
+        robot_state_row, self.robot_state_label = self._metric_row(
+            "상태",
+            "feedback 수신 전",
+            "robotStateChip",
         )
-        robot_desc.setObjectName("mutedText")
-        robot_desc.setWordWrap(True)
-
-        self.robot_id_label = QLabel("assigned_robot_id: pinky2")
-        self.robot_state_label = QLabel("state: feedback 수신 전")
-        self.robot_pose_label = QLabel("pose: 미수신")
-        self.robot_destination_label = QLabel("destination_id: -")
-
-        for label in [
-            self.robot_id_label,
-            self.robot_state_label,
-            self.robot_pose_label,
-            self.robot_destination_label,
-        ]:
-            label.setObjectName("previewValue")
-            label.setWordWrap(True)
+        robot_pose_row, self.robot_pose_label = self._metric_row("위치", "미수신")
+        robot_destination_row, self.robot_destination_label = self._metric_row("목적지")
 
         self.robot_map_placeholder = QFrame()
         self.robot_map_placeholder.setObjectName("robotMapPlaceholder")
@@ -640,11 +627,10 @@ class TaskRequestSidePanel(QWidget):
         map_layout.addWidget(map_label)
 
         robot_layout.addWidget(robot_title)
-        robot_layout.addWidget(robot_desc)
-        robot_layout.addWidget(self.robot_id_label)
-        robot_layout.addWidget(self.robot_state_label)
-        robot_layout.addWidget(self.robot_pose_label)
-        robot_layout.addWidget(self.robot_destination_label)
+        robot_layout.addWidget(robot_id_row)
+        robot_layout.addWidget(robot_state_row)
+        robot_layout.addWidget(robot_pose_row)
+        robot_layout.addWidget(robot_destination_row)
         robot_layout.addWidget(self.robot_map_placeholder)
 
         self.result_card = QFrame()
@@ -655,38 +641,24 @@ class TaskRequestSidePanel(QWidget):
 
         result_title = QLabel("최근 요청 결과")
         result_title.setObjectName("sectionTitle")
-        result_desc = QLabel("서버가 반환한 IF-DEL-001 응답 필드를 그대로 표시합니다.")
-        result_desc.setObjectName("mutedText")
-        result_desc.setWordWrap(True)
 
-        self.result_code_label = QLabel("result_code: -")
         self.result_message_label = QLabel("아직 요청 결과가 없습니다.")
-        self.reason_code_label = QLabel("reason_code: -")
-        self.task_id_label = QLabel("task_id: -")
-        self.task_status_label = QLabel("task_status: -")
-        self.assigned_robot_id_label = QLabel("assigned_robot_id: -")
-
         self.result_message_label.setObjectName("resultMessage")
         self.result_message_label.setWordWrap(True)
 
-        for label in [
-            self.result_code_label,
-            self.reason_code_label,
-            self.task_id_label,
-            self.task_status_label,
-            self.assigned_robot_id_label,
-        ]:
-            label.setObjectName("previewValue")
-            label.setWordWrap(True)
+        result_code_row, self.result_code_label = self._metric_row("결과")
+        reason_row, self.reason_code_label = self._metric_row("사유")
+        task_id_row, self.task_id_label = self._metric_row("task_id")
+        task_status_row, self.task_status_label = self._metric_row("상태")
+        assigned_robot_row, self.assigned_robot_id_label = self._metric_row("배정 로봇")
 
         result_layout.addWidget(result_title)
-        result_layout.addWidget(result_desc)
-        result_layout.addWidget(self.result_code_label)
         result_layout.addWidget(self.result_message_label)
-        result_layout.addWidget(self.reason_code_label)
-        result_layout.addWidget(self.task_id_label)
-        result_layout.addWidget(self.task_status_label)
-        result_layout.addWidget(self.assigned_robot_id_label)
+        result_layout.addWidget(result_code_row)
+        result_layout.addWidget(reason_row)
+        result_layout.addWidget(task_id_row)
+        result_layout.addWidget(task_status_row)
+        result_layout.addWidget(assigned_robot_row)
 
         notice_card = QFrame()
         notice_card.setObjectName("noticeCard")
@@ -712,49 +684,63 @@ class TaskRequestSidePanel(QWidget):
         root.addWidget(notice_card)
         root.addStretch()
 
+    @staticmethod
+    def _metric_row(label_text, value_text="-", value_object_name="sideMetricValue"):
+        row = QFrame()
+        row.setObjectName("sideMetricRow")
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(12, 10, 12, 10)
+        row_layout.setSpacing(10)
+
+        label = QLabel(label_text)
+        label.setObjectName("sideMetricLabel")
+        value = QLabel(value_text)
+        value.setObjectName(value_object_name)
+        value.setWordWrap(True)
+        value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        row_layout.addWidget(label)
+        row_layout.addStretch(1)
+        row_layout.addWidget(value)
+        return row, value
+
     def update_preview(self, preview):
         preview = preview or {}
         item_id = self._display(preview.get("item_id"))
         item_name = self._display(preview.get("item_name"))
+        item_text = "-"
+        if item_id != "-" or item_name != "-":
+            item_text = f"{item_name} (item_id: {item_id})"
 
-        self.preview_caregiver_id.setText(
-            f"caregiver_id: {self._display(preview.get('caregiver_id'))}"
-        )
-        self.preview_item.setText(f"item_id: {item_id} / {item_name}")
-        self.preview_quantity.setText(
-            f"quantity: {self._display(preview.get('quantity'))}"
-        )
-        self.preview_destination.setText(
-            f"destination_id: {self._display(preview.get('destination_id'))}"
-        )
+        self.preview_caregiver_id.setText(self._display(preview.get("caregiver_id")))
+        self.preview_item.setText(item_text)
+        self.preview_quantity.setText(f"{self._display(preview.get('quantity'))}개")
+        destination_id = self._display(preview.get("destination_id"))
+        self.preview_destination.setText(destination_id)
         self.preview_priority.setText(
-            f"priority: {self._display(preview.get('priority'))}"
+            self._priority_label(preview.get("priority"))
         )
-        self.robot_destination_label.setText(
-            f"destination_id: {self._display(preview.get('destination_id'))}"
-        )
+        self.robot_destination_label.setText(destination_id)
 
     def show_delivery_result(self, response):
         response = response or {}
-        self.result_code_label.setText(
-            f"result_code: {self._display(response.get('result_code'))}"
-        )
+        self.result_code_label.setText(self._display(response.get("result_code")))
         self.result_message_label.setText(
             self._display(response.get("result_message"))
         )
-        self.reason_code_label.setText(
-            f"reason_code: {self._display(response.get('reason_code'))}"
-        )
-        self.task_id_label.setText(f"task_id: {self._display(response.get('task_id'))}")
-        self.task_status_label.setText(
-            f"task_status: {self._display(response.get('task_status'))}"
-        )
+        self.reason_code_label.setText(self._display(response.get("reason_code")))
+        self.task_id_label.setText(self._display(response.get("task_id")))
+        self.task_status_label.setText(self._display(response.get("task_status")))
         self.assigned_robot_id_label.setText(
-            f"assigned_robot_id: {self._display(response.get('assigned_robot_id'))}"
+            self._display(response.get("assigned_robot_id"))
         )
         assigned_robot_id = response.get("assigned_robot_id") or "pinky2"
-        self.robot_id_label.setText(
-            f"assigned_robot_id: {self._display(assigned_robot_id)}"
+        self.robot_id_label.setText(self._display(assigned_robot_id))
+
+    def _priority_label(self, priority_code):
+        return self.PRIORITY_CODE_TO_LABEL.get(
+            self._display(priority_code),
+            self._display(priority_code),
         )
 
     @staticmethod
@@ -850,6 +836,7 @@ class TaskRequestPage(QWidget):
         self.content_row.addWidget(self.side_scroll, 1)
 
         self.preview_card = self.side_panel.preview_card
+        self.result_card = self.side_panel.result_card
         self.preview_caregiver_id = self.side_panel.preview_caregiver_id
         self.preview_item = self.side_panel.preview_item
         self.preview_quantity = self.side_panel.preview_quantity

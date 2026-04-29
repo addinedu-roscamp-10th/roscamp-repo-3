@@ -576,6 +576,19 @@ QFrame#requestPreviewCard QLabel#mutedText {
     color: #CCFBF1;
 }
 
+QFrame#requestPreviewCard QFrame#sideMetricRow {
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+QFrame#requestPreviewCard QLabel#sideMetricLabel {
+    color: #CCFBF1;
+}
+
+QFrame#requestPreviewCard QLabel#sideMetricValue {
+    color: #FFFFFF;
+}
+
 QFrame#resultPanel {
     background: #FFFFFF;
     border: 1px solid #D8E0E8;
@@ -593,6 +606,35 @@ QFrame#robotMapPlaceholder {
     border: 1px dashed #B9D8D3;
     border-radius: 16px;
     min-height: 116px;
+}
+
+QFrame#sideMetricRow {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+}
+
+QLabel#sideMetricLabel {
+    color: #5B6775;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+QLabel#sideMetricValue {
+    color: #16202A;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+QLabel#priorityChip,
+QLabel#robotStateChip {
+    background: #DDEDEA;
+    border: 1px solid #B9D8D3;
+    border-radius: 12px;
+    color: #005C55;
+    font-size: 12px;
+    font-weight: 900;
+    padding: 5px 10px;
 }
 
 QLabel#previewValue {

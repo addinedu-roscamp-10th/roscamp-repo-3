@@ -90,11 +90,12 @@ def test_delivery_request_preview_uses_standard_fields_and_no_task_id_before_sub
         page.delivery_form.set_priority("URGENT")
         page.delivery_form.emit_preview_changed()
 
-        assert page.preview_caregiver_id.text() == "caregiver_id: 7"
-        assert page.preview_item.text() == "item_id: 1 / 세면도구 세트"
-        assert page.preview_quantity.text() == "quantity: 2"
-        assert page.preview_destination.text() == "destination_id: delivery_room_301"
-        assert page.preview_priority.text() == "priority: URGENT"
+        assert page.preview_caregiver_id.text() == "7"
+        assert page.preview_item.text() == "세면도구 세트 (item_id: 1)"
+        assert page.preview_quantity.text() == "2개"
+        assert page.preview_destination.text() == "delivery_room_301"
+        assert page.preview_priority.text() == "긴급"
+        assert page.preview_priority.objectName() == "priorityChip"
         assert all("task_id" not in text.lower() for text in _label_texts(page.preview_card))
     finally:
         SessionManager.logout()
@@ -128,10 +129,16 @@ def test_task_request_page_uses_content_height_form_card_and_robot_placeholder(m
 
         assert page.robot_status_card.objectName() == "robotStatusCard"
         assert page.robot_map_placeholder.objectName() == "robotMapPlaceholder"
-        assert page.robot_id_label.text() == "assigned_robot_id: pinky2"
-        assert page.robot_state_label.text() == "state: feedback 수신 전"
-        assert page.robot_pose_label.text() == "pose: 미수신"
-        assert page.robot_destination_label.text() == "destination_id: delivery_room_301"
+        assert "전송 전 payload 기준 필드를 확인합니다." not in _label_texts(page.preview_card)
+        assert "작업 생성 후 로봇 feedback 수신 시 위치와 상태를 갱신합니다." not in _label_texts(page.robot_status_card)
+        assert "서버가 반환한 IF-DEL-001 응답 필드를 그대로 표시합니다." not in _label_texts(page.result_card)
+        assert page.robot_id_label.text() == "pinky2"
+        assert page.robot_state_label.text() == "feedback 수신 전"
+        assert page.robot_state_label.objectName() == "robotStateChip"
+        assert page.robot_pose_label.text() == "미수신"
+        assert page.robot_destination_label.text() == "delivery_room_301"
+        metric_rows = page.side_panel.findChildren(QFrame, "sideMetricRow")
+        assert len(metric_rows) >= 14
         assert page.side_scroll.widget() is page.side_panel
         assert page.side_scroll.height() < page.side_panel.height()
     finally:
@@ -225,12 +232,12 @@ def test_delivery_submit_result_panel_displays_if_del_001_response_fields(monkey
             },
         )
 
-        assert page.result_code_label.text() == "result_code: ACCEPTED"
+        assert page.result_code_label.text() == "ACCEPTED"
         assert page.result_message_label.text() == "작업이 접수되었습니다."
-        assert page.reason_code_label.text() == "reason_code: -"
-        assert page.task_id_label.text() == "task_id: 1001"
-        assert page.task_status_label.text() == "task_status: WAITING_DISPATCH"
-        assert page.assigned_robot_id_label.text() == "assigned_robot_id: pinky2"
+        assert page.reason_code_label.text() == "-"
+        assert page.task_id_label.text() == "1001"
+        assert page.task_status_label.text() == "WAITING_DISPATCH"
+        assert page.assigned_robot_id_label.text() == "pinky2"
 
         page.delivery_form._handle_submit_finished(
             False,
@@ -244,9 +251,9 @@ def test_delivery_submit_result_panel_displays_if_del_001_response_fields(monkey
             },
         )
 
-        assert page.result_code_label.text() == "result_code: REJECTED"
+        assert page.result_code_label.text() == "REJECTED"
         assert page.result_message_label.text() == "재고가 부족합니다."
-        assert page.reason_code_label.text() == "reason_code: ITEM_QUANTITY_INSUFFICIENT"
+        assert page.reason_code_label.text() == "ITEM_QUANTITY_INSUFFICIENT"
         labels = _label_texts(page)
         assert all("assigned_pinky_id" not in text for text in labels)
     finally:
