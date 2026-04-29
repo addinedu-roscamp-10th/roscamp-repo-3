@@ -23,7 +23,7 @@ from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.staff_call import StaffCallService
-from server.ropi_main_service.application.task_request import DeliveryRequestService
+from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.application.visitor_info import VisitorInfoService
 from server.ropi_main_service.application.visitor_register import VisitorRegisterService
@@ -166,7 +166,7 @@ SERVICE_REGISTRY = {
     "caregiver": CaregiverFacade,
     "patient": PatientService,
     "inventory": InventoryService,
-    "task_request": DeliveryRequestService,
+    "task_request": TaskRequestService,
     "visit_guide": VisitGuideService,
     "visitor_info": VisitorInfoService,
     "visitor_register": VisitorRegisterService,

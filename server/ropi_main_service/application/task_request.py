@@ -13,10 +13,16 @@ from server.ropi_main_service.ipc.uds_client import (
     RosServiceCommandError,
     UnixDomainSocketCommandClient,
 )
-from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
+from server.ropi_main_service.persistence.repositories.task_request_repository import (
+    TaskRequestRepository,
+)
 
 
-class DeliveryRequestService:
+DeliveryRequestRepository = TaskRequestRepository
+_DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
+
+
+class TaskRequestService:
     ACCEPTED = "ACCEPTED"
     INVALID_REQUEST = "INVALID_REQUEST"
     REJECTED = "REJECTED"
@@ -33,7 +39,7 @@ class DeliveryRequestService:
         fall_response_command_service=None,
         cancel_timeout_sec=5.0,
     ):
-        self.repository = repository or DeliveryRequestRepository()
+        self.repository = repository or _new_task_request_repository()
         self.delivery_workflow_starter = delivery_workflow_starter
         self.patrol_workflow_starter = patrol_workflow_starter
         self.delivery_request_precheck = delivery_request_precheck
@@ -757,6 +763,17 @@ class DeliveryRequestService:
         self.patrol_create_service.repository = self.repository
         self.patrol_create_service.patrol_workflow_starter = self.patrol_workflow_starter
 
-TaskRequestService = DeliveryRequestService
+DeliveryRequestService = TaskRequestService
 
-__all__ = ["DeliveryRequestService", "TaskRequestService"]
+
+def _new_task_request_repository():
+    canonical_repository_cls = globals().get("TaskRequestRepository")
+    legacy_repository_cls = globals().get("DeliveryRequestRepository")
+    if canonical_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return canonical_repository_cls()
+    if legacy_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return legacy_repository_cls()
+    return canonical_repository_cls()
+
+
+__all__ = ["TaskRequestService", "DeliveryRequestService"]

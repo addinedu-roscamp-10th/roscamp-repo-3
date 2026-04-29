@@ -1,8 +1,12 @@
 import asyncio
 
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
-    DeliveryRequestRepository,
+    TaskRequestRepository,
 )
+
+
+DeliveryRequestRepository = TaskRequestRepository
+_DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
 
 
 class PatrolTaskCreateService:
@@ -16,7 +20,7 @@ class PatrolTaskCreateService:
         repository=None,
         patrol_workflow_starter=None,
     ):
-        self.repository = repository or DeliveryRequestRepository()
+        self.repository = repository or _new_task_request_repository()
         self.patrol_workflow_starter = patrol_workflow_starter
 
     def create_patrol_task(
@@ -175,3 +179,13 @@ class PatrolTaskCreateService:
 
 
 __all__ = ["PatrolTaskCreateService"]
+
+
+def _new_task_request_repository():
+    canonical_repository_cls = globals().get("TaskRequestRepository")
+    legacy_repository_cls = globals().get("DeliveryRequestRepository")
+    if canonical_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return canonical_repository_cls()
+    if legacy_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return legacy_repository_cls()
+    return canonical_repository_cls()

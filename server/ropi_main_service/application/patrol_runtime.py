@@ -5,16 +5,19 @@ from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
 from server.ropi_main_service.application.patrol_orchestrator import PatrolOrchestrator
-from server.ropi_main_service.application.task_request import DeliveryRequestService
+from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.observability import log_event
 from server.ropi_main_service.persistence.repositories.patrol_task_execution_repository import (
     PatrolTaskExecutionRepository,
 )
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
-    DeliveryRequestRepository,
+    TaskRequestRepository,
 )
 
 
+DeliveryRequestService = TaskRequestService
+DeliveryRequestRepository = TaskRequestRepository
+_DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
 logger = logging.getLogger(__name__)
 
 
@@ -42,8 +45,8 @@ def build_patrol_request_service(
     patrol_execution_repository=None,
     patrol_orchestrator=None,
     task_request_repository=None,
-) -> DeliveryRequestService:
-    task_request_repository = task_request_repository or DeliveryRequestRepository()
+) -> TaskRequestService:
+    task_request_repository = task_request_repository or _new_task_request_repository()
     patrol_workflow_starter = None
 
     if loop is not None:
@@ -127,10 +130,20 @@ def build_patrol_request_service(
 
         patrol_workflow_starter = _start_patrol_workflow
 
-    return DeliveryRequestService(
+    return TaskRequestService(
         repository=task_request_repository,
         patrol_workflow_starter=patrol_workflow_starter,
     )
 
 
 __all__ = ["build_patrol_request_service"]
+
+
+def _new_task_request_repository():
+    canonical_repository_cls = globals().get("TaskRequestRepository")
+    legacy_repository_cls = globals().get("DeliveryRequestRepository")
+    if canonical_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return canonical_repository_cls()
+    if legacy_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return legacy_repository_cls()
+    return canonical_repository_cls()

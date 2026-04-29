@@ -40,7 +40,7 @@ from server.ropi_main_service.persistence.sql_loader import load_sql
 FIRST_PHASE_DELIVERY_PINKY_ID = DEFAULT_DELIVERY_PINKY_ID
 
 
-class DeliveryRequestRepository:
+class TaskRequestRepository:
     def __init__(
         self,
         runtime_config=None,
@@ -903,6 +903,6 @@ class DeliveryRequestRepository:
         }
 
 
-TaskRequestRepository = DeliveryRequestRepository
+DeliveryRequestRepository = TaskRequestRepository
 
-__all__ = ["DeliveryRequestRepository", "TaskRequestRepository"]
+__all__ = ["TaskRequestRepository", "DeliveryRequestRepository"]

@@ -6,7 +6,7 @@ from .staff_call_repository import StaffCallRepository
 from .stream_metrics_log_repository import StreamMetricsLogRepository
 from .task_request_repository import (
     DeliveryRequestRepository,
-    DeliveryRequestRepository as TaskRequestRepository,
+    TaskRequestRepository,
 )
 from .user_repository import UserRepository
 from .visit_guide_repository import VisitGuideRepository
@@ -15,13 +15,13 @@ from .visitor_register_repository import VisitorRegisterRepository
 
 __all__ = [
     "CaregiverRepository",
+    "TaskRequestRepository",
     "DeliveryRequestRepository",
     "InventoryRepository",
     "PatientRepository",
     "PatrolTaskResumeRepository",
     "StaffCallRepository",
     "StreamMetricsLogRepository",
-    "TaskRequestRepository",
     "UserRepository",
     "VisitGuideRepository",
     "VisitorInfoRepository",

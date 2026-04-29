@@ -122,10 +122,10 @@ def get_delivery_navigation_config(*, repository=None, source=None) -> dict:
 def _get_delivery_navigation_config_from_db(*, repository=None) -> dict:
     if repository is None:
         from server.ropi_main_service.persistence.repositories.task_request_repository import (
-            DeliveryRequestRepository,
+            TaskRequestRepository,
         )
 
-        repository = DeliveryRequestRepository()
+        repository = TaskRequestRepository()
 
     return _build_delivery_navigation_config_from_db_rows(
         repository.get_enabled_goal_poses()

@@ -16,9 +16,14 @@ from server.ropi_main_service.application.goal_pose_resolvers import (
 )
 from server.ropi_main_service.application.manipulation_command import ManipulationCommandService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
-from server.ropi_main_service.application.task_request import DeliveryRequestService
+from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.observability import log_event
-from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
+from server.ropi_main_service.persistence.repositories.task_request_repository import TaskRequestRepository
+
+
+DeliveryRequestService = TaskRequestService
+DeliveryRequestRepository = TaskRequestRepository
+_DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
 
 
 logger = logging.getLogger(__name__)
@@ -75,10 +80,10 @@ def _build_delivery_precheck_helpers(
         )
 
     def _reject(message: str, reason_code: str) -> dict:
-        return DeliveryRequestService._rejected(message, reason_code)
+        return TaskRequestService._rejected(message, reason_code)
 
     def _invalid_request(message: str, reason_code: str) -> dict:
-        return DeliveryRequestService._invalid_request(message, reason_code)
+        return TaskRequestService._invalid_request(message, reason_code)
 
     def _run_static_precheck(destination_id: str):
         if pickup_goal_pose is None:
@@ -214,13 +219,13 @@ def _build_async_delivery_request_precheck(
     return _async_precheck
 
 
-def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> DeliveryRequestService:
+def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> TaskRequestService:
     runtime_config = get_delivery_runtime_config()
     navigation_config = get_delivery_navigation_config()
     pickup_goal_pose = navigation_config["pickup_goal_pose"]
     destination_goal_poses = navigation_config["destination_goal_poses"]
     return_to_dock_goal_pose = navigation_config["return_to_dock_goal_pose"]
-    delivery_request_repository = DeliveryRequestRepository()
+    delivery_request_repository = _new_task_request_repository()
     delivery_workflow_starter = None
     delivery_request_precheck = None
     async_delivery_request_precheck = None
@@ -358,7 +363,7 @@ def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> 
 
         delivery_workflow_starter = _start_delivery_workflow
 
-    return DeliveryRequestService(
+    return TaskRequestService(
         repository=delivery_request_repository,
         delivery_workflow_starter=delivery_workflow_starter,
         delivery_request_precheck=delivery_request_precheck,
@@ -367,3 +372,13 @@ def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> 
 
 
 __all__ = ["build_delivery_request_service"]
+
+
+def _new_task_request_repository():
+    canonical_repository_cls = globals().get("TaskRequestRepository")
+    legacy_repository_cls = globals().get("DeliveryRequestRepository")
+    if canonical_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return canonical_repository_cls()
+    if legacy_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return legacy_repository_cls()
+    return canonical_repository_cls()
