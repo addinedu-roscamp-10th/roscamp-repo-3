@@ -1,6 +1,9 @@
 from server.ropi_main_service.application.fall_response_command import (
     FallResponseCommandService,
 )
+from server.ropi_main_service.application.patrol_states import (
+    is_waiting_fall_response,
+)
 from server.ropi_main_service.persistence.repositories.fall_inference_repository import (
     FALL_DETECTED_REASON,
     FALL_RESPONSE_MESSAGE,
@@ -130,12 +133,10 @@ class FallInferenceResultProcessor:
 
     @staticmethod
     def _is_waiting_fall_response(active_task):
-        phase = str(active_task.get("phase") or "").strip()
-        patrol_status = str(active_task.get("patrol_status") or "").strip()
-        return phase in {"WAIT_FALL_RESPONSE", "WAITING_FALL_RESPONSE"} or patrol_status in {
-            "WAIT_FALL_RESPONSE",
-            "WAITING_FALL_RESPONSE",
-        }
+        return is_waiting_fall_response(
+            phase=active_task.get("phase"),
+            patrol_status=active_task.get("patrol_status"),
+        )
 
     @staticmethod
     def _optional_int(value):

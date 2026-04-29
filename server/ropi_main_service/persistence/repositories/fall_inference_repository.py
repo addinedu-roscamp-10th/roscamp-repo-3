@@ -1,6 +1,11 @@
 import json
 from datetime import datetime, timezone
 
+from server.ropi_main_service.application.patrol_states import (
+    PATROL_STATUS_WAITING_FALL_RESPONSE,
+    PHASE_WAIT_FALL_RESPONSE,
+    is_waiting_fall_response,
+)
 from server.ropi_main_service.persistence.async_connection import (
     async_execute,
     async_fetch_one,
@@ -11,7 +16,6 @@ from server.ropi_main_service.persistence.sql_loader import load_sql
 
 FALL_DETECTED_REASON = "FALL_DETECTED"
 FALL_RESPONSE_MESSAGE = "낙상 대응 대기 상태로 전환했습니다."
-WAIT_FALL_RESPONSE_PHASES = {"WAIT_FALL_RESPONSE", "WAITING_FALL_RESPONSE"}
 
 
 class FallInferenceRepository:
@@ -105,7 +109,7 @@ class FallInferenceRepository:
             await cur.execute(
                 load_sql("fall_inference/update_patrol_detail_wait_fall_response.sql"),
                 (
-                    "WAITING_FALL_RESPONSE",
+                    PATROL_STATUS_WAITING_FALL_RESPONSE,
                     row["task_id"],
                 ),
             )
@@ -140,7 +144,7 @@ class FallInferenceRepository:
             "result_message": FALL_RESPONSE_MESSAGE,
             "task_id": row.get("task_id"),
             "task_status": row.get("task_status"),
-            "phase": "WAIT_FALL_RESPONSE",
+            "phase": PHASE_WAIT_FALL_RESPONSE,
             "assigned_robot_id": row.get("assigned_robot_id"),
             "latest_reason_code": FALL_DETECTED_REASON,
             "cancellable": True,
@@ -158,9 +162,10 @@ class FallInferenceRepository:
 
     @staticmethod
     def _is_waiting_fall_response(row):
-        phase = str(row.get("phase") or "").strip()
-        patrol_status = str(row.get("patrol_status") or "").strip()
-        return phase in WAIT_FALL_RESPONSE_PHASES or patrol_status in WAIT_FALL_RESPONSE_PHASES
+        return is_waiting_fall_response(
+            phase=row.get("phase"),
+            patrol_status=row.get("patrol_status"),
+        )
 
     @staticmethod
     def _parse_optional_task_id(value):

@@ -1,5 +1,11 @@
 import json
 
+from server.ropi_main_service.application.patrol_states import (
+    PATROL_STATUS_MOVING,
+    PHASE_FOLLOW_PATROL_PATH,
+    TASK_STATUS_RUNNING,
+    is_waiting_fall_response,
+)
 from server.ropi_main_service.persistence.async_connection import (
     async_fetch_one,
     async_transaction,
@@ -12,13 +18,6 @@ CONTROL_SERVICE_COMPONENT = "control_service"
 RESUME_RESULT_CODE = "ACCEPTED"
 RESUME_RESULT_MESSAGE = "순찰을 재개합니다."
 RESUME_REASON_CODE = "PATROL_RESUME_REQUESTED"
-TASK_STATUS_RUNNING = "RUNNING"
-PHASE_FOLLOW_PATROL_PATH = "FOLLOW_PATROL_PATH"
-PATROL_STATUS_MOVING = "MOVING"
-WAITING_FALL_RESPONSE_PHASES = {
-    "WAIT_FALL_RESPONSE",
-    "WAITING_FALL_RESPONSE",
-}
 
 
 class PatrolTaskResumeRepository:
@@ -152,11 +151,9 @@ class PatrolTaskResumeRepository:
                 assigned_robot_id=row.get("assigned_robot_id"),
             )
 
-        phase = str(row.get("phase") or "").strip().upper()
-        patrol_status = str(row.get("patrol_status") or "").strip().upper()
-        if (
-            phase not in WAITING_FALL_RESPONSE_PHASES
-            and patrol_status not in WAITING_FALL_RESPONSE_PHASES
+        if not is_waiting_fall_response(
+            phase=row.get("phase"),
+            patrol_status=row.get("patrol_status"),
         ):
             return cls.build_not_allowed_response(
                 reason_code="PATROL_NOT_WAITING_FALL_RESPONSE",
