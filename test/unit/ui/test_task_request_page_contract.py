@@ -135,11 +135,11 @@ def test_delivery_form_uses_wireframe_form_controls():
         assert notes.maximumHeight() <= 88
 
         grid = form.findChild(QGridLayout, "deliveryFormGrid")
-        assert grid.verticalSpacing() <= 12
+        assert grid.verticalSpacing() <= 6
 
         notes_group = form.findChild(QFrame, "notesFieldGroup")
         assert notes_group is not None
-        assert notes_group.layout().spacing() <= 4
+        assert notes_group.layout().spacing() <= 2
     finally:
         form.close()
 

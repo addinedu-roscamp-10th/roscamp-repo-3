@@ -90,7 +90,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.form_grid = QGridLayout()
         self.form_grid.setObjectName("deliveryFormGrid")
         self.form_grid.setHorizontalSpacing(18)
-        self.form_grid.setVerticalSpacing(10)
+        self.form_grid.setVerticalSpacing(6)
         self.form_grid.setColumnStretch(0, 1)
         self.form_grid.setColumnStretch(1, 1)
 
@@ -164,7 +164,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
             "추가 메모",
             self.detail_input,
             object_name="notesFieldGroup",
-            spacing=4,
+            spacing=2,
         )
         self.form_grid.addWidget(
             self.notes_field_group,
