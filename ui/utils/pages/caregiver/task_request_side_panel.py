@@ -123,7 +123,7 @@ class RequestPreviewCard(QFrame):
     def set_patrol_context(self):
         self.preview_item_label.setText("순찰 구역")
         self.preview_quantity_label.setText("구역 ID")
-        self.preview_destination_label.setText("배정 후보")
+        self.preview_destination_label.setText("배정 로봇")
 
     def update_delivery(self, preview):
         item_name = _display(preview.get("item_name"))
@@ -138,9 +138,7 @@ class RequestPreviewCard(QFrame):
         self.preview_caregiver_id.setText(_display(preview.get("caregiver_id")))
         self.preview_item.setText(_display(preview.get("patrol_area_name")))
         self.preview_quantity.setText(_display(preview.get("patrol_area_id")))
-        self.preview_destination.setText(
-            _display_unassigned_robot(preview.get("assigned_robot_id"))
-        )
+        self.preview_destination.setText("작업 생성 후 확정")
         self.preview_priority.setText(_priority_label(preview.get("priority")))
 
 

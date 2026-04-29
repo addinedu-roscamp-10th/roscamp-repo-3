@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS `delivery_task_detail`;
 DROP TABLE IF EXISTS `task`;
 DROP TABLE IF EXISTS `goal_pose`;
 DROP TABLE IF EXISTS `operation_zone`;
+DROP TABLE IF EXISTS `patrol_area`;
 DROP TABLE IF EXISTS `map_profile`;
 DROP TABLE IF EXISTS `item`;
 DROP TABLE IF EXISTS `member_event`;
@@ -165,19 +166,29 @@ CREATE TABLE `operation_zone` (
     `zone_name` VARCHAR(100) NOT NULL,
     `zone_type` VARCHAR(50) NOT NULL,
     `revision` INT UNSIGNED NOT NULL DEFAULT 1,
-    `path_json` JSON NULL,
-    `default_robot_id` VARCHAR(50) NULL,
     `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
     `created_at` DATETIME NOT NULL,
     `updated_at` DATETIME NOT NULL,
     CONSTRAINT `pk_operation_zone` PRIMARY KEY (`zone_id`),
     CONSTRAINT `fk_operation_zone_map_profile`
         FOREIGN KEY (`map_id`)
+        REFERENCES `map_profile` (`map_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `patrol_area` (
+    `patrol_area_id` VARCHAR(100) NOT NULL,
+    `map_id` VARCHAR(100) NOT NULL,
+    `patrol_area_name` VARCHAR(100) NOT NULL,
+    `revision` INT UNSIGNED NOT NULL DEFAULT 1,
+    `path_json` JSON NOT NULL,
+    `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_patrol_area` PRIMARY KEY (`patrol_area_id`),
+    CONSTRAINT `fk_patrol_area_map_profile`
+        FOREIGN KEY (`map_id`)
         REFERENCES `map_profile` (`map_id`),
-    CONSTRAINT `fk_operation_zone_default_robot`
-        FOREIGN KEY (`default_robot_id`)
-        REFERENCES `robot` (`robot_id`),
-    KEY `idx_operation_zone_default_robot` (`default_robot_id`)
+    KEY `idx_patrol_area_map_enabled_name` (`map_id`, `is_enabled`, `patrol_area_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `goal_pose` (
@@ -284,36 +295,23 @@ CREATE TABLE `delivery_task_item` (
 
 CREATE TABLE `patrol_task_detail` (
     `task_id` BIGINT UNSIGNED NOT NULL,
-    `coverage_strategy` VARCHAR(50) NOT NULL,
+    `patrol_area_id` VARCHAR(100) NOT NULL,
+    `patrol_area_revision` INT UNSIGNED NOT NULL,
+    `patrol_status` VARCHAR(30) NOT NULL DEFAULT 'PENDING',
     `frame_id` VARCHAR(50) NOT NULL DEFAULT 'map',
+    `waypoint_count` INT UNSIGNED NOT NULL DEFAULT 0,
+    `current_waypoint_index` INT UNSIGNED NULL,
+    `path_snapshot_json` JSON NOT NULL,
     `notes` TEXT NULL,
     CONSTRAINT `pk_patrol_task_detail` PRIMARY KEY (`task_id`),
     CONSTRAINT `fk_patrol_task_detail_task`
         FOREIGN KEY (`task_id`)
         REFERENCES `task` (`task_id`)
-        ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE `patrol_task_zone` (
-    `patrol_task_zone_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `task_id` BIGINT UNSIGNED NOT NULL,
-    `zone_id` VARCHAR(100) NOT NULL,
-    `zone_revision` INT UNSIGNED NOT NULL,
-    `path_snapshot_json` JSON NULL,
-    `sequence_no` INT UNSIGNED NOT NULL,
-    `coverage_status` VARCHAR(30) NOT NULL DEFAULT 'PENDING',
-    `created_at` DATETIME NOT NULL,
-    `updated_at` DATETIME NOT NULL,
-    CONSTRAINT `pk_patrol_task_zone` PRIMARY KEY (`patrol_task_zone_id`),
-    CONSTRAINT `fk_patrol_task_zone_task`
-        FOREIGN KEY (`task_id`)
-        REFERENCES `task` (`task_id`)
         ON DELETE CASCADE,
-    CONSTRAINT `fk_patrol_task_zone_operation_zone`
-        FOREIGN KEY (`zone_id`)
-        REFERENCES `operation_zone` (`zone_id`),
-    KEY `idx_patrol_task_zone_task_sequence` (`task_id`, `sequence_no`),
-    KEY `idx_patrol_task_zone_zone` (`zone_id`)
+    CONSTRAINT `fk_patrol_task_detail_patrol_area`
+        FOREIGN KEY (`patrol_area_id`)
+        REFERENCES `patrol_area` (`patrol_area_id`),
+    KEY `idx_patrol_task_detail_area_revision` (`patrol_area_id`, `patrol_area_revision`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `guide_task_detail` (

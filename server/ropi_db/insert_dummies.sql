@@ -9,13 +9,13 @@ DELETE FROM `command_execution`;
 DELETE FROM `task_event_log`;
 DELETE FROM `task_state_history`;
 DELETE FROM `guide_task_detail`;
-DELETE FROM `patrol_task_zone`;
 DELETE FROM `patrol_task_detail`;
 DELETE FROM `delivery_task_item`;
 DELETE FROM `delivery_task_detail`;
 DELETE FROM `task`;
 DELETE FROM `goal_pose`;
 DELETE FROM `operation_zone`;
+DELETE FROM `patrol_area`;
 DELETE FROM `map_profile`;
 DELETE FROM `item`;
 DELETE FROM `member_event`;
@@ -164,18 +164,26 @@ VALUES
 -- operation_zone
 -- =========================
 INSERT INTO `operation_zone`
-(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `path_json`, `default_robot_id`,
+(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `is_enabled`,
+ `created_at`, `updated_at`)
+VALUES
+('room_301', 'map_test11_0423', '301호', 'ROOM', 1, TRUE, NOW(), NOW()),
+('room_302', 'map_test11_0423', '302호', 'ROOM', 1, TRUE, NOW(), NOW()),
+('room_305', 'map_test11_0423', '305호', 'ROOM', 1, TRUE, NOW(), NOW()),
+('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1, TRUE, NOW(), NOW()),
+('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1, TRUE, NOW(), NOW()),
+('dock', 'map_test11_0423', '충전소', 'DOCK', 1, TRUE, NOW(), NOW());
+
+-- =========================
+-- patrol_area
+-- =========================
+INSERT INTO `patrol_area`
+(`patrol_area_id`, `map_id`, `patrol_area_name`, `revision`, `path_json`,
  `is_enabled`, `created_at`, `updated_at`)
 VALUES
-('room_301', 'map_test11_0423', '301호', 'ROOM', 1, NULL, NULL, TRUE, NOW(), NOW()),
-('room_302', 'map_test11_0423', '302호', 'ROOM', 1, NULL, NULL, TRUE, NOW(), NOW()),
-('room_305', 'map_test11_0423', '305호', 'ROOM', 1, NULL, NULL, TRUE, NOW(), NOW()),
-('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1, NULL, NULL, TRUE, NOW(), NOW()),
-('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1, NULL, NULL, TRUE, NOW(), NOW()),
-('dock', 'map_test11_0423', '충전소', 'DOCK', 1, NULL, NULL, TRUE, NOW(), NOW()),
-('patrol_ward_night_01', 'map_test11_0423', '야간 병동 순찰', 'PATROL_ROUTE', 7,
+('patrol_ward_night_01', 'map_test11_0423', '야간 병동 순찰', 7,
  '{"header":{"frame_id":"map"},"poses":[{"x":0.1665755137108074,"y":-0.4496830900440016,"yaw":1.5707963267948966},{"x":1.6946025435218914,"y":0.0043433854992070454,"yaw":0.0},{"x":0.8577123880386353,"y":0.25597259402275085,"yaw":0.0}]}',
- 'pinky3', TRUE, NOW(), NOW());
+ TRUE, NOW(), NOW());
 
 -- =========================
 -- goal_pose

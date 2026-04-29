@@ -190,7 +190,6 @@ def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
                     "patrol_area_id": "patrol_ward_night_01",
                     "patrol_area_name": "야간 병동 순찰",
                     "patrol_area_revision": 7,
-                    "assigned_robot_id": "pinky_from_db",
                     "map_id": "map_test11_0423",
                     "waypoint_count": 3,
                     "path_frame_id": "map",
@@ -221,15 +220,14 @@ def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
         assert page.preview_caregiver_id.text() == "7"
         assert page.preview_item.text() == "야간 병동 순찰"
         assert page.preview_quantity.text() == "patrol_ward_night_01"
-        assert page.preview_destination.text() == "pinky_from_db"
+        assert page.preview_destination.text() == "작업 생성 후 확정"
         assert page.preview_priority.text() == "긴급"
-        assert page.robot_id_label.text() == "pinky_from_db"
+        assert page.robot_id_label.text() == "미정"
         assert page.robot_state_label.text() == "feedback 수신 전"
         assert page.robot_pose_label.text() == "미수신"
         assert page.robot_destination_label.text() == "미수신"
         assert page.robot_map_label.text() == "순찰 경로 / waypoint placeholder"
         assert form.findChild(QFrame, "patrolRouteSummaryCard") is not None
-        assert form.assigned_robot_label.text() == "pinky_from_db"
         assert form.map_id_label.text() == "map_test11_0423"
         assert form.waypoint_count_label.text() == "3개"
         assert form.path_frame_id_label.text() == "map"
@@ -372,7 +370,6 @@ def test_delivery_form_loads_items_and_destinations_from_server_options():
                         "patrol_area_id": "patrol_ward_night_01",
                         "patrol_area_name": "야간 병동 순찰",
                         "patrol_area_revision": 7,
-                        "assigned_robot_id": "pinky_from_db",
                         "map_id": "map_test11_0423",
                         "waypoint_count": 3,
                     }
@@ -407,7 +404,6 @@ def test_patrol_form_loads_area_options_from_server_options():
                     "patrol_area_id": "patrol_ward_night_01",
                     "patrol_area_name": "야간 병동 순찰",
                     "patrol_area_revision": 7,
-                    "assigned_robot_id": "pinky_from_db",
                     "map_id": "map_test11_0423",
                     "waypoint_count": 3,
                     "path_frame_id": "map",
@@ -420,7 +416,6 @@ def test_patrol_form_loads_area_options_from_server_options():
         assert form.patrol_area_combo.currentData()["patrol_area_id"] == (
             "patrol_ward_night_01"
         )
-        assert form.assigned_robot_label.text() == "pinky_from_db"
         assert form.map_id_label.text() == "map_test11_0423"
         assert form.waypoint_count_label.text() == "3개"
         assert form.path_frame_id_label.text() == "map"
@@ -431,7 +426,6 @@ def test_patrol_form_loads_area_options_from_server_options():
                     "patrol_area_id": "patrol_no_robot",
                     "patrol_area_name": "로봇 미정 순찰",
                     "patrol_area_revision": 1,
-                    "assigned_robot_id": None,
                     "map_id": "map_test11_0423",
                     "waypoint_count": 0,
                     "path_frame_id": "map",
@@ -439,8 +433,6 @@ def test_patrol_form_loads_area_options_from_server_options():
                 }
             ]
         )
-
-        assert form.assigned_robot_label.text() == "미정"
         assert form.waypoint_count_label.text() == "0개"
     finally:
         form.close()

@@ -329,7 +329,6 @@ class DeliveryRequestService:
             "patrol_area_id": str(row.get("patrol_area_id") or "").strip(),
             "patrol_area_name": str(row.get("patrol_area_name") or "").strip(),
             "patrol_area_revision": row.get("patrol_area_revision"),
-            "assigned_robot_id": self._optional_string(row.get("assigned_robot_id")),
             "waypoint_count": self._optional_int(row.get("waypoint_count")),
             "path_frame_id": self._optional_string(row.get("path_frame_id")),
             "active": True,

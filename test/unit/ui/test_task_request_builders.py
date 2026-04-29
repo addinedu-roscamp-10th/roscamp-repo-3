@@ -109,7 +109,6 @@ def test_patrol_builder_creates_pat_001_payload_and_preview():
         "patrol_area_id": "patrol_ward_night_01",
         "patrol_area_name": "야간 병동 순찰",
         "patrol_area_revision": 7,
-        "assigned_robot_id": "pinky_from_db",
         "map_id": "map_test11_0423",
         "waypoint_count": 3,
         "path_frame_id": None,
@@ -138,19 +137,7 @@ def test_patrol_builder_creates_pat_001_payload_and_preview():
         "patrol_area_name": "야간 병동 순찰",
         "patrol_area_revision": 7,
         "priority": "URGENT",
-        "assigned_robot_id": "pinky_from_db",
         "map_id": "map_test11_0423",
         "waypoint_count": 3,
         "path_frame_id": None,
     }
-
-    preview_without_robot = build_patrol_preview(
-        current_user,
-        {
-            "patrol_area_id": "patrol_no_robot",
-            "patrol_area_name": "로봇 미정 순찰",
-        },
-        "NORMAL",
-    )
-
-    assert preview_without_robot["assigned_robot_id"] is None

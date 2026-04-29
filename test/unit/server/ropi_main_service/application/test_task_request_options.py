@@ -24,7 +24,6 @@ class FakeTaskRequestOptionRepository:
                 "patrol_area_name": "야간 병동 순찰",
                 "patrol_area_revision": 7,
                 "map_id": "map_test11_0423",
-                "assigned_robot_id": "pinky_from_db",
                 "waypoint_count": 3,
                 "path_frame_id": "map",
             }
@@ -60,7 +59,6 @@ def test_task_request_service_exposes_db_backed_patrol_area_metadata():
             "patrol_area_id": "patrol_ward_night_01",
             "patrol_area_name": "야간 병동 순찰",
             "patrol_area_revision": 7,
-            "assigned_robot_id": "pinky_from_db",
             "waypoint_count": 3,
             "path_frame_id": "map",
             "active": True,
@@ -81,5 +79,4 @@ def test_task_request_service_option_methods_have_async_variants():
     destinations, patrol_areas = asyncio.run(scenario())
 
     assert destinations[0]["destination_id"] == "delivery_room_301"
-    assert patrol_areas[0]["assigned_robot_id"] == "pinky_from_db"
     assert patrol_areas[0]["waypoint_count"] == 3

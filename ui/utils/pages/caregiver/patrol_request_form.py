@@ -144,31 +144,24 @@ class PatrolRequestForm(QWidget):
         layout.setHorizontalSpacing(16)
         layout.setVerticalSpacing(8)
 
-        self.assigned_robot_label = self._add_summary_row(
-            layout,
-            0,
-            "배정 후보",
-            "미정",
-        )
         self.map_id_label = self._add_summary_row(
             layout,
             0,
             "지도",
             "-",
-            column=2,
         )
         self.waypoint_count_label = self._add_summary_row(
             layout,
-            1,
+            0,
             "waypoint",
             "0개",
+            column=2,
         )
         self.path_frame_id_label = self._add_summary_row(
             layout,
             1,
             "frame",
             "-",
-            column=2,
         )
         return card
 
@@ -240,9 +233,6 @@ class PatrolRequestForm(QWidget):
 
     def _sync_selected_area_summary(self):
         area = self._selected_area()
-        self.assigned_robot_label.setText(
-            self._display_unassigned_robot(area.get("assigned_robot_id"))
-        )
         self.map_id_label.setText(self._display_value(area.get("map_id")))
         self.waypoint_count_label.setText(
             f"{self._display_waypoint_count(area.get('waypoint_count'))}개"
@@ -256,10 +246,6 @@ class PatrolRequestForm(QWidget):
         if value is None or str(value).strip() == "":
             return empty
         return str(value)
-
-    @classmethod
-    def _display_unassigned_robot(cls, value):
-        return cls._display_value(value, empty="미정")
 
     @staticmethod
     def _display_waypoint_count(value):

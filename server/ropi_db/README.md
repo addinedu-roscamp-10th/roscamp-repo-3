@@ -14,14 +14,14 @@
 SQL 파일 안에서 DB 이름을 고정하지 않는다. 실행할 때 대상 DB를 명시한다.
 
 ```bash
-mysql -u care_user -p care_service_20260428 < server/ropi_db/init_tables.sql
-mysql -u care_user -p care_service_20260428 < server/ropi_db/insert_dummies.sql
+mysql -u care_user -p care_service < server/ropi_db/init_tables.sql
+mysql -u care_user -p care_service < server/ropi_db/insert_dummies.sql
 ```
 
-기존 `care_service`를 보존하고 새 DB에서 검증할 때는 `.env`의 `DB_NAME`을 대상 DB명으로 바꾼다.
+검증용 임시 DB를 사용할 때만 `.env`의 `DB_NAME`을 별도 DB명으로 바꾼다. 기본 개발 DB명은 `care_service`다.
 
 ```dotenv
-DB_NAME=care_service_20260428
+DB_NAME=care_service
 ```
 
 ## 주의사항
@@ -31,6 +31,6 @@ DB_NAME=care_service_20260428
 - `care_user`가 대상 DB 권한을 가져야 한다.
 
 ```sql
-GRANT ALL PRIVILEGES ON care_service_20260428.* TO 'care_user'@'%';
+GRANT ALL PRIVILEGES ON care_service.* TO 'care_user'@'%';
 FLUSH PRIVILEGES;
 ```

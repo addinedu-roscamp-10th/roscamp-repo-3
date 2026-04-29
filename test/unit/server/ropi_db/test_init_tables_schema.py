@@ -53,7 +53,7 @@ def test_schema_contains_control_task_and_log_tables():
         "delivery_task_detail",
         "delivery_task_item",
         "patrol_task_detail",
-        "patrol_task_zone",
+        "patrol_area",
         "guide_task_detail",
         "task_state_history",
         "task_event_log",
@@ -70,13 +70,33 @@ def test_schema_contains_control_task_and_log_tables():
     assert "CREATE TABLE `map_table`" not in ddl
 
 
-def test_patrol_zone_schema_uses_path_snapshot_columns():
+def test_patrol_schema_separates_area_from_operation_zone():
     ddl = _ddl()
     seed_sql = _seed_sql()
 
-    assert "`path_json` JSON NULL" in ddl
-    assert "`path_snapshot_json` JSON NULL" in ddl
+    assert "CREATE TABLE `patrol_area`" in ddl
+    assert "`patrol_area_id` VARCHAR(100) NOT NULL" in ddl
+    assert "`path_json` JSON NOT NULL" in ddl
+    assert "`patrol_area_id` VARCHAR(100) NOT NULL" in ddl
+    assert "`patrol_area_revision` INT UNSIGNED NOT NULL" in ddl
+    assert "`path_snapshot_json` JSON NOT NULL" in ddl
+    assert "`waypoint_count` INT UNSIGNED NOT NULL DEFAULT 0" in ddl
+    assert "`current_waypoint_index` INT UNSIGNED NULL" in ddl
+    assert "CONSTRAINT `fk_patrol_task_detail_patrol_area`" in ddl
+    assert "CREATE TABLE `patrol_task_zone`" not in ddl
+    assert "`coverage_strategy`" not in ddl
+
+    operation_zone_section = ddl.split("CREATE TABLE `operation_zone`", 1)[1].split(
+        "CREATE TABLE `patrol_area`",
+        1,
+    )[0]
+    assert "`path_json`" not in operation_zone_section
+    assert "`default_robot_id`" not in operation_zone_section
+
+    assert "INSERT INTO `patrol_area`" in seed_sql
+    assert "INSERT INTO `operation_zone`" in seed_sql
     assert "`path_json`" in seed_sql
+    assert "`default_robot_id`" not in seed_sql
 
     assert "polygon_json" not in ddl
     assert "polygon_json" not in seed_sql
@@ -84,15 +104,14 @@ def test_patrol_zone_schema_uses_path_snapshot_columns():
     assert "coverage_polygon_snapshot_json" not in seed_sql
 
 
-def test_operation_zone_contains_db_backed_patrol_robot_hint():
+def test_operation_zone_does_not_store_patrol_robot_hint():
     ddl = _ddl()
     seed_sql = _seed_sql()
 
-    assert "`default_robot_id` VARCHAR(50) NULL" in ddl
-    assert "CONSTRAINT `fk_operation_zone_default_robot`" in ddl
-    assert "`default_robot_id`" in seed_sql
-    assert "'patrol_ward_night_01'" in seed_sql
-    assert "'pinky3'" in seed_sql
+    assert "`default_robot_id` VARCHAR(50) NULL" not in ddl
+    assert "CONSTRAINT `fk_operation_zone_default_robot`" not in ddl
+    assert "idx_operation_zone_default_robot" not in ddl
+    assert "`default_robot_id`" not in seed_sql
 
 
 def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
@@ -105,9 +124,10 @@ def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
     assert "('dock_home', 'map_test11_0423', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0," in seed_sql
 
 
-def test_dummy_operation_zone_contains_path_backed_patrol_candidate():
+def test_dummy_patrol_area_contains_path_backed_route():
     seed_sql = _seed_sql()
 
+    assert "INSERT INTO `patrol_area`" in seed_sql
     assert "patrol_ward_night_01" in seed_sql
     assert "야간 병동 순찰" in seed_sql
     assert '"poses"' in seed_sql
@@ -124,6 +144,8 @@ def test_schema_contains_expected_indexes():
         "idx_task_requester_created_at",
         "idx_delivery_task_item_task",
         "idx_delivery_task_item_item",
+        "idx_patrol_area_map_enabled_name",
+        "idx_patrol_task_detail_area_revision",
         "idx_task_state_history_task_changed_at",
         "idx_task_event_log_task_occurred_at",
         "idx_command_execution_task_started_at",
@@ -153,6 +175,7 @@ def test_dummy_data_targets_current_schema_tables():
         "item",
         "map_profile",
         "operation_zone",
+        "patrol_area",
         "goal_pose",
         "task",
         "delivery_task_detail",

@@ -153,7 +153,6 @@ def build_patrol_create_payload(
 
 
 def build_patrol_preview(current_user: Any, area: dict, priority: str) -> dict:
-    assigned_robot_id = str(area.get("assigned_robot_id") or "").strip() or None
     return {
         "task_type": "PATROL",
         "caregiver_id": _user_id(current_user) if current_user else None,
@@ -164,5 +163,4 @@ def build_patrol_preview(current_user: Any, area: dict, priority: str) -> dict:
         "waypoint_count": area.get("waypoint_count"),
         "path_frame_id": area.get("path_frame_id"),
         "priority": priority,
-        "assigned_robot_id": assigned_robot_id,
     }
