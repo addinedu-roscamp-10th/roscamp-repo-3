@@ -53,6 +53,19 @@ ros2 run ropi_patrol fallen_alarm_buzzer
 | Pinky3 -> 낙상 서버 | UDP | 카메라 JPEG 프레임 전송 |
 | 낙상 서버 -> Pinky3 | TCP | `{"alarm": true}` 또는 `{"alarm": false}` 수신 |
 | Pinky3 내부 | ROS topic | `/fall_alarm`에 `std_msgs/msg/Bool` 발행 |
+| 관제 ROS adapter -> Pinky3 | ROS service | `/ropi/control/pinky3/fall_response_control`로 낙상 대응 시작/해제 |
+
+## PAT-004 낙상 대응 제어
+
+관제 서버는 PAT-004 service로 Pinky의 낙상 대응 상태를 제어한다.
+
+| command_type | 의미 |
+| --- | --- |
+| `START_FALL_ALERT` | 현재 순찰 action을 낙상 대응 대기 상태로 전환하고 `/fall_alarm=true`를 발행한다. |
+| `CLEAR_AND_RESTART` | `/fall_alarm=false`를 발행하고 저장된 순찰 snapshot 기준으로 내부 재시작을 시도한다. |
+| `CLEAR_AND_STOP` | `/fall_alarm=false`를 발행하고 저장된 순찰 snapshot과 내부 실행 상태를 종료 상태로 정리한다. |
+
+이 service는 외부 UI가 직접 호출하는 API가 아니라, 관제 서버의 ROS UDS adapter가 호출하는 로봇 내부 명령 경계다. PAT-002 재개 요청은 관제 서버에서 검증/기록한 뒤 이 service로 번역되는 구조로 본다.
 
 ## 현재 config
 
@@ -64,6 +77,7 @@ ros2 run ropi_patrol fallen_alarm_buzzer
 | `udp_port` | 이미지 전송 UDP 포트 |
 | `tcp_port` | alarm 수신 TCP 포트 |
 | `alarm_topic` | alarm topic 이름 |
+| `fall_response_service_name` | 관제 ROS adapter가 호출하는 PAT-004 service 이름 |
 | `waypoints` | 순찰 경로 |
 | `send_fps` | 카메라 전송 FPS |
 | `nav_check_interval_sec` | Nav2 상태 확인 주기 |

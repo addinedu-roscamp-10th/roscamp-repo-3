@@ -27,7 +27,9 @@ class RosServiceUdsServer:
         goal_pose_action_client,
         manipulation_action_client=None,
         patrol_path_action_client=None,
+        fall_response_control_client=None,
         runtime_config=None,
+        patrol_runtime_config=None,
     ):
         ipc_config = get_ros_service_ipc_config()
         self.socket_path = socket_path or ipc_config["socket_path"]
@@ -35,7 +37,9 @@ class RosServiceUdsServer:
             goal_pose_action_client=goal_pose_action_client,
             manipulation_action_client=manipulation_action_client,
             patrol_path_action_client=patrol_path_action_client,
+            fall_response_control_client=fall_response_control_client,
             runtime_config=runtime_config,
+            patrol_runtime_config=patrol_runtime_config,
         )
         self._server = None
 

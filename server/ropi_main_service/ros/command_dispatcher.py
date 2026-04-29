@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 from server.ropi_main_service.application.delivery_config import get_delivery_runtime_config
+from server.ropi_main_service.application.patrol_config import get_patrol_runtime_config
 
 
 class RosServiceCommandDispatchError(RuntimeError):
@@ -20,12 +21,16 @@ class RosServiceCommandDispatcher:
         goal_pose_action_client,
         manipulation_action_client=None,
         patrol_path_action_client=None,
+        fall_response_control_client=None,
         runtime_config=None,
+        patrol_runtime_config=None,
     ):
         self.goal_pose_action_client = goal_pose_action_client
         self.manipulation_action_client = manipulation_action_client
         self.patrol_path_action_client = patrol_path_action_client
+        self.fall_response_control_client = fall_response_control_client
         self.runtime_config = runtime_config or get_delivery_runtime_config()
+        self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
         self._dispatch_executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="ropi_ros_dispatch",
@@ -37,6 +42,7 @@ class RosServiceCommandDispatcher:
             "navigate_to_goal": self._dispatch_navigate_to_goal,
             "execute_manipulation": self._dispatch_execute_manipulation,
             "execute_patrol_path": self._dispatch_execute_patrol_path,
+            "fall_response_control": self._dispatch_fall_response_control,
         }
         self._async_command_handlers = {
             "cancel_action": self._async_dispatch_cancel_action,
@@ -45,6 +51,7 @@ class RosServiceCommandDispatcher:
             "navigate_to_goal": self._async_dispatch_navigate_to_goal,
             "execute_manipulation": self._async_dispatch_execute_manipulation,
             "execute_patrol_path": self._async_dispatch_execute_patrol_path,
+            "fall_response_control": self._async_dispatch_fall_response_control,
         }
 
     def dispatch(self, command: str, payload: dict | None = None) -> dict:
@@ -127,6 +134,19 @@ class RosServiceCommandDispatcher:
             action_name=f"/ropi/control/{pinky_id}/execute_patrol_path",
             goal=goal,
             result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
+        )
+
+    def _dispatch_fall_response_control(self, payload: dict) -> dict:
+        pinky_id = self._get_fall_response_pinky_id(payload)
+        request = self._build_fall_response_request(payload)
+        service_client = self._require_action_client(
+            self.fall_response_control_client,
+            error_code="FALL_RESPONSE_SERVICE_UNAVAILABLE",
+            error_message="fall_response_control command requires fall response service client.",
+        )
+        return service_client.call(
+            service_name=self._build_fall_response_service_name(pinky_id),
+            request=request,
         )
 
     def _dispatch_cancel_action(self, payload: dict) -> dict:
@@ -275,6 +295,20 @@ class RosServiceCommandDispatcher:
             action_name=f"/ropi/control/{pinky_id}/execute_patrol_path",
             goal=goal,
             result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
+        )
+
+    async def _async_dispatch_fall_response_control(self, payload: dict) -> dict:
+        pinky_id = self._get_fall_response_pinky_id(payload)
+        request = self._build_fall_response_request(payload)
+        service_client = self._require_action_client(
+            self.fall_response_control_client,
+            error_code="FALL_RESPONSE_SERVICE_UNAVAILABLE",
+            error_message="fall_response_control command requires fall response service client.",
+        )
+        return await self._async_call_service(
+            service_client,
+            service_name=self._build_fall_response_service_name(pinky_id),
+            request=request,
         )
 
     async def _async_dispatch_cancel_action(self, payload: dict) -> dict:
@@ -538,6 +572,17 @@ class RosServiceCommandDispatcher:
             partial(action_client.is_server_ready, **kwargs),
         )
 
+    async def _async_call_service(self, service_client, **kwargs):
+        async_call = getattr(service_client, "async_call", None)
+        if async_call is not None:
+            return await async_call(**kwargs)
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._dispatch_executor,
+            partial(service_client.call, **kwargs),
+        )
+
     def _cancel_goal(self, action_client, *, client_name, **kwargs):
         cancel_goal = getattr(action_client, "cancel_goal", None)
         if cancel_goal is None:
@@ -625,6 +670,38 @@ class RosServiceCommandDispatcher:
     def _build_navigation_result_wait_timeout_sec(goal: dict) -> float:
         timeout_sec = float(goal.get("timeout_sec") or 0)
         return max(timeout_sec + 5.0, 30.0)
+
+    def _get_fall_response_pinky_id(self, payload: dict) -> str:
+        return (
+            self._get_optional_identifier(payload, "pinky_id")
+            or self.patrol_runtime_config.pinky_id
+        )
+
+    @classmethod
+    def _build_fall_response_request(cls, payload: dict) -> dict:
+        request = payload.get("request")
+        if not isinstance(request, dict):
+            request = payload
+        task_id = cls._get_required_identifier(
+            request,
+            field_name="task_id",
+            error_code="TASK_ID_REQUIRED",
+            error_message="fall_response_control command requires task_id.",
+        )
+        command_type = cls._get_required_identifier(
+            request,
+            field_name="command_type",
+            error_code="COMMAND_TYPE_REQUIRED",
+            error_message="fall_response_control command requires command_type.",
+        )
+        return {
+            "task_id": task_id,
+            "command_type": command_type,
+        }
+
+    @staticmethod
+    def _build_fall_response_service_name(pinky_id: str) -> str:
+        return f"/ropi/control/{pinky_id}/fall_response_control"
 
     @staticmethod
     def _build_cancel_action_response(*, task_id, action_name, details):

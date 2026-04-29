@@ -35,6 +35,34 @@ def test_execute_patrol_path_action_matches_if_pat_003_contract():
     assert 'result.result_code = "SUCCESS"' not in action_server
 
 
+def test_fall_response_control_service_matches_if_pat_004_contract():
+    srv_path = INTERFACE_ROOT / "srv" / "FallResponseControl.srv"
+    content = srv_path.read_text(encoding="utf-8")
+
+    assert "string task_id" in content
+    assert "string command_type" in content
+    assert "---" in content
+    assert "bool accepted" in content
+    assert "string message" in content
+
+    cmake = (INTERFACE_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    package_xml = (PATROL_ROOT / "package.xml").read_text(encoding="utf-8")
+    action_server = (PATROL_ROOT / "ropi_patrol" / "patrol_path_action_server.py").read_text(
+        encoding="utf-8"
+    )
+    config = (PATROL_ROOT / "config" / "pinky3" / "patrol.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"srv/FallResponseControl.srv"' in cmake
+    assert "<depend>std_msgs</depend>" in package_xml
+    assert "from ropi_interface.srv import FallResponseControl" in action_server
+    assert "START_FALL_ALERT" in action_server
+    assert "CLEAR_AND_RESTART" in action_server
+    assert "CLEAR_AND_STOP" in action_server
+    assert 'fall_response_service_name: "/ropi/control/pinky3/fall_response_control"' in config
+
+
 def test_ropi_patrol_launch_exposes_control_managed_patrol_action_server():
     setup_py = (PATROL_ROOT / "setup.py").read_text(encoding="utf-8")
     launch_py = (PATROL_ROOT / "launch" / "patrol.launch.py").read_text(encoding="utf-8")

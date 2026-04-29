@@ -18,7 +18,10 @@ set(
   "msg/PinkyStatus.msg"
 )
 
-set(SRV_FILES)
+set(
+  SRV_FILES
+  "srv/FallResponseControl.srv"
+)
 
 set(
   ACTION_FILES

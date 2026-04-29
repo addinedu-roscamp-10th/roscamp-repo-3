@@ -105,6 +105,21 @@ class FakeAsyncManipulationActionClient:
         return []
 
 
+class FakeAsyncFallResponseControlClient:
+    def __init__(self):
+        self.calls = []
+
+    def call(self, **kwargs):
+        raise AssertionError("async dispatcher should prefer async_call")
+
+    async def async_call(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "accepted": True,
+            "message": "",
+        }
+
+
 def test_async_dispatch_prefers_async_goal_pose_action_client():
     goal_client = FakeAsyncGoalPoseActionClient()
     dispatcher = RosServiceCommandDispatcher(goal_pose_action_client=goal_client)
@@ -219,6 +234,81 @@ def test_async_dispatch_execute_patrol_path_uses_patrol_action_client():
                 "timeout_sec": 180,
             },
             "result_wait_timeout_sec": 185.0,
+        }
+    ]
+
+
+def test_async_dispatch_fall_response_control_uses_service_client():
+    fall_response_client = FakeAsyncFallResponseControlClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        fall_response_control_client=fall_response_client,
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "fall_response_control",
+            {
+                "pinky_id": "pinky3",
+                "request": {
+                    "task_id": "2001",
+                    "command_type": "CLEAR_AND_RESTART",
+                    },
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response == {
+        "accepted": True,
+        "message": "",
+    }
+    assert fall_response_client.calls == [
+        {
+            "service_name": "/ropi/control/pinky3/fall_response_control",
+            "request": {
+                "task_id": "2001",
+                "command_type": "CLEAR_AND_RESTART",
+            },
+        }
+    ]
+
+
+def test_async_dispatch_fall_response_control_accepts_flat_patrol_payload():
+    fall_response_client = FakeAsyncFallResponseControlClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        fall_response_control_client=fall_response_client,
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "fall_response_control",
+                {
+                    "task_id": "2001",
+                    "command_type": "CLEAR_AND_STOP",
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response == {
+        "accepted": True,
+        "message": "",
+    }
+    assert fall_response_client.calls == [
+        {
+            "service_name": "/ropi/control/pinky3/fall_response_control",
+            "request": {
+                "task_id": "2001",
+                "command_type": "CLEAR_AND_STOP",
+            },
         }
     ]
 

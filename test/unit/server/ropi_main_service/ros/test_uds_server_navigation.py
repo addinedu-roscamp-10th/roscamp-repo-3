@@ -84,6 +84,23 @@ class FakePatrolPathActionClient(FakeGoalPoseActionClient):
         return []
 
 
+class FakeFallResponseControlClient:
+    def __init__(self):
+        self.calls = []
+
+    async def async_call(self, *, service_name, request):
+        self.calls.append(
+            {
+                "service_name": service_name,
+                "request": request,
+            }
+        )
+        return {
+            "accepted": True,
+            "message": "",
+        }
+
+
 def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
     socket_path = tmp_path / "ropi_ros_service.sock"
     action_client = FakeGoalPoseActionClient()
@@ -221,6 +238,115 @@ def test_ros_service_uds_server_dispatches_execute_patrol_path_command(tmp_path)
     ]
     assert response["ok"] is True
     assert response["payload"]["result_code"] == "SUCCEEDED"
+
+
+def test_ros_service_uds_server_dispatches_fall_response_control_command(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    fall_response_client = FakeFallResponseControlClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=FakeGoalPoseActionClient(),
+            fall_response_control_client=fall_response_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "fall_response_control",
+                        "payload": {
+                            "pinky_id": "pinky3",
+                            "request": {
+                                "task_id": "2001",
+                                "command_type": "START_FALL_ALERT",
+                            },
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert fall_response_client.calls == [
+        {
+            "service_name": "/ropi/control/pinky3/fall_response_control",
+            "request": {
+                "task_id": "2001",
+                "command_type": "START_FALL_ALERT",
+            },
+        }
+    ]
+    assert response == {
+        "ok": True,
+        "payload": {
+            "accepted": True,
+            "message": "",
+        },
+    }
+
+
+def test_ros_service_uds_server_dispatches_flat_fall_response_control_payload(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    fall_response_client = FakeFallResponseControlClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=FakeGoalPoseActionClient(),
+            fall_response_control_client=fall_response_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "fall_response_control",
+                        "payload": {
+                            "task_id": "2001",
+                            "command_type": "CLEAR_AND_STOP",
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert fall_response_client.calls == [
+        {
+            "service_name": "/ropi/control/pinky3/fall_response_control",
+            "request": {
+                "task_id": "2001",
+                "command_type": "CLEAR_AND_STOP",
+            },
+        }
+    ]
+    assert response == {
+        "ok": True,
+        "payload": {
+            "accepted": True,
+            "message": "",
+        },
+    }
 
 
 def test_ros_service_uds_server_dispatch_request_is_awaitable(tmp_path):
