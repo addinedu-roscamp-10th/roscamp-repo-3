@@ -227,10 +227,10 @@ def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
         assert page.robot_pose_label.text() == "미수신"
         assert page.robot_destination_label.text() == "미수신"
         assert page.robot_map_label.text() == "순찰 경로 / waypoint placeholder"
-        assert form.findChild(QFrame, "patrolRouteSummaryCard") is not None
-        assert form.map_id_label.text() == "map_test11_0423"
-        assert form.waypoint_count_label.text() == "3개"
-        assert form.path_frame_id_label.text() == "map"
+        assert form.findChild(QFrame, "patrolRouteSummaryCard") is None
+        assert not hasattr(form, "map_id_label")
+        assert not hasattr(form, "waypoint_count_label")
+        assert not hasattr(form, "path_frame_id_label")
 
         payload = form._build_create_patrol_task_payload(SessionManager.current_user())
         assert payload["caregiver_id"] == 7
@@ -416,9 +416,10 @@ def test_patrol_form_loads_area_options_from_server_options():
         assert form.patrol_area_combo.currentData()["patrol_area_id"] == (
             "patrol_ward_night_01"
         )
-        assert form.map_id_label.text() == "map_test11_0423"
-        assert form.waypoint_count_label.text() == "3개"
-        assert form.path_frame_id_label.text() == "map"
+        assert form.findChild(QFrame, "patrolRouteSummaryCard") is None
+        assert not hasattr(form, "map_id_label")
+        assert not hasattr(form, "waypoint_count_label")
+        assert not hasattr(form, "path_frame_id_label")
 
         form.set_patrol_areas(
             [
@@ -433,7 +434,9 @@ def test_patrol_form_loads_area_options_from_server_options():
                 }
             ]
         )
-        assert form.waypoint_count_label.text() == "0개"
+        assert form.patrol_area_combo.currentData()["patrol_area_id"] == (
+            "patrol_no_robot"
+        )
     finally:
         form.close()
 

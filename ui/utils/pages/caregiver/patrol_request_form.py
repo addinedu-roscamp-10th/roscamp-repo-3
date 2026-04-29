@@ -1,7 +1,6 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
-    QFrame,
     QGridLayout,
     QLabel,
     QPushButton,
@@ -67,8 +66,6 @@ class PatrolRequestForm(QWidget):
         self.patrol_area_combo.setEnabled(False)
         self.patrol_area_combo.setMinimumHeight(44)
 
-        self.route_summary_card = self._build_route_summary_card()
-
         (
             self.priority_segment,
             self.priority_group,
@@ -104,13 +101,6 @@ class PatrolRequestForm(QWidget):
             1,
             2,
         )
-        self.form_grid.addWidget(
-            self.route_summary_card,
-            2,
-            0,
-            1,
-            2,
-        )
         self.notes_field_group = make_field_group(
             "요청 메모",
             self.notes_input,
@@ -119,7 +109,7 @@ class PatrolRequestForm(QWidget):
         )
         self.form_grid.addWidget(
             self.notes_field_group,
-            3,
+            2,
             0,
             1,
             2,
@@ -133,47 +123,7 @@ class PatrolRequestForm(QWidget):
             self._handle_patrol_area_changed
         )
         self.notes_input.textChanged.connect(self.emit_preview_changed)
-        self._sync_selected_area_summary()
         self.set_priority("NORMAL")
-
-    def _build_route_summary_card(self):
-        card = QFrame()
-        card.setObjectName("patrolRouteSummaryCard")
-        layout = QGridLayout(card)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setHorizontalSpacing(16)
-        layout.setVerticalSpacing(8)
-
-        self.map_id_label = self._add_summary_row(
-            layout,
-            0,
-            "지도",
-            "-",
-        )
-        self.waypoint_count_label = self._add_summary_row(
-            layout,
-            0,
-            "waypoint",
-            "0개",
-            column=2,
-        )
-        self.path_frame_id_label = self._add_summary_row(
-            layout,
-            1,
-            "frame",
-            "-",
-        )
-        return card
-
-    @staticmethod
-    def _add_summary_row(layout, row, label_text, value_text, *, column=0):
-        label = QLabel(label_text)
-        label.setObjectName("patrolSummaryLabel")
-        value = QLabel(value_text)
-        value.setObjectName("patrolSummaryValue")
-        layout.addWidget(label, row, column)
-        layout.addWidget(value, row, column + 1)
-        return value
 
     def set_patrol_areas(self, patrol_areas):
         self.patrol_area_combo.clear()
@@ -182,7 +132,6 @@ class PatrolRequestForm(QWidget):
         if not areas:
             self.patrol_area_combo.addItem("등록된 순찰 구역 없음")
             self.patrol_area_combo.setEnabled(False)
-            self._sync_selected_area_summary()
             self.emit_preview_changed()
             return
 
@@ -195,7 +144,6 @@ class PatrolRequestForm(QWidget):
                 self._build_patrol_area_display_name(area),
                 area,
             )
-        self._sync_selected_area_summary()
         self.emit_preview_changed()
 
     @staticmethod
@@ -228,33 +176,7 @@ class PatrolRequestForm(QWidget):
         return area if isinstance(area, dict) else {}
 
     def _handle_patrol_area_changed(self):
-        self._sync_selected_area_summary()
         self.emit_preview_changed()
-
-    def _sync_selected_area_summary(self):
-        area = self._selected_area()
-        self.map_id_label.setText(self._display_value(area.get("map_id")))
-        self.waypoint_count_label.setText(
-            f"{self._display_waypoint_count(area.get('waypoint_count'))}개"
-        )
-        self.path_frame_id_label.setText(
-            self._display_value(area.get("path_frame_id"))
-        )
-
-    @staticmethod
-    def _display_value(value, *, empty="-"):
-        if value is None or str(value).strip() == "":
-            return empty
-        return str(value)
-
-    @staticmethod
-    def _display_waypoint_count(value):
-        if value in (None, ""):
-            return "0"
-        try:
-            return str(int(value))
-        except (TypeError, ValueError):
-            return "0"
 
     def _build_create_patrol_task_payload(self, current_user):
         return build_patrol_create_payload(
