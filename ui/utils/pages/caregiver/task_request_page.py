@@ -1,8 +1,9 @@
 from uuid import uuid4
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QApplication, QPushButton, QComboBox, QTextEdit, QScrollArea, QSpinBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGridLayout,
+    QApplication, QPushButton, QComboBox, QTextEdit, QScrollArea, QSpinBox,
+    QButtonGroup, QCompleter
 )
 from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 
@@ -65,6 +66,10 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         "긴급": "URGENT",
         "최우선": "HIGHEST",
     }
+    PRIORITY_CODE_TO_LABEL = {
+        code: label
+        for label, code in PRIORITY_LABEL_TO_CODE.items()
+    }
 
     def __init__(self):
         super().__init__()
@@ -77,9 +82,20 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setSpacing(12)
+        root.setSpacing(16)
+
+        form_title = QLabel("운반 작업 설정")
+        form_title.setObjectName("sectionTitle")
+
+        self.form_grid = QGridLayout()
+        self.form_grid.setObjectName("deliveryFormGrid")
+        self.form_grid.setHorizontalSpacing(18)
+        self.form_grid.setVerticalSpacing(16)
+        self.form_grid.setColumnStretch(0, 1)
+        self.form_grid.setColumnStretch(1, 1)
 
         self.item_combo = QComboBox()
+        self._configure_searchable_combo(self.item_combo, "물품명 또는 item_id 검색")
         self.item_combo.setMinimumHeight(44)
 
         self.quantity_input = QSpinBox()
@@ -89,37 +105,71 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.quantity_input.setMinimumHeight(44)
 
         self.destination_combo = QComboBox()
+        self._configure_searchable_combo(self.destination_combo, "목적지 검색")
         for label, destination_id in self.DESTINATION_OPTIONS:
             self.destination_combo.addItem(label, destination_id)
         self.destination_combo.setMinimumHeight(44)
 
-        self.priority_combo = QComboBox()
+        self.priority_combo = QComboBox(self)
         self.priority_combo.addItems(["일반", "긴급", "최우선"])
-        self.priority_combo.setMinimumHeight(44)
+        self.priority_combo.hide()
+
+        self.priority_group = QButtonGroup(self)
+        self.priority_group.setExclusive(True)
+        self.priority_buttons = {}
+        self.priority_segment = QFrame()
+        self.priority_segment.setObjectName("prioritySegment")
+        priority_layout = QHBoxLayout(self.priority_segment)
+        priority_layout.setContentsMargins(4, 4, 4, 4)
+        priority_layout.setSpacing(6)
+
+        for code in ["NORMAL", "URGENT", "HIGHEST"]:
+            button = QPushButton(code)
+            button.setObjectName("prioritySegmentButton")
+            button.setCheckable(True)
+            button.clicked.connect(
+                lambda _checked=False, priority=code: self.set_priority(priority)
+            )
+            self.priority_buttons[code] = button
+            self.priority_group.addButton(button)
+            priority_layout.addWidget(button)
 
         self.detail_input = QTextEdit()
+        self.detail_input.setObjectName("deliveryNotesInput")
         self.detail_input.setPlaceholderText("배송 시 주의사항이나 수령인 정보를 입력하세요.")
-        self.detail_input.setMinimumHeight(120)
+        self.detail_input.setFixedHeight(84)
         self.init_inline_status()
 
         self.submit_btn = QPushButton("물품 요청 등록")
         self.submit_btn.setObjectName("primaryButton")
         self.submit_btn.clicked.connect(self.submit_request)
 
-        root.addWidget(QLabel("물품 종류"))
-        root.addWidget(self.item_combo)
+        self.form_grid.addWidget(self._field_group("운반 물품", self.item_combo), 0, 0)
+        self.form_grid.addWidget(self._field_group("수량", self.quantity_input), 0, 1)
+        self.form_grid.addWidget(
+            self._field_group("목적지", self.destination_combo),
+            1,
+            0,
+            1,
+            2,
+        )
+        self.form_grid.addWidget(
+            self._field_group("우선순위", self.priority_segment),
+            2,
+            0,
+            1,
+            2,
+        )
+        self.form_grid.addWidget(
+            self._field_group("추가 메모", self.detail_input),
+            3,
+            0,
+            1,
+            2,
+        )
 
-        root.addWidget(QLabel("수량"))
-        root.addWidget(self.quantity_input)
-
-        root.addWidget(QLabel("목적지"))
-        root.addWidget(self.destination_combo)
-
-        root.addWidget(QLabel("우선순위"))
-        root.addWidget(self.priority_combo)
-
-        root.addWidget(QLabel("설명"))
-        root.addWidget(self.detail_input)
+        root.addWidget(form_title)
+        root.addLayout(self.form_grid)
         root.addWidget(self.status_label)
 
         root.addWidget(self.submit_btn)
@@ -127,8 +177,62 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.item_combo.currentIndexChanged.connect(self.emit_preview_changed)
         self.quantity_input.valueChanged.connect(self.emit_preview_changed)
         self.destination_combo.currentIndexChanged.connect(self.emit_preview_changed)
-        self.priority_combo.currentIndexChanged.connect(self.emit_preview_changed)
+        self.priority_combo.currentTextChanged.connect(
+            self._handle_priority_combo_changed
+        )
         self.detail_input.textChanged.connect(self.emit_preview_changed)
+        self.set_priority("NORMAL")
+
+    @staticmethod
+    def _configure_searchable_combo(combo, placeholder):
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        combo.lineEdit().setPlaceholderText(placeholder)
+
+        completer = QCompleter(combo.model(), combo)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        combo.setCompleter(completer)
+
+    @staticmethod
+    def _field_group(label_text, widget):
+        group = QFrame()
+        group.setObjectName("formFieldGroup")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        label = QLabel(label_text)
+        label.setObjectName("fieldLabel")
+        layout.addWidget(label)
+        layout.addWidget(widget)
+        return group
+
+    def _handle_priority_combo_changed(self, label):
+        self.set_priority(
+            self.PRIORITY_LABEL_TO_CODE.get(label, "NORMAL"),
+            sync_combo=False,
+        )
+
+    def set_priority(self, priority_code, sync_combo=True):
+        normalized = str(priority_code or "NORMAL").upper()
+        if normalized not in self.priority_buttons:
+            normalized = "NORMAL"
+
+        self._priority_code = normalized
+        self.priority_buttons[normalized].setChecked(True)
+
+        if sync_combo:
+            label = self.PRIORITY_CODE_TO_LABEL[normalized]
+            if self.priority_combo.currentText() != label:
+                was_blocked = self.priority_combo.blockSignals(True)
+                self.priority_combo.setCurrentText(label)
+                self.priority_combo.blockSignals(was_blocked)
+
+        self.emit_preview_changed()
+
+    def get_priority_code(self):
+        return getattr(self, "_priority_code", "NORMAL")
 
     def ensure_items_loaded(self):
         if not self._items_loaded and self.load_thread is None:
@@ -289,10 +393,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
             "item_id": int(item_id),
             "quantity": self.quantity_input.value(),
             "destination_id": destination_id,
-            "priority": self.PRIORITY_LABEL_TO_CODE.get(
-                self.priority_combo.currentText(),
-                "NORMAL",
-            ),
+            "priority": self.get_priority_code(),
             "notes": self.detail_input.toPlainText().strip() or None,
             "idempotency_key": f"idem_{uuid4().hex}",
         }
@@ -319,10 +420,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         current_user = SessionManager.current_user()
         item = self.item_combo.currentData()
         destination_id = str(self.destination_combo.currentData() or "-")
-        priority = self.PRIORITY_LABEL_TO_CODE.get(
-            self.priority_combo.currentText(),
-            "NORMAL",
-        )
+        priority = self.get_priority_code()
 
         if isinstance(item, dict):
             item_id = str(item.get("item_id") or "-")
@@ -361,7 +459,7 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
     def reset_form(self):
         self.quantity_input.setValue(1)
         self.destination_combo.setCurrentIndex(0)
-        self.priority_combo.setCurrentIndex(0)
+        self.set_priority("NORMAL")
         self.detail_input.clear()
         if self.item_combo.count() > 0:
             self.item_combo.setCurrentIndex(0)

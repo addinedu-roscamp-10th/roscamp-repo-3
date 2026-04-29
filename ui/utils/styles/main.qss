@@ -320,6 +320,37 @@ QPushButton#scenarioTabButton:checked {
     color: #FFFFFF;
 }
 
+QFrame#formFieldGroup {
+    background: transparent;
+    border: none;
+}
+
+QFrame#prioritySegment {
+    background: #F1F5F9;
+    border: 1px solid #D8E0E8;
+    border-radius: 16px;
+}
+
+QPushButton#prioritySegmentButton {
+    background: transparent;
+    border: 1px solid transparent;
+    color: #5B6775;
+    font-weight: 900;
+    padding: 11px 14px;
+}
+
+QPushButton#prioritySegmentButton:hover {
+    background: #FFFFFF;
+    border: 1px solid #D8E0E8;
+    color: #005C55;
+}
+
+QPushButton#prioritySegmentButton:checked {
+    background: #FFFFFF;
+    border: 1px solid #B9D8D3;
+    color: #005C55;
+}
+
 QPushButton#dangerButton {
     background: #DC2626;
     border: none;

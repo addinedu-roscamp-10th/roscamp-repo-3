@@ -38,6 +38,10 @@ def test_main_qss_defines_task_request_page_components():
 
     assert "QPushButton#scenarioTabButton" in qss
     assert "QPushButton#scenarioTabButton:checked" in qss
+    assert "QFrame#formFieldGroup" in qss
+    assert "QFrame#prioritySegment" in qss
+    assert "QPushButton#prioritySegmentButton" in qss
+    assert "QPushButton#prioritySegmentButton:checked" in qss
     assert "QFrame#requestPreviewCard" in qss
     assert "QFrame#resultPanel" in qss
     assert "QLabel#previewValue" in qss
