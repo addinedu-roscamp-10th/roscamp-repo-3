@@ -12,6 +12,8 @@ _EXPORTS = {
     "DeliveryWorkflowTaskManager": ("delivery_workflow_task_manager", "DeliveryWorkflowTaskManager"),
     "FixedGoalPoseResolver": ("goal_pose_resolvers", "FixedGoalPoseResolver"),
     "FallResponseCommandService": ("fall_response_command", "FallResponseCommandService"),
+    "GuideCommandService": ("guide_command", "GuideCommandService"),
+    "GuideRuntimeService": ("guide_runtime", "GuideRuntimeService"),
     "GoalPoseNavigationService": ("goal_pose_navigation", "GoalPoseNavigationService"),
     "InventoryService": ("inventory", "InventoryService"),
     "MappedGoalPoseResolver": ("goal_pose_resolvers", "MappedGoalPoseResolver"),
