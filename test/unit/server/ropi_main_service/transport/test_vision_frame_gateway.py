@@ -81,3 +81,36 @@ def test_gateway_flushes_window_metrics_for_received_relayed_and_dropped_frames(
     assert snapshot.dropped_frame_count == 1
     assert snapshot.latest_frame_id == 10
     assert snapshot.max_latency_ms is not None
+
+
+def test_gateway_config_from_env_uses_common_ai_server_host(monkeypatch):
+    monkeypatch.delenv("VISION_GATEWAY_AI_HOST", raising=False)
+    monkeypatch.setenv("AI_SERVER_HOST", "192.168.0.89")
+
+    config = VisionFrameGatewayConfig.from_env()
+
+    assert config.ai_host == "192.168.0.89"
+
+
+def test_gateway_config_from_env_parses_human_readable_socket_buffers(monkeypatch):
+    monkeypatch.setenv("VISION_GATEWAY_RECV_BUFFER", "16MiB")
+    monkeypatch.setenv("VISION_GATEWAY_SEND_BUFFER", "8MiB")
+    monkeypatch.setenv("VISION_GATEWAY_RECV_BUFFER_BYTES", "1024")
+    monkeypatch.setenv("VISION_GATEWAY_SEND_BUFFER_BYTES", "2048")
+
+    config = VisionFrameGatewayConfig.from_env()
+
+    assert config.receive_buffer_bytes == 16 * 1024 * 1024
+    assert config.send_buffer_bytes == 8 * 1024 * 1024
+
+
+def test_gateway_config_from_env_keeps_legacy_socket_buffer_bytes(monkeypatch):
+    monkeypatch.delenv("VISION_GATEWAY_RECV_BUFFER", raising=False)
+    monkeypatch.delenv("VISION_GATEWAY_SEND_BUFFER", raising=False)
+    monkeypatch.setenv("VISION_GATEWAY_RECV_BUFFER_BYTES", "1048576")
+    monkeypatch.setenv("VISION_GATEWAY_SEND_BUFFER_BYTES", "2097152")
+
+    config = VisionFrameGatewayConfig.from_env()
+
+    assert config.receive_buffer_bytes == 1 * 1024 * 1024
+    assert config.send_buffer_bytes == 2 * 1024 * 1024

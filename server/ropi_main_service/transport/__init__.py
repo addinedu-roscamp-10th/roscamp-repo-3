@@ -1,10 +1,14 @@
+from importlib import import_module
+
 from .tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
+    MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     TCPFrame,
@@ -39,7 +43,24 @@ from .fall_inference_stream import (
     FallInferenceStreamConfig,
     FallInferenceStreamError,
 )
-from .tcp_server import ControlServiceServer, main
+
+
+_EXPORTS = {
+    "ControlServiceServer": ("tcp_server", "ControlServiceServer"),
+    "main": ("tcp_server", "main"),
+}
+
+
+def __getattr__(name):
+    try:
+        module_name, attribute_name = _EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(name) from exc
+
+    module = import_module(f"{__name__}.{module_name}")
+    value = getattr(module, attribute_name)
+    globals()[name] = value
+    return value
 
 __all__ = [
     "ControlServiceServer",
@@ -47,11 +68,13 @@ __all__ = [
     "FallInferenceStreamConfig",
     "FallInferenceStreamError",
     "MESSAGE_CODE_DELIVERY_CREATE_TASK",
+    "MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY",
     "MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE",
     "MESSAGE_CODE_HEARTBEAT",
     "MESSAGE_CODE_INTERNAL_RPC",
     "MESSAGE_CODE_LOGIN",
     "MESSAGE_CODE_PATROL_CREATE_TASK",
+    "MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY",
     "MESSAGE_CODE_PATROL_RESUME_TASK",
     "MESSAGE_CODE_TASK_EVENT_SUBSCRIBE",
     "PACKET_TYPE_FRAME_CHUNK",

@@ -12,6 +12,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
+    MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
     TCPFrame,
 )
@@ -23,7 +24,8 @@ class FakeTaskRequestService:
 
 
 @pytest.fixture
-def control_service_server():
+def control_service_server(monkeypatch):
+    monkeypatch.setenv("AI_FALL_STREAM_ENABLED", "false")
     return tcp_server.ControlServiceServer()
 
 
@@ -96,6 +98,82 @@ def test_rpc_dispatch_routes_to_registered_service(control_service_server):
     assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
     assert response.sequence_no == 2
     assert response.is_response is True
+
+
+def test_task_monitor_snapshot_rpc_uses_stream_watermark_for_handoff(
+    control_service_server,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=24,
+        payload={
+            "service": "task_monitor",
+            "method": "get_task_monitor_snapshot",
+            "kwargs": {},
+        },
+    )
+
+    class FakeTaskMonitorService:
+        async def async_get_task_monitor_snapshot(self, **kwargs):
+            return {
+                "result_code": "ACCEPTED",
+                "last_event_seq": 999,
+                "tasks": [],
+            }
+
+    async def scenario():
+        await control_service_server.task_event_stream_hub.publish(
+            "TASK_UPDATED",
+            {"task_id": 1001},
+        )
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"task_monitor": FakeTaskMonitorService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload["last_event_seq"] == 1
+
+
+def test_fall_evidence_image_dispatch_routes_if_pat_007_to_fall_evidence_service(
+    control_service_server,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
+        sequence_no=33,
+        payload={
+            "consumer_id": "ui-admin-task-monitor",
+            "task_id": "2001",
+            "alert_id": "17",
+            "evidence_image_id": "fall-2001-541",
+            "result_seq": 541,
+        },
+    )
+    calls = []
+
+    class FakeFallEvidenceImageService:
+        def get_fall_evidence_image(self, **payload):
+            calls.append(payload)
+            return {
+                "result_code": "OK",
+                "task_id": payload["task_id"],
+                "evidence_image_id": payload["evidence_image_id"],
+            }
+
+    with patch.dict(
+        tcp_server.SERVICE_REGISTRY,
+        {"fall_evidence_image": FakeFallEvidenceImageService},
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY
+    assert response.sequence_no == 33
+    assert response.payload["result_code"] == "OK"
+    assert calls == [request.payload]
 
 
 def test_rpc_dispatch_rejects_unknown_service(control_service_server):
@@ -280,6 +358,49 @@ def test_async_rpc_dispatch_prefers_async_method_alias(control_service_server):
 
     assert response.is_response is True
     assert response.payload == {"summary": {"available_robot_count": 3}}
+
+
+def test_async_fall_evidence_image_dispatch_prefers_async_service(
+    control_service_server,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
+        sequence_no=34,
+        payload={
+            "consumer_id": "ui-admin-task-monitor",
+            "task_id": "2001",
+            "alert_id": "17",
+            "evidence_image_id": "fall-2001-541",
+            "result_seq": 541,
+        },
+    )
+
+    class FakeFallEvidenceImageService:
+        def get_fall_evidence_image(self, **payload):
+            raise AssertionError("IF-PAT-007 should prefer async fall evidence method")
+
+        async def async_get_fall_evidence_image(self, **payload):
+            return {
+                "result_code": "OK",
+                "task_id": payload["task_id"],
+                "evidence_image_id": payload["evidence_image_id"],
+            }
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"fall_evidence_image": FakeFallEvidenceImageService},
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("IF-PAT-007 should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY
+    assert response.payload["result_code"] == "OK"
 
 
 def test_caregiver_facade_attaches_action_feedback_to_running_tasks():

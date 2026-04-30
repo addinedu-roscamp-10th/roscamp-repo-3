@@ -8,10 +8,12 @@ from server.ropi_main_service.application.fall_inference_result import (
 class FakeRepository:
     def __init__(self, active_task=None):
         self.active_task = active_task
+        self.requested_robot_ids = []
         self.inference_logs = []
         self.alert_records = []
 
     async def async_get_active_patrol_task_for_robot(self, robot_id):
+        self.requested_robot_ids.append(robot_id)
         return self.active_task
 
     async def async_record_ai_inference(self, **kwargs):
@@ -87,9 +89,11 @@ def test_processor_records_inference_and_starts_fall_response_after_threshold():
                         "result_seq": 541,
                         "frame_id": "front_cam_frame_541",
                         "frame_ts": "2026-04-29T12:34:56Z",
+                        "pinky_id": "pinky3",
                         "fall_detected": True,
                         "confidence": 0.94,
-                        "fall_streak_ms": 1200,
+                        "fall_streak_ms": 0,
+                        "alert_candidate": True,
                     }
                 ],
             }
@@ -218,3 +222,46 @@ def test_processor_does_not_duplicate_alert_for_waiting_task():
     assert summary["alert_started_count"] == 0
     assert summary["ignored_count"] == 1
     assert command_client.calls == []
+
+
+def test_processor_uses_result_pinky_id_for_unfiltered_multi_robot_stream():
+    repository = FakeRepository(
+        active_task={
+            "task_id": 3001,
+            "task_status": "RUNNING",
+            "phase": "FOLLOW_PATROL_PATH",
+            "assigned_robot_id": "pinky4",
+            "patrol_status": "MOVING",
+        }
+    )
+    command_client = FakeCommandClient()
+    processor = FallInferenceResultProcessor(
+        repository=repository,
+        command_client=command_client,
+        command_execution_recorder=FakeCommandExecutionRecorder(),
+        pinky_id="pinky3",
+    )
+
+    summary = asyncio.run(
+        processor.async_process_batch(
+            {
+                "batch_end_seq": 801,
+                "results": [
+                    {
+                        "result_seq": 801,
+                        "pinky_id": "pinky4",
+                        "frame_id": "pinky4_frame_801",
+                        "frame_ts": "2026-04-29T12:35:00Z",
+                        "fall_detected": True,
+                        "fall_streak_ms": 0,
+                        "alert_candidate": True,
+                    }
+                ],
+            }
+        )
+    )
+
+    assert summary["alert_started_count"] == 1
+    assert repository.requested_robot_ids == ["pinky4"]
+    assert repository.inference_logs[0]["robot_id"] == "pinky4"
+    assert command_client.calls[0][1]["pinky_id"] == "pinky4"

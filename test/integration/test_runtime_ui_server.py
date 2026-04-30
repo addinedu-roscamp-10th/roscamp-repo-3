@@ -1,10 +1,5 @@
 import os
-import socket
-import subprocess
-import sys
-import threading
-import time
-from pathlib import Path
+import json
 
 import pytest
 
@@ -12,66 +7,29 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication
 
-from server.ropi_main_service.persistence.connection import fetch_one
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
-from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
+from runtime_db_seeders import (
+    active_patrol_task_seed,
+    fall_evidence_seed,
+    safe_fetch_one,
+)
+from runtime_servers import (
+    SERVER_HOST,
+    ai_evidence_server,
+    ai_fall_stream_server,
+    control_server,
+    control_server_with_ai_fall_stream,
+    ros_service_stub,
+)
+from runtime_waiting import wait_for_condition, wait_for_qt
 from ui.utils.network import tcp_client
-from ui.utils.network.service_clients import DeliveryRequestRemoteService
+from ui.utils.network.service_clients import (
+    DeliveryRequestRemoteService,
+    TaskMonitorRemoteService,
+)
 from ui.utils.network.tcp_client import send_request
 from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
 from ui.utils.session.session_manager import SessionManager, UserSession
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVER_HOST = "127.0.0.1"
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind((SERVER_HOST, 0))
-        return sock.getsockname()[1]
-
-
-def _wait_for_server_ready(server_process, server_port: int, app: QApplication, timeout: float = 10.0):
-    deadline = time.monotonic() + timeout
-
-    while time.monotonic() < deadline:
-        if server_process.poll() is not None:
-            stdout, stderr = server_process.communicate(timeout=1)
-            raise RuntimeError(
-                "Control server exited during startup.\n"
-                f"stdout:\n{stdout}\n"
-                f"stderr:\n{stderr}"
-            )
-
-        try:
-            with socket.create_connection((SERVER_HOST, server_port), timeout=0.2):
-                return
-        except OSError:
-            app.processEvents()
-            time.sleep(0.1)
-
-    raise TimeoutError("Control server did not become ready in time.")
-
-
-def wait_for_qt(app: QApplication, predicate, timeout: float = 10.0) -> bool:
-    deadline = time.monotonic() + timeout
-
-    while time.monotonic() < deadline:
-        app.processEvents()
-        if predicate():
-            return True
-        time.sleep(0.05)
-
-    app.processEvents()
-    return predicate()
-
-
-def _safe_fetch_one(query: str):
-    try:
-        return fetch_one(query)
-    except Exception:
-        return None
 
 
 def build_if_del_001_payload() -> dict:
@@ -80,7 +38,7 @@ def build_if_del_001_payload() -> dict:
 
     product = products[0]
 
-    caregiver_row = _safe_fetch_one(
+    caregiver_row = safe_fetch_one(
         "SELECT CAST(caregiver_id AS CHAR) AS caregiver_id FROM caregiver LIMIT 1"
     )
     return {
@@ -111,135 +69,6 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
-@pytest.fixture(scope="session")
-def ros_service_stub(tmp_path_factory):
-    socket_path = tmp_path_factory.mktemp("ros-runtime") / "ropi_ros_service.sock"
-    ready = threading.Event()
-    stop_requested = threading.Event()
-    finished = threading.Event()
-
-    def run_server():
-        if socket_path.exists():
-            socket_path.unlink()
-
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server_sock:
-                server_sock.bind(str(socket_path))
-                server_sock.listen(5)
-                server_sock.settimeout(0.2)
-                ready.set()
-
-                while not stop_requested.is_set():
-                    try:
-                        conn, _ = server_sock.accept()
-                    except TimeoutError:
-                        continue
-                    except OSError:
-                        break
-
-                    with conn:
-                        try:
-                            request = decode_message_bytes(conn.recv(4096))
-                        except Exception:
-                            continue
-
-                        if request.get("command") == "get_runtime_status":
-                            response = {
-                                "ok": True,
-                                "payload": {
-                                    "ready": True,
-                                    "checks": [
-                                        {"name": "pinky2.navigate_to_goal", "ready": True},
-                                        {"name": "arm1.execute_manipulation", "ready": True},
-                                        {"name": "arm2.execute_manipulation", "ready": True},
-                                    ],
-                                },
-                            }
-                        else:
-                            response = {
-                                "ok": True,
-                                "payload": {
-                                    "accepted": True,
-                                    "status": 4,
-                                    "result_code": "SUCCESS",
-                                    "result_message": "done",
-                                },
-                            }
-
-                        try:
-                            conn.sendall(encode_message(response))
-                        except BrokenPipeError:
-                            continue
-        finally:
-            finished.set()
-
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-    assert ready.wait(timeout=5), "fake ros service did not become ready"
-
-    try:
-        yield {"socket_path": str(socket_path)}
-    finally:
-        stop_requested.set()
-        try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client_sock:
-                client_sock.connect(str(socket_path))
-                client_sock.sendall(encode_message({"command": "shutdown_probe", "payload": {}}))
-        except OSError:
-            pass
-        server_thread.join(timeout=5)
-        if socket_path.exists():
-            socket_path.unlink()
-        assert finished.is_set()
-
-
-@pytest.fixture(scope="session")
-def control_server(qapp, ros_service_stub):
-    server_port = _find_free_port()
-    server_process = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "server.ropi_main_service.transport.tcp_server",
-            "--host",
-            SERVER_HOST,
-            "--port",
-            str(server_port),
-        ],
-        cwd=PROJECT_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env={
-            **os.environ,
-            "PYTHONUNBUFFERED": "1",
-            "ROPI_ROS_SERVICE_SOCKET_PATH": ros_service_stub["socket_path"],
-            "ROPI_DELIVERY_GOAL_POSE_SOURCE": "db",
-        },
-    )
-
-    _wait_for_server_ready(server_process, server_port, qapp)
-
-    try:
-        yield {
-            "port": server_port,
-            "process": server_process,
-        }
-    finally:
-        if server_process.poll() is None:
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
-                server_process.wait(timeout=5)
-
-        if server_process.stdout:
-            server_process.stdout.close()
-        if server_process.stderr:
-            server_process.stderr.close()
-
-
 @pytest.fixture
 def patched_ui_endpoint(control_server, monkeypatch):
     monkeypatch.setattr(tcp_client, "CONTROL_SERVER_HOST", SERVER_HOST)
@@ -254,6 +83,106 @@ def test_server_process_heartbeat_reports_db_status(patched_ui_endpoint):
     assert response["ok"] is True
     assert response["payload"]["message"] == "메인 서버 연결 정상"
     assert response["payload"]["db"]["ok"] is True
+
+
+def test_control_server_subscribes_ai_fall_stream_and_starts_fall_alert(
+    control_server_with_ai_fall_stream,
+    ai_fall_stream_server,
+    active_patrol_task_seed,
+):
+    assert control_server_with_ai_fall_stream["port"] > 0
+    assert ai_fall_stream_server["subscribed"].wait(timeout=10)
+
+    with ai_fall_stream_server["request_lock"]:
+        requests = list(ai_fall_stream_server["requests"])
+
+    assert requests
+    assert requests[0]["consumer_id"] == "control_service_ai_fall"
+    assert "pinky_id" not in requests[0]
+    assert requests[0]["last_seq"] == 0
+
+    ai_fall_stream_server["push_requested"].set()
+    task_id = active_patrol_task_seed["task_id"]
+
+    updated = wait_for_condition(
+        lambda: (
+            safe_fetch_one(
+                "SELECT phase FROM task "
+                f"WHERE task_id = {int(task_id)}"
+            )
+            or {}
+        ).get("phase")
+        == "WAIT_FALL_RESPONSE",
+        timeout=10.0,
+    )
+    if not updated:
+        process = control_server_with_ai_fall_stream["process"]
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=5)
+        pytest.fail(
+            "Control Service did not process the PAT-005 push.\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}"
+        )
+
+    task_row = safe_fetch_one(
+        "SELECT phase, latest_reason_code FROM task "
+        f"WHERE task_id = {int(task_id)}"
+    )
+    patrol_row = safe_fetch_one(
+        "SELECT patrol_status FROM patrol_task_detail "
+        f"WHERE task_id = {int(task_id)}"
+    )
+    inference_row = safe_fetch_one(
+        "SELECT robot_id, result_json FROM ai_inference_log "
+        f"WHERE task_id = {int(task_id)} ORDER BY ai_inference_log_id DESC LIMIT 1"
+    )
+
+    assert task_row["phase"] == "WAIT_FALL_RESPONSE"
+    assert task_row["latest_reason_code"] == "FALL_DETECTED"
+    assert patrol_row["patrol_status"] == "WAITING_FALL_RESPONSE"
+    assert inference_row["robot_id"] == "pinky3"
+    assert json.loads(inference_row["result_json"])["pinky_id"] == "pinky3"
+
+
+def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(
+    patched_ui_endpoint,
+    fall_evidence_seed,
+    ai_evidence_server,
+):
+    with ai_evidence_server["request_lock"]:
+        request_count_before = len(ai_evidence_server["requests"])
+
+    response = TaskMonitorRemoteService().get_fall_evidence_image(
+        consumer_id="ui-integration-task-monitor",
+        task_id=fall_evidence_seed["task_id"],
+        alert_id=fall_evidence_seed["alert_id"],
+        evidence_image_id=fall_evidence_seed["evidence_image_id"],
+        result_seq=fall_evidence_seed["result_seq"],
+    )
+
+    assert response["result_code"] == "OK"
+    assert response["task_id"] == fall_evidence_seed["task_id"]
+    assert response["alert_id"] == fall_evidence_seed["alert_id"]
+    assert response["evidence_image_id"] == fall_evidence_seed["evidence_image_id"]
+    assert response["image_width_px"] == 640
+    assert response["detections"][0]["class_name"] == "fall"
+
+    with ai_evidence_server["request_lock"]:
+        ai_requests = ai_evidence_server["requests"][request_count_before:]
+
+    assert ai_requests == [
+        {
+            "consumer_id": "control_service_ai_fall",
+            "evidence_image_id": fall_evidence_seed["evidence_image_id"],
+            "result_seq": fall_evidence_seed["result_seq"],
+            **(
+                {"pinky_id": fall_evidence_seed["robot_id"]}
+                if fall_evidence_seed["robot_id"]
+                else {}
+            ),
+        }
+    ]
 
 
 def test_ui_client_create_delivery_task_hits_real_server(patched_ui_endpoint, runtime_delivery_schema):
@@ -316,10 +245,13 @@ def test_task_request_page_submit_request_hits_if_del_001(patched_ui_endpoint, q
 
         submitted = wait_for_qt(
             qapp,
-            lambda: page.delivery_form.submit_thread is None,
+            lambda: (
+                page.delivery_form.submit_thread is None
+                and page.delivery_form.load_thread is None
+            ),
             timeout=10.0,
         )
-        assert submitted is True, "Delivery submit worker did not finish."
+        assert submitted is True, "Delivery submit or refresh worker did not finish."
         assert page.delivery_form.status_label.isVisible() is True
         assert "접수되었습니다" in page.delivery_form.status_label.text()
     finally:

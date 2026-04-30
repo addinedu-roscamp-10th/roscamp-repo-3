@@ -3,7 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QFrame, QLineEdit, QPushButton, QTextEdit
+from PyQt6.QtWidgets import QApplication, QFrame
 
 
 _APP = None
@@ -88,8 +88,8 @@ def test_task_request_side_panel_cards_update_delivery_and_patrol_contexts():
         assert panel.preview_destination_label.text() == "배정 로봇"
         assert panel.preview_destination.text() == "작업 생성 후 확정"
         assert panel.robot_id_label.text() == "미정"
-        assert panel.robot_destination_text_label.text() == "waypoint"
-        assert panel.robot_map_label.text() == "순찰 경로 / waypoint placeholder"
+        assert panel.robot_destination_text_label.text() == "배정"
+        assert panel.robot_map_label.text() == "순찰 요청 미리보기"
 
         panel.update_preview(
             {
@@ -164,7 +164,7 @@ def test_request_result_card_exposes_cancel_button_by_task_status():
         panel.close()
 
 
-def test_patrol_waiting_fall_response_exposes_pat_002_resume_action():
+def test_task_request_side_panel_does_not_expose_patrol_resume_action():
     _app()
 
     from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
@@ -186,29 +186,11 @@ def test_patrol_waiting_fall_response_exposes_pat_002_resume_action():
             }
         )
 
-        action_panel = panel.findChild(QFrame, "patrolResumeActionPanel")
-        member_input = panel.findChild(QLineEdit, "patrolResumeMemberIdInput")
-        memo_input = panel.findChild(QTextEdit, "patrolResumeActionMemoInput")
-        resume_btn = panel.findChild(QPushButton, "patrolResumeButton")
-
-        assert action_panel is panel.patrol_resume_action_panel
-        assert action_panel.isHidden() is False
-        assert member_input is panel.patrol_resume_member_input
-        assert memo_input is panel.patrol_resume_memo_input
-        assert resume_btn is panel.patrol_resume_btn
-        assert resume_btn.text() == "현장 조치 완료 후 순찰 재개"
-        assert resume_btn.isEnabled() is False
-
-        member_input.setText("301")
-        memo_input.setPlainText("119 신고 후 병원 이송")
-
-        assert resume_btn.isEnabled() is True
-        assert panel.build_patrol_resume_payload(caregiver_id=7) == {
-            "task_id": "2001",
-            "caregiver_id": 7,
-            "member_id": 301,
-            "action_memo": "119 신고 후 병원 이송",
-        }
+        assert panel.task_id_label.text() == "2001"
+        assert panel.task_status_label.text() == "RUNNING"
+        assert panel.findChild(QFrame, "patrolResumeActionPanel") is None
+        assert not hasattr(panel, "patrol_resume_btn")
+        assert not hasattr(panel, "build_patrol_resume_payload")
     finally:
         panel.close()
 

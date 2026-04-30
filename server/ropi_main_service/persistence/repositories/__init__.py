@@ -12,6 +12,7 @@ from .task_request_repository import (
     DeliveryRequestRepository,
     TaskRequestRepository,
 )
+from .task_monitor_repository import TaskMonitorRepository
 from .user_repository import UserRepository
 from .visit_guide_repository import VisitGuideRepository
 from .visitor_info_repository import VisitorInfoRepository
@@ -20,6 +21,7 @@ from .visitor_register_repository import VisitorRegisterRepository
 __all__ = [
     "CaregiverRepository",
     "TaskRequestRepository",
+    "TaskMonitorRepository",
     "DeliveryRequestRepository",
     "InventoryRepository",
     "PatientRepository",

@@ -719,17 +719,25 @@ QFrame#robotStatusCard {
     border-radius: 18px;
 }
 
-QFrame#robotMapPlaceholder {
+QFrame#robotMapPlaceholder,
+QFrame#patrolMapPlaceholder {
     background: #EEF4F7;
     border: 1px dashed #B9D8D3;
     border-radius: 16px;
     min-height: 116px;
 }
 
-QFrame#patrolResumeActionPanel {
+QFrame#fallAlertPanel,
+QFrame#patrolResumeFormPanel {
     background: #F8FAFC;
     border: 1px solid #D8E0E8;
     border-radius: 14px;
+}
+
+QLabel#fallAlertMarker {
+    color: #991B1B;
+    font-size: 13px;
+    font-weight: 900;
 }
 
 QFrame#sideMetricRow {

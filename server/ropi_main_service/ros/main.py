@@ -5,10 +5,13 @@ import threading
 from contextlib import suppress
 
 from server.ropi_main_service.observability import configure_logging
+from server.ropi_main_service.ros.guide_command_client import RclpyGuideCommandClient
+from server.ropi_main_service.ros.guide_runtime_subscriber import GuideRuntimeSubscriber
 from server.ropi_main_service.ros.goal_pose_action_client import RclpyGoalPoseActionClient
 from server.ropi_main_service.ros.fall_response_control_client import RclpyFallResponseControlClient
 from server.ropi_main_service.ros.manipulation_action_client import RclpyManipulationActionClient
 from server.ropi_main_service.ros.patrol_path_action_client import RclpyPatrolPathActionClient
+from server.ropi_main_service.ros.patrol_runtime_subscriber import PatrolRuntimeSubscriber
 from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
 
 
@@ -31,11 +34,16 @@ async def _run_ros_service(node_name: str):
     manipulation_action_client = RclpyManipulationActionClient(node=node)
     patrol_path_action_client = RclpyPatrolPathActionClient(node=node)
     fall_response_control_client = RclpyFallResponseControlClient(node=node)
+    guide_command_client = RclpyGuideCommandClient(node=node)
+    patrol_runtime_subscriber = PatrolRuntimeSubscriber(node=node)
+    guide_runtime_subscriber = GuideRuntimeSubscriber(node=node)
     uds_server = RosServiceUdsServer(
         goal_pose_action_client=goal_pose_action_client,
         manipulation_action_client=manipulation_action_client,
         patrol_path_action_client=patrol_path_action_client,
         fall_response_control_client=fall_response_control_client,
+        guide_command_client=guide_command_client,
+        guide_runtime_subscriber=guide_runtime_subscriber,
     )
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()

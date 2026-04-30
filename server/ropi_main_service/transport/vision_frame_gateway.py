@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import signal
 import socket
 import time
@@ -61,7 +62,10 @@ class VisionFrameGatewayConfig:
         return cls(
             listen_host=_env_text("VISION_GATEWAY_LISTEN_HOST", DEFAULT_LISTEN_HOST),
             listen_port=_env_int("VISION_GATEWAY_LISTEN_PORT", DEFAULT_LISTEN_PORT),
-            ai_host=_env_text("VISION_GATEWAY_AI_HOST", DEFAULT_AI_HOST),
+            ai_host=_env_text(
+                "VISION_GATEWAY_AI_HOST",
+                _env_text("AI_SERVER_HOST", DEFAULT_AI_HOST),
+            ),
             ai_port=_env_int("VISION_GATEWAY_AI_PORT", DEFAULT_AI_PORT),
             assembly_timeout_sec=_env_float(
                 "VISION_GATEWAY_ASSEMBLY_TIMEOUT_SEC",
@@ -81,11 +85,13 @@ class VisionFrameGatewayConfig:
                 "VISION_GATEWAY_MAX_DATAGRAM_SIZE",
                 DEFAULT_MAX_DATAGRAM_SIZE,
             ),
-            receive_buffer_bytes=_env_int(
+            receive_buffer_bytes=_env_size_bytes(
+                "VISION_GATEWAY_RECV_BUFFER",
                 "VISION_GATEWAY_RECV_BUFFER_BYTES",
                 DEFAULT_SOCKET_BUFFER_BYTES,
             ),
-            send_buffer_bytes=_env_int(
+            send_buffer_bytes=_env_size_bytes(
+                "VISION_GATEWAY_SEND_BUFFER",
                 "VISION_GATEWAY_SEND_BUFFER_BYTES",
                 DEFAULT_SOCKET_BUFFER_BYTES,
             ),
@@ -531,6 +537,58 @@ def _env_float(name: str, default: float) -> float:
         return float(raw)
     except ValueError as exc:
         raise RuntimeError(f"{name} must be a number.") from exc
+
+
+def _env_size_bytes(name: str, legacy_name: str, default: int) -> int:
+    raw = _env_optional_text(name)
+    field_name = name
+    if raw is None:
+        raw = _env_optional_text(legacy_name)
+        field_name = legacy_name
+    if raw is None:
+        return default
+    return _parse_size_bytes(raw, field_name=field_name)
+
+
+def _parse_size_bytes(raw: str, *, field_name: str) -> int:
+    normalized = str(raw or "").strip()
+    if not normalized:
+        raise RuntimeError(f"{field_name} must not be empty.")
+
+    if normalized.isdigit():
+        return int(normalized)
+
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)", normalized)
+    if match is None:
+        raise RuntimeError(
+            f"{field_name} must be bytes or a size like 16MiB, 8MB, or 64KiB."
+        )
+
+    value = float(match.group(1))
+    unit = match.group(2).lower()
+    multipliers = {
+        "b": 1,
+        "byte": 1,
+        "bytes": 1,
+        "kb": 1000,
+        "mb": 1000 * 1000,
+        "gb": 1000 * 1000 * 1000,
+        "kib": 1024,
+        "mib": 1024 * 1024,
+        "gib": 1024 * 1024 * 1024,
+    }
+    multiplier = multipliers.get(unit)
+    if multiplier is None:
+        raise RuntimeError(
+            f"{field_name} unit must be one of B, KB, MB, GB, KiB, MiB, GiB."
+        )
+    return int(value * multiplier)
+
+
+def _env_optional_text(name: str) -> str | None:
+    value = os.getenv(name)
+    normalized = str(value or "").strip()
+    return normalized or None
 
 
 def _open_udp_socket(config: VisionFrameGatewayConfig):

@@ -51,8 +51,10 @@ RESULT_BUFFER_SIZE = 256
 # MVP에서는 stream_name이 Pinky 한 대의 단일 순찰 카메라를 대표한다고 본다.
 # 팀 naming이 확정되면 이 매핑을 설정 파일/env로 분리하는 편이 좋다.
 STREAM_TO_PINKY_ID = {
-    "pinky03_cam": "pinky_03",
+    "pinky03_cam": "pinky3",
+    "pinky3_cam": "pinky3",
 }
+FALL_ALERT_THRESHOLD_MS = 1000
 
 
 @dataclass
@@ -350,6 +352,10 @@ class FallenDetectionServer:
             consumer_id,
             pinky_id,
         )
+        print(
+            f"[TCP] Subscriber accepted: consumer_id={consumer_id} "
+            f"pinky_id={pinky_id} last_seq={last_seq}"
+        )
 
         client_sock.settimeout(None)
         subscriber = FallResultSubscriber(
@@ -416,14 +422,7 @@ class FallenDetectionServer:
 
         push_payload = {
             "batch_end_seq": results[-1]["result_seq"],
-            "results": [
-                {
-                    key: value
-                    for key, value in result.items()
-                    if key != "pinky_id"
-                }
-                for result in results
-            ],
+            "results": [dict(result) for result in results],
         }
         frame = build_frame(
             MESSAGE_CODE_FALL_RESULT_SUBSCRIBE,
@@ -435,6 +434,11 @@ class FallenDetectionServer:
 
         try:
             subscriber.sock.sendall(encode_frame(frame))
+            print(
+                f"[TCP] Fall result push sent: consumer_id={subscriber.consumer_id} "
+                f"pinky_id={subscriber.pinky_id} count={len(results)} "
+                f"batch_end_seq={push_payload['batch_end_seq']}"
+            )
 
         except Exception as e:
             print(f"[TCP] Fall result push error: {e}")
@@ -452,7 +456,19 @@ class FallenDetectionServer:
         with self.tcp_lock:
             subscriber = self.subscriber
 
-        if subscriber is None or not self.result_matches_subscriber(result, subscriber):
+        if subscriber is None:
+            print(
+                f"[TCP] No fall result subscriber; dropping result_seq={result.get('result_seq')} "
+                f"pinky_id={result.get('pinky_id')}"
+            )
+            return
+
+        if not self.result_matches_subscriber(result, subscriber):
+            print(
+                f"[TCP] Fall result subscriber filter mismatch: "
+                f"subscriber_pinky_id={subscriber.pinky_id} result_pinky_id={result.get('pinky_id')} "
+                f"result_seq={result.get('result_seq')}"
+            )
             return
 
         self.send_result_push(subscriber, [result])
@@ -465,7 +481,7 @@ class FallenDetectionServer:
             source = stream_name[: -len("_cam")]
             suffix = source[len("pinky"):]
             if suffix.isdigit():
-                return f"pinky_{suffix}"
+                return f"pinky{int(suffix)}"
 
         return None
 
@@ -488,15 +504,15 @@ class FallenDetectionServer:
 
         return {
             "result_seq": self.result_seq,
-            "frame_id": (
-                f"{stream_name}:{frame_meta['session_id']}:{frame_meta['frame_id']}"
-            ),
+            "pinky_id": pinky_id,
+            "frame_id": str(frame_meta["frame_id"]),
             "frame_ts": self.timestamp_us_to_iso(frame_meta["ts_us"]),
             "fall_detected": True,
             "confidence": confidence,
             "fall_streak_ms": fall_streak_ms,
-            # 내부 필터용 필드. PAT-005 push payload에서는 제거된다.
-            "pinky_id": pinky_id,
+            "alert_candidate": fall_streak_ms >= FALL_ALERT_THRESHOLD_MS,
+            "evidence_image_id": None,
+            "evidence_image_available": False,
         }
 
     def clear_fall_streak(self, frame_meta):
@@ -564,7 +580,8 @@ class FallenDetectionServer:
 
                 if fall_detected:
                     result = self.build_positive_result(frame_meta, confidence)
-                    self.publish_fall_result(result)
+                    if result["alert_candidate"]:
+                        self.publish_fall_result(result)
                 else:
                     self.clear_fall_streak(frame_meta)
 

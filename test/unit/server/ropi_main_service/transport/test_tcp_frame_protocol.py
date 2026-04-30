@@ -2,7 +2,9 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MAGIC,
     VERSION,
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
+    MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
@@ -102,3 +104,26 @@ def test_fall_inference_result_subscribe_message_code_is_if_pat_005():
     assert decoded.payload["consumer_id"] == "control_service_ai_fall"
     assert decoded.payload["last_seq"] == 540
     assert decoded.payload["pinky_id"] == "pinky3"
+
+
+def test_fall_evidence_query_message_codes_are_defined():
+    ui_request = TCPFrame(
+        message_code=MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
+        sequence_no=60,
+        payload={
+            "task_id": 2001,
+            "alert_id": "17",
+            "evidence_image_id": "fall_evidence_pinky3_541",
+        },
+    )
+    ai_request = TCPFrame(
+        message_code=MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
+        sequence_no=61,
+        payload={
+            "consumer_id": "control_service_ai_fall",
+            "evidence_image_id": "fall_evidence_pinky3_541",
+        },
+    )
+
+    assert decode_frame_bytes(encode_frame(ui_request)).message_code == 0x3003
+    assert decode_frame_bytes(encode_frame(ai_request)).message_code == 0x5003
