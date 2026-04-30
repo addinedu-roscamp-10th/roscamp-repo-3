@@ -1,9 +1,11 @@
 import os
+import json
 import socket
 import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -12,11 +14,20 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication
 
-from server.ropi_main_service.persistence.connection import fetch_one
+from server.ropi_main_service.persistence.connection import fetch_one, get_connection
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
+from server.ropi_main_service.transport.tcp_protocol import (
+    MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
+    build_frame,
+    encode_frame,
+    read_frame_from_socket,
+)
 from ui.utils.network import tcp_client
-from ui.utils.network.service_clients import DeliveryRequestRemoteService
+from ui.utils.network.service_clients import (
+    DeliveryRequestRemoteService,
+    TaskMonitorRemoteService,
+)
 from ui.utils.network.tcp_client import send_request
 from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
 from ui.utils.session.session_manager import SessionManager, UserSession
@@ -194,7 +205,101 @@ def ros_service_stub(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def control_server(qapp, ros_service_stub):
+def ai_evidence_server():
+    server_port = _find_free_port()
+    ready = threading.Event()
+    stop_requested = threading.Event()
+    finished = threading.Event()
+    requests = []
+    request_lock = threading.Lock()
+
+    def run_server():
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
+                server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                server_sock.bind((SERVER_HOST, server_port))
+                server_sock.listen(5)
+                server_sock.settimeout(0.2)
+                ready.set()
+
+                while not stop_requested.is_set():
+                    try:
+                        conn, _ = server_sock.accept()
+                    except TimeoutError:
+                        continue
+                    except OSError:
+                        break
+
+                    with conn:
+                        try:
+                            request_frame = read_frame_from_socket(conn)
+                        except Exception:
+                            continue
+
+                        payload = (
+                            request_frame.payload
+                            if isinstance(request_frame.payload, dict)
+                            else {}
+                        )
+                        with request_lock:
+                            requests.append(payload)
+
+                        response_frame = build_frame(
+                            MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
+                            request_frame.sequence_no,
+                            {
+                                "result_code": "OK",
+                                "result_message": None,
+                                "evidence_image_id": payload.get("evidence_image_id"),
+                                "result_seq": payload.get("result_seq"),
+                                "frame_id": "front_cam_frame_541",
+                                "frame_ts": "2026-04-30T06:09:38Z",
+                                "image_format": "jpeg",
+                                "image_encoding": "base64",
+                                "image_data": "/9j/AA==",
+                                "image_width_px": 640,
+                                "image_height_px": 480,
+                                "detections": [
+                                    {
+                                        "class_name": "fall",
+                                        "confidence": 0.87,
+                                        "bbox_xyxy": [120, 88, 430, 360],
+                                    }
+                                ],
+                            },
+                            is_response=True,
+                        )
+                        try:
+                            conn.sendall(encode_frame(response_frame))
+                        except BrokenPipeError:
+                            continue
+        finally:
+            finished.set()
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    assert ready.wait(timeout=5), "fake AI evidence server did not become ready"
+
+    try:
+        yield {
+            "host": SERVER_HOST,
+            "port": server_port,
+            "requests": requests,
+            "request_lock": request_lock,
+        }
+    finally:
+        stop_requested.set()
+        try:
+            with socket.create_connection((SERVER_HOST, server_port), timeout=0.2):
+                pass
+        except OSError:
+            pass
+        server_thread.join(timeout=5)
+        assert finished.is_set()
+
+
+@pytest.fixture(scope="session")
+def control_server(qapp, ros_service_stub, ai_evidence_server):
     server_port = _find_free_port()
     server_process = subprocess.Popen(
         [
@@ -215,6 +320,9 @@ def control_server(qapp, ros_service_stub):
             "PYTHONUNBUFFERED": "1",
             "ROPI_ROS_SERVICE_SOCKET_PATH": ros_service_stub["socket_path"],
             "ROPI_DELIVERY_GOAL_POSE_SOURCE": "db",
+            "AI_FALL_EVIDENCE_HOST": ai_evidence_server["host"],
+            "AI_FALL_EVIDENCE_PORT": str(ai_evidence_server["port"]),
+            "AI_FALL_EVIDENCE_CONNECT_TIMEOUT_SEC": "5.0",
         },
     )
 
@@ -248,12 +356,131 @@ def patched_ui_endpoint(control_server, monkeypatch):
     return control_server
 
 
+@pytest.fixture
+def fall_evidence_seed():
+    robot_row = _safe_fetch_one("SELECT robot_id FROM robot WHERE robot_id = 'pinky3'")
+    if robot_row is None:
+        robot_row = _safe_fetch_one("SELECT robot_id FROM robot LIMIT 1")
+
+    robot_id = robot_row["robot_id"] if robot_row else None
+    evidence_image_id = f"it-fall-evidence-{uuid.uuid4().hex}"
+    request_id = f"runtime-pat-007-{uuid.uuid4().hex}"
+    result_seq = 541
+    task_id = None
+
+    conn = get_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO task
+                (task_type, request_id, idempotency_key, requester_type, requester_id,
+                 priority, task_status, phase, assigned_robot_id, latest_reason_code,
+                 created_at, updated_at, started_at)
+                VALUES
+                ('PATROL', %s, %s, 'CAREGIVER', 'integration-test',
+                 'NORMAL', 'RUNNING', 'WAIT_FALL_RESPONSE', %s, 'FALL_DETECTED',
+                 NOW(3), NOW(3), NOW(3))
+                """,
+                (request_id, request_id, robot_id),
+            )
+            task_id = cursor.lastrowid
+            payload = {
+                "trigger_result": {
+                    "result_seq": result_seq,
+                    "frame_id": "front_cam_frame_541",
+                    "fall_streak_ms": 1200,
+                    "evidence_image_id": evidence_image_id,
+                    "evidence_image_available": True,
+                    "pinky_id": robot_id,
+                    "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                }
+            }
+            cursor.execute(
+                """
+                INSERT INTO task_event_log
+                (task_id, event_name, severity, component, robot_id, correlation_id,
+                 result_code, reason_code, message, payload_json, occurred_at, created_at)
+                VALUES
+                (%s, 'FALL_ALERT_CREATED', 'WARN', 'ai_fall_detector', %s, NULL,
+                 'FALL_DETECTED', 'FALL_DETECTED', 'integration fall alert',
+                 %s, NOW(3), NOW(3))
+                """,
+                (task_id, robot_id, json.dumps(payload, ensure_ascii=False)),
+            )
+            alert_id = cursor.lastrowid
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    try:
+        yield {
+            "task_id": task_id,
+            "alert_id": str(alert_id),
+            "evidence_image_id": evidence_image_id,
+            "result_seq": result_seq,
+            "robot_id": robot_id,
+        }
+    finally:
+        if task_id is not None:
+            cleanup_conn = get_connection()
+            try:
+                with cleanup_conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM task WHERE task_id = %s", (task_id,))
+            finally:
+                cleanup_conn.close()
+
+
 def test_server_process_heartbeat_reports_db_status(patched_ui_endpoint):
     response = send_request("HEARTBEAT", {"check_db": True}, timeout=5.0)
 
     assert response["ok"] is True
     assert response["payload"]["message"] == "메인 서버 연결 정상"
     assert response["payload"]["db"]["ok"] is True
+
+
+def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(
+    patched_ui_endpoint,
+    fall_evidence_seed,
+    ai_evidence_server,
+):
+    with ai_evidence_server["request_lock"]:
+        request_count_before = len(ai_evidence_server["requests"])
+
+    response = TaskMonitorRemoteService().get_fall_evidence_image(
+        consumer_id="ui-integration-task-monitor",
+        task_id=fall_evidence_seed["task_id"],
+        alert_id=fall_evidence_seed["alert_id"],
+        evidence_image_id=fall_evidence_seed["evidence_image_id"],
+        result_seq=fall_evidence_seed["result_seq"],
+    )
+
+    assert response["result_code"] == "OK"
+    assert response["task_id"] == fall_evidence_seed["task_id"]
+    assert response["alert_id"] == fall_evidence_seed["alert_id"]
+    assert response["evidence_image_id"] == fall_evidence_seed["evidence_image_id"]
+    assert response["image_width_px"] == 640
+    assert response["detections"][0]["class_name"] == "fall"
+
+    with ai_evidence_server["request_lock"]:
+        ai_requests = ai_evidence_server["requests"][request_count_before:]
+
+    assert ai_requests == [
+        {
+            "consumer_id": "control_service_ai_fall",
+            "evidence_image_id": fall_evidence_seed["evidence_image_id"],
+            "result_seq": fall_evidence_seed["result_seq"],
+            **(
+                {"pinky_id": fall_evidence_seed["robot_id"]}
+                if fall_evidence_seed["robot_id"]
+                else {}
+            ),
+        }
+    ]
 
 
 def test_ui_client_create_delivery_task_hits_real_server(patched_ui_endpoint, runtime_delivery_schema):
@@ -316,10 +543,13 @@ def test_task_request_page_submit_request_hits_if_del_001(patched_ui_endpoint, q
 
         submitted = wait_for_qt(
             qapp,
-            lambda: page.delivery_form.submit_thread is None,
+            lambda: (
+                page.delivery_form.submit_thread is None
+                and page.delivery_form.load_thread is None
+            ),
             timeout=10.0,
         )
-        assert submitted is True, "Delivery submit worker did not finish."
+        assert submitted is True, "Delivery submit or refresh worker did not finish."
         assert page.delivery_form.status_label.isVisible() is True
         assert "접수되었습니다" in page.delivery_form.status_label.text()
     finally:
