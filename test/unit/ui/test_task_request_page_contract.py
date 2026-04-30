@@ -228,7 +228,7 @@ def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
         assert page.robot_state_label.text() == "feedback 수신 전"
         assert page.robot_pose_label.text() == "미수신"
         assert page.robot_destination_label.text() == "미수신"
-        assert page.robot_map_label.text() == "순찰 경로 / waypoint placeholder"
+        assert page.robot_map_label.text() == "순찰 요청 미리보기"
         assert form.findChild(QFrame, "patrolRouteSummaryCard") is None
         assert not hasattr(form, "map_id_label")
         assert not hasattr(form, "waypoint_count_label")
@@ -611,7 +611,7 @@ def test_task_request_page_cancel_button_updates_result_panel(monkeypatch):
         page.close()
 
 
-def test_task_request_page_builds_pat_002_resume_payload(monkeypatch):
+def test_task_request_page_does_not_embed_patrol_resume_form(monkeypatch):
     _app()
 
     from ui.utils.pages.caregiver.task_request_page import (
@@ -620,10 +620,8 @@ def test_task_request_page_builds_pat_002_resume_payload(monkeypatch):
     )
 
     monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
-    SessionManager.login(UserSession(user_id="7", name="김보호", role="caregiver"))
 
     page = TaskRequestPage()
-    started_payloads = []
 
     try:
         page.side_panel.show_delivery_result(
@@ -637,27 +635,11 @@ def test_task_request_page_builds_pat_002_resume_payload(monkeypatch):
                 "cancellable": True,
             }
         )
-        page.side_panel.patrol_resume_member_input.setText("301")
-        page.side_panel.patrol_resume_memo_input.setPlainText("119 신고 후 병원 이송")
-        monkeypatch.setattr(
-            page,
-            "_start_patrol_resume_task",
-            lambda payload: started_payloads.append(payload),
-        )
 
-        page._request_patrol_resume()
-
-        assert started_payloads == [
-            {
-                "task_id": "2001",
-                "caregiver_id": 7,
-                "member_id": 301,
-                "action_memo": "119 신고 후 병원 이송",
-            }
-        ]
-        assert page.side_panel.patrol_resume_btn.text() == "재개 요청 전송 중..."
+        assert page.findChild(QFrame, "patrolResumeActionPanel") is None
+        assert not hasattr(page.side_panel, "patrol_resume_btn")
+        assert not hasattr(page, "_request_patrol_resume")
     finally:
-        SessionManager.logout()
         page.close()
 
 

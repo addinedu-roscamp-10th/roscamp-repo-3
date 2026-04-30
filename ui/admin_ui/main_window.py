@@ -484,14 +484,8 @@ class CaregiverMainWindow(QMainWindow):
         self._show_or_create_page("task_page", TaskRequestPage, "task_request")
 
     def show_task_monitor_page(self):
-        self._show_or_create_page(
-            "task_monitor_page",
-            lambda: PlaceholderPage(
-                "작업 모니터",
-                "운반, 순찰, 안내 작업의 진행 상태와 피드백을 모니터링합니다.",
-            ),
-            "task_monitor",
-        )
+        from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+        self._show_or_create_page("task_monitor_page", TaskMonitorPage, "task_monitor")
 
     def show_robot_status_page(self):
         from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
@@ -523,6 +517,7 @@ class CaregiverMainWindow(QMainWindow):
     def closeEvent(self, event):
         for page in [
             self.task_page,
+            self.task_monitor_page,
             self.robot_status_page,
             self.inventory_page,
             self.patient_page,
