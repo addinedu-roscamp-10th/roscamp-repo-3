@@ -138,7 +138,7 @@ def test_task_monitor_snapshot_rpc_uses_stream_watermark_for_handoff(
     assert response.payload["last_event_seq"] == 1
 
 
-def test_fall_evidence_image_dispatch_routes_if_pat_007_to_task_monitor_service(
+def test_fall_evidence_image_dispatch_routes_if_pat_007_to_fall_evidence_service(
     control_service_server,
 ):
     request = TCPFrame(
@@ -154,7 +154,7 @@ def test_fall_evidence_image_dispatch_routes_if_pat_007_to_task_monitor_service(
     )
     calls = []
 
-    class FakeTaskMonitorService:
+    class FakeFallEvidenceImageService:
         def get_fall_evidence_image(self, **payload):
             calls.append(payload)
             return {
@@ -165,7 +165,7 @@ def test_fall_evidence_image_dispatch_routes_if_pat_007_to_task_monitor_service(
 
     with patch.dict(
         tcp_server.SERVICE_REGISTRY,
-        {"task_monitor": FakeTaskMonitorService},
+        {"fall_evidence_image": FakeFallEvidenceImageService},
     ):
         response = control_service_server.dispatch_frame(request)
 
@@ -375,9 +375,9 @@ def test_async_fall_evidence_image_dispatch_prefers_async_service(
         },
     )
 
-    class FakeTaskMonitorService:
+    class FakeFallEvidenceImageService:
         def get_fall_evidence_image(self, **payload):
-            raise AssertionError("IF-PAT-007 should prefer async task monitor method")
+            raise AssertionError("IF-PAT-007 should prefer async fall evidence method")
 
         async def async_get_fall_evidence_image(self, **payload):
             return {
@@ -389,7 +389,7 @@ def test_async_fall_evidence_image_dispatch_prefers_async_service(
     async def scenario():
         with patch.dict(
             tcp_server.SERVICE_REGISTRY,
-            {"task_monitor": FakeTaskMonitorService},
+            {"fall_evidence_image": FakeFallEvidenceImageService},
         ), patch(
             "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
             side_effect=AssertionError("IF-PAT-007 should not use thread fallback"),

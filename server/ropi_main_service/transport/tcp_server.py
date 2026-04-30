@@ -15,6 +15,9 @@ from server.ropi_main_service.application.delivery_runtime import build_delivery
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
+from server.ropi_main_service.application.fall_evidence_image import (
+    FallEvidenceImageService,
+)
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
@@ -168,6 +171,7 @@ SERVICE_REGISTRY = {
     "caregiver": CaregiverFacade,
     "patient": PatientService,
     "inventory": InventoryService,
+    "fall_evidence_image": FallEvidenceImageService,
     "task_monitor": TaskMonitorService,
     "task_request": TaskRequestService,
     "visit_guide": VisitGuideService,
@@ -424,7 +428,7 @@ class ControlServiceServer:
         payload: dict,
     ) -> TCPFrame:
         try:
-            service = SERVICE_REGISTRY["task_monitor"]()
+            service = SERVICE_REGISTRY["fall_evidence_image"]()
             result = service.get_fall_evidence_image(**payload)
         except Exception as exc:
             return self._error_response(frame, "FALL_EVIDENCE_QUERY_ERROR", str(exc))
@@ -437,7 +441,7 @@ class ControlServiceServer:
         payload: dict,
     ) -> TCPFrame:
         try:
-            service = SERVICE_REGISTRY["task_monitor"]()
+            service = SERVICE_REGISTRY["fall_evidence_image"]()
             async_method = getattr(service, "async_get_fall_evidence_image", None)
             if async_method is not None:
                 result = await async_method(**payload)
