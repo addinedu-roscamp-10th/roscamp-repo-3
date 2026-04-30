@@ -17,6 +17,7 @@ class VisitGuidePage(QWidget):
         self.go_home_page = go_home_page
         self.service = VisitGuideRemoteService()
         self.selected_patient = None
+        self.current_session = None
         self._build_ui()
 
     def _build_ui(self):
@@ -88,6 +89,10 @@ class VisitGuidePage(QWidget):
         self.robot_btn.setObjectName("primaryButton")
         self.robot_btn.clicked.connect(self.start_robot_guide)
 
+        self.runtime_btn = QPushButton("안내 상태 확인")
+        self.runtime_btn.setObjectName("secondaryButton")
+        self.runtime_btn.clicked.connect(self.refresh_guide_runtime_status)
+
         self.reset_btn = QPushButton("다시 검색")
         self.reset_btn.setObjectName("secondaryButton")
         self.reset_btn.clicked.connect(self.reset_search)
@@ -97,10 +102,11 @@ class VisitGuidePage(QWidget):
         self.back_btn.clicked.connect(self.go_back)
 
         action_row.addWidget(self.robot_btn, 2)
+        action_row.addWidget(self.runtime_btn, 1)
         action_row.addWidget(self.reset_btn, 1)
         action_row.addWidget(self.back_btn, 1)
 
-        for btn in [self.robot_btn, self.reset_btn, self.back_btn]:
+        for btn in [self.robot_btn, self.runtime_btn, self.reset_btn, self.back_btn]:
             btn.setMinimumHeight(48)
 
         detail_layout.addWidget(detail_title)
@@ -128,6 +134,7 @@ class VisitGuidePage(QWidget):
     def search_patient(self):
         ok, message, patient = self.service.search_patient(self.search_input.text())
         self.selected_patient = patient if ok else None
+        self.current_session = None
 
         if not ok:
             self.name_label.setText("어르신명: 선택 전")
@@ -144,20 +151,51 @@ class VisitGuidePage(QWidget):
         self.status_label.setText("상태: 검색 결과를 확인했습니다.")
 
     def start_robot_guide(self):
-        success, message = self.service.start_robot_guide(
-            self.selected_patient,
+        success, message, session = self.service.begin_guide_session(
+            patient=self.selected_patient,
             member_id=self._current_member_id(),
+            command_type="WAIT_TARGET_TRACKING",
         )
-        if success and self.selected_patient:
+        if success and self.selected_patient and session:
+            self.current_session = session
+            task_id = str(session.get("task_id", "-")).strip() or "-"
             self.status_label.setText(
-                f"상태: {self.selected_patient['name']} 님의 {self.selected_patient['room']} 방향으로 로봇 안내를 시작합니다."
+                f"상태: {self.selected_patient['name']} 님의 {self.selected_patient['room']} 방향으로 "
+                f"대상 추적 대기를 시작합니다. (task_id={task_id})"
             )
         else:
             self.status_label.setText(f"상태: {message}")
 
+    def refresh_guide_runtime_status(self):
+        try:
+            ok, message, status = self.service.get_guide_runtime_status()
+        except Exception as exc:
+            self.status_label.setText(f"상태: 안내 상태 조회 실패 - {exc}")
+            return
+
+        guide_runtime = (status or {}).get("guide_runtime") or {}
+        last_update = guide_runtime.get("last_update") or {}
+        tracking_status = str(last_update.get("tracking_status") or "-").strip() or "-"
+        task_id = str(last_update.get("task_id") or "-").strip() or "-"
+        seq = last_update.get("tracking_result_seq")
+        seq_text = "-" if seq is None else str(seq)
+
+        if ok:
+            self.status_label.setText(
+                f"상태: {message} "
+                f"(tracking_status={tracking_status}, task_id={task_id}, seq={seq_text})"
+            )
+            return
+
+        self.status_label.setText(
+            f"상태: {message} "
+            f"(tracking_status={tracking_status}, task_id={task_id}, seq={seq_text})"
+        )
+
     def reset_search(self):
         self.search_input.clear()
         self.selected_patient = None
+        self.current_session = None
         self.name_label.setText("어르신명: 선택 전")
         self.room_label.setText("병실: -")
         self.location_label.setText("위치: -")

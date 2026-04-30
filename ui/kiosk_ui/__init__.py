@@ -1,1 +1,3 @@
-"""Reserved for future kiosk-only UI split."""
+from .main_window import KioskHomeWindow
+
+__all__ = ["KioskHomeWindow"]

@@ -177,6 +177,73 @@ class VisitGuideRemoteService:
     def start_robot_guide(self, patient: dict, member_id=None):
         return _rpc("visit_guide", "start_robot_guide", patient=patient, member_id=member_id)
 
+    def begin_guide_session(
+        self,
+        *,
+        patient: dict,
+        member_id=None,
+        pinky_id=None,
+        command_type="WAIT_TARGET_TRACKING",
+        target_track_id="",
+        wait_timeout_sec=0,
+        finish_reason="",
+    ):
+        kwargs = {
+            "patient": patient,
+            "member_id": member_id,
+            "command_type": command_type,
+            "target_track_id": target_track_id,
+            "wait_timeout_sec": wait_timeout_sec,
+            "finish_reason": finish_reason,
+        }
+        if pinky_id is not None:
+            kwargs["pinky_id"] = pinky_id
+        return _rpc("visit_guide", "begin_guide_session", **kwargs)
+
+    def finish_guide_session(
+        self,
+        *,
+        task_id,
+        pinky_id=None,
+        target_track_id="",
+        finish_reason="",
+    ):
+        kwargs = {
+            "task_id": task_id,
+            "target_track_id": target_track_id,
+            "finish_reason": finish_reason,
+        }
+        if pinky_id is not None:
+            kwargs["pinky_id"] = pinky_id
+        return _rpc("visit_guide", "finish_guide_session", **kwargs)
+
+    def send_guide_command(
+        self,
+        *,
+        task_id,
+        command_type,
+        pinky_id=None,
+        target_track_id="",
+        wait_timeout_sec=0,
+        finish_reason="",
+    ):
+        kwargs = {
+            "task_id": task_id,
+            "command_type": command_type,
+            "target_track_id": target_track_id,
+            "wait_timeout_sec": wait_timeout_sec,
+            "finish_reason": finish_reason,
+        }
+        if pinky_id is not None:
+            kwargs["pinky_id"] = pinky_id
+        return _rpc("visit_guide", "send_guide_command", **kwargs)
+
+    def get_guide_runtime_status(self, pinky_id=None):
+        kwargs = {}
+        if pinky_id is not None:
+            kwargs["pinky_id"] = pinky_id
+        return _rpc("visit_guide", "get_guide_runtime_status", **kwargs)
+
 
 class VisitorInfoRemoteService:
     def get_patient_visit_info(self, keyword: str):
