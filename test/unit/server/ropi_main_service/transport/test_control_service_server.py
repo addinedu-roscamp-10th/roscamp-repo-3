@@ -24,7 +24,8 @@ class FakeTaskRequestService:
 
 
 @pytest.fixture
-def control_service_server():
+def control_service_server(monkeypatch):
+    monkeypatch.setenv("AI_FALL_STREAM_ENABLED", "false")
     return tcp_server.ControlServiceServer()
 
 
