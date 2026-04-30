@@ -17,7 +17,7 @@ from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
 from ropi_interface.action import NavigateToGoal
 
-#운반팀 노드 SOO
+#운반팀 노드 WSL2
 class PinkyAMRNode(Node):
 
     def __init__(self):
