@@ -42,6 +42,7 @@ class FallEvidenceImageClient:
         host = (
             os.getenv("AI_FALL_EVIDENCE_HOST")
             or os.getenv("AI_FALL_STREAM_HOST")
+            or os.getenv("AI_SERVER_HOST")
             or DEFAULT_HOST
         )
         port = (

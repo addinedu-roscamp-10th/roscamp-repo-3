@@ -110,3 +110,16 @@ def test_fall_evidence_image_client_rejects_unexpected_response_code():
             await server.wait_closed()
 
     asyncio.run(scenario())
+
+
+def test_fall_evidence_image_client_from_env_uses_common_ai_server_host(monkeypatch):
+    monkeypatch.delenv("AI_FALL_EVIDENCE_HOST", raising=False)
+    monkeypatch.delenv("AI_FALL_STREAM_HOST", raising=False)
+    monkeypatch.delenv("AI_FALL_EVIDENCE_PORT", raising=False)
+    monkeypatch.delenv("AI_FALL_STREAM_PORT", raising=False)
+    monkeypatch.setenv("AI_SERVER_HOST", "192.168.0.89")
+
+    client = FallEvidenceImageClient.from_env()
+
+    assert client.host == "192.168.0.89"
+    assert client.port == 6000

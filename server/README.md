@@ -47,18 +47,36 @@ ROPI_ROS_SERVICE_SOCKET_TIMEOUT=2.0
 PATROL_PINKY_ID=pinky3
 PATROL_PATH_TIMEOUT_SEC=180
 
+AI_SERVER_HOST=192.168.0.89
+
 VISION_GATEWAY_LISTEN_HOST=0.0.0.0
 VISION_GATEWAY_LISTEN_PORT=5005
-VISION_GATEWAY_AI_HOST=<AI 서버 IP>
-VISION_GATEWAY_AI_PORT=<AI 서버 UDP 포트>
+VISION_GATEWAY_AI_PORT=5005
 VISION_GATEWAY_RECV_BUFFER_BYTES=16777216
 VISION_GATEWAY_SEND_BUFFER_BYTES=16777216
+
+AI_FALL_STREAM_ENABLED=true
+AI_FALL_STREAM_PORT=6000
+AI_FALL_STREAM_CONSUMER_ID=control_service_ai_fall
+AI_FALL_STREAM_PINKY_ID=pinky3
+AI_FALL_STREAM_LAST_SEQ=0
+```
+
+`AI_SERVER_HOST`는 영상 미디어 게이트웨이, 낙상 추론 TCP 구독, 낙상 증거사진 조회가 같은 AI 서버를 바라볼 때 공통으로 쓰는 기본 IP다. 기능별로 다른 AI 서버를 써야 하면 아래 값을 개별로 추가해 공통값을 덮어쓴다.
+
+```env
+VISION_GATEWAY_AI_HOST=<영상 UDP를 받을 AI 서버 IP>
+AI_FALL_STREAM_HOST=<낙상 추론 TCP push AI 서버 IP>
+AI_FALL_EVIDENCE_HOST=<낙상 증거사진 조회 AI 서버 IP>
+AI_FALL_EVIDENCE_PORT=6000
 ```
 
 관제 서버 방화벽에서 최소한 아래 포트를 열어둔다.
 
 - `CONTROL_SERVER_PORT`: 외부 클라이언트가 Control Service에 접속하는 TCP 포트
 - `VISION_GATEWAY_LISTEN_PORT`: 로봇 영상 프레임을 받는 UDP 포트
+
+PAT-005 낙상 추론 결과 구독은 별도 실행 명령이 없다. `AI_FALL_STREAM_ENABLED=true`이면 `ropi-control-server`가 시작될 때 AI 서버의 TCP `6000`번 포트로 구독을 연결한다.
 
 ## ROS 인터페이스 빌드
 
@@ -105,6 +123,8 @@ cd /home/addinedu/dev/roscamp-repo-3
 uv run ropi-control-server --host "$CONTROL_SERVER_HOST" --port "$CONTROL_SERVER_PORT"
 ```
 
+PAT-005 연결이 켜져 있으면 정상 로그에는 AI 서버 접속 시도, subscribe accepted, push batch 수신 내역이 출력된다.
+
 ### 3. 영상 미디어 게이트웨이
 
 ```bash
@@ -139,4 +159,5 @@ test -S /tmp/ropi_control_ros_service.sock && echo "ROS bridge UDS ok"
 - Control Service 접속 실패: `CONTROL_SERVER_HOST`, `CONTROL_SERVER_PORT`, 서버 방화벽을 확인한다.
 - DB 오류: `.env`의 DB 접속 정보와 DB 서버 방화벽을 확인한다.
 - 영상이 AI 서버로 가지 않음: `ropi-media-gateway` 실행 여부, UDP 포트, AI 서버 IP, 방화벽을 확인한다.
+- 낙상 감지 TCP push가 보이지 않음: `AI_FALL_STREAM_ENABLED=true`, `AI_SERVER_HOST`, `AI_FALL_STREAM_PORT=6000`, `AI_FALL_STREAM_PINKY_ID=pinky3`를 확인한다. AI 서버 stream name은 `pinky3`로 정규화되어야 한다.
 - ROS 브릿지 UDS 오류: `ROPI_ROS_SERVICE_SOCKET_PATH`가 ROS 브릿지와 Control Service에서 같은 값인지 확인한다.

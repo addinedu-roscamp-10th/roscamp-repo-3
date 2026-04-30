@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import logging
 import os
 from contextlib import suppress
 from dataclasses import dataclass
@@ -15,9 +16,11 @@ from server.ropi_main_service.transport.tcp_protocol import (
 
 DEFAULT_CONSUMER_ID = "control_service_ai_fall"
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 5055
+DEFAULT_PORT = 6000
 DEFAULT_CONNECT_TIMEOUT_SEC = 3.0
 DEFAULT_RECONNECT_DELAY_SEC = 1.0
+
+logger = logging.getLogger(__name__)
 
 
 class FallInferenceStreamError(RuntimeError):
@@ -60,7 +63,11 @@ class FallInferenceStreamClient:
     @classmethod
     def from_env(cls):
         return cls(
-            host=os.getenv("AI_FALL_STREAM_HOST", DEFAULT_HOST),
+            host=_first_env_value(
+                "AI_FALL_STREAM_HOST",
+                "AI_SERVER_HOST",
+                default=DEFAULT_HOST,
+            ),
             port=int(os.getenv("AI_FALL_STREAM_PORT", str(DEFAULT_PORT)) or DEFAULT_PORT),
             consumer_id=os.getenv("AI_FALL_STREAM_CONSUMER_ID", DEFAULT_CONSUMER_ID),
             pinky_id=os.getenv("AI_FALL_STREAM_PINKY_ID") or None,
@@ -82,9 +89,22 @@ class FallInferenceStreamClient:
         )
 
     async def subscribe_and_listen(self, on_results=None, *, max_batches=None):
+        logger.info(
+            "Connecting to AI fall inference stream host=%s port=%s consumer_id=%s pinky_id=%s last_seq=%s",
+            self.host,
+            self.port,
+            self.consumer_id,
+            self.pinky_id,
+            self.last_seq,
+        )
         reader, writer = await self._open_connection()
         try:
             ack = await self._send_subscribe_request(reader, writer)
+            logger.info(
+                "AI fall inference stream subscribe accepted consumer_id=%s subscribed_pinky_id=%s",
+                ack.get("accepted_consumer_id"),
+                ack.get("subscribed_pinky_id"),
+            )
             batch_count = await self._consume_push_batches(
                 reader,
                 on_results=on_results,
@@ -106,9 +126,14 @@ class FallInferenceStreamClient:
                 await self.subscribe_and_listen(on_results)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 if stop_event is not None and stop_event.is_set():
                     break
+                logger.warning(
+                    "AI fall inference stream disconnected; reconnecting in %.1fs: %s",
+                    self.reconnect_delay_sec,
+                    exc,
+                )
                 await asyncio.sleep(self.reconnect_delay_sec)
 
     async def _open_connection(self):
@@ -161,9 +186,15 @@ class FallInferenceStreamClient:
                 ) from exc
 
             batch = self._parse_push_batch(frame)
-            await self._call_result_handler(on_results, batch)
+            handler_result = await self._call_result_handler(on_results, batch)
             self.last_seq = max(self.last_seq, int(batch["batch_end_seq"]))
             batch_count += 1
+            logger.info(
+                "Received AI fall inference push batch_end_seq=%s result_count=%s handler_result=%s",
+                batch["batch_end_seq"],
+                len(batch["results"]),
+                handler_result,
+            )
 
         return batch_count
 
@@ -247,11 +278,12 @@ class FallInferenceStreamClient:
     @staticmethod
     async def _call_result_handler(handler, batch):
         if handler is None:
-            return
+            return None
 
         result = handler(batch)
         if inspect.isawaitable(result):
-            await result
+            return await result
+        return result
 
     def _allocate_sequence_no(self):
         sequence_no = self._next_sequence_no
@@ -280,6 +312,15 @@ class FallInferenceStreamClient:
         if normalized < 0 or normalized > 0xFFFFFFFF:
             raise FallInferenceStreamError(f"IF-PAT-005 {field_name} is out of u32 range.")
         return normalized
+
+
+def _first_env_value(*names, default):
+    for name in names:
+        value = os.getenv(name)
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    return default
 
 
 __all__ = [

@@ -61,7 +61,10 @@ class VisionFrameGatewayConfig:
         return cls(
             listen_host=_env_text("VISION_GATEWAY_LISTEN_HOST", DEFAULT_LISTEN_HOST),
             listen_port=_env_int("VISION_GATEWAY_LISTEN_PORT", DEFAULT_LISTEN_PORT),
-            ai_host=_env_text("VISION_GATEWAY_AI_HOST", DEFAULT_AI_HOST),
+            ai_host=_env_text(
+                "VISION_GATEWAY_AI_HOST",
+                _env_text("AI_SERVER_HOST", DEFAULT_AI_HOST),
+            ),
             ai_port=_env_int("VISION_GATEWAY_AI_PORT", DEFAULT_AI_PORT),
             assembly_timeout_sec=_env_float(
                 "VISION_GATEWAY_ASSEMBLY_TIMEOUT_SEC",

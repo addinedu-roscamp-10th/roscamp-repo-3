@@ -81,3 +81,12 @@ def test_gateway_flushes_window_metrics_for_received_relayed_and_dropped_frames(
     assert snapshot.dropped_frame_count == 1
     assert snapshot.latest_frame_id == 10
     assert snapshot.max_latency_ms is not None
+
+
+def test_gateway_config_from_env_uses_common_ai_server_host(monkeypatch):
+    monkeypatch.delenv("VISION_GATEWAY_AI_HOST", raising=False)
+    monkeypatch.setenv("AI_SERVER_HOST", "192.168.0.89")
+
+    config = VisionFrameGatewayConfig.from_env()
+
+    assert config.ai_host == "192.168.0.89"

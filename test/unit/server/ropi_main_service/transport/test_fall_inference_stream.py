@@ -51,9 +51,11 @@ def test_fall_inference_stream_client_subscribes_and_consumes_push_batch():
                                 "result_seq": 541,
                                 "frame_id": "front_cam_frame_541",
                                 "frame_ts": "2026-04-29T12:34:56Z",
+                                "pinky_id": "pinky3",
                                 "fall_detected": True,
                                 "confidence": 0.94,
                                 "fall_streak_ms": 1200,
+                                "alert_candidate": True,
                             }
                         ],
                     },
@@ -105,9 +107,11 @@ def test_fall_inference_stream_client_subscribes_and_consumes_push_batch():
                     "result_seq": 541,
                     "frame_id": "front_cam_frame_541",
                     "frame_ts": "2026-04-29T12:34:56Z",
+                    "pinky_id": "pinky3",
                     "fall_detected": True,
                     "confidence": 0.94,
                     "fall_streak_ms": 1200,
+                    "alert_candidate": True,
                 }
             ],
         }
@@ -162,3 +166,16 @@ def test_fall_inference_stream_client_rejects_invalid_subscribe_ack():
             await server.wait_closed()
 
     asyncio.run(scenario())
+
+
+def test_fall_inference_stream_client_from_env_uses_common_ai_server_host(monkeypatch):
+    monkeypatch.delenv("AI_FALL_STREAM_HOST", raising=False)
+    monkeypatch.delenv("AI_FALL_STREAM_PORT", raising=False)
+    monkeypatch.delenv("AI_FALL_STREAM_PINKY_ID", raising=False)
+    monkeypatch.delenv("AI_FALL_STREAM_LAST_SEQ", raising=False)
+    monkeypatch.setenv("AI_SERVER_HOST", "192.168.0.89")
+
+    client = FallInferenceStreamClient.from_env()
+
+    assert client.host == "192.168.0.89"
+    assert client.port == 6000

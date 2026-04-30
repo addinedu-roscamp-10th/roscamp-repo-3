@@ -19,6 +19,7 @@ from server.ropi_main_service.persistence.repositories.task_request_repository i
 from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
+    MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
     build_frame,
     encode_frame,
     read_frame_from_socket,
@@ -75,6 +76,17 @@ def wait_for_qt(app: QApplication, predicate, timeout: float = 10.0) -> bool:
         time.sleep(0.05)
 
     app.processEvents()
+    return predicate()
+
+
+def wait_for_condition(predicate, timeout: float = 10.0) -> bool:
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+
     return predicate()
 
 
@@ -204,6 +216,129 @@ def ros_service_stub(tmp_path_factory):
         assert finished.is_set()
 
 
+@pytest.fixture
+def ai_fall_stream_server():
+    server_port = _find_free_port()
+    ready = threading.Event()
+    subscribed = threading.Event()
+    push_requested = threading.Event()
+    stop_requested = threading.Event()
+    finished = threading.Event()
+    requests = []
+    request_lock = threading.Lock()
+
+    def run_server():
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
+                server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                server_sock.bind((SERVER_HOST, server_port))
+                server_sock.listen(1)
+                server_sock.settimeout(0.2)
+                ready.set()
+
+                while not stop_requested.is_set():
+                    try:
+                        conn, _ = server_sock.accept()
+                    except TimeoutError:
+                        continue
+                    except OSError:
+                        break
+
+                    with conn:
+                        try:
+                            request_frame = read_frame_from_socket(conn)
+                        except Exception:
+                            continue
+
+                        payload = (
+                            request_frame.payload
+                            if isinstance(request_frame.payload, dict)
+                            else {}
+                        )
+                        with request_lock:
+                            requests.append(payload)
+
+                        ack_frame = build_frame(
+                            MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
+                            request_frame.sequence_no,
+                            {
+                                "result_code": "ACCEPTED",
+                                "result_message": None,
+                                "accepted_consumer_id": payload.get("consumer_id"),
+                                "subscribed_pinky_id": payload.get("pinky_id"),
+                            },
+                            is_response=True,
+                        )
+                        try:
+                            conn.sendall(encode_frame(ack_frame))
+                        except BrokenPipeError:
+                            continue
+
+                        subscribed.set()
+                        while not stop_requested.is_set():
+                            if push_requested.wait(timeout=0.1):
+                                break
+
+                        if stop_requested.is_set():
+                            break
+
+                        push_frame = build_frame(
+                            MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
+                            541,
+                            {
+                                "batch_end_seq": 541,
+                                "results": [
+                                    {
+                                        "result_seq": 541,
+                                        "pinky_id": "pinky3",
+                                        "frame_id": "541",
+                                        "frame_ts": "2026-04-30T06:09:38Z",
+                                        "fall_detected": True,
+                                        "confidence": 0.94,
+                                        "fall_streak_ms": 1000,
+                                        "alert_candidate": True,
+                                        "evidence_image_id": "it-pat-005-evidence-541",
+                                        "evidence_image_available": True,
+                                    }
+                                ],
+                            },
+                            is_push=True,
+                        )
+                        try:
+                            conn.sendall(encode_frame(push_frame))
+                        except BrokenPipeError:
+                            continue
+
+                        while not stop_requested.wait(timeout=0.1):
+                            pass
+        finally:
+            finished.set()
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    assert ready.wait(timeout=5), "fake AI fall stream server did not become ready"
+
+    try:
+        yield {
+            "host": SERVER_HOST,
+            "port": server_port,
+            "requests": requests,
+            "request_lock": request_lock,
+            "subscribed": subscribed,
+            "push_requested": push_requested,
+        }
+    finally:
+        stop_requested.set()
+        push_requested.set()
+        try:
+            with socket.create_connection((SERVER_HOST, server_port), timeout=0.2):
+                pass
+        except OSError:
+            pass
+        server_thread.join(timeout=5)
+        assert finished.is_set()
+
+
 @pytest.fixture(scope="session")
 def ai_evidence_server():
     server_port = _find_free_port()
@@ -296,6 +431,61 @@ def ai_evidence_server():
             pass
         server_thread.join(timeout=5)
         assert finished.is_set()
+
+
+@pytest.fixture
+def control_server_with_ai_fall_stream(qapp, ros_service_stub, ai_fall_stream_server):
+    server_port = _find_free_port()
+    server_process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "server.ropi_main_service.transport.tcp_server",
+            "--host",
+            SERVER_HOST,
+            "--port",
+            str(server_port),
+        ],
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            "ROPI_ROS_SERVICE_SOCKET_PATH": ros_service_stub["socket_path"],
+            "ROPI_DELIVERY_GOAL_POSE_SOURCE": "db",
+            "AI_FALL_STREAM_ENABLED": "true",
+            "AI_FALL_STREAM_HOST": ai_fall_stream_server["host"],
+            "AI_FALL_STREAM_PORT": str(ai_fall_stream_server["port"]),
+            "AI_FALL_STREAM_CONSUMER_ID": "control_service_ai_fall",
+            "AI_FALL_STREAM_PINKY_ID": "pinky3",
+            "AI_FALL_STREAM_LAST_SEQ": "0",
+            "AI_FALL_STREAM_CONNECT_TIMEOUT_SEC": "5.0",
+            "AI_FALL_STREAM_RECONNECT_DELAY_SEC": "0.2",
+        },
+    )
+
+    _wait_for_server_ready(server_process, server_port, qapp)
+
+    try:
+        yield {
+            "port": server_port,
+            "process": server_process,
+        }
+    finally:
+        if server_process.poll() is None:
+            server_process.terminate()
+            try:
+                server_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server_process.kill()
+                server_process.wait(timeout=5)
+
+        if server_process.stdout:
+            server_process.stdout.close()
+        if server_process.stderr:
+            server_process.stderr.close()
 
 
 @pytest.fixture(scope="session")
@@ -435,12 +625,133 @@ def fall_evidence_seed():
                 cleanup_conn.close()
 
 
+@pytest.fixture
+def active_patrol_task_seed():
+    robot_row = _safe_fetch_one("SELECT robot_id FROM robot WHERE robot_id = 'pinky3'")
+    assert robot_row is not None, "The remote DB has no pinky3 robot row."
+
+    patrol_area = _safe_fetch_one(
+        "SELECT patrol_area_id, revision FROM patrol_area WHERE is_enabled = TRUE LIMIT 1"
+    )
+    assert patrol_area is not None, "The remote DB has no enabled patrol_area row."
+
+    request_id = f"runtime-pat-005-{uuid.uuid4().hex}"
+    task_id = None
+    conn = get_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO task
+                (task_type, request_id, idempotency_key, requester_type, requester_id,
+                 priority, task_status, phase, assigned_robot_id, latest_reason_code,
+                 created_at, updated_at, started_at)
+                VALUES
+                ('PATROL', %s, %s, 'CAREGIVER', 'integration-test',
+                 'NORMAL', 'RUNNING', 'FOLLOW_PATROL_PATH', 'pinky3', NULL,
+                 NOW(3), NOW(3), NOW(3))
+                """,
+                (request_id, request_id),
+            )
+            task_id = cursor.lastrowid
+            cursor.execute(
+                """
+                INSERT INTO patrol_task_detail
+                (task_id, patrol_area_id, patrol_area_revision, patrol_status,
+                 frame_id, waypoint_count, current_waypoint_index, path_snapshot_json, notes)
+                VALUES
+                (%s, %s, %s, 'MOVING', 'map', 1, 0,
+                 '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0}]}',
+                 'runtime PAT-005 integration test')
+                """,
+                (task_id, patrol_area["patrol_area_id"], patrol_area["revision"]),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    try:
+        yield {"task_id": task_id}
+    finally:
+        if task_id is not None:
+            cleanup_conn = get_connection()
+            try:
+                with cleanup_conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM task WHERE task_id = %s", (task_id,))
+            finally:
+                cleanup_conn.close()
+
+
 def test_server_process_heartbeat_reports_db_status(patched_ui_endpoint):
     response = send_request("HEARTBEAT", {"check_db": True}, timeout=5.0)
 
     assert response["ok"] is True
     assert response["payload"]["message"] == "메인 서버 연결 정상"
     assert response["payload"]["db"]["ok"] is True
+
+
+def test_control_server_subscribes_ai_fall_stream_and_starts_fall_alert(
+    control_server_with_ai_fall_stream,
+    ai_fall_stream_server,
+    active_patrol_task_seed,
+):
+    assert control_server_with_ai_fall_stream["port"] > 0
+    assert ai_fall_stream_server["subscribed"].wait(timeout=10)
+
+    with ai_fall_stream_server["request_lock"]:
+        requests = list(ai_fall_stream_server["requests"])
+
+    assert requests
+    assert requests[0]["consumer_id"] == "control_service_ai_fall"
+    assert requests[0]["pinky_id"] == "pinky3"
+    assert requests[0]["last_seq"] == 0
+
+    ai_fall_stream_server["push_requested"].set()
+    task_id = active_patrol_task_seed["task_id"]
+
+    updated = wait_for_condition(
+        lambda: (
+            _safe_fetch_one(
+                "SELECT phase FROM task "
+                f"WHERE task_id = {int(task_id)}"
+            )
+            or {}
+        ).get("phase")
+        == "WAIT_FALL_RESPONSE",
+        timeout=10.0,
+    )
+    if not updated:
+        process = control_server_with_ai_fall_stream["process"]
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=5)
+        pytest.fail(
+            "Control Service did not process the PAT-005 push.\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}"
+        )
+
+    task_row = _safe_fetch_one(
+        "SELECT phase, latest_reason_code FROM task "
+        f"WHERE task_id = {int(task_id)}"
+    )
+    patrol_row = _safe_fetch_one(
+        "SELECT patrol_status FROM patrol_task_detail "
+        f"WHERE task_id = {int(task_id)}"
+    )
+    inference_row = _safe_fetch_one(
+        "SELECT robot_id, result_json FROM ai_inference_log "
+        f"WHERE task_id = {int(task_id)} ORDER BY ai_inference_log_id DESC LIMIT 1"
+    )
+
+    assert task_row["phase"] == "WAIT_FALL_RESPONSE"
+    assert task_row["latest_reason_code"] == "FALL_DETECTED"
+    assert patrol_row["patrol_status"] == "WAITING_FALL_RESPONSE"
+    assert inference_row["robot_id"] == "pinky3"
+    assert json.loads(inference_row["result_json"])["pinky_id"] == "pinky3"
 
 
 def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(
