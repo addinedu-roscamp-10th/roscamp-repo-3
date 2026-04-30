@@ -501,6 +501,7 @@ def test_ros_service_uds_server_reports_runtime_readiness(tmp_path):
                     "error": "manipulation action client is not configured",
                 },
             ],
+            "guide_runtime": None,
         },
     }
 
