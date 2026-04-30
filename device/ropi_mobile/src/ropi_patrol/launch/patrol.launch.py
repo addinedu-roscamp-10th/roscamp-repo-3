@@ -18,8 +18,18 @@ def generate_launch_description():
             DeclareLaunchArgument("params_file", default_value=default_params_file),
             Node(
                 package="ropi_patrol",
-                executable="fallen_detection_client_tcp",
-                name="fallen_detection_client_tcp",
+                executable="fallen_detection_client",
+                name="fallen_detection_client",
+                output="screen",
+                parameters=[
+                    params_file,
+                    {"pinky_id": robot_id},
+                ],
+            ),
+            Node(
+                package="ropi_patrol",
+                executable="ropi_camera",
+                name="ropi_camera",
                 output="screen",
                 parameters=[params_file],
             ),

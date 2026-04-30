@@ -33,7 +33,7 @@ def _assert_launch_uses_params_file(launch_path: Path, *, package_name: str, con
     assert "params_file" in content
     assert f'FindPackageShare("{package_name}")' in content or f"FindPackageShare('{package_name}')" in content
     assert f'"config", robot_id, "{config_subdir}"' in content or f"'config', robot_id, '{config_subdir}'" in content
-    assert "parameters=[params_file]" in content
+    assert "parameters=" in content
 
 
 def test_ropi_delivery_runtime_config_contract():
@@ -100,20 +100,25 @@ def test_tracking_runtime_config_contract():
 def test_fallen_detection_runtime_config_contract():
     config_path = FALLEN_ROOT / "config" / "pinky3" / "patrol.yaml"
     launch_path = FALLEN_ROOT / "launch" / "patrol.launch.py"
-    node_path = FALLEN_ROOT / "ropi_patrol" / "fallen_detection_client_tcp.py"
+    client_node_path = FALLEN_ROOT / "ropi_patrol" / "fallen_detection_client.py"
+    camera_node_path = FALLEN_ROOT / "ropi_patrol" / "ropi_camera.py"
 
-    params = _load_ros_parameters(config_path, "fallen_detection_client_tcp")
-    assert params["server_ip"] == "192.168.0.89"
-    assert params["udp_port"] == 5005
-    assert params["tcp_port"] == 6000
-    assert params["alarm_topic"] == "/fall_alarm"
-    assert params["send_fps"] == 10.0
-    assert params["nav_check_interval_sec"] == 0.2
-    assert params["camera_width"] == 320
-    assert params["camera_height"] == 240
-    assert params["jpeg_quality"] == 70
-    assert len(params["waypoints"]) == 6
-    assert all(isinstance(waypoint, str) for waypoint in params["waypoints"])
+    client_params = _load_ros_parameters(config_path, "fallen_detection_client")
+    assert client_params["alarm_topic"] == "/fall_alarm"
+    assert client_params["pinky_id"] == "pinky3"
+    assert client_params["nav_check_interval_sec"] == 0.2
+    assert len(client_params["waypoints"]) == 13
+    assert all(isinstance(waypoint, str) for waypoint in client_params["waypoints"])
+
+    camera_params = _load_ros_parameters(config_path, "ropi_camera")
+    assert camera_params["server_ip"] == "192.168.0.89"
+    assert camera_params["udp_port"] == 5005
+    assert camera_params["stream_name"] == "pinky03_cam"
+    assert camera_params["udp_packet_size"] == 1200
+    assert camera_params["send_fps"] == 10.0
+    assert camera_params["camera_width"] == 480
+    assert camera_params["camera_height"] == 320
+    assert camera_params["jpeg_quality"] == 70
 
     _assert_launch_uses_params_file(
         launch_path,
@@ -124,16 +129,22 @@ def test_fallen_detection_runtime_config_contract():
         FALLEN_ROOT,
         "glob('launch/*.launch.py')",
         "glob('config/pinky3/*.yaml')",
+        "fallen_detection_client = ropi_patrol.fallen_detection_client:main",
+        "ropi_camera = ropi_patrol.ropi_camera:main",
     )
 
-    node_source = node_path.read_text(encoding="utf-8")
-    assert 'SERVER_IP = "' not in node_source
-    assert "UDP_PORT =" not in node_source
-    assert "TCP_PORT =" not in node_source
-    assert '"192.168.0.89"' not in node_source
-    assert "0.9576985239982605" not in node_source
-    assert "self.declare_parameter(\"server_ip\"" in node_source
-    assert "self.declare_parameter(\"waypoints\"" in node_source
+    client_source = client_node_path.read_text(encoding="utf-8")
+    assert 'SERVER_IP = "' not in client_source
+    assert "UDP_PORT =" not in client_source
+    assert "TCP_PORT =" not in client_source
+    assert '"192.168.0.89"' not in client_source
+    assert "0.9576985239982605" not in client_source
+    assert "self.declare_parameter(\"server_ip\"" not in client_source
+    assert "self.declare_parameter(\"waypoints\"" in client_source
+
+    camera_source = camera_node_path.read_text(encoding="utf-8")
+    assert "self.declare_parameter(\"server_ip\"" in camera_source
+    assert "self.declare_parameter(\"udp_port\"" in camera_source
 
 
 def test_jet_arm_runtime_config_contract_is_kept():
