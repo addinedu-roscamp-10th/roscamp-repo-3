@@ -1,12 +1,12 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QPushButton, QFrame, QStackedWidget, QScrollArea, QTableWidget,
-    QTableWidgetItem, QGridLayout
+    QFrame, QTableWidget, QTableWidgetItem, QGridLayout
 )
 from PyQt6.QtCore import Qt, QTimer, QDateTime, QObject, QThread, pyqtSignal
 
 from ui.utils.network.service_clients import CaregiverRemoteService
 from ui.utils.session.session_manager import SessionManager
+from ui.utils.widgets.admin_shell import AdminShell, PageHeader, PlaceholderPage
 
 
 class DashboardLoadWorker(QObject):
@@ -79,7 +79,7 @@ class RobotBoardCard(QFrame):
 
 
 class FlowColumn(QFrame):
-    def __init__(self, title: str, tasks: list[str]):
+    def __init__(self, title: str, tasks: list):
         super().__init__()
         self.setObjectName("card")
         root = QVBoxLayout(self)
@@ -101,7 +101,7 @@ class FlowColumn(QFrame):
                 task_card.setObjectName("infoBox")
                 tc = QVBoxLayout(task_card)
                 tc.setContentsMargins(12, 12, 12, 12)
-                task_label = QLabel(task)
+                task_label = QLabel(self._format_task_label(task))
                 task_label.setWordWrap(True)
                 tc.addWidget(task_label)
                 root.addWidget(task_card)
@@ -111,6 +111,26 @@ class FlowColumn(QFrame):
             root.addWidget(empty)
 
         root.addStretch()
+
+    @staticmethod
+    def _format_task_label(task):
+        if not isinstance(task, dict):
+            return str(task)
+
+        display_text = str(task.get("display_text") or "").strip()
+        feedback_summary = str(task.get("feedback_summary") or "").strip()
+        if display_text and feedback_summary:
+            return f"{display_text}\n{feedback_summary}"
+        if display_text:
+            return display_text
+
+        task_id = task.get("task_id") or "-"
+        description = task.get("description") or "-"
+        robot_id = task.get("robot_id") or "-"
+        fallback = f"#{task_id} {description} / {robot_id}"
+        if feedback_summary:
+            return f"{fallback}\n{feedback_summary}"
+        return fallback
 
 
 class CaregiverHomePage(QWidget):
@@ -133,14 +153,6 @@ class CaregiverHomePage(QWidget):
 
         top = QHBoxLayout()
 
-        title_wrap = QVBoxLayout()
-        title = QLabel("보호사 메인 화면")
-        title.setObjectName("pageTitle")
-        subtitle = QLabel("현재 로봇 상태와 작업 흐름을 한눈에 확인하세요.")
-        subtitle.setObjectName("pageSubtitle")
-        title_wrap.addWidget(title)
-        title_wrap.addWidget(subtitle)
-
         time_box = QFrame()
         time_box.setObjectName("card")
         tb = QVBoxLayout(time_box)
@@ -154,7 +166,14 @@ class CaregiverHomePage(QWidget):
         tb.addWidget(self.t1, alignment=Qt.AlignmentFlag.AlignRight)
         tb.addWidget(self.t2, alignment=Qt.AlignmentFlag.AlignRight)
 
-        top.addLayout(title_wrap, 1)
+        top.addWidget(
+            PageHeader(
+                "보호사 메인 화면",
+                "현재 로봇 상태와 작업 흐름을 한눈에 확인하세요.",
+                show_status=True,
+            ),
+            1,
+        )
         top.addWidget(time_box)
 
         def update_time():
@@ -343,14 +362,28 @@ class CaregiverHomePage(QWidget):
 
 
 class CaregiverMainWindow(QMainWindow):
+    NAV_ITEMS = [
+        ("home", "홈"),
+        ("task_request", "작업 요청"),
+        ("task_monitor", "작업 모니터"),
+        ("robot_status", "로봇 상태"),
+        ("inventory", "재고 관리"),
+        ("patient", "어르신 정보"),
+        ("alerts", "알림/로그"),
+        ("system_health", "시스템 상태"),
+    ]
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("보호사 메인")
         self.login_window = None
         self.task_page = None
+        self.task_monitor_page = None
+        self.robot_status_page = None
         self.inventory_page = None
         self.patient_page = None
         self.alert_page = None
+        self.system_health_page = None
         self._build_ui()
         self._fit_to_screen()
 
@@ -363,76 +396,35 @@ class CaregiverMainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        side_layout = QVBoxLayout(sidebar)
-        side_layout.setContentsMargins(18, 18, 18, 18)
-        side_layout.setSpacing(14)
-
-        brand = QLabel("CareBot\n보호사 화면")
-        brand.setObjectName("sidebarBrand")
-
-        self.home_btn = QPushButton("홈")
-        self.task_btn = QPushButton("작업 요청")
-        self.inventory_btn = QPushButton("재고 관리")
-        self.patient_btn = QPushButton("어르신 정보")
-        self.alert_btn = QPushButton("오류 / 알림")
-
-        for btn in [
-            self.home_btn, self.task_btn, self.inventory_btn,
-            self.patient_btn, self.alert_btn
-        ]:
-            btn.setObjectName("sideButton")
-
-        side_layout.addWidget(brand)
-        side_layout.addSpacing(10)
-        side_layout.addWidget(self.home_btn)
-        side_layout.addWidget(self.task_btn)
-        side_layout.addWidget(self.inventory_btn)
-        side_layout.addWidget(self.patient_btn)
-        side_layout.addWidget(self.alert_btn)
-        side_layout.addStretch()
-
         current_user = SessionManager.current_user()
         user_name = current_user.name if current_user else "김보호 보호사"
 
-        user_box = QFrame()
-        user_box.setObjectName("userBox")
-        ub = QVBoxLayout(user_box)
-        ub.setContentsMargins(14, 14, 14, 14)
-        user_lbl = QLabel(user_name)
-        user_lbl.setObjectName("userName")
-        user_desc = QLabel("3층 담당")
-        user_desc.setObjectName("mutedText")
-        ub.addWidget(user_lbl)
-        ub.addWidget(user_desc)
+        self.admin_shell = AdminShell(
+            nav_items=self.NAV_ITEMS,
+            user_name=user_name,
+            user_role="요양보호사",
+            on_logout=self.logout,
+        )
+        self.shell = self.admin_shell
+        self.admin_shell.nav_requested.connect(self._handle_nav)
 
-        logout_btn = QPushButton("로그아웃")
-        logout_btn.setObjectName("dangerButton")
-        logout_btn.clicked.connect(self.logout)
-
-        side_layout.addWidget(user_box)
-        side_layout.addWidget(logout_btn)
-
-        self.stack = QStackedWidget()
-
-        self.page_scroll = QScrollArea()
-        self.page_scroll.setWidgetResizable(True)
-        self.page_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.page_scroll.setWidget(self.stack)
+        self.stack = self.admin_shell.stack
+        self.page_scroll = self.admin_shell.page_scroll
         self.home_page = CaregiverHomePage()
 
-        self.stack.addWidget(self.home_page)
+        self.admin_shell.add_page("home", self.home_page)
+        self.admin_shell.set_page("home")
 
-        self.home_btn.clicked.connect(self.show_home_page)
-        self.task_btn.clicked.connect(self.show_task_page)
-        self.inventory_btn.clicked.connect(self.show_inventory_page)
-        self.patient_btn.clicked.connect(self.show_patient_page)
-        self.alert_btn.clicked.connect(self.show_alert_page)
+        self.home_btn = self.admin_shell.sidebar.button("home")
+        self.task_btn = self.admin_shell.sidebar.button("task_request")
+        self.task_monitor_btn = self.admin_shell.sidebar.button("task_monitor")
+        self.robot_status_btn = self.admin_shell.sidebar.button("robot_status")
+        self.inventory_btn = self.admin_shell.sidebar.button("inventory")
+        self.patient_btn = self.admin_shell.sidebar.button("patient")
+        self.alert_btn = self.admin_shell.sidebar.button("alerts")
+        self.system_health_btn = self.admin_shell.sidebar.button("system_health")
 
-        layout.addWidget(sidebar)
-        layout.addWidget(self.page_scroll, 1)
+        layout.addWidget(self.admin_shell)
 
     def _fit_to_screen(self):
         screen = self.screen()
@@ -451,44 +443,95 @@ class CaregiverMainWindow(QMainWindow):
         target_height = min(920, max(760, available.height() - 40))
         self.resize(target_width, target_height)
 
-    def _show_or_create_page(self, attr_name, page_factory):
+    def _show_or_create_page(self, attr_name, page_factory, page_key):
         page = getattr(self, attr_name)
         if page is None:
             page = page_factory()
             setattr(self, attr_name, page)
-            self.stack.addWidget(page)
+            self.admin_shell.add_page(page_key, page)
         if hasattr(page, "reset_page"):
             page.reset_page()
-        self.stack.setCurrentWidget(page)
-        self.page_scroll.verticalScrollBar().setValue(0)
+        self.admin_shell.set_page(page_key)
+
+    def _handle_nav(self, key):
+        handlers = {
+            "home": self.show_home_page,
+            "task_request": self.show_task_page,
+            "task_monitor": self.show_task_monitor_page,
+            "robot_status": self.show_robot_status_page,
+            "inventory": self.show_inventory_page,
+            "patient": self.show_patient_page,
+            "alerts": self.show_alert_page,
+            "system_health": self.show_system_health_page,
+        }
+        handler = handlers.get(key)
+        if handler is not None:
+            handler()
 
     def logout(self):
-        from ui.admin_ui.login_role_window import LoginRoleWindow
+        from ui.admin_ui.login_auth_window import LoginAuthWindow
         SessionManager.logout()
-        self.login_window = LoginRoleWindow()
+        self.login_window = LoginAuthWindow(role="caregiver")
         self.login_window.show()
         self.close()
 
     def show_home_page(self):
-        self.stack.setCurrentWidget(self.home_page)
-        self.page_scroll.verticalScrollBar().setValue(0)
+        self.admin_shell.set_page("home")
         self.home_page.load_dashboard_data()
 
     def show_task_page(self):
         from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
-        self._show_or_create_page("task_page", TaskRequestPage)
+        self._show_or_create_page("task_page", TaskRequestPage, "task_request")
+
+    def show_task_monitor_page(self):
+        self._show_or_create_page(
+            "task_monitor_page",
+            lambda: PlaceholderPage(
+                "작업 모니터",
+                "운반, 순찰, 안내 작업의 진행 상태와 피드백을 모니터링합니다.",
+            ),
+            "task_monitor",
+        )
+
+    def show_robot_status_page(self):
+        from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+        self._show_or_create_page("robot_status_page", RobotStatusPage, "robot_status")
 
     def show_inventory_page(self):
         from ui.utils.pages.caregiver.inventory_management_page import InventoryManagementPage
-        self._show_or_create_page("inventory_page", InventoryManagementPage)
+        self._show_or_create_page("inventory_page", InventoryManagementPage, "inventory")
 
     def show_patient_page(self):
         from ui.utils.pages.caregiver.patient_info_page import PatientInfoPage
-        self._show_or_create_page("patient_page", PatientInfoPage)
+        self._show_or_create_page("patient_page", PatientInfoPage, "patient")
 
     def show_alert_page(self):
         from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
-        self._show_or_create_page("alert_page", AlertLogPage)
+        self._show_or_create_page("alert_page", AlertLogPage, "alerts")
+
+    def show_system_health_page(self):
+        self._show_or_create_page(
+            "system_health_page",
+            lambda: PlaceholderPage(
+                "시스템 상태",
+                "관제 서버, 데이터베이스, ROS2, AI 서버의 연결 상태를 확인합니다.",
+                show_status=True,
+            ),
+            "system_health",
+        )
+
+    def closeEvent(self, event):
+        for page in [
+            self.task_page,
+            self.robot_status_page,
+            self.inventory_page,
+            self.patient_page,
+            self.alert_page,
+        ]:
+            shutdown = getattr(page, "shutdown", None)
+            if shutdown is not None:
+                shutdown()
+        super().closeEvent(event)
 
 
 __all__ = ["CaregiverMainWindow"]

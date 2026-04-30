@@ -1,72 +1,32 @@
+from server.ropi_main_service.persistence.async_connection import async_fetch_all, async_fetch_one
 from server.ropi_main_service.persistence.connection import fetch_all, fetch_one
+from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 class CaregiverRepository:
     def get_dashboard_summary(self):
-        query = """
-            SELECT
-                (
-                    SELECT COUNT(*)
-                    FROM robot
-                    WHERE robot_status_name IN ('대기', 'IDLE')
-                ) AS available_robot_count,
-                (
-                    SELECT COUNT(*)
-                    FROM robot_event
-                    WHERE event_description LIKE '%대기%'
-                ) AS waiting_job_count,
-                (
-                    SELECT COUNT(*)
-                    FROM robot
-                    WHERE robot_status_name IN ('작업중', 'RUNNING')
-                ) AS running_job_count
-        """
-        return fetch_one(query)
+        return fetch_one(load_sql("caregiver/dashboard_summary.sql"))
+
+    async def async_get_dashboard_summary(self):
+        return await async_fetch_one(load_sql("caregiver/dashboard_summary.sql"))
 
     def get_robot_board(self):
-        query = """
-            SELECT
-                r.robot_id,
-                r.robot_type_name,
-                r.ip_address AS current_location,
-                r.robot_status_name AS robot_status,
-                (
-                    SELECT re.event_description
-                    FROM robot_event re
-                    ORDER BY re.event_at DESC
-                    LIMIT 1
-                ) AS current_task
-            FROM robot r
-            ORDER BY r.robot_id
-        """
-        return fetch_all(query)
+        return fetch_all(load_sql("caregiver/robot_board.sql"))
+
+    async def async_get_robot_board(self):
+        return await async_fetch_all(load_sql("caregiver/robot_board.sql"))
 
     def get_timeline(self, limit=20):
-        query = """
-            SELECT
-                DATE_FORMAT(re.event_at, '%%H:%%i:%%s') AS timeline_time,
-                re.robot_event_id AS work_id,
-                re.robot_event_type AS event_name,
-                re.event_description AS detail
-            FROM robot_event re
-            ORDER BY re.event_at DESC
-            LIMIT %s
-        """
-        return fetch_all(query, (limit,))
+        return fetch_all(load_sql("caregiver/timeline.sql"), (limit,))
+
+    async def async_get_timeline(self, limit=20):
+        return await async_fetch_all(load_sql("caregiver/timeline.sql"), (limit,))
 
     def get_flow_board_events(self, limit=50):
-        query = """
-            SELECT
-                re.robot_event_id,
-                re.robot_event_type,
-                re.event_description AS description,
-                re.event_at AS event_datetime,
-                'ROBOT' AS robot_id
-            FROM robot_event re
-            ORDER BY re.event_at DESC
-            LIMIT %s
-        """
-        return fetch_all(query, (limit,))
+        return fetch_all(load_sql("caregiver/flow_board_events.sql"), (limit,))
+
+    async def async_get_flow_board_events(self, limit=50):
+        return await async_fetch_all(load_sql("caregiver/flow_board_events.sql"), (limit,))
 
 
 __all__ = ["CaregiverRepository"]

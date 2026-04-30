@@ -1,9 +1,9 @@
+from server.ropi_main_service.persistence.async_connection import async_transaction
 from server.ropi_main_service.persistence.connection import get_connection
+from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 class VisitorRegisterRepository:
-    EVENT_TYPE_ID = 4
-
     def create_visitor_registration(
         self,
         visitor_name: str,
@@ -21,21 +21,22 @@ class VisitorRegisterRepository:
         conn = get_connection()
         try:
             with conn.cursor() as cur:
-                target_member_id = str(member_id) if member_id else self._find_member_id(cur, patient_name)
+                target_member_id = (
+                    self._normalize_member_id(member_id)
+                    if member_id
+                    else self._find_member_id(cur, patient_name)
+                )
                 cur.execute(
-                    """
-                    INSERT INTO event (
-                        event_name,
+                    load_sql("member_event/insert_member_event.sql"),
+                    (
+                        target_member_id,
+                        "VISIT_CHECKIN",
+                        "방문 등록",
+                        "VISIT",
+                        "INFO",
+                        "방문 등록",
                         description,
-                        event_at,
-                        member_id,
-                        event_type_id,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (%s, %s, NOW(), %s, %s, NOW(), NOW())
-                    """,
-                    ("방문 등록", description, target_member_id, self.EVENT_TYPE_ID),
+                    ),
                 )
                 conn.commit()
                 return True, "방문 등록이 완료되었습니다."
@@ -45,19 +46,67 @@ class VisitorRegisterRepository:
         finally:
             conn.close()
 
+    async def async_create_visitor_registration(
+        self,
+        visitor_name: str,
+        phone: str,
+        patient_name: str,
+        relation: str,
+        purpose: str,
+        member_id=None,
+    ):
+        description = (
+            f"[방문 등록] 방문객={visitor_name}, 연락처={phone}, "
+            f"대상어르신={patient_name}, 관계={relation}, 목적={purpose}"
+        )
+
+        try:
+            async with async_transaction() as cur:
+                target_member_id = (
+                    self._normalize_member_id(member_id)
+                    if member_id
+                    else await self._async_find_member_id(cur, patient_name)
+                )
+                await cur.execute(
+                    load_sql("member_event/insert_member_event.sql"),
+                    (
+                        target_member_id,
+                        "VISIT_CHECKIN",
+                        "방문 등록",
+                        "VISIT",
+                        "INFO",
+                        "방문 등록",
+                        description,
+                    ),
+                )
+            return True, "방문 등록이 완료되었습니다."
+        except Exception as exc:
+            return False, f"방문 등록 중 오류가 발생했습니다: {exc}"
+
     @staticmethod
     def _find_member_id(cur, patient_name: str):
         cur.execute(
-            """
-            SELECT member_id
-            FROM member
-            WHERE member_name = %s
-            LIMIT 1
-            """,
+            load_sql("visitor_register/find_member_id_by_name.sql"),
             (patient_name,),
         )
         row = cur.fetchone()
-        return row["member_id"] if row else "MEM001"
+        return row["member_id"] if row else 1
+
+    @staticmethod
+    async def _async_find_member_id(cur, patient_name: str):
+        await cur.execute(
+            load_sql("visitor_register/find_member_id_by_name.sql"),
+            (patient_name,),
+        )
+        row = await cur.fetchone()
+        return row["member_id"] if row else 1
+
+    @staticmethod
+    def _normalize_member_id(member_id):
+        raw = str(member_id or "").strip()
+        if raw.isdigit():
+            return int(raw)
+        return 1
 
 
 __all__ = ["VisitorRegisterRepository"]

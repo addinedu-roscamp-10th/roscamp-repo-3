@@ -1,29 +1,628 @@
+from unittest.mock import patch
+import asyncio
+
 from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
+from server.ropi_main_service.persistence.repositories.idempotency_repository import (
+    IdempotencyRepository,
+)
+from server.ropi_main_service.persistence.repositories.delivery_task_repository import (
+    DeliveryTaskRepository,
+)
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
     DeliveryRequestRepository,
 )
 
 
+class FakeCursor:
+    lastrowid = 101
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class FakeAsyncCursor:
+    lastrowid = 101
+
+
+class FakeAsyncTransaction:
+    def __init__(self):
+        self.cursor = FakeAsyncCursor()
+        self.entered = False
+        self.exited = False
+
+    async def __aenter__(self):
+        self.entered = True
+        return self.cursor
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.exited = True
+        return False
+
+
+class RecordingAsyncCursor:
+    lastrowid = 101
+
+    def __init__(self, row=None):
+        self.calls = []
+        self.row = row
+
+    async def execute(self, query, params):
+        self.calls.append((query, params))
+
+    async def fetchone(self):
+        return self.row
+
+
+class FakeExistingIdempotencyCursor:
+    def execute(self, query, params):
+        self.query = query
+        self.params = params
+
+    def fetchone(self):
+        return {
+            "request_hash": "different_hash",
+            "response_json": '{"result_code":"ACCEPTED"}',
+        }
+
+
+class FakeConnection:
+    def __init__(self):
+        self.committed = False
+        self.rolled_back = False
+        self.closed = False
+
+    def begin(self):
+        pass
+
+    def cursor(self):
+        return FakeCursor()
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+    def close(self):
+        self.closed = True
+
+
 class FakeDeliveryRequestRepository(DeliveryRequestRepository):
-    def get_product_by_id(self, item_id, conn=None):
-        return {"item_id": item_id, "item_name": "물티슈"}
+    def _find_idempotent_response(self, cur, *, requester_id, idempotency_key, request_hash):
+        return None
+
+    def _fetch_product(self, where_clause, params, *, conn=None):
+        return {"item_id": "1", "item_name": "물티슈", "quantity": 10}
+
+    def _caregiver_exists(self, cur, caregiver_id):
+        return True
+
+    def _goal_pose_exists(self, cur, goal_pose_id):
+        return True
+
+    def _insert_delivery_task(self, cur, **kwargs):
+        self.inserted_task_kwargs = kwargs
+        return 101
+
+    def _insert_delivery_detail(self, cur, **kwargs):
+        self.inserted_detail_kwargs = kwargs
+
+    def _insert_delivery_item(self, cur, **kwargs):
+        self.inserted_item_kwargs = kwargs
+
+    def _insert_initial_task_history(self, cur, *, task_id):
+        self.history_task_id = task_id
+
+    def _insert_initial_task_event(self, cur, *, task_id):
+        self.event_task_id = task_id
+
+    def _insert_idempotency_record(self, cur, **kwargs):
+        self.idempotency_kwargs = kwargs
 
 
-def test_create_delivery_task_uses_runtime_config_assigned_pinky_id():
-    repository = FakeDeliveryRequestRepository(
-        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9")
+class FakeInsufficientItemRepository(FakeDeliveryRequestRepository):
+    def _fetch_product(self, where_clause, params, *, conn=None):
+        return {"item_id": "1", "item_name": "물티슈", "quantity": 0}
+
+
+class FakeIdempotencyRepository:
+    def __init__(self):
+        self.inserted = None
+
+    def build_request_hash(self, **payload):
+        self.hash_payload = payload
+        return "request_hash"
+
+    def find_response(
+        self,
+        cur,
+        *,
+        requester_id,
+        idempotency_key,
+        request_hash,
+        scope="DELIVERY_CREATE_TASK",
+    ):
+        self.find_args = {
+            "requester_id": requester_id,
+            "idempotency_key": idempotency_key,
+            "request_hash": request_hash,
+        }
+        if scope != "DELIVERY_CREATE_TASK":
+            self.find_args["scope"] = scope
+        return None
+
+    def insert_record(self, cur, **kwargs):
+        self.inserted = kwargs
+
+    async def async_find_response(
+        self,
+        cur,
+        *,
+        requester_id,
+        idempotency_key,
+        request_hash,
+        scope="DELIVERY_CREATE_TASK",
+    ):
+        self.find_args = {
+            "requester_id": requester_id,
+            "idempotency_key": idempotency_key,
+            "request_hash": request_hash,
+        }
+        if scope != "DELIVERY_CREATE_TASK":
+            self.find_args["scope"] = scope
+        return None
+
+    async def async_insert_record(self, cur, **kwargs):
+        self.inserted = kwargs
+
+
+class FakeDeliveryTaskRepository:
+    def __init__(self):
+        self.created = None
+
+    def create_delivery_task_records(self, cur, **kwargs):
+        self.created = kwargs
+        return 101
+
+    async def async_create_delivery_task_records(self, cur, **kwargs):
+        self.created = kwargs
+        return 101
+
+
+class FakePatrolTaskRepository:
+    def __init__(self):
+        self.created = None
+
+    def create_patrol_task_records(self, cur, **kwargs):
+        self.created = kwargs
+        return 2001
+
+    async def async_create_patrol_task_records(self, cur, **kwargs):
+        self.created = kwargs
+        return 2001
+
+
+class FakeDeliveryTaskCancelRepository:
+    def __init__(self):
+        self.calls = []
+
+    def record_delivery_task_cancel_result(self, **kwargs):
+        self.calls.append(("record_cancel", kwargs))
+        return {"result_code": "CANCEL_REQUESTED"}
+
+    async def async_record_delivery_task_cancelled_result(self, **kwargs):
+        self.calls.append(("async_record_cancelled", kwargs))
+        return {"result_code": "CANCELLED"}
+
+
+class CollaboratorBackedDeliveryRequestRepository(DeliveryRequestRepository):
+    def _fetch_product(self, where_clause, params, *, conn=None):
+        return {"item_id": "1", "item_name": "물티슈", "quantity": 10}
+
+    def _caregiver_exists(self, cur, caregiver_id):
+        return True
+
+    def _goal_pose_exists(self, cur, goal_pose_id):
+        return True
+
+    async def _async_fetch_product_by_id(self, cur, item_id):
+        return {"item_id": "1", "item_name": "물티슈", "quantity": 10}
+
+    async def _async_caregiver_exists(self, cur, caregiver_id):
+        return True
+
+    async def _async_goal_pose_exists(self, cur, goal_pose_id):
+        return True
+
+    def _fetch_patrol_area_by_id(self, cur, patrol_area_id):
+        return {
+            "patrol_area_id": patrol_area_id,
+            "patrol_area_name": "야간 병동 순찰",
+            "revision": 7,
+            "map_id": "map_test11_0423",
+            "path_json": {
+                "header": {"frame_id": "map"},
+                "poses": [{"pose": {"position": {"x": 1.0, "y": 2.0}}}],
+            },
+            "is_enabled": 1,
+        }
+
+    async def _async_fetch_patrol_area_by_id(self, cur, patrol_area_id):
+        return self._fetch_patrol_area_by_id(cur, patrol_area_id)
+
+
+class AsyncInsufficientItemRepository(CollaboratorBackedDeliveryRequestRepository):
+    async def _async_fetch_product_by_id(self, cur, item_id):
+        return {"item_id": "1", "item_name": "물티슈", "quantity": 0}
+
+
+def test_create_delivery_task_delegates_persistence_to_collaborators():
+    fake_conn = FakeConnection()
+    idempotency_repository = FakeIdempotencyRepository()
+    delivery_task_repository = FakeDeliveryTaskRepository()
+    repository = CollaboratorBackedDeliveryRequestRepository(
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=idempotency_repository,
+        delivery_task_repository=delivery_task_repository,
     )
 
-    response = repository.create_delivery_task(
-        request_id="req_001",
-        caregiver_id="cg_001",
-        item_id="supply_001",
-        quantity=1,
-        destination_id="room2",
-        priority="NORMAL",
-        notes=None,
-        idempotency_key="idem_001",
+    with patch(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.get_connection",
+        return_value=fake_conn,
+    ):
+        response = repository.create_delivery_task(
+            request_id="req_001",
+            caregiver_id="1",
+            item_id="1",
+            quantity=1,
+            destination_id="delivery_room_301",
+            priority="NORMAL",
+            notes="note",
+            idempotency_key="idem_001",
+        )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert delivery_task_repository.created["item_id"] == 1
+    assert delivery_task_repository.created["destination_goal_pose_id"] == "delivery_room_301"
+    assert idempotency_repository.find_args == {
+        "requester_id": "1",
+        "idempotency_key": "idem_001",
+        "request_hash": "request_hash",
+    }
+    assert idempotency_repository.inserted["task_id"] == 101
+    assert fake_conn.committed is True
+
+
+def test_async_create_delivery_task_delegates_persistence_to_collaborators(monkeypatch):
+    fake_transaction = FakeAsyncTransaction()
+    idempotency_repository = FakeIdempotencyRepository()
+    delivery_task_repository = FakeDeliveryTaskRepository()
+    repository = CollaboratorBackedDeliveryRequestRepository(
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=idempotency_repository,
+        delivery_task_repository=delivery_task_repository,
+    )
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    response = asyncio.run(
+        repository.async_create_delivery_task(
+            request_id="req_001",
+            caregiver_id="1",
+            item_id="1",
+            quantity=1,
+            destination_id="delivery_room_301",
+            priority="NORMAL",
+            notes="note",
+            idempotency_key="idem_001",
+        )
     )
 
     assert response["result_code"] == "ACCEPTED"
-    assert response["assigned_pinky_id"] == "pinky9"
+    assert response["task_id"] == 101
+    assert response["assigned_robot_id"] == "pinky9"
+    assert delivery_task_repository.created["item_id"] == 1
+    assert delivery_task_repository.created["destination_goal_pose_id"] == "delivery_room_301"
+    assert idempotency_repository.find_args == {
+        "requester_id": "1",
+        "idempotency_key": "idem_001",
+        "request_hash": "request_hash",
+    }
+    assert idempotency_repository.inserted["task_id"] == 101
+    assert fake_transaction.entered is True
+    assert fake_transaction.exited is True
+
+
+def test_create_patrol_task_snapshots_area_to_collaborator():
+    fake_conn = FakeConnection()
+    idempotency_repository = FakeIdempotencyRepository()
+    patrol_task_repository = FakePatrolTaskRepository()
+    repository = CollaboratorBackedDeliveryRequestRepository(
+        idempotency_repository=idempotency_repository,
+        patrol_task_repository=patrol_task_repository,
+    )
+
+    with patch(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.get_connection",
+        return_value=fake_conn,
+    ):
+        response = repository.create_patrol_task(
+            request_id="req_patrol_001",
+            caregiver_id=1,
+            patrol_area_id="patrol_ward_night_01",
+            priority="NORMAL",
+            idempotency_key="idem_patrol_001",
+        )
+
+    assert response == {
+        "result_code": "ACCEPTED",
+        "result_message": None,
+        "reason_code": None,
+        "task_id": 2001,
+        "task_status": "WAITING_DISPATCH",
+        "assigned_robot_id": "pinky3",
+        "patrol_area_id": "patrol_ward_night_01",
+        "patrol_area_name": "야간 병동 순찰",
+        "patrol_area_revision": 7,
+    }
+    assert patrol_task_repository.created["patrol_area_id"] == "patrol_ward_night_01"
+    assert patrol_task_repository.created["patrol_area_revision"] == 7
+    assert patrol_task_repository.created["frame_id"] == "map"
+    assert patrol_task_repository.created["waypoint_count"] == 1
+    assert patrol_task_repository.created["assigned_robot_id"] == "pinky3"
+    assert idempotency_repository.find_args["scope"] == "PATROL_CREATE_TASK"
+    assert idempotency_repository.inserted["scope"] == "PATROL_CREATE_TASK"
+    assert fake_conn.committed is True
+
+
+def test_async_create_patrol_task_snapshots_area_to_collaborator(monkeypatch):
+    fake_transaction = FakeAsyncTransaction()
+    idempotency_repository = FakeIdempotencyRepository()
+    patrol_task_repository = FakePatrolTaskRepository()
+    repository = CollaboratorBackedDeliveryRequestRepository(
+        idempotency_repository=idempotency_repository,
+        patrol_task_repository=patrol_task_repository,
+    )
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    response = asyncio.run(
+        repository.async_create_patrol_task(
+            request_id="req_patrol_001",
+            caregiver_id=1,
+            patrol_area_id="patrol_ward_night_01",
+            priority="URGENT",
+            idempotency_key="idem_patrol_001",
+        )
+    )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_id"] == 2001
+    assert response["assigned_robot_id"] == "pinky3"
+    assert patrol_task_repository.created["priority"] == "URGENT"
+    assert patrol_task_repository.created["path_snapshot_json"]["poses"]
+    assert fake_transaction.entered is True
+    assert fake_transaction.exited is True
+
+
+def test_create_delivery_task_uses_runtime_config_assigned_robot_id():
+    fake_conn = FakeConnection()
+    idempotency_repository = FakeIdempotencyRepository()
+    delivery_task_repository = FakeDeliveryTaskRepository()
+    repository = FakeDeliveryRequestRepository(
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=idempotency_repository,
+        delivery_task_repository=delivery_task_repository,
+    )
+
+    with patch(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.get_connection",
+        return_value=fake_conn,
+    ):
+        response = repository.create_delivery_task(
+            request_id="req_001",
+            caregiver_id="1",
+            item_id="1",
+            quantity=1,
+            destination_id="delivery_room_301",
+            priority="NORMAL",
+            notes=None,
+            idempotency_key="idem_001",
+        )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_id"] == 101
+    assert response["assigned_robot_id"] == "pinky9"
+    assert "assigned_pinky_id" not in response
+    assert delivery_task_repository.created["destination_goal_pose_id"] == "delivery_room_301"
+    assert delivery_task_repository.created["item_id"] == 1
+    assert delivery_task_repository.created["quantity"] == 1
+    assert idempotency_repository.inserted["task_id"] == 101
+    assert fake_conn.committed is True
+    assert fake_conn.closed is True
+
+
+def test_create_delivery_task_rejects_when_item_quantity_is_insufficient():
+    fake_conn = FakeConnection()
+    delivery_task_repository = FakeDeliveryTaskRepository()
+    repository = FakeInsufficientItemRepository(
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=FakeIdempotencyRepository(),
+        delivery_task_repository=delivery_task_repository,
+    )
+
+    with patch(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.get_connection",
+        return_value=fake_conn,
+    ):
+        response = repository.create_delivery_task(
+            request_id="req_001",
+            caregiver_id="1",
+            item_id="1",
+            quantity=2,
+            destination_id="delivery_room_301",
+            priority="NORMAL",
+            notes=None,
+            idempotency_key="idem_001",
+        )
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "ITEM_QUANTITY_INSUFFICIENT"
+    assert fake_conn.rolled_back is True
+    assert delivery_task_repository.created is None
+
+
+def test_async_create_delivery_task_rejects_when_item_quantity_is_insufficient(monkeypatch):
+    fake_transaction = FakeAsyncTransaction()
+    delivery_task_repository = FakeDeliveryTaskRepository()
+    repository = AsyncInsufficientItemRepository(
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky9"),
+        idempotency_repository=FakeIdempotencyRepository(),
+        delivery_task_repository=delivery_task_repository,
+    )
+
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.task_request_repository.async_transaction",
+        lambda: fake_transaction,
+    )
+
+    response = asyncio.run(
+        repository.async_create_delivery_task(
+            request_id="req_001",
+            caregiver_id="1",
+            item_id="1",
+            quantity=2,
+            destination_id="delivery_room_301",
+            priority="NORMAL",
+            notes=None,
+            idempotency_key="idem_001",
+        )
+    )
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "ITEM_QUANTITY_INSUFFICIENT"
+    assert delivery_task_repository.created is None
+
+
+def test_delivery_request_repository_delegates_cancel_result_to_cancel_repository():
+    cancel_repository = FakeDeliveryTaskCancelRepository()
+    repository = DeliveryRequestRepository(delivery_task_cancel_repository=cancel_repository)
+
+    response = repository.record_delivery_task_cancel_result(
+        task_id="101",
+        cancel_response={"result_code": "CANCEL_REQUESTED"},
+    )
+
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert cancel_repository.calls == [
+        (
+            "record_cancel",
+            {
+                "task_id": "101",
+                "cancel_response": {"result_code": "CANCEL_REQUESTED"},
+            },
+        )
+    ]
+
+
+def test_delivery_request_repository_delegates_cancelled_result_to_cancel_repository():
+    cancel_repository = FakeDeliveryTaskCancelRepository()
+    repository = DeliveryRequestRepository(delivery_task_cancel_repository=cancel_repository)
+
+    response = asyncio.run(
+        repository.async_record_delivery_task_cancelled_result(
+            task_id="101",
+            workflow_response={"status": 5},
+        )
+    )
+
+    assert response["result_code"] == "CANCELLED"
+    assert cancel_repository.calls == [
+        (
+            "async_record_cancelled",
+            {
+                "task_id": "101",
+                "workflow_response": {"status": 5},
+            },
+        )
+    ]
+
+
+def test_find_idempotent_response_rejects_key_reuse_with_different_payload():
+    response = IdempotencyRepository().find_response(
+        FakeExistingIdempotencyCursor(),
+        requester_id="1",
+        idempotency_key="idem_001",
+        request_hash="expected_hash",
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "IDEMPOTENCY_KEY_CONFLICT"
+
+
+def test_async_find_idempotent_response_rejects_key_reuse_with_different_payload():
+    cursor = RecordingAsyncCursor(
+        row={
+            "request_hash": "different_hash",
+            "response_json": '{"result_code":"ACCEPTED"}',
+        }
+    )
+
+    response = asyncio.run(
+        IdempotencyRepository().async_find_response(
+            cursor,
+            requester_id="1",
+            idempotency_key="idem_001",
+            request_hash="expected_hash",
+        )
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "IDEMPOTENCY_KEY_CONFLICT"
+    assert "FROM idempotency_record" in cursor.calls[0][0]
+
+
+def test_async_delivery_task_repository_inserts_records_in_order():
+    cursor = RecordingAsyncCursor()
+    repository = DeliveryTaskRepository(
+        runtime_config=DeliveryRuntimeConfig(
+            pinky_id="pinky9",
+            pickup_arm_robot_id="jetcobot1",
+            destination_arm_robot_id="jetcobot2",
+            robot_slot_id="slot_a",
+        )
+    )
+
+    task_id = asyncio.run(
+        repository.async_create_delivery_task_records(
+            cursor,
+            request_id="req_001",
+            idempotency_key="idem_001",
+            caregiver_id=1,
+            priority="NORMAL",
+            destination_goal_pose_id="delivery_room_301",
+            notes="note",
+            item_id=1,
+            quantity=2,
+        )
+    )
+
+    assert task_id == 101
+    assert [call[0].split()[2] for call in cursor.calls[:5]] == [
+        "task",
+        "delivery_task_detail",
+        "delivery_task_item",
+        "task_state_history",
+        "task_event_log",
+    ]
+    assert cursor.calls[0][1][4] == "pinky9"
+    assert cursor.calls[1][1][3:6] == ("jetcobot1", "jetcobot2", "slot_a")

@@ -6,6 +6,9 @@ from server.ropi_main_service.application.delivery_config import (
     get_delivery_runtime_config,
 )
 from server.ropi_main_service.application.delivery_orchestrator import DeliveryOrchestrator
+from server.ropi_main_service.application.workflow_task_manager import (
+    get_default_workflow_task_manager,
+)
 from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.goal_pose_resolvers import (
     FixedGoalPoseResolver,
@@ -13,19 +16,51 @@ from server.ropi_main_service.application.goal_pose_resolvers import (
 )
 from server.ropi_main_service.application.manipulation_command import ManipulationCommandService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
-from server.ropi_main_service.application.task_request import DeliveryRequestService
+from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.observability import log_event
+from server.ropi_main_service.persistence.repositories.task_request_repository import TaskRequestRepository
+
+
+DeliveryRequestService = TaskRequestService
+DeliveryRequestRepository = TaskRequestRepository
+_DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
 
 
 logger = logging.getLogger(__name__)
+ROS_GOAL_STATUS_CANCELED = 5
 
 
-def _build_delivery_request_precheck(
+def _is_cancelled_workflow_response(result):
+    if not isinstance(result, dict):
+        return False
+
+    if str(result.get("status") or "").strip() == str(ROS_GOAL_STATUS_CANCELED):
+        return True
+
+    result_code = str(result.get("result_code") or "").strip().upper()
+    reason_code = str(result.get("reason_code") or "").strip().upper()
+    return result_code in {"CANCELED", "CANCELLED"} or reason_code in {
+        "ROS_ACTION_CANCELED",
+        "ROS_ACTION_CANCELLED",
+    }
+
+
+def _normalize_workflow_response(result):
+    if isinstance(result, dict):
+        return result
+
+    return {
+        "result_code": "FAILED",
+        "result_message": f"delivery workflow returned non-dict result: {result!r}",
+        "reason_code": "WORKFLOW_RESULT_INVALID",
+    }
+
+
+def _build_delivery_precheck_helpers(
     *,
     pickup_goal_pose,
     destination_goal_poses,
     return_to_dock_goal_pose,
-    runtime_config,
 ):
     def _log_precheck_failure(
         *,
@@ -45,14 +80,12 @@ def _build_delivery_request_precheck(
         )
 
     def _reject(message: str, reason_code: str) -> dict:
-        return DeliveryRequestService._rejected(message, reason_code)
+        return TaskRequestService._rejected(message, reason_code)
 
     def _invalid_request(message: str, reason_code: str) -> dict:
-        return DeliveryRequestService._invalid_request(message, reason_code)
+        return TaskRequestService._invalid_request(message, reason_code)
 
-    def _precheck(**kwargs):
-        destination_id = str(kwargs.get("destination_id") or "").strip()
-
+    def _run_static_precheck(destination_id: str):
         if pickup_goal_pose is None:
             _log_precheck_failure(
                 reason_code="PICKUP_GOAL_POSE_NOT_CONFIGURED",
@@ -97,19 +130,20 @@ def _build_delivery_request_precheck(
                 "DESTINATION_ID_UNKNOWN",
             )
 
-        try:
-            ros_status = RosRuntimeReadinessService(runtime_config=runtime_config).get_status()
-        except Exception as exc:
-            _log_precheck_failure(
-                reason_code="ROS_SERVICE_UNAVAILABLE",
-                message=f"ROS service가 준비되지 않았습니다: {exc}",
-                destination_id=destination_id,
-            )
-            return _reject(
-                f"ROS service가 준비되지 않았습니다: {exc}",
-                "ROS_SERVICE_UNAVAILABLE",
-            )
+        return None
 
+    def _handle_ros_unavailable(exc: Exception, destination_id: str):
+        _log_precheck_failure(
+            reason_code="ROS_SERVICE_UNAVAILABLE",
+            message=f"ROS service가 준비되지 않았습니다: {exc}",
+            destination_id=destination_id,
+        )
+        return _reject(
+            f"ROS service가 준비되지 않았습니다: {exc}",
+            "ROS_SERVICE_UNAVAILABLE",
+        )
+
+    def _evaluate_ros_status(ros_status: dict, destination_id: str):
         if not ros_status.get("ready"):
             _log_precheck_failure(
                 reason_code="ROS_RUNTIME_NOT_READY",
@@ -124,17 +158,77 @@ def _build_delivery_request_precheck(
 
         return None
 
+    return _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status
+
+
+def _build_delivery_request_precheck(
+    *,
+    pickup_goal_pose,
+    destination_goal_poses,
+    return_to_dock_goal_pose,
+    runtime_config,
+):
+    _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status = _build_delivery_precheck_helpers(
+        pickup_goal_pose=pickup_goal_pose,
+        destination_goal_poses=destination_goal_poses,
+        return_to_dock_goal_pose=return_to_dock_goal_pose,
+    )
+
+    def _precheck(**kwargs):
+        destination_id = str(kwargs.get("destination_id") or "").strip()
+        static_response = _run_static_precheck(destination_id)
+        if static_response is not None:
+            return static_response
+
+        try:
+            ros_status = RosRuntimeReadinessService(runtime_config=runtime_config).get_status()
+        except Exception as exc:
+            return _handle_ros_unavailable(exc, destination_id)
+
+        return _evaluate_ros_status(ros_status, destination_id)
+
     return _precheck
 
 
-def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
+def _build_async_delivery_request_precheck(
+    *,
+    pickup_goal_pose,
+    destination_goal_poses,
+    return_to_dock_goal_pose,
+    runtime_config,
+):
+    _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status = _build_delivery_precheck_helpers(
+        pickup_goal_pose=pickup_goal_pose,
+        destination_goal_poses=destination_goal_poses,
+        return_to_dock_goal_pose=return_to_dock_goal_pose,
+    )
+
+    async def _async_precheck(**kwargs):
+        destination_id = str(kwargs.get("destination_id") or "").strip()
+        static_response = _run_static_precheck(destination_id)
+        if static_response is not None:
+            return static_response
+
+        try:
+            ros_status = await RosRuntimeReadinessService(runtime_config=runtime_config).async_get_status()
+        except Exception as exc:
+            return _handle_ros_unavailable(exc, destination_id)
+
+        return _evaluate_ros_status(ros_status, destination_id)
+
+    return _async_precheck
+
+
+def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> TaskRequestService:
     runtime_config = get_delivery_runtime_config()
     navigation_config = get_delivery_navigation_config()
     pickup_goal_pose = navigation_config["pickup_goal_pose"]
     destination_goal_poses = navigation_config["destination_goal_poses"]
     return_to_dock_goal_pose = navigation_config["return_to_dock_goal_pose"]
+    delivery_request_repository = _new_task_request_repository()
     delivery_workflow_starter = None
     delivery_request_precheck = None
+    async_delivery_request_precheck = None
 
     if loop is not None:
         delivery_request_precheck = _build_delivery_request_precheck(
@@ -143,8 +237,15 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
             return_to_dock_goal_pose=return_to_dock_goal_pose,
             runtime_config=runtime_config,
         )
+        async_delivery_request_precheck = _build_async_delivery_request_precheck(
+            pickup_goal_pose=pickup_goal_pose,
+            destination_goal_poses=destination_goal_poses,
+            return_to_dock_goal_pose=return_to_dock_goal_pose,
+            runtime_config=runtime_config,
+        )
 
     if pickup_goal_pose is not None and destination_goal_poses and loop is not None:
+        workflow_task_manager = workflow_task_manager or get_default_workflow_task_manager()
         goal_pose_navigation_service = GoalPoseNavigationService(runtime_config=runtime_config)
         manipulation_command_service = ManipulationCommandService(runtime_config=runtime_config)
         orchestrator = DeliveryOrchestrator(
@@ -156,35 +257,128 @@ def build_delivery_request_service(*, loop=None) -> DeliveryRequestService:
             runtime_config=runtime_config,
         )
 
+        async def _record_cancelled_workflow_result(*, task_id, workflow_response):
+            try:
+                await delivery_request_repository.async_record_delivery_task_cancelled_result(
+                    task_id=task_id,
+                    workflow_response=workflow_response,
+                )
+            except Exception:
+                logger.exception(
+                    "delivery workflow cancelled result persistence failed",
+                    extra={"task_id": task_id},
+                )
+
+        async def _record_workflow_result(*, task_id, workflow_response):
+            try:
+                await delivery_request_repository.async_record_delivery_task_workflow_result(
+                    task_id=task_id,
+                    workflow_response=workflow_response,
+                )
+            except Exception:
+                logger.exception(
+                    "delivery workflow result persistence failed",
+                    extra={"task_id": task_id},
+                )
+
         def _start_delivery_workflow(**kwargs):
-            background_task = loop.create_task(asyncio.to_thread(orchestrator.run, **kwargs))
+            task_id = kwargs.get("task_id")
+            background_task = workflow_task_manager.create_task(
+                orchestrator.async_run(**kwargs),
+                name=f"delivery_workflow_{task_id}",
+                loop=loop,
+                cancel_on_shutdown=True,
+            )
+
+            def _record_workflow_result_in_background(workflow_response):
+                workflow_task_manager.create_task(
+                    _record_workflow_result(
+                        task_id=task_id,
+                        workflow_response=workflow_response,
+                    ),
+                    name=f"delivery_workflow_result_{task_id}",
+                    loop=loop,
+                    cancel_on_shutdown=False,
+                )
+
+            def _record_cancelled_workflow_result_in_background(workflow_response):
+                workflow_task_manager.create_task(
+                    _record_cancelled_workflow_result(
+                        task_id=task_id,
+                        workflow_response=workflow_response,
+                    ),
+                    name=f"delivery_workflow_cancelled_result_{task_id}",
+                    loop=loop,
+                    cancel_on_shutdown=False,
+                )
 
             def _handle_background_task_done(task: asyncio.Task):
                 try:
                     result = task.result()
-                except Exception:
-                    logger.exception("delivery workflow background task failed", extra={"task_id": kwargs.get("task_id")})
+                except asyncio.CancelledError:
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "delivery_workflow_background_cancelled",
+                        task_id=task_id,
+                        reason_code="WORKFLOW_TASK_CANCELLED",
+                    )
+                    _record_workflow_result_in_background(
+                        {
+                            "result_code": "FAILED",
+                            "result_message": "delivery workflow background task was cancelled.",
+                            "reason_code": "WORKFLOW_TASK_CANCELLED",
+                        }
+                    )
+                    return
+                except Exception as exc:
+                    logger.exception("delivery workflow background task failed", extra={"task_id": task_id})
+                    _record_workflow_result_in_background(
+                        {
+                            "result_code": "FAILED",
+                            "result_message": f"delivery workflow background task failed: {exc}",
+                            "reason_code": "WORKFLOW_UNHANDLED_EXCEPTION",
+                        }
+                    )
                     return
 
+                result = _normalize_workflow_response(result)
                 level = logging.INFO if str(result.get("result_code") or "").upper() == "SUCCESS" else logging.WARNING
                 log_event(
                     logger,
                     level,
                     "delivery_workflow_background_finished",
-                    task_id=kwargs.get("task_id"),
+                    task_id=task_id,
                     result_code=result.get("result_code"),
                     result_message=result.get("result_message"),
                     reason_code=result.get("reason_code"),
                 )
+                if _is_cancelled_workflow_response(result):
+                    _record_cancelled_workflow_result_in_background(result)
+                    return
+
+                _record_workflow_result_in_background(result)
 
             background_task.add_done_callback(_handle_background_task_done)
 
         delivery_workflow_starter = _start_delivery_workflow
 
-    return DeliveryRequestService(
+    return TaskRequestService(
+        repository=delivery_request_repository,
         delivery_workflow_starter=delivery_workflow_starter,
         delivery_request_precheck=delivery_request_precheck,
+        async_delivery_request_precheck=async_delivery_request_precheck,
     )
 
 
 __all__ = ["build_delivery_request_service"]
+
+
+def _new_task_request_repository():
+    canonical_repository_cls = globals().get("TaskRequestRepository")
+    legacy_repository_cls = globals().get("DeliveryRequestRepository")
+    if canonical_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return canonical_repository_cls()
+    if legacy_repository_cls is not _DEFAULT_TASK_REQUEST_REPOSITORY:
+        return legacy_repository_cls()
+    return canonical_repository_cls()

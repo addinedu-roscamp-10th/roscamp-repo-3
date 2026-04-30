@@ -1,0 +1,9 @@
+string arm_id
+string station_role
+string arm_state
+string active_task_id
+string active_transfer_direction
+string active_item_id
+string active_robot_slot_id
+string fault_code
+builtin_interfaces/Time timestamp

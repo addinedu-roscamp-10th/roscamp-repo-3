@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiomysql>=0.3.2",
     "bcrypt>=4.1.2",
     "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
@@ -26,6 +27,7 @@ dev = [
 
 [project.scripts]
 ropi-control-server = "server.ropi_main_service.transport.tcp_server:main"
+ropi-media-gateway = "server.ropi_main_service.transport.vision_frame_gateway:main"
 ropi-ros-service = "server.ropi_main_service.ros.main:main"
 ropi-admin-ui = "ui.admin_ui.main:main"
 ropi-user-ui = "ui.user_ui.main:main"

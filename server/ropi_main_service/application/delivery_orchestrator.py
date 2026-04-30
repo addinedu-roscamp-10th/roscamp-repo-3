@@ -1,3 +1,5 @@
+import asyncio
+import inspect
 import logging
 import time
 
@@ -44,6 +46,24 @@ class DeliveryOrchestrator:
         )
 
     def run(self, *, task_id, item_id, quantity, destination_id):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(
+                self.async_run(
+                    task_id=task_id,
+                    item_id=item_id,
+                    quantity=quantity,
+                    destination_id=destination_id,
+                )
+            )
+
+        raise RuntimeError(
+            "DeliveryOrchestrator.run() cannot be called from a running event loop; "
+            "use async_run()."
+        )
+
+    async def async_run(self, *, task_id, item_id, quantity, destination_id):
         started_at = time.monotonic()
         log_event(
             logger,
@@ -63,7 +83,7 @@ class DeliveryOrchestrator:
             self._log_failure("delivery_pickup_goal_pose_missing", task_id, response, started_at)
             return response
 
-        pickup_response = self.goal_pose_navigation_service.navigate(
+        pickup_response = await self._async_navigate(
             task_id=task_id,
             nav_phase="DELIVERY_PICKUP",
             goal_pose=pickup_goal_pose,
@@ -73,7 +93,7 @@ class DeliveryOrchestrator:
             self._log_failure("delivery_pickup_navigation_failed", task_id, pickup_response, started_at)
             return pickup_response
 
-        load_response = self.manipulation_command_service.execute(
+        load_response = await self._async_execute(
             arm_id=self.runtime_config.pickup_arm_id,
             task_id=task_id,
             transfer_direction=PICKUP_TRANSFER_DIRECTION,
@@ -93,7 +113,7 @@ class DeliveryOrchestrator:
             self._log_failure("delivery_destination_goal_pose_missing", task_id, response, started_at)
             return response
 
-        destination_response = self.goal_pose_navigation_service.navigate(
+        destination_response = await self._async_navigate(
             task_id=task_id,
             nav_phase="DELIVERY_DESTINATION",
             goal_pose=destination_goal_pose,
@@ -103,7 +123,7 @@ class DeliveryOrchestrator:
             self._log_failure("delivery_destination_navigation_failed", task_id, destination_response, started_at)
             return destination_response
 
-        unload_response = self.manipulation_command_service.execute(
+        unload_response = await self._async_execute(
             arm_id=self.runtime_config.destination_arm_id,
             task_id=task_id,
             transfer_direction=UNLOAD_TRANSFER_DIRECTION,
@@ -123,7 +143,7 @@ class DeliveryOrchestrator:
             self._log_failure("delivery_return_to_dock_goal_pose_missing", task_id, response, started_at)
             return response
 
-        return_to_dock_response = self.goal_pose_navigation_service.navigate(
+        return_to_dock_response = await self._async_navigate(
             task_id=task_id,
             nav_phase="RETURN_TO_DOCK",
             goal_pose=return_to_dock_goal_pose,
@@ -143,9 +163,29 @@ class DeliveryOrchestrator:
         )
         return return_to_dock_response
 
+    async def _async_navigate(self, **kwargs):
+        async_navigate = getattr(self.goal_pose_navigation_service, "async_navigate", None)
+        if async_navigate is not None:
+            return await self._await_if_needed(async_navigate(**kwargs))
+
+        return await asyncio.to_thread(self.goal_pose_navigation_service.navigate, **kwargs)
+
+    async def _async_execute(self, **kwargs):
+        async_execute = getattr(self.manipulation_command_service, "async_execute", None)
+        if async_execute is not None:
+            return await self._await_if_needed(async_execute(**kwargs))
+
+        return await asyncio.to_thread(self.manipulation_command_service.execute, **kwargs)
+
     @staticmethod
     def _is_success(response) -> bool:
         return str((response or {}).get("result_code") or "").upper() == "SUCCESS"
+
+    @staticmethod
+    async def _await_if_needed(value):
+        if inspect.isawaitable(value):
+            return await value
+        return value
 
     @staticmethod
     def _failed(result_message: str, *, reason_code: str):

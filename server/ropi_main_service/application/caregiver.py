@@ -2,12 +2,27 @@ from server.ropi_main_service.persistence.repositories.caregiver_repository impo
 
 
 class CaregiverService:
-    def __init__(self):
-        self.repo = CaregiverRepository()
+    CANCELLABLE_TASK_STATUSES = {
+        "WAITING",
+        "WAITING_DISPATCH",
+        "READY",
+        "ASSIGNED",
+        "RUNNING",
+    }
+
+    def __init__(self, repository=None):
+        self.repo = repository or CaregiverRepository()
 
     def get_dashboard_summary(self):
         row = self.repo.get_dashboard_summary()
+        return self._format_dashboard_summary(row)
 
+    async def async_get_dashboard_summary(self):
+        row = await self.repo.async_get_dashboard_summary()
+        return self._format_dashboard_summary(row)
+
+    @staticmethod
+    def _format_dashboard_summary(row):
         return {
             "available_robot_count": row["available_robot_count"] if row else 0,
             "waiting_job_count": row["waiting_job_count"] if row else 0,
@@ -16,6 +31,14 @@ class CaregiverService:
 
     def get_robot_board_data(self):
         rows = self.repo.get_robot_board()
+        return self._format_robot_board_data(rows)
+
+    async def async_get_robot_board_data(self):
+        rows = await self.repo.async_get_robot_board()
+        return self._format_robot_board_data(rows)
+
+    @staticmethod
+    def _format_robot_board_data(rows):
         result = []
 
         for row in rows:
@@ -34,8 +57,8 @@ class CaregiverService:
                 "robot_name": row["robot_id"],
                 "status": status,
                 "zone": row["current_location"] or "-",
-                "battery": "-",
-                "current_task": row["current_task"] or "-",
+                "battery": row.get("battery_percent") if row.get("battery_percent") is not None else "-",
+                "current_task": row.get("current_task_phase") or row.get("current_task_status") or "-",
                 "chip_type": chip_type,
             })
 
@@ -43,6 +66,14 @@ class CaregiverService:
 
     def get_timeline_data(self):
         rows = self.repo.get_timeline(limit=30)
+        return self._format_timeline_data(rows)
+
+    async def async_get_timeline_data(self):
+        rows = await self.repo.async_get_timeline(limit=30)
+        return self._format_timeline_data(rows)
+
+    @staticmethod
+    def _format_timeline_data(rows):
         return [
             [
                 row["timeline_time"] or "",
@@ -55,7 +86,14 @@ class CaregiverService:
 
     def get_flow_board_data(self):
         rows = self.repo.get_flow_board_events(limit=50)
+        return self._format_flow_board_data(rows)
 
+    async def async_get_flow_board_data(self):
+        rows = await self.repo.async_get_flow_board_events(limit=50)
+        return self._format_flow_board_data(rows)
+
+    @staticmethod
+    def _format_flow_board_data(rows):
         flow_data = {
             "READY": [],
             "ASSIGNED": [],
@@ -64,23 +102,37 @@ class CaregiverService:
         }
 
         for row in rows:
-            event_id = row["robot_event_id"]
-            robot_id = row["robot_id"] or "-"
-            desc = row["description"] or "-"
-            event_type = row["robot_event_type"]
+            task = CaregiverService._format_flow_task(row)
 
-            item_text = f"#{event_id} {desc} / {robot_id}"
-
-            if "대기" in desc:
-                flow_data["READY"].append(item_text)
-            elif event_type in ("운반", "READY", "ASSIGNED"):
-                flow_data["ASSIGNED"].append(item_text)
-            elif event_type in ("순찰", "RUNNING"):
-                flow_data["RUNNING"].append(item_text)
+            if task["task_status"] in ("WAITING", "WAITING_DISPATCH"):
+                flow_data["READY"].append(task)
+            elif task["task_status"] in ("READY", "ASSIGNED"):
+                flow_data["ASSIGNED"].append(task)
+            elif task["task_status"] in ("RUNNING", "CANCEL_REQUESTED"):
+                flow_data["RUNNING"].append(task)
             else:
-                flow_data["DONE"].append(item_text)
+                flow_data["DONE"].append(task)
 
         return flow_data
+
+    @staticmethod
+    def _format_flow_task(row):
+        task_id = row.get("task_id")
+        task_status = row.get("task_status") or row.get("event_type") or "UNKNOWN"
+        robot_id = row.get("robot_id") or "-"
+        description = row.get("description") or "-"
+
+        return {
+            "event_id": row.get("event_id"),
+            "task_id": task_id,
+            "task_type": row.get("task_type") or "UNKNOWN",
+            "task_status": task_status,
+            "phase": row.get("phase"),
+            "robot_id": robot_id,
+            "description": description,
+            "display_text": f"#{task_id or row.get('event_id') or '-'} {description} / {robot_id}",
+            "cancellable": task_status in CaregiverService.CANCELLABLE_TASK_STATUSES,
+        }
 
 
 __all__ = ["CaregiverService"]

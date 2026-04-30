@@ -1,16 +1,19 @@
 from unittest.mock import patch
 
-from server.ropi_main_service.transport.tcp_protocol import MESSAGE_CODE_DELIVERY_CREATE_TASK
+from server.ropi_main_service.transport.tcp_protocol import (
+    MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_INTERNAL_RPC,
+)
 from ui.utils.network.service_clients import DeliveryRequestRemoteService
 
 
 def test_create_delivery_task_forwards_if_del_001_request_fields():
     request_payload = {
         "request_id": "req_001",
-        "caregiver_id": "cg_001",
-        "item_id": "supply_001",
+        "caregiver_id": "1",
+        "item_id": "1",
         "quantity": 2,
-        "destination_id": "room2",
+        "destination_id": "delivery_room_301",
         "priority": "NORMAL",
         "notes": "Medication after meals",
         "idempotency_key": "idem_delivery_001",
@@ -22,9 +25,9 @@ def test_create_delivery_task_forwards_if_del_001_request_fields():
             "ok": True,
             "payload": {
                 "result_code": "ACCEPTED",
-                "task_id": "task_delivery_001",
+                "task_id": 101,
                 "task_status": "WAITING_DISPATCH",
-                "assigned_pinky_id": "pinky2",
+                "assigned_robot_id": "pinky2",
             },
         },
     ) as send_request:
@@ -35,5 +38,35 @@ def test_create_delivery_task_forwards_if_del_001_request_fields():
         request_payload,
     )
     assert response["result_code"] == "ACCEPTED"
-    assert response["task_id"] == "task_delivery_001"
-    assert response["assigned_pinky_id"] == "pinky2"
+    assert response["task_id"] == 101
+    assert response["assigned_robot_id"] == "pinky2"
+    assert "assigned_pinky_id" not in response
+
+
+def test_cancel_delivery_task_uses_internal_rpc_contract():
+    with patch(
+        "ui.utils.network.service_clients.send_request",
+        return_value={
+            "ok": True,
+            "payload": {
+                "result_code": "CANCEL_REQUESTED",
+                "task_id": "101",
+                "cancel_requested": True,
+            },
+        },
+    ) as send_request:
+        response = DeliveryRequestRemoteService().cancel_delivery_task(task_id=101)
+
+    send_request.assert_called_once_with(
+        MESSAGE_CODE_INTERNAL_RPC,
+        {
+            "service": "task_request",
+            "method": "cancel_delivery_task",
+            "kwargs": {
+                "task_id": "101",
+            },
+        },
+    )
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert response["cancel_requested"] is True
+

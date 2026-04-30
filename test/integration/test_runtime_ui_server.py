@@ -76,7 +76,7 @@ def _safe_fetch_one(query: str):
 
 def build_if_del_001_payload() -> dict:
     products = DeliveryRequestRepository().get_all_products()
-    assert products, "The remote DB has no supply rows for IF-DEL-001 integration testing."
+    assert products, "The remote DB has no item rows for IF-DEL-001 integration testing."
 
     product = products[0]
 
@@ -86,11 +86,11 @@ def build_if_del_001_payload() -> dict:
     return {
         "request_id": "runtime-if-del-001",
         "caregiver_id": (
-            caregiver_row["caregiver_id"] if caregiver_row else "cg_runtime_test"
+            caregiver_row["caregiver_id"] if caregiver_row else "1"
         ),
-        "item_id": product.get("item_id") or f"supply_{product['product_id']}",
+        "item_id": product["item_id"],
         "quantity": 1,
-        "destination_id": "room2",
+        "destination_id": "delivery_room_301",
         "priority": "NORMAL",
         "notes": "runtime integration test",
         "idempotency_key": "runtime-if-del-001-idem",
@@ -214,11 +214,7 @@ def control_server(qapp, ros_service_stub):
             **os.environ,
             "PYTHONUNBUFFERED": "1",
             "ROPI_ROS_SERVICE_SOCKET_PATH": ros_service_stub["socket_path"],
-            "ROPI_DELIVERY_PICKUP_GOAL_POSE": "1.5,2.5,1.57",
-            "ROPI_DELIVERY_DESTINATION_GOAL_POSES": (
-                "room2=12.0,2.0,0.0"
-            ),
-            "ROPI_RETURN_TO_DOCK_GOAL_POSE": "0.5,0.5,3.14",
+            "ROPI_DELIVERY_GOAL_POSE_SOURCE": "db",
         },
     )
 
@@ -260,18 +256,18 @@ def test_server_process_heartbeat_reports_db_status(patched_ui_endpoint):
     assert response["payload"]["db"]["ok"] is True
 
 
-def test_ui_client_create_delivery_task_hits_real_server(patched_ui_endpoint):
+def test_ui_client_create_delivery_task_hits_real_server(patched_ui_endpoint, runtime_delivery_schema):
     payload = build_if_del_001_payload()
 
     response = DeliveryRequestRemoteService().create_delivery_task(**payload)
 
     assert response["result_code"] == "ACCEPTED"
-    assert response["task_id"].startswith("task_delivery_")
+    assert isinstance(response["task_id"], int)
     assert response["task_status"] == "WAITING_DISPATCH"
-    assert response["assigned_pinky_id"] == "pinky2"
+    assert response["assigned_robot_id"] == "pinky2"
 
 
-def test_task_request_page_loads_items_from_real_server(patched_ui_endpoint, qapp):
+def test_task_request_page_loads_items_from_real_server(patched_ui_endpoint, qapp, runtime_delivery_schema):
     page = TaskRequestPage()
     page.show()
 
@@ -295,7 +291,7 @@ def test_task_request_page_loads_items_from_real_server(patched_ui_endpoint, qap
         wait_for_qt(qapp, lambda: True, timeout=0.1)
 
 
-def test_task_request_page_submit_request_hits_if_del_001(patched_ui_endpoint, qapp):
+def test_task_request_page_submit_request_hits_if_del_001(patched_ui_endpoint, qapp, runtime_delivery_schema):
     SessionManager.login(build_runtime_caregiver_session())
     page = TaskRequestPage()
     page.show()

@@ -26,14 +26,20 @@ class RosServiceUdsServer:
         socket_path: str | None = None,
         goal_pose_action_client,
         manipulation_action_client=None,
+        patrol_path_action_client=None,
+        fall_response_control_client=None,
         runtime_config=None,
+        patrol_runtime_config=None,
     ):
         ipc_config = get_ros_service_ipc_config()
         self.socket_path = socket_path or ipc_config["socket_path"]
         self.dispatcher = RosServiceCommandDispatcher(
             goal_pose_action_client=goal_pose_action_client,
             manipulation_action_client=manipulation_action_client,
+            patrol_path_action_client=patrol_path_action_client,
+            fall_response_control_client=fall_response_control_client,
             runtime_config=runtime_config,
+            patrol_runtime_config=patrol_runtime_config,
         )
         self._server = None
 
@@ -57,6 +63,7 @@ class RosServiceUdsServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        self.dispatcher.close()
         self._cleanup_existing_socket()
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -77,7 +84,7 @@ class RosServiceUdsServer:
                     pinky_id=payload.get("pinky_id"),
                     arm_id=payload.get("arm_id"),
                 )
-                response = self._dispatch_request(request)
+                response = await self._dispatch_request(request)
                 if response.get("ok"):
                     log_event(
                         logger,
@@ -100,11 +107,11 @@ class RosServiceUdsServer:
             writer.close()
             await writer.wait_closed()
 
-    def _dispatch_request(self, request: dict) -> dict:
+    async def _dispatch_request(self, request: dict) -> dict:
         try:
             return build_response_message(
                 ok=True,
-                payload=self.dispatcher.dispatch(
+                payload=await self.dispatcher.async_dispatch(
                     request.get("command", ""),
                     request.get("payload") or {},
                 ),

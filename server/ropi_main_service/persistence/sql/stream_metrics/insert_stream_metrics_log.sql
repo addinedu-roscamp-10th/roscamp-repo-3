@@ -1,0 +1,38 @@
+INSERT INTO stream_metrics_log (
+    task_id,
+    robot_id,
+    stream_name,
+    direction,
+    window_started_at,
+    window_ended_at,
+    received_frame_count,
+    relayed_frame_count,
+    dropped_frame_count,
+    dropped_frame_rate,
+    incomplete_frame_count,
+    crc_mismatch_count,
+    assembly_timeout_count,
+    avg_latency_ms,
+    max_latency_ms,
+    latest_frame_id,
+    created_at
+)
+VALUES (
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    NOW(3)
+)

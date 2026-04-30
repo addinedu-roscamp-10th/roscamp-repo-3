@@ -2,6 +2,8 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
+    MESSAGE_CODE_PATROL_CREATE_TASK,
+    MESSAGE_CODE_PATROL_RESUME_TASK,
 )
 from ui.utils.network.tcp_client import TcpClientError, send_request
 
@@ -70,6 +72,12 @@ class DeliveryRequestRemoteService:
     def get_delivery_items(self):
         return self._rpc("get_delivery_items")
 
+    def get_delivery_destinations(self):
+        return self._rpc("get_delivery_destinations")
+
+    def get_patrol_areas(self):
+        return self._rpc("get_patrol_areas")
+
     def get_product_names(self):
         return self._rpc("get_product_names")
 
@@ -81,8 +89,32 @@ class DeliveryRequestRemoteService:
 
         return response.get("payload")
 
+    def create_patrol_task(self, **payload):
+        response = send_request(MESSAGE_CODE_PATROL_CREATE_TASK, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+
+        return response.get("payload")
+
+    def resume_patrol_task(self, **payload):
+        response = send_request(MESSAGE_CODE_PATROL_RESUME_TASK, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+
+        return response.get("payload")
+
     def submit_delivery_request(self, **payload):
         return self._rpc("submit_delivery_request", **payload)
+
+    def cancel_delivery_task(self, task_id, action_name=None):
+        kwargs = {
+            "task_id": str(task_id).strip(),
+        }
+        if action_name is not None:
+            kwargs["action_name"] = str(action_name).strip()
+        return self._rpc("cancel_delivery_task", **kwargs)
 
 
 class VisitGuideRemoteService:

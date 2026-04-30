@@ -1,10 +1,16 @@
 from .caregiver_repository import CaregiverRepository
 from .inventory_repository import InventoryRepository
 from .patient_repository import PatientRepository
+from .patrol_task_create_repository import (
+    PatrolPathSnapshotBuilder,
+    PatrolTaskCreateRepository,
+)
+from .patrol_task_resume_repository import PatrolTaskResumeRepository
 from .staff_call_repository import StaffCallRepository
+from .stream_metrics_log_repository import StreamMetricsLogRepository
 from .task_request_repository import (
     DeliveryRequestRepository,
-    DeliveryRequestRepository as TaskRequestRepository,
+    TaskRequestRepository,
 )
 from .user_repository import UserRepository
 from .visit_guide_repository import VisitGuideRepository
@@ -13,11 +19,15 @@ from .visitor_register_repository import VisitorRegisterRepository
 
 __all__ = [
     "CaregiverRepository",
+    "TaskRequestRepository",
     "DeliveryRequestRepository",
     "InventoryRepository",
     "PatientRepository",
+    "PatrolPathSnapshotBuilder",
+    "PatrolTaskCreateRepository",
+    "PatrolTaskResumeRepository",
     "StaffCallRepository",
-    "TaskRequestRepository",
+    "StreamMetricsLogRepository",
     "UserRepository",
     "VisitGuideRepository",
     "VisitorInfoRepository",

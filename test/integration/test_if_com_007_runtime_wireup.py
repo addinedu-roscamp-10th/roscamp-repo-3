@@ -43,7 +43,11 @@ def _wait_for_server_ready(server_process, server_port: int, timeout: float = 10
     raise TimeoutError("Control server did not become ready in time.")
 
 
-def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, monkeypatch):
+def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(
+    tmp_path,
+    monkeypatch,
+    runtime_delivery_schema,
+):
     socket_path = tmp_path / "ropi_ros_service.sock"
     server_port = _find_free_port()
     received = []
@@ -118,7 +122,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
         },
     }
     destination_goal_poses = {
-        "room2": {
+        "delivery_room_301": {
             "header": {
                 "stamp": {"sec": 0, "nanosec": 0},
                 "frame_id": "map",
@@ -158,6 +162,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
             **os.environ,
             "PYTHONUNBUFFERED": "1",
             "ROPI_ROS_SERVICE_SOCKET_PATH": str(socket_path),
+            "ROPI_DELIVERY_GOAL_POSE_SOURCE": "env",
             "ROPI_DELIVERY_PICKUP_GOAL_POSE_JSON": json.dumps(pickup_goal_pose),
             "ROPI_DELIVERY_DESTINATION_GOAL_POSES_JSON": json.dumps(destination_goal_poses),
             "ROPI_RETURN_TO_DOCK_GOAL_POSE_JSON": json.dumps(return_to_dock_goal_pose),
@@ -173,10 +178,10 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
     try:
         response = DeliveryRequestRemoteService().create_delivery_task(
             request_id="req_001",
-            caregiver_id="cg_001",
-            item_id="supply_001",
+            caregiver_id="1",
+            item_id="1",
             quantity=1,
-            destination_id="room2",
+            destination_id="delivery_room_301",
             priority="NORMAL",
             notes="runtime delivery workflow wire-up test",
             idempotency_key="idem_001",
@@ -199,6 +204,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
     ros_service_thread.join(timeout=2)
 
     assert response["result_code"] == "ACCEPTED"
+    task_id = str(response["task_id"])
     assert received == [
         {
             "command": "get_runtime_status",
@@ -212,7 +218,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
             "payload": {
                 "pinky_id": "pinky2",
                 "goal": {
-                    "task_id": "task_delivery_idem_001",
+                    "task_id": task_id,
                     "nav_phase": "DELIVERY_PICKUP",
                     "goal_pose": pickup_goal_pose,
                     "timeout_sec": 120,
@@ -224,9 +230,9 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
             "payload": {
                 "arm_id": "arm1",
                 "goal": {
-                    "task_id": "task_delivery_idem_001",
+                    "task_id": task_id,
                     "transfer_direction": "TO_ROBOT",
-                    "item_id": "supply_001",
+                    "item_id": "1",
                     "quantity": 1,
                     "robot_slot_id": "robot_slot_a1",
                 },
@@ -237,9 +243,9 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
             "payload": {
                 "pinky_id": "pinky2",
                 "goal": {
-                    "task_id": "task_delivery_idem_001",
+                    "task_id": task_id,
                     "nav_phase": "DELIVERY_DESTINATION",
-                    "goal_pose": destination_goal_poses["room2"],
+                    "goal_pose": destination_goal_poses["delivery_room_301"],
                     "timeout_sec": 120,
                 },
             },
@@ -249,9 +255,9 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
             "payload": {
                 "arm_id": "arm2",
                 "goal": {
-                    "task_id": "task_delivery_idem_001",
+                    "task_id": task_id,
                     "transfer_direction": "FROM_ROBOT",
-                    "item_id": "supply_001",
+                    "item_id": "1",
                     "quantity": 1,
                     "robot_slot_id": "robot_slot_a1",
                 },
@@ -262,7 +268,7 @@ def test_if_del_001_runtime_wires_delivery_workflow_to_ros_service(tmp_path, mon
             "payload": {
                 "pinky_id": "pinky2",
                 "goal": {
-                    "task_id": "task_delivery_idem_001",
+                    "task_id": task_id,
                     "nav_phase": "RETURN_TO_DOCK",
                     "goal_pose": return_to_dock_goal_pose,
                     "timeout_sec": 120,

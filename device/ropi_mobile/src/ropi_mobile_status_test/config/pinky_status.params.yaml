@@ -1,0 +1,26 @@
+/**:
+  ros__parameters:
+    pinky_id: "pinky2"
+    frame_id: "map"
+    pose_topic: ""
+    odom_topic: "/odom"
+    battery_topic: ""
+    battery_percent_topic: "/battery/present"
+    battery_voltage_topic: "/battery/voltage"
+    state_topic: "/transport/amr_status"
+    task_topic: ""
+    charging_topic: ""
+    docked_topic: ""
+    fail_topic: ""
+    fallback_state: "IDLE"
+    fallback_active_task_id: ""
+    fallback_charging_state: "NOT_CHARGING"
+    fallback_docked: false
+    fallback_battery_percent: 82.3
+    fallback_battery_voltage: 24.8
+    fallback_fail_code: ""
+    use_pinkylib_battery: false
+    battery_poll_period_sec: 2.0
+    pose_x: 0.0
+    pose_y: 0.0
+    pose_yaw_deg: 0.0

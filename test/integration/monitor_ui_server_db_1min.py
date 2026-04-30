@@ -5,6 +5,7 @@ import sys
 import time
 from collections import deque
 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -25,12 +26,13 @@ def heartbeat_check():
             "db_ok": db_ok,
             "result": result,
         }
-    except Exception as e:
+    except Exception as exc:
         return {
             "server_ok": False,
             "db_ok": False,
-            "result": {"ok": False, "error": str(e)},
+            "result": {"ok": False, "error": str(exc)},
         }
+
 
 def main() -> int:
     interval_sec = 1
@@ -61,7 +63,7 @@ def main() -> int:
         )
 
         if len(history) == window_sec and fail_count >= fail_threshold_sec:
-            print("FAIL: 최근 1분 동안 연결 끊김이 10초 이상 발생")
+            print("FAIL: 최근 1분 동안 JSON line TCP 연결 끊김이 10초 이상 발생")
             return 1
 
         time.sleep(interval_sec)

@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
 from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
@@ -8,6 +9,7 @@ class FakeGoalPoseActionClient:
     def __init__(self):
         self.calls = []
         self.ready_checks = []
+        self.cancel_calls = []
 
     def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
         self.calls.append(
@@ -32,6 +34,71 @@ class FakeGoalPoseActionClient:
             }
         )
         return True
+
+    async def async_cancel_goal(self, *, task_id, action_name=None):
+        self.cancel_calls.append(
+            {
+                "task_id": task_id,
+                "action_name": action_name,
+            }
+        )
+        return {
+            "result_code": "CANCEL_REQUESTED",
+            "cancel_requested": True,
+            "matched_goal_count": 1,
+        }
+
+    def get_latest_feedback(self, *, task_id, action_name=None):
+        return [
+            {
+                "task_id": task_id,
+                "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                "action_type": "navigation",
+                "feedback_type": "NAVIGATION_FEEDBACK",
+                "received_at": "2026-04-28T00:00:00+00:00",
+                "payload": {
+                    "nav_status": "MOVING",
+                    "distance_remaining_m": 1.25,
+                },
+            }
+        ]
+
+
+class FakePatrolPathActionClient(FakeGoalPoseActionClient):
+    def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
+        self.calls.append(
+            {
+                "action_name": action_name,
+                "goal": goal,
+                "result_wait_timeout_sec": result_wait_timeout_sec,
+            }
+        )
+        return {
+            "accepted": True,
+            "status": 4,
+            "result_code": "SUCCEEDED",
+            "result_message": "patrol done",
+        }
+
+    def get_latest_feedback(self, *, task_id, action_name=None):
+        return []
+
+
+class FakeFallResponseControlClient:
+    def __init__(self):
+        self.calls = []
+
+    async def async_call(self, *, service_name, request):
+        self.calls.append(
+            {
+                "service_name": service_name,
+                "request": request,
+            }
+        )
+        return {
+            "accepted": True,
+            "message": "",
+        }
 
 
 def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
@@ -108,6 +175,269 @@ def test_ros_service_uds_server_dispatches_navigate_to_goal_command(tmp_path):
     }
 
 
+def test_ros_service_uds_server_dispatches_execute_patrol_path_command(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    patrol_action_client = FakePatrolPathActionClient()
+    path = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {
+                "pose": {
+                    "position": {"x": 1.0, "y": 2.0, "z": 0.0},
+                    "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                }
+            }
+        ],
+    }
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=FakeGoalPoseActionClient(),
+            patrol_path_action_client=patrol_action_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "execute_patrol_path",
+                        "payload": {
+                            "pinky_id": "pinky3",
+                            "goal": {
+                                "task_id": "2001",
+                                "path": path,
+                                "timeout_sec": 180,
+                            },
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert patrol_action_client.calls == [
+        {
+            "action_name": "/ropi/control/pinky3/execute_patrol_path",
+            "goal": {
+                "task_id": "2001",
+                "path": path,
+                "timeout_sec": 180,
+            },
+            "result_wait_timeout_sec": 185.0,
+        }
+    ]
+    assert response["ok"] is True
+    assert response["payload"]["result_code"] == "SUCCEEDED"
+
+
+def test_ros_service_uds_server_dispatches_fall_response_control_command(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    fall_response_client = FakeFallResponseControlClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=FakeGoalPoseActionClient(),
+            fall_response_control_client=fall_response_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "fall_response_control",
+                        "payload": {
+                            "pinky_id": "pinky3",
+                            "request": {
+                                "task_id": "2001",
+                                "command_type": "START_FALL_ALERT",
+                            },
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert fall_response_client.calls == [
+        {
+            "service_name": "/ropi/control/pinky3/fall_response_control",
+            "request": {
+                "task_id": "2001",
+                "command_type": "START_FALL_ALERT",
+            },
+        }
+    ]
+    assert response == {
+        "ok": True,
+        "payload": {
+            "accepted": True,
+            "message": "",
+        },
+    }
+
+
+def test_ros_service_uds_server_dispatches_flat_fall_response_control_payload(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    fall_response_client = FakeFallResponseControlClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=FakeGoalPoseActionClient(),
+            fall_response_control_client=fall_response_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "fall_response_control",
+                        "payload": {
+                            "task_id": "2001",
+                            "command_type": "CLEAR_AND_STOP",
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert fall_response_client.calls == [
+        {
+            "service_name": "/ropi/control/pinky3/fall_response_control",
+            "request": {
+                "task_id": "2001",
+                "command_type": "CLEAR_AND_STOP",
+            },
+        }
+    ]
+    assert response == {
+        "ok": True,
+        "payload": {
+            "accepted": True,
+            "message": "",
+        },
+    }
+
+
+def test_ros_service_uds_server_dispatch_request_is_awaitable(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    action_client = FakeGoalPoseActionClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=action_client,
+        )
+        try:
+            return await server._dispatch_request(
+                {
+                    "command": "navigate_to_goal",
+                    "payload": {
+                        "pinky_id": "pinky2",
+                        "goal": {
+                            "task_id": "task_delivery_001",
+                            "nav_phase": "DELIVERY_DESTINATION",
+                            "timeout_sec": 120,
+                        },
+                    },
+                }
+            )
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["ok"] is True
+    assert response["payload"]["result_code"] == "SUCCESS"
+
+
+def test_ros_service_uds_server_does_not_block_event_loop_while_action_waits(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+
+    class SlowGoalPoseActionClient(FakeGoalPoseActionClient):
+        def send_goal(self, *, action_name, goal, result_wait_timeout_sec=None):
+            time.sleep(0.25)
+            return super().send_goal(
+                action_name=action_name,
+                goal=goal,
+                result_wait_timeout_sec=result_wait_timeout_sec,
+            )
+
+    async def send_request(command, payload):
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        writer.write(encode_message({"command": command, "payload": payload}))
+        await writer.drain()
+        response = decode_message_bytes(await reader.readline())
+        writer.close()
+        await writer.wait_closed()
+        return response
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=SlowGoalPoseActionClient(),
+        )
+        await server.start()
+        try:
+            started_at = time.monotonic()
+            slow_task = asyncio.create_task(
+                send_request(
+                    "navigate_to_goal",
+                    {
+                        "pinky_id": "pinky2",
+                        "goal": {
+                            "task_id": "task_delivery_001",
+                            "nav_phase": "DELIVERY_DESTINATION",
+                            "timeout_sec": 120,
+                        },
+                    },
+                )
+            )
+            await asyncio.sleep(0.01)
+            fast_response = await send_request("unknown_command", {})
+            elapsed = time.monotonic() - started_at
+            await slow_task
+            return elapsed, fast_response
+        finally:
+            await server.close()
+
+    elapsed, fast_response = asyncio.run(scenario())
+
+    assert elapsed < 0.2
+    assert fast_response["ok"] is False
+    assert fast_response["error_code"] == "UNKNOWN_COMMAND"
+
+
 def test_ros_service_uds_server_reports_runtime_readiness(tmp_path):
     socket_path = tmp_path / "ropi_ros_service.sock"
     action_client = FakeGoalPoseActionClient()
@@ -170,6 +500,122 @@ def test_ros_service_uds_server_reports_runtime_readiness(tmp_path):
                     "action_name": "/ropi/arm/arm2/execute_manipulation",
                     "error": "manipulation action client is not configured",
                 },
+            ],
+        },
+    }
+
+
+def test_ros_service_uds_server_dispatches_cancel_action_command(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    action_client = FakeGoalPoseActionClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=action_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "cancel_action",
+                        "payload": {
+                            "task_id": "task_delivery_001",
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert action_client.cancel_calls == [
+        {
+            "task_id": "task_delivery_001",
+            "action_name": None,
+        }
+    ]
+    assert response == {
+        "ok": True,
+        "payload": {
+            "result_code": "CANCEL_REQUESTED",
+            "result_message": "action cancel request was accepted.",
+            "task_id": "task_delivery_001",
+            "action_name": None,
+            "cancel_requested": True,
+            "details": [
+                {
+                    "client": "navigation",
+                    "result_code": "CANCEL_REQUESTED",
+                    "cancel_requested": True,
+                    "matched_goal_count": 1,
+                }
+            ],
+        },
+    }
+
+
+def test_ros_service_uds_server_dispatches_get_action_feedback_command(tmp_path):
+    socket_path = tmp_path / "ropi_ros_service.sock"
+    action_client = FakeGoalPoseActionClient()
+
+    async def scenario():
+        server = RosServiceUdsServer(
+            socket_path=str(socket_path),
+            goal_pose_action_client=action_client,
+        )
+        await server.start()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(str(socket_path))
+            writer.write(
+                encode_message(
+                    {
+                        "command": "get_action_feedback",
+                        "payload": {
+                            "task_id": "task_delivery_001",
+                        },
+                    }
+                )
+            )
+            await writer.drain()
+            response = decode_message_bytes(await reader.readline())
+            writer.close()
+            await writer.wait_closed()
+            return response
+        finally:
+            await server.close()
+
+    response = asyncio.run(scenario())
+
+    assert response == {
+        "ok": True,
+        "payload": {
+            "result_code": "FOUND",
+            "task_id": "task_delivery_001",
+            "action_name": None,
+            "feedback": [
+                {
+                    "client": "navigation",
+                    "task_id": "task_delivery_001",
+                    "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                    "action_type": "navigation",
+                    "feedback_type": "NAVIGATION_FEEDBACK",
+                    "received_at": "2026-04-28T00:00:00+00:00",
+                    "payload": {
+                        "nav_status": "MOVING",
+                        "distance_remaining_m": 1.25,
+                    },
+                }
             ],
         },
     }

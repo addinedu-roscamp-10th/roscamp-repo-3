@@ -21,8 +21,13 @@ load_dotenv(PROJECT_ROOT / ".env")
 DEFAULT_DELIVERY_PINKY_ID = "pinky2"
 DEFAULT_DELIVERY_PICKUP_ARM_ID = "arm1"
 DEFAULT_DELIVERY_DESTINATION_ARM_ID = "arm2"
+DEFAULT_DELIVERY_PICKUP_ARM_ROBOT_ID = "jetcobot1"
+DEFAULT_DELIVERY_DESTINATION_ARM_ROBOT_ID = "jetcobot2"
 DEFAULT_DELIVERY_ROBOT_SLOT_ID = "robot_slot_a1"
 DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC = 120.0
+DEFAULT_DELIVERY_GOAL_POSE_SOURCE = "db"
+DEFAULT_DELIVERY_PICKUP_GOAL_POSE_ID = "pickup_supply"
+DEFAULT_DELIVERY_RETURN_TO_DOCK_GOAL_POSE_ID = "dock_home"
 
 
 @dataclass(frozen=True)
@@ -30,6 +35,8 @@ class DeliveryRuntimeConfig:
     pinky_id: str = DEFAULT_DELIVERY_PINKY_ID
     pickup_arm_id: str = DEFAULT_DELIVERY_PICKUP_ARM_ID
     destination_arm_id: str = DEFAULT_DELIVERY_DESTINATION_ARM_ID
+    pickup_arm_robot_id: str = DEFAULT_DELIVERY_PICKUP_ARM_ROBOT_ID
+    destination_arm_robot_id: str = DEFAULT_DELIVERY_DESTINATION_ARM_ROBOT_ID
     robot_slot_id: str = DEFAULT_DELIVERY_ROBOT_SLOT_ID
     navigation_timeout_sec: float = DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC
 
@@ -64,6 +71,14 @@ def get_delivery_runtime_config() -> DeliveryRuntimeConfig:
             "ROPI_DELIVERY_DESTINATION_ARM_ID",
             default=DEFAULT_DELIVERY_DESTINATION_ARM_ID,
         ),
+        pickup_arm_robot_id=_load_text_env(
+            "ROPI_DELIVERY_PICKUP_ARM_ROBOT_ID",
+            default=DEFAULT_DELIVERY_PICKUP_ARM_ROBOT_ID,
+        ),
+        destination_arm_robot_id=_load_text_env(
+            "ROPI_DELIVERY_DESTINATION_ARM_ROBOT_ID",
+            default=DEFAULT_DELIVERY_DESTINATION_ARM_ROBOT_ID,
+        ),
         robot_slot_id=_load_text_env("ROPI_DELIVERY_ROBOT_SLOT_ID", default=DEFAULT_DELIVERY_ROBOT_SLOT_ID),
         navigation_timeout_sec=_load_float_env(
             "ROPI_DELIVERY_NAVIGATION_TIMEOUT_SEC",
@@ -87,7 +102,86 @@ def _load_raw_env(name: str) -> str:
     return str(os.getenv(name, "")).strip()
 
 
-def get_delivery_navigation_config() -> dict:
+def get_delivery_navigation_config(*, repository=None, source=None) -> dict:
+    normalized_source = str(
+        source
+        or os.getenv("ROPI_DELIVERY_GOAL_POSE_SOURCE")
+        or DEFAULT_DELIVERY_GOAL_POSE_SOURCE
+    ).strip().lower()
+
+    if normalized_source == "env":
+        return _get_delivery_navigation_config_from_env()
+    if normalized_source == "db":
+        return _get_delivery_navigation_config_from_db(repository=repository)
+
+    raise RuntimeError(
+        "ROPI_DELIVERY_GOAL_POSE_SOURCE는 'db' 또는 'env'여야 합니다."
+    )
+
+
+def _get_delivery_navigation_config_from_db(*, repository=None) -> dict:
+    if repository is None:
+        from server.ropi_main_service.persistence.repositories.task_request_repository import (
+            TaskRequestRepository,
+        )
+
+        repository = TaskRequestRepository()
+
+    return _build_delivery_navigation_config_from_db_rows(
+        repository.get_enabled_goal_poses()
+    )
+
+
+def _build_delivery_navigation_config_from_db_rows(rows) -> dict:
+    pickup_goal_pose = None
+    return_to_dock_goal_pose = None
+    destination_goal_poses = {}
+
+    for row in rows or []:
+        purpose = str(row.get("purpose") or "").upper()
+        goal_pose_id = str(row.get("goal_pose_id") or "").strip()
+        if not goal_pose_id:
+            continue
+
+        goal_pose = _build_goal_pose_from_db_row(row)
+        if (
+            purpose == "PICKUP"
+            and goal_pose_id == DEFAULT_DELIVERY_PICKUP_GOAL_POSE_ID
+        ):
+            pickup_goal_pose = goal_pose
+            continue
+
+        if purpose == "DESTINATION":
+            destination_goal_poses[goal_pose_id] = goal_pose
+            continue
+
+        if (
+            purpose == "DOCK"
+            and goal_pose_id == DEFAULT_DELIVERY_RETURN_TO_DOCK_GOAL_POSE_ID
+        ):
+            return_to_dock_goal_pose = goal_pose
+
+    return {
+        "pickup_goal_pose": pickup_goal_pose,
+        "destination_goal_poses": destination_goal_poses,
+        "return_to_dock_goal_pose": return_to_dock_goal_pose,
+    }
+
+
+def _build_goal_pose_from_db_row(row: dict) -> dict:
+    goal_pose_id = str(row.get("goal_pose_id") or "").strip() or "unknown"
+    return normalize_goal_pose_spec(
+        {
+            "x": row.get("pose_x"),
+            "y": row.get("pose_y"),
+            "yaw": row.get("pose_yaw"),
+            "frame_id": row.get("frame_id") or "map",
+        },
+        env_name=f"goal_pose[{goal_pose_id}]",
+    )
+
+
+def _get_delivery_navigation_config_from_env() -> dict:
     pickup_goal_pose_json_raw = _load_json_env(
         "ROPI_DELIVERY_PICKUP_GOAL_POSE_JSON",
         default=None,
@@ -157,6 +251,7 @@ def get_delivery_navigation_config() -> dict:
 
 __all__ = [
     "DeliveryRuntimeConfig",
+    "_build_delivery_navigation_config_from_db_rows",
     "get_delivery_navigation_config",
     "get_delivery_runtime_config",
 ]

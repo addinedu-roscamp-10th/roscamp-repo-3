@@ -1,0 +1,212 @@
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+INIT_TABLES_SQL = REPO_ROOT / "server" / "ropi_db" / "init_tables.sql"
+INSERT_DUMMIES_SQL = REPO_ROOT / "server" / "ropi_db" / "insert_dummies.sql"
+
+
+def _ddl() -> str:
+    return INIT_TABLES_SQL.read_text(encoding="utf-8")
+
+
+def _seed_sql() -> str:
+    return INSERT_DUMMIES_SQL.read_text(encoding="utf-8")
+
+
+def test_schema_uses_member_event_without_legacy_event_type_tables():
+    ddl = _ddl()
+
+    assert "CREATE TABLE `member_event`" in ddl
+    assert "`member_event_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT" in ddl
+    assert "`event_type_code` VARCHAR(50) NOT NULL" in ddl
+    assert "`event_category` VARCHAR(30) NOT NULL" in ddl
+    assert "`severity` VARCHAR(20) NOT NULL" in ddl
+    assert "CREATE TABLE `event`" not in ddl
+    assert "CREATE TABLE `event_type`" not in ddl
+
+
+def test_schema_uses_item_table_and_unsigned_delivery_quantities():
+    ddl = _ddl()
+
+    assert "CREATE TABLE `item`" in ddl
+    assert "`item_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT" in ddl
+    assert "`item_type` VARCHAR(100) NOT NULL" in ddl
+    assert "`quantity` INT UNSIGNED NOT NULL" in ddl
+    assert "CREATE TABLE `supply`" not in ddl
+    assert "`requested_quantity` INT UNSIGNED NOT NULL" in ddl
+    assert "`loaded_quantity` INT UNSIGNED NOT NULL" in ddl
+    assert "`delivered_quantity` INT UNSIGNED NOT NULL" in ddl
+
+
+def test_dummy_item_seed_includes_food_example():
+    seed_sql = _seed_sql()
+
+    assert "(6, '식료품', '두유', 60, NOW(), NOW())" in seed_sql
+
+
+def test_schema_contains_control_task_and_log_tables():
+    ddl = _ddl()
+
+    for table_name in (
+        "task",
+        "delivery_task_detail",
+        "delivery_task_item",
+        "patrol_task_detail",
+        "patrol_area",
+        "guide_task_detail",
+        "task_state_history",
+        "task_event_log",
+        "command_execution",
+        "robot_runtime_status",
+        "robot_data_log",
+        "ai_inference_log",
+        "stream_metrics_log",
+        "idempotency_record",
+    ):
+        assert f"CREATE TABLE `{table_name}`" in ddl
+
+    assert "CREATE TABLE `robot_event`" not in ddl
+    assert "CREATE TABLE `map_table`" not in ddl
+
+
+def test_ai_inference_log_uses_string_frame_id_for_pat_005():
+    ddl = _ddl()
+
+    ai_inference_section = ddl.split("CREATE TABLE `ai_inference_log`", 1)[1].split(
+        "CREATE TABLE `stream_metrics_log`",
+        1,
+    )[0]
+
+    assert "`frame_id` VARCHAR(100) NULL" in ai_inference_section
+    assert "`frame_id` BIGINT UNSIGNED" not in ai_inference_section
+
+
+def test_patrol_schema_separates_area_from_operation_zone():
+    ddl = _ddl()
+    seed_sql = _seed_sql()
+
+    assert "CREATE TABLE `patrol_area`" in ddl
+    assert "`patrol_area_id` VARCHAR(100) NOT NULL" in ddl
+    assert "`path_json` JSON NOT NULL" in ddl
+    assert "`patrol_area_id` VARCHAR(100) NOT NULL" in ddl
+    assert "`patrol_area_revision` INT UNSIGNED NOT NULL" in ddl
+    assert "`path_snapshot_json` JSON NOT NULL" in ddl
+    assert "`waypoint_count` INT UNSIGNED NOT NULL DEFAULT 0" in ddl
+    assert "`current_waypoint_index` INT UNSIGNED NULL" in ddl
+    assert "CONSTRAINT `fk_patrol_task_detail_patrol_area`" in ddl
+    assert "CREATE TABLE `patrol_task_zone`" not in ddl
+    assert "`coverage_strategy`" not in ddl
+
+    operation_zone_section = ddl.split("CREATE TABLE `operation_zone`", 1)[1].split(
+        "CREATE TABLE `patrol_area`",
+        1,
+    )[0]
+    assert "`path_json`" not in operation_zone_section
+    assert "`default_robot_id`" not in operation_zone_section
+
+    assert "INSERT INTO `patrol_area`" in seed_sql
+    assert "INSERT INTO `operation_zone`" in seed_sql
+    assert "`path_json`" in seed_sql
+    assert "`default_robot_id`" not in seed_sql
+
+    assert "polygon_json" not in ddl
+    assert "polygon_json" not in seed_sql
+    assert "coverage_polygon_snapshot_json" not in ddl
+    assert "coverage_polygon_snapshot_json" not in seed_sql
+
+
+def test_operation_zone_does_not_store_patrol_robot_hint():
+    ddl = _ddl()
+    seed_sql = _seed_sql()
+
+    assert "`default_robot_id` VARCHAR(50) NULL" not in ddl
+    assert "CONSTRAINT `fk_operation_zone_default_robot`" not in ddl
+    assert "idx_operation_zone_default_robot" not in ddl
+    assert "`default_robot_id`" not in seed_sql
+
+
+def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
+    seed_sql = _seed_sql()
+
+    assert "delivery_room_301" in seed_sql
+    assert "room2" not in seed_sql
+    assert "('pickup_supply', 'map_test11_0423', 'supply_station', 'PICKUP', 0.1665755137108074, -0.4496830900440016, 1.5707963267948966," in seed_sql
+    assert "('delivery_room_301', 'map_test11_0423', 'room_301', 'DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0," in seed_sql
+    assert "('dock_home', 'map_test11_0423', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0," in seed_sql
+
+
+def test_dummy_patrol_area_contains_path_backed_route():
+    seed_sql = _seed_sql()
+
+    assert "INSERT INTO `patrol_area`" in seed_sql
+    assert "patrol_ward_night_01" in seed_sql
+    assert "야간 병동 순찰" in seed_sql
+    assert '"poses"' in seed_sql
+
+
+def test_schema_contains_expected_indexes():
+    ddl = _ddl()
+
+    expected_indexes = (
+        "idx_member_event_member_event_at",
+        "idx_member_event_type_event_at",
+        "idx_task_status_type_created_at",
+        "idx_task_robot_status_updated_at",
+        "idx_task_requester_created_at",
+        "idx_delivery_task_item_task",
+        "idx_delivery_task_item_item",
+        "idx_patrol_area_map_enabled_name",
+        "idx_patrol_task_detail_area_revision",
+        "idx_task_state_history_task_changed_at",
+        "idx_task_event_log_task_occurred_at",
+        "idx_command_execution_task_started_at",
+        "idx_command_execution_robot_started_at",
+        "idx_robot_data_log_robot_received_at",
+        "idx_robot_data_log_task_received_at",
+        "idx_stream_metrics_robot_window",
+        "idx_ai_inference_task_inferred_at",
+        "uq_idempotency",
+    )
+
+    for index_name in expected_indexes:
+        assert index_name in ddl
+
+
+def test_dummy_data_targets_current_schema_tables():
+    seed_sql = _seed_sql()
+
+    for table_name in (
+        "member",
+        "caregiver",
+        "visitor",
+        "preference",
+        "prescription",
+        "member_event",
+        "robot",
+        "item",
+        "map_profile",
+        "operation_zone",
+        "patrol_area",
+        "goal_pose",
+        "task",
+        "delivery_task_detail",
+        "delivery_task_item",
+        "task_state_history",
+        "task_event_log",
+        "command_execution",
+        "robot_runtime_status",
+    ):
+        assert f"INSERT INTO `{table_name}`" in seed_sql
+
+    assert "INSERT INTO `event`" not in seed_sql
+    assert "INSERT INTO `event_type`" not in seed_sql
+    assert "INSERT INTO `robot_event`" not in seed_sql
+    assert "INSERT INTO `supply`" not in seed_sql
+    assert "INSERT INTO `map_table`" not in seed_sql
+
+
+def test_dummy_data_does_not_force_database_name():
+    seed_sql = _seed_sql()
+
+    assert "USE care_service" not in seed_sql
