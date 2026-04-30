@@ -22,6 +22,7 @@ _EXPORTS = {
     "RosRuntimeReadinessService": ("runtime_readiness", "RosRuntimeReadinessService"),
     "StaffCallService": ("staff_call", "StaffCallService"),
     "TaskRequestService": ("task_request", "TaskRequestService"),
+    "TaskMonitorService": ("task_monitor", "TaskMonitorService"),
     "VisitGuideService": ("visit_guide", "VisitGuideService"),
     "VisitorInfoService": ("visitor_info", "VisitorInfoService"),
     "VisitorRegisterService": ("visitor_register", "VisitorRegisterService"),

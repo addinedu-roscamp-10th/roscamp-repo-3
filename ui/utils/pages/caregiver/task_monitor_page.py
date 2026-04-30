@@ -1,6 +1,9 @@
+import base64
+import binascii
 import logging
 
-from PyQt6.QtCore import Qt, QThread
+from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -18,6 +21,7 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_workers import PatrolResumeWorker
+from ui.utils.network.service_clients import TaskMonitorRemoteService
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.admin_shell import PageHeader
 
@@ -180,20 +184,217 @@ class PatrolResumeDialog(QDialog):
         self.error_label.setHidden(False)
 
 
+class FallEvidenceImageDialog(QDialog):
+    def __init__(self, *, response, parent=None):
+        super().__init__(parent)
+        self.response = response if isinstance(response, dict) else {}
+        self.setObjectName("fallEvidenceImageDialog")
+        self.setWindowTitle("낙상 증거사진")
+        self.setModal(False)
+        self._build_ui()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(12)
+
+        panel = QFrame()
+        panel.setObjectName("patrolResumeFormPanel")
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(18, 18, 18, 18)
+        panel_layout.setSpacing(10)
+
+        title = QLabel("낙상 증거사진")
+        title.setObjectName("sectionTitle")
+
+        evidence_row, _label, evidence_label = _metric_row(
+            "evidence_image_id",
+            _display(self.response.get("evidence_image_id")),
+            "fallEvidenceImageIdLabel",
+        )
+        frame_row, _frame_label, _frame_value = _metric_row(
+            "frame_id",
+            _display(self.response.get("frame_id")),
+        )
+        size_text = self._format_image_size()
+        size_row, _size_label, _size_value = _metric_row("크기", size_text)
+
+        self.image_label = QLabel()
+        self.image_label.setObjectName("fallEvidenceImagePreview")
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setMinimumSize(420, 280)
+
+        pixmap = self._build_pixmap()
+        if pixmap is None:
+            self.image_label.setText("이미지를 표시할 수 없습니다.")
+        else:
+            self.image_label.setPixmap(
+                pixmap.scaled(
+                    720,
+                    520,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+
+        detection_text = self._format_detections()
+        self.detection_label = QLabel(detection_text)
+        self.detection_label.setObjectName("mutedText")
+        self.detection_label.setWordWrap(True)
+
+        close_row = QHBoxLayout()
+        close_row.addStretch(1)
+        close_btn = QPushButton("닫기")
+        close_btn.setObjectName("secondaryButton")
+        close_btn.clicked.connect(self.accept)
+        close_row.addWidget(close_btn)
+
+        panel_layout.addWidget(title)
+        panel_layout.addWidget(evidence_row)
+        panel_layout.addWidget(frame_row)
+        panel_layout.addWidget(size_row)
+        panel_layout.addWidget(self.image_label)
+        panel_layout.addWidget(self.detection_label)
+        panel_layout.addLayout(close_row)
+        root.addWidget(panel)
+
+        # Keep a direct reference for tests and for later UI updates.
+        self.evidence_image_id_label = evidence_label
+
+    def _format_image_size(self):
+        width = self.response.get("image_width_px")
+        height = self.response.get("image_height_px")
+        if width in (None, "") or height in (None, ""):
+            return "-"
+        return f"{width} x {height}px"
+
+    def _build_pixmap(self):
+        image_data = (
+            self.response.get("annotated_image_data")
+            or self.response.get("image_data")
+        )
+        if not image_data:
+            return None
+        try:
+            raw = base64.b64decode(str(image_data), validate=False)
+        except (binascii.Error, ValueError):
+            return None
+
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(raw):
+            return None
+
+        self._draw_detections(pixmap)
+        return pixmap
+
+    def _draw_detections(self, pixmap):
+        detections = self.response.get("detections")
+        if not isinstance(detections, list):
+            return
+
+        painter = QPainter(pixmap)
+        try:
+            pen = QPen(QColor("#f97316"))
+            pen.setWidth(4)
+            painter.setPen(pen)
+            for detection in detections:
+                if not isinstance(detection, dict):
+                    continue
+                bbox = detection.get("bbox_xyxy")
+                if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                    continue
+                try:
+                    x1, y1, x2, y2 = [int(float(value)) for value in bbox]
+                except (TypeError, ValueError):
+                    continue
+                painter.drawRect(x1, y1, max(1, x2 - x1), max(1, y2 - y1))
+        finally:
+            painter.end()
+
+    def _format_detections(self):
+        detections = self.response.get("detections")
+        if not isinstance(detections, list) or not detections:
+            return "감지 bbox 없음"
+
+        parts = []
+        for detection in detections:
+            if not isinstance(detection, dict):
+                continue
+            class_name = detection.get("class_name") or detection.get("label") or "object"
+            confidence = detection.get("confidence")
+            if confidence is None:
+                parts.append(str(class_name))
+            else:
+                try:
+                    parts.append(f"{class_name} {float(confidence):.2f}")
+                except (TypeError, ValueError):
+                    parts.append(str(class_name))
+        return ", ".join(parts) or "감지 bbox 없음"
+
+
+class TaskMonitorSnapshotLoadWorker(QObject):
+    finished = pyqtSignal(bool, object)
+
+    def __init__(self, *, consumer_id):
+        super().__init__()
+        self.consumer_id = str(consumer_id or "").strip()
+
+    def run(self):
+        service = TaskMonitorRemoteService()
+
+        try:
+            response = service.get_task_monitor_snapshot(consumer_id=self.consumer_id)
+            result_code = str((response or {}).get("result_code") or "").upper()
+            self.finished.emit(result_code == "ACCEPTED", response or {})
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
+class FallEvidenceImageLookupWorker(QObject):
+    finished = pyqtSignal(bool, object)
+
+    def __init__(self, *, payload):
+        super().__init__()
+        self.payload = payload if isinstance(payload, dict) else {}
+
+    def run(self):
+        service = TaskMonitorRemoteService()
+
+        try:
+            response = service.get_fall_evidence_image(**self.payload)
+            result_code = str((response or {}).get("result_code") or "").upper()
+            self.finished.emit(result_code == "OK", response or {})
+        except Exception as exc:
+            self.finished.emit(
+                False,
+                {
+                    "result_code": "CLIENT_ERROR",
+                    "result_message": str(exc),
+                    "reason_code": "CLIENT_EVIDENCE_QUERY_FAILED",
+                },
+            )
+
+
 class TaskMonitorPage(QWidget):
     def __init__(self, *, autostart_stream=True):
         super().__init__()
+        self.consumer_id = "ui-admin-task-monitor"
         self._tasks = {}
         self._row_by_task_id = {}
         self._selected_task_id = None
         self._resume_dialog = None
+        self.snapshot_thread = None
+        self.snapshot_worker = None
         self.task_event_thread = None
         self.task_event_worker = None
         self.patrol_resume_thread = None
         self.patrol_resume_worker = None
+        self.fall_evidence_thread = None
+        self.fall_evidence_worker = None
+        self._fall_evidence_dialog = None
         self._build_ui()
         if autostart_stream:
-            self._start_task_event_stream()
+            self._start_snapshot_load()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -292,12 +493,18 @@ class TaskMonitorPage(QWidget):
         self.evidence_image_btn = QPushButton("증거사진 조회")
         self.evidence_image_btn.setObjectName("secondaryButton")
         self.evidence_image_btn.setEnabled(False)
+        self.evidence_image_btn.clicked.connect(self.open_fall_evidence_dialog)
         self.resume_patrol_btn = QPushButton("현장 조치 후 순찰 재개")
         self.resume_patrol_btn.setObjectName("patrolResumeButton")
         self.resume_patrol_btn.setEnabled(False)
         self.resume_patrol_btn.clicked.connect(self.open_patrol_resume_dialog)
         action_row.addWidget(self.evidence_image_btn)
         action_row.addWidget(self.resume_patrol_btn)
+
+        self.evidence_status_label = QLabel("")
+        self.evidence_status_label.setObjectName("mutedText")
+        self.evidence_status_label.setWordWrap(True)
+        self.evidence_status_label.setHidden(True)
 
         self.resume_status_label = QLabel("")
         self.resume_status_label.setObjectName("mutedText")
@@ -310,6 +517,7 @@ class TaskMonitorPage(QWidget):
         alert_layout.addWidget(frame_row)
         alert_layout.addWidget(streak_row)
         alert_layout.addLayout(action_row)
+        alert_layout.addWidget(self.evidence_status_label)
         alert_layout.addWidget(self.resume_status_label)
         self.fall_alert_panel.setHidden(True)
 
@@ -346,6 +554,61 @@ class TaskMonitorPage(QWidget):
 
         if event_type in {"ALERT_CREATED", "FALL_ALERT_CREATED"}:
             self._apply_alert_created(payload)
+
+    def apply_snapshot(self, snapshot):
+        snapshot = snapshot if isinstance(snapshot, dict) else {}
+        tasks = [task for task in snapshot.get("tasks") or [] if isinstance(task, dict)]
+
+        self._reset_task_list()
+        first_task_id = None
+        for task_payload in tasks:
+            normalized_payload = self._normalize_snapshot_task(task_payload)
+            task = self._merge_task_payload(normalized_payload)
+            if task is None:
+                continue
+            if first_task_id is None:
+                first_task_id = task["task_id"]
+            self._upsert_task_row(task)
+
+        if first_task_id is not None:
+            self._select_task(first_task_id)
+        else:
+            self._render_detail({})
+
+    def _reset_task_list(self):
+        self.task_table.blockSignals(True)
+        try:
+            self.task_table.setRowCount(0)
+            self._tasks.clear()
+            self._row_by_task_id.clear()
+            self._selected_task_id = None
+            self.empty_state_label.setHidden(False)
+        finally:
+            self.task_table.blockSignals(False)
+
+    @staticmethod
+    def _normalize_snapshot_task(task_payload):
+        normalized = dict(task_payload)
+
+        latest_feedback = normalized.get("latest_feedback")
+        if isinstance(latest_feedback, dict):
+            normalized["feedback_summary"] = (
+                latest_feedback.get("feedback_summary")
+                or latest_feedback.get("summary")
+                or normalized.get("feedback_summary")
+            )
+            if latest_feedback.get("pose") is not None:
+                normalized["pose"] = latest_feedback.get("pose")
+
+        latest_robot = normalized.get("latest_robot")
+        if isinstance(latest_robot, dict) and not normalized.get("assigned_robot_id"):
+            normalized["assigned_robot_id"] = latest_robot.get("robot_id")
+
+        latest_alert = normalized.get("latest_alert")
+        if isinstance(latest_alert, dict):
+            normalized["fall_alert"] = latest_alert
+
+        return normalized
 
     def _apply_task_updated(self, payload):
         task = self._merge_task_payload(payload)
@@ -471,6 +734,7 @@ class TaskMonitorPage(QWidget):
         has_alert = bool(alert)
         should_show = has_alert or self._can_resume_patrol(task)
         self.fall_alert_panel.setHidden(not should_show)
+        self.evidence_status_label.setHidden(True)
         self.resume_status_label.setHidden(True)
 
         if not should_show:
@@ -494,7 +758,7 @@ class TaskMonitorPage(QWidget):
         )
         self.fall_marker_label.setText(f"{zone_text}\n{pose_text}")
         self.evidence_image_btn.setEnabled(
-            bool(alert.get("evidence_image_available") and evidence_id)
+            self._is_evidence_image_available(alert)
         )
         self.resume_patrol_btn.setEnabled(self._can_resume_patrol(task))
         self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
@@ -503,6 +767,113 @@ class TaskMonitorPage(QWidget):
         task_type = str(task.get("task_type") or "").strip().upper()
         phase = str(task.get("phase") or "").strip().upper()
         return task_type == "PATROL" and phase in WAITING_FALL_RESPONSE_PHASES
+
+    def open_fall_evidence_dialog(self):
+        payload = self._build_fall_evidence_payload()
+        if payload is None:
+            self.evidence_status_label.setText("조회할 증거사진 정보가 없습니다.")
+            self.evidence_status_label.setHidden(False)
+            return
+
+        self.evidence_image_btn.setEnabled(False)
+        self.evidence_image_btn.setText("조회 중...")
+        self.evidence_status_label.setText("증거사진 조회 중...")
+        self.evidence_status_label.setHidden(False)
+        self._start_fall_evidence_image_lookup(payload)
+
+    def _build_fall_evidence_payload(self):
+        task = self._current_task()
+        if not task:
+            return None
+
+        alert = task.get("fall_alert") or {}
+        evidence_image_id = str(alert.get("evidence_image_id") or "").strip()
+        if not evidence_image_id:
+            return None
+
+        return {
+            "consumer_id": self.consumer_id,
+            "task_id": task.get("task_id"),
+            "alert_id": alert.get("alert_id"),
+            "evidence_image_id": evidence_image_id,
+            "result_seq": alert.get("result_seq"),
+        }
+
+    def _start_fall_evidence_image_lookup(self, payload):
+        if self.fall_evidence_thread is not None:
+            return
+
+        self.fall_evidence_thread = QThread(self)
+        self.fall_evidence_worker = FallEvidenceImageLookupWorker(payload=payload)
+        self.fall_evidence_worker.moveToThread(self.fall_evidence_thread)
+
+        self.fall_evidence_thread.started.connect(self.fall_evidence_worker.run)
+        self.fall_evidence_worker.finished.connect(self._handle_fall_evidence_finished)
+        self.fall_evidence_worker.finished.connect(self.fall_evidence_thread.quit)
+        self.fall_evidence_worker.finished.connect(
+            self.fall_evidence_worker.deleteLater
+        )
+        self.fall_evidence_thread.finished.connect(
+            self.fall_evidence_thread.deleteLater
+        )
+        self.fall_evidence_thread.finished.connect(self._clear_fall_evidence_thread)
+
+        self.fall_evidence_thread.start()
+
+    def _handle_fall_evidence_finished(self, success, response):
+        response = response or {}
+        if not isinstance(response, dict):
+            response = {
+                "result_code": "CLIENT_ERROR",
+                "result_message": str(response),
+                "reason_code": "CLIENT_RESPONSE_INVALID",
+            }
+        elif not response.get("result_code"):
+            response = {
+                **response,
+                "result_code": "CLIENT_ERROR",
+                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
+            }
+
+        self.evidence_image_btn.setText("증거사진 조회")
+        self.evidence_image_btn.setEnabled(self._has_current_evidence_image())
+
+        result_code = str(response.get("result_code") or "").upper()
+        if success and result_code == "OK":
+            self.evidence_status_label.setHidden(True)
+            self._fall_evidence_dialog = self._create_fall_evidence_dialog(response)
+            self._fall_evidence_dialog.open()
+            return
+
+        message = response.get("result_message") or result_code or "증거사진 조회 실패"
+        self.evidence_status_label.setText(f"증거사진 조회 실패: {message}")
+        self.evidence_status_label.setHidden(False)
+
+    def _create_fall_evidence_dialog(self, response):
+        return FallEvidenceImageDialog(response=response, parent=self)
+
+    def _clear_fall_evidence_thread(self):
+        self.fall_evidence_thread = None
+        self.fall_evidence_worker = None
+
+    def _current_task(self):
+        if self._selected_task_id is None:
+            return None
+        return self._tasks.get("task_id:" + str(self._selected_task_id))
+
+    def _has_current_evidence_image(self):
+        task = self._current_task() or {}
+        alert = task.get("fall_alert") or {}
+        return self._is_evidence_image_available(alert)
+
+    @staticmethod
+    def _is_evidence_image_available(alert):
+        if not isinstance(alert, dict):
+            return False
+        return bool(
+            alert.get("evidence_image_id")
+            and alert.get("evidence_image_available") is not False
+        )
 
     def open_patrol_resume_dialog(self):
         if self._selected_task_id is None:
@@ -582,14 +953,52 @@ class TaskMonitorPage(QWidget):
         self.patrol_resume_thread = None
         self.patrol_resume_worker = None
 
-    def _start_task_event_stream(self):
+    def _start_snapshot_load(self):
+        if self.snapshot_thread is not None:
+            return
+
+        self.snapshot_thread = QThread(self)
+        self.snapshot_worker = TaskMonitorSnapshotLoadWorker(
+            consumer_id=self.consumer_id,
+        )
+        self.snapshot_worker.moveToThread(self.snapshot_thread)
+
+        self.snapshot_thread.started.connect(self.snapshot_worker.run)
+        self.snapshot_worker.finished.connect(self._handle_snapshot_loaded)
+        self.snapshot_worker.finished.connect(self.snapshot_thread.quit)
+        self.snapshot_worker.finished.connect(self.snapshot_worker.deleteLater)
+        self.snapshot_thread.finished.connect(self.snapshot_thread.deleteLater)
+        self.snapshot_thread.finished.connect(self._clear_snapshot_thread)
+
+        self.stream_status_label.setText("초기 상태 조회 중")
+        self.snapshot_thread.start()
+
+    def _handle_snapshot_loaded(self, success, response):
+        last_seq = 0
+        if success and isinstance(response, dict):
+            self.apply_snapshot(response)
+            try:
+                last_seq = int(response.get("last_event_seq") or 0)
+            except (TypeError, ValueError):
+                last_seq = 0
+            self.stream_status_label.setText("초기 상태 조회 완료")
+        else:
+            self.stream_status_label.setText(f"초기 상태 조회 실패: {response}")
+
+        self._start_task_event_stream(last_seq=last_seq)
+
+    def _clear_snapshot_thread(self):
+        self.snapshot_thread = None
+        self.snapshot_worker = None
+
+    def _start_task_event_stream(self, *, last_seq=0):
         if self.task_event_thread is not None:
             return
 
         self.task_event_thread = QThread(self)
         self.task_event_worker = TaskEventStreamWorker(
-            consumer_id="ui-admin-task-monitor",
-            last_seq=0,
+            consumer_id=self.consumer_id,
+            last_seq=last_seq,
         )
         self.task_event_worker.moveToThread(self.task_event_thread)
 
@@ -631,6 +1040,14 @@ class TaskMonitorPage(QWidget):
             thread.wait(1000)
         self._clear_task_event_stream_thread()
 
+    def _stop_snapshot_thread(self):
+        if self.snapshot_thread is None:
+            return
+        if self.snapshot_thread.isRunning():
+            self.snapshot_thread.quit()
+            self.snapshot_thread.wait(1000)
+        self._clear_snapshot_thread()
+
     def _stop_patrol_resume_thread(self):
         if self.patrol_resume_thread is None:
             return
@@ -639,17 +1056,33 @@ class TaskMonitorPage(QWidget):
             self.patrol_resume_thread.wait(1000)
         self._clear_patrol_resume_thread()
 
+    def _stop_fall_evidence_thread(self):
+        if self.fall_evidence_thread is None:
+            return
+        if self.fall_evidence_thread.isRunning():
+            self.fall_evidence_thread.quit()
+            self.fall_evidence_thread.wait(1000)
+        self._clear_fall_evidence_thread()
+
     def reset_page(self):
         if self.task_table.rowCount() > 0:
             self._render_detail(self._tasks.get("task_id:" + str(self._selected_task_id)))
 
     def shutdown(self):
+        self._stop_snapshot_thread()
         self._stop_task_event_stream_thread()
         self._stop_patrol_resume_thread()
+        self._stop_fall_evidence_thread()
 
     def closeEvent(self, event):
         self.shutdown()
         super().closeEvent(event)
 
 
-__all__ = ["PatrolResumeDialog", "TaskMonitorPage"]
+__all__ = [
+    "FallEvidenceImageDialog",
+    "FallEvidenceImageLookupWorker",
+    "PatrolResumeDialog",
+    "TaskMonitorPage",
+    "TaskMonitorSnapshotLoadWorker",
+]

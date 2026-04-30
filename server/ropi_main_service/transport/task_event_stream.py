@@ -98,6 +98,9 @@ class TaskEventStreamHub:
 
         return event
 
+    def current_watermark(self):
+        return max(0, self._next_event_seq - 1)
+
     def _build_event(self, *, event_type, payload, occurred_at=None):
         event_seq = self._next_event_seq
         self._next_event_seq += 1

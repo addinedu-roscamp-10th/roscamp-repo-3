@@ -3,9 +3,10 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
+    MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
 )
-from ui.utils.network.tcp_client import TcpClientError, send_request
+from ui.utils.network.tcp_client import send_request
 
 
 class RemoteServiceError(RuntimeError):
@@ -115,6 +116,58 @@ class DeliveryRequestRemoteService:
         if action_name is not None:
             kwargs["action_name"] = str(action_name).strip()
         return self._rpc("cancel_delivery_task", **kwargs)
+
+
+class TaskMonitorRemoteService:
+    _SERVICE_NAME = "task_monitor"
+
+    def _rpc(self, method: str, **kwargs):
+        return _rpc(self._SERVICE_NAME, method, **kwargs)
+
+    def get_task_monitor_snapshot(
+        self,
+        *,
+        consumer_id="ui-admin-task-monitor",
+        task_types=None,
+        statuses=None,
+        include_recent_terminal=True,
+        recent_terminal_limit=20,
+        limit=100,
+    ):
+        return self._rpc(
+            "get_task_monitor_snapshot",
+            consumer_id=consumer_id,
+            task_types=task_types,
+            statuses=statuses,
+            include_recent_terminal=include_recent_terminal,
+            recent_terminal_limit=recent_terminal_limit,
+            limit=limit,
+        )
+
+    def get_fall_evidence_image(
+        self,
+        *,
+        consumer_id="ui-admin-task-monitor",
+        task_id,
+        alert_id=None,
+        evidence_image_id,
+        result_seq=None,
+    ):
+        payload = {
+            "consumer_id": consumer_id,
+            "task_id": task_id,
+            "alert_id": alert_id,
+            "evidence_image_id": evidence_image_id,
+            "result_seq": result_seq,
+        }
+        response = send_request(MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+
+        return response.get("payload")
 
 
 class VisitGuideRemoteService:

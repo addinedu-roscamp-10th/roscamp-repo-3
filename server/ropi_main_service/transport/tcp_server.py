@@ -23,6 +23,7 @@ from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.staff_call import StaffCallService
+from server.ropi_main_service.application.task_monitor import TaskMonitorService
 from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.application.visitor_info import VisitorInfoService
@@ -38,6 +39,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
+    MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     TCPFrame,
@@ -166,6 +168,7 @@ SERVICE_REGISTRY = {
     "caregiver": CaregiverFacade,
     "patient": PatientService,
     "inventory": InventoryService,
+    "task_monitor": TaskMonitorService,
     "task_request": TaskRequestService,
     "visit_guide": VisitGuideService,
     "visitor_info": VisitorInfoService,
@@ -242,6 +245,9 @@ class ControlServiceServer:
         if frame.message_code == MESSAGE_CODE_PATROL_RESUME_TASK:
             return self._dispatch_patrol_resume_task(frame, payload, loop=loop)
 
+        if frame.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY:
+            return self._dispatch_fall_evidence_image_query(frame, payload)
+
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return self._dispatch_rpc(frame, payload)
 
@@ -276,6 +282,9 @@ class ControlServiceServer:
 
         if frame.message_code == MESSAGE_CODE_PATROL_RESUME_TASK:
             return await self._dispatch_patrol_resume_task_async(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY:
+            return await self._dispatch_fall_evidence_image_query_async(frame, payload)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return await self._dispatch_rpc_async(frame, payload)
@@ -409,10 +418,47 @@ class ControlServiceServer:
         )
         return self._success_response(frame, result)
 
+    def _dispatch_fall_evidence_image_query(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+    ) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["task_monitor"]()
+            result = service.get_fall_evidence_image(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "FALL_EVIDENCE_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def _dispatch_fall_evidence_image_query_async(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+    ) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["task_monitor"]()
+            async_method = getattr(service, "async_get_fall_evidence_image", None)
+            if async_method is not None:
+                result = await async_method(**payload)
+            else:
+                result = await asyncio.to_thread(
+                    service.get_fall_evidence_image,
+                    **payload,
+                )
+        except Exception as exc:
+            return self._error_response(frame, "FALL_EVIDENCE_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
     async def _dispatch_rpc_async(self, frame: TCPFrame, payload: dict):
         service_name = payload.get("service")
         method_name = payload.get("method")
         kwargs = payload.get("kwargs") or {}
+        task_monitor_handoff_seq = self._task_monitor_handoff_seq(
+            service_name,
+            method_name,
+        )
 
         factory = SERVICE_REGISTRY.get(service_name)
         if factory is None:
@@ -446,12 +492,18 @@ class ControlServiceServer:
                 source="DELIVERY_CANCEL",
             )
 
+        result = self._attach_task_monitor_handoff_seq(result, task_monitor_handoff_seq)
+
         return self._success_response(frame, result)
 
     def _dispatch_rpc(self, frame: TCPFrame, payload: dict):
         service_name = payload.get("service")
         method_name = payload.get("method")
         kwargs = payload.get("kwargs") or {}
+        task_monitor_handoff_seq = self._task_monitor_handoff_seq(
+            service_name,
+            method_name,
+        )
 
         factory = SERVICE_REGISTRY.get(service_name)
         if factory is None:
@@ -474,7 +526,26 @@ class ControlServiceServer:
         except Exception as exc:
             return self._error_response(frame, "RPC_ERROR", str(exc))
 
+        result = self._attach_task_monitor_handoff_seq(result, task_monitor_handoff_seq)
+
         return self._success_response(frame, result)
+
+    def _task_monitor_handoff_seq(self, service_name, method_name):
+        if (
+            service_name == "task_monitor"
+            and method_name == "get_task_monitor_snapshot"
+        ):
+            return self.task_event_stream_hub.current_watermark()
+        return None
+
+    @staticmethod
+    def _attach_task_monitor_handoff_seq(result, handoff_seq):
+        if handoff_seq is None or not isinstance(result, dict):
+            return result
+        return {
+            **result,
+            "last_event_seq": handoff_seq,
+        }
 
     async def start(self):
         self.db_writer.start()
