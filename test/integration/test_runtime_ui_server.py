@@ -459,7 +459,6 @@ def control_server_with_ai_fall_stream(qapp, ros_service_stub, ai_fall_stream_se
             "AI_FALL_STREAM_HOST": ai_fall_stream_server["host"],
             "AI_FALL_STREAM_PORT": str(ai_fall_stream_server["port"]),
             "AI_FALL_STREAM_CONSUMER_ID": "control_service_ai_fall",
-            "AI_FALL_STREAM_PINKY_ID": "pinky3",
             "AI_FALL_STREAM_LAST_SEQ": "0",
             "AI_FALL_STREAM_CONNECT_TIMEOUT_SEC": "5.0",
             "AI_FALL_STREAM_RECONNECT_DELAY_SEC": "0.2",
@@ -707,7 +706,7 @@ def test_control_server_subscribes_ai_fall_stream_and_starts_fall_alert(
 
     assert requests
     assert requests[0]["consumer_id"] == "control_service_ai_fall"
-    assert requests[0]["pinky_id"] == "pinky3"
+    assert "pinky_id" not in requests[0]
     assert requests[0]["last_seq"] == 0
 
     ai_fall_stream_server["push_requested"].set()

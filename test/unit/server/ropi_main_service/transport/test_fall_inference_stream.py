@@ -179,3 +179,19 @@ def test_fall_inference_stream_client_from_env_uses_common_ai_server_host(monkey
 
     assert client.host == "192.168.0.89"
     assert client.port == 6000
+    assert client.pinky_id is None
+    assert client._build_subscribe_payload() == {
+        "consumer_id": "control_service_ai_fall",
+        "last_seq": 0,
+    }
+
+
+def test_fall_inference_stream_client_from_env_uses_optional_debug_pinky_filter(
+    monkeypatch,
+):
+    monkeypatch.setenv("AI_FALL_STREAM_PINKY_ID", "pinky3")
+
+    client = FallInferenceStreamClient.from_env()
+
+    assert client.pinky_id == "pinky3"
+    assert client._build_subscribe_payload()["pinky_id"] == "pinky3"

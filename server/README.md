@@ -44,7 +44,6 @@ CONTROL_SERVER_TIMEOUT=3.0
 ROPI_ROS_SERVICE_SOCKET_PATH=/tmp/ropi_control_ros_service.sock
 ROPI_ROS_SERVICE_SOCKET_TIMEOUT=2.0
 
-PATROL_PINKY_ID=pinky3
 PATROL_PATH_TIMEOUT_SEC=180
 
 AI_SERVER_HOST=192.168.0.89
@@ -52,13 +51,12 @@ AI_SERVER_HOST=192.168.0.89
 VISION_GATEWAY_LISTEN_HOST=0.0.0.0
 VISION_GATEWAY_LISTEN_PORT=5005
 VISION_GATEWAY_AI_PORT=5005
-VISION_GATEWAY_RECV_BUFFER_BYTES=16777216
-VISION_GATEWAY_SEND_BUFFER_BYTES=16777216
+VISION_GATEWAY_RECV_BUFFER=16MiB
+VISION_GATEWAY_SEND_BUFFER=16MiB
 
 AI_FALL_STREAM_ENABLED=true
 AI_FALL_STREAM_PORT=6000
 AI_FALL_STREAM_CONSUMER_ID=control_service_ai_fall
-AI_FALL_STREAM_PINKY_ID=pinky3
 AI_FALL_STREAM_LAST_SEQ=0
 ```
 
@@ -70,6 +68,18 @@ AI_FALL_STREAM_HOST=<낙상 추론 TCP push AI 서버 IP>
 AI_FALL_EVIDENCE_HOST=<낙상 증거사진 조회 AI 서버 IP>
 AI_FALL_EVIDENCE_PORT=6000
 ```
+
+`PATROL_PINKY_ID`와 `AI_FALL_STREAM_PINKY_ID`는 기본 `.env`에 두지 않는다. 둘 다 단일 Pinky 문제를 좁혀 볼 때 쓰는 개발/디버그 옵션이다. 현재 phase 1 코드의 순찰 fallback 로봇은 `pinky3`이므로, 명시적으로 고정해 테스트할 때만 아래 값을 둔다.
+
+```env
+# 순찰 배정 로봇을 강제로 고정해야 할 때만 사용한다.
+PATROL_PINKY_ID=pinky3
+
+# PAT-005 TCP 구독을 특정 Pinky 결과로만 제한해야 할 때만 사용한다.
+AI_FALL_STREAM_PINKY_ID=pinky3
+```
+
+`VISION_GATEWAY_RECV_BUFFER`, `VISION_GATEWAY_SEND_BUFFER`는 `16MiB`, `8MB`, `64KiB` 같은 단위를 지원한다. 기존 `VISION_GATEWAY_RECV_BUFFER_BYTES`, `VISION_GATEWAY_SEND_BUFFER_BYTES`도 동작하지만 하위 호환용이다.
 
 관제 서버 방화벽에서 최소한 아래 포트를 열어둔다.
 
@@ -159,5 +169,5 @@ test -S /tmp/ropi_control_ros_service.sock && echo "ROS bridge UDS ok"
 - Control Service 접속 실패: `CONTROL_SERVER_HOST`, `CONTROL_SERVER_PORT`, 서버 방화벽을 확인한다.
 - DB 오류: `.env`의 DB 접속 정보와 DB 서버 방화벽을 확인한다.
 - 영상이 AI 서버로 가지 않음: `ropi-media-gateway` 실행 여부, UDP 포트, AI 서버 IP, 방화벽을 확인한다.
-- 낙상 감지 TCP push가 보이지 않음: `AI_FALL_STREAM_ENABLED=true`, `AI_SERVER_HOST`, `AI_FALL_STREAM_PORT=6000`, `AI_FALL_STREAM_PINKY_ID=pinky3`를 확인한다. AI 서버 stream name은 `pinky3`로 정규화되어야 한다.
+- 낙상 감지 TCP push가 보이지 않음: `AI_FALL_STREAM_ENABLED=true`, `AI_SERVER_HOST`, `AI_FALL_STREAM_PORT=6000`을 확인한다. 단일 로봇 필터를 걸었으면 `AI_FALL_STREAM_PINKY_ID`와 AI 서버가 보내는 `pinky_id`가 같은지 확인한다.
 - ROS 브릿지 UDS 오류: `ROPI_ROS_SERVICE_SOCKET_PATH`가 ROS 브릿지와 Control Service에서 같은 값인지 확인한다.
