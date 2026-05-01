@@ -16,6 +16,8 @@ SELECT
     t.task_type,
     t.task_status,
     t.result_code AS task_outcome,
+    t.result_code,
+    t.result_message,
     t.phase,
     t.assigned_robot_id,
     ptd.patrol_area_id,

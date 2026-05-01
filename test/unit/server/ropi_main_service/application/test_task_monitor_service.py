@@ -14,7 +14,9 @@ class FakeTaskMonitorRepository:
                     "task_id": 2001,
                     "task_type": "PATROL",
                     "task_status": "RUNNING",
-                    "task_outcome": None,
+                    "task_outcome": "FAILED",
+                    "result_code": "FAILED",
+                    "result_message": "순찰 workflow 실패",
                     "phase": "WAIT_FALL_RESPONSE",
                     "assigned_robot_id": "pinky3",
                     "patrol_area_id": "ward_3f",
@@ -91,6 +93,9 @@ def test_task_monitor_snapshot_formats_nested_feedback_robot_and_alert():
     assert task["task_id"] == 2001
     assert task["task_type"] == "PATROL"
     assert task["task_status"] == "RUNNING"
+    assert task["result_code"] == "FAILED"
+    assert task["result_message"] == "순찰 workflow 실패"
+    assert task["reason_code"] == "FALL_DETECTED"
     assert task["phase"] == "WAIT_FALL_RESPONSE"
     assert task["assigned_robot_id"] == "pinky3"
     assert task["cancellable"] is True

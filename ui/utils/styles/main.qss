@@ -713,6 +713,22 @@ QFrame#resultPanel {
     border-radius: 18px;
 }
 
+QFrame#taskResultPanel {
+    background: #F8FAFC;
+    border: 1px solid #D8E0E8;
+    border-radius: 14px;
+}
+
+QFrame#taskResultPanelWarning {
+    background: #FFF7ED;
+    border: 1px solid #FDBA74;
+    border-radius: 14px;
+}
+
+QFrame#taskResultPanelWarning QLabel#sectionTitle {
+    color: #9A3412;
+}
+
 QFrame#robotStatusCard {
     background: #F8FAFC;
     border: 1px solid #D8E0E8;

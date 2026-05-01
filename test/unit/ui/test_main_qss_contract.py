@@ -51,6 +51,8 @@ def test_main_qss_defines_task_request_page_components():
     assert "QLabel#priorityChip" in qss
     assert "QLabel#robotStateChip" in qss
     assert "QFrame#resultPanel" in qss
+    assert "QFrame#taskResultPanel" in qss
+    assert "QFrame#taskResultPanelWarning" in qss
     assert "QLabel#previewValue" in qss
     assert "QLabel#resultMessage" in qss
 

@@ -212,6 +212,60 @@ def test_task_monitor_page_exposes_cancel_action_by_task_type_and_status(monkeyp
         page.close()
 
 
+def test_task_monitor_page_shows_result_reason_and_message_prominently():
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+
+    try:
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "3001",
+                    "task_type": "DELIVERY",
+                    "task_status": "FAILED",
+                    "phase": "FAILED",
+                    "assigned_robot_id": "pinky2",
+                    "result_code": "FAILED",
+                    "reason_code": "ROS_ACTION_TIMEOUT",
+                    "result_message": "목적지 이동 중 action timeout",
+                    "cancellable": False,
+                },
+            }
+        )
+
+        assert page.detail_result_code_label.text() == "FAILED"
+        assert page.detail_reason_code_label.text() == "ROS_ACTION_TIMEOUT"
+        assert page.detail_result_message_label.text() == "목적지 이동 중 action timeout"
+        assert page.result_info_panel.objectName() == "taskResultPanelWarning"
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "3002",
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_FALL_RESPONSE",
+                    "assigned_robot_id": "pinky3",
+                    "latest_reason_code": "FALL_DETECTED",
+                },
+            }
+        )
+        page._select_task("3002")
+
+        assert page.detail_result_code_label.text() == "-"
+        assert page.detail_reason_code_label.text() == "FALL_DETECTED"
+        assert page.detail_result_message_label.text() == "-"
+        assert page.result_info_panel.objectName() == "taskResultPanel"
+    finally:
+        page.shutdown()
+        page.close()
+
+
 def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
     monkeypatch,
 ):
@@ -238,6 +292,9 @@ def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
                         "task_id": 2001,
                         "task_type": "PATROL",
                         "task_status": "RUNNING",
+                        "result_code": "REJECTED",
+                        "reason_code": "NO_ELIGIBLE_PINKY",
+                        "result_message": "순찰 가능한 로봇이 없습니다.",
                         "phase": "WAIT_FALL_RESPONSE",
                         "assigned_robot_id": "pinky3",
                         "latest_feedback": {
@@ -261,6 +318,9 @@ def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
 
         assert page.task_table.rowCount() == 1
         assert page.detail_task_id_label.text() == "2001"
+        assert page.detail_result_code_label.text() == "REJECTED"
+        assert page.detail_reason_code_label.text() == "NO_ELIGIBLE_PINKY"
+        assert page.detail_result_message_label.text() == "순찰 가능한 로봇이 없습니다."
         assert page.detail_feedback_label.text() == "MOVING / 남은 거리 1.25m"
         assert page.evidence_image_id_label.text() == "fall-2001-44"
         assert "3층 복도" in page.fall_marker_label.text()

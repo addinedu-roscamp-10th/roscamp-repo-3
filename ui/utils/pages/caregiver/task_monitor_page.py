@@ -50,6 +50,21 @@ TERMINAL_TASK_STATUSES = {
     "COMPLETED",
     "FAILED",
 }
+RESULT_ATTENTION_STATUSES = {
+    "CANCEL_REQUESTED",
+    "CANCELLED",
+    "FAILED",
+    "REJECTED",
+}
+RESULT_ATTENTION_CODES = {
+    "CANCEL_REQUESTED",
+    "CANCELLED",
+    "CLIENT_ERROR",
+    "FAILED",
+    "NOT_ALLOWED",
+    "NOT_FOUND",
+    "REJECTED",
+}
 
 
 def _display(value):
@@ -532,6 +547,33 @@ class TaskMonitorPage(QWidget):
         feedback_row, _feedback_text, self.detail_feedback_label = _metric_row("피드백")
         pose_row, _pose_text, self.detail_pose_label = _metric_row("위치")
 
+        self.result_info_panel = QFrame()
+        self.result_info_panel.setObjectName("taskResultPanel")
+        result_layout = QVBoxLayout(self.result_info_panel)
+        result_layout.setContentsMargins(14, 14, 14, 14)
+        result_layout.setSpacing(8)
+        result_title = QLabel("결과 정보")
+        result_title.setObjectName("sectionTitle")
+        (
+            result_code_row,
+            _result_code_text,
+            self.detail_result_code_label,
+        ) = _metric_row("결과")
+        (
+            reason_code_row,
+            _reason_code_text,
+            self.detail_reason_code_label,
+        ) = _metric_row("사유")
+        (
+            result_message_row,
+            _result_message_text,
+            self.detail_result_message_label,
+        ) = _metric_row("메시지")
+        result_layout.addWidget(result_title)
+        result_layout.addWidget(result_code_row)
+        result_layout.addWidget(reason_code_row)
+        result_layout.addWidget(result_message_row)
+
         detail_action_row = QHBoxLayout()
         detail_action_row.setSpacing(8)
         self.cancel_task_btn = QPushButton("작업 취소")
@@ -614,6 +656,7 @@ class TaskMonitorPage(QWidget):
         detail_layout.addWidget(robot_row)
         detail_layout.addWidget(feedback_row)
         detail_layout.addWidget(pose_row)
+        detail_layout.addWidget(self.result_info_panel)
         detail_layout.addLayout(detail_action_row)
         detail_layout.addWidget(self.cancel_status_label)
         detail_layout.addWidget(self.patrol_map_placeholder)
@@ -817,9 +860,31 @@ class TaskMonitorPage(QWidget):
         self.detail_robot_label.setText(_display(task.get("assigned_robot_id")))
         self.detail_feedback_label.setText(_display(task.get("feedback_summary")))
         self.detail_pose_label.setText(_format_pose(task.get("pose")))
+        self._render_result_info(task)
         self.cancel_status_label.setHidden(True)
         self._sync_cancel_action(task)
         self._render_fall_alert(task)
+
+    def _render_result_info(self, task):
+        result_code = task.get("result_code") or task.get("task_outcome")
+        reason_code = task.get("reason_code") or task.get("latest_reason_code")
+        result_message = task.get("result_message") or task.get("message")
+
+        self.detail_result_code_label.setText(_display(result_code))
+        self.detail_reason_code_label.setText(_display(reason_code))
+        self.detail_result_message_label.setText(_display(result_message))
+
+        task_status = str(task.get("task_status") or "").strip().upper()
+        normalized_result_code = str(result_code or "").strip().upper()
+        if (
+            task_status in RESULT_ATTENTION_STATUSES
+            or normalized_result_code in RESULT_ATTENTION_CODES
+        ):
+            self.result_info_panel.setObjectName("taskResultPanelWarning")
+        else:
+            self.result_info_panel.setObjectName("taskResultPanel")
+        self.result_info_panel.style().unpolish(self.result_info_panel)
+        self.result_info_panel.style().polish(self.result_info_panel)
 
     def _sync_cancel_action(self, task):
         task = task or {}
