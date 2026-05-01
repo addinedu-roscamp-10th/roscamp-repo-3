@@ -20,6 +20,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.utils.pages.caregiver.task_monitor_detail_panels import (
+    FallAlertPanel,
+    TaskResultInfoPanel,
+    _display,
+    _format_pose,
+    _metric_row,
+)
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_workers import PatrolResumeWorker
 from ui.utils.network.service_clients import TaskMonitorRemoteService
@@ -50,27 +57,6 @@ TERMINAL_TASK_STATUSES = {
     "COMPLETED",
     "FAILED",
 }
-RESULT_ATTENTION_STATUSES = {
-    "CANCEL_REQUESTED",
-    "CANCELLED",
-    "FAILED",
-    "REJECTED",
-}
-RESULT_ATTENTION_CODES = {
-    "CANCEL_REQUESTED",
-    "CANCELLED",
-    "CLIENT_ERROR",
-    "FAILED",
-    "NOT_ALLOWED",
-    "NOT_FOUND",
-    "REJECTED",
-}
-
-
-def _display(value):
-    if value is None or value == "":
-        return "-"
-    return str(value)
 
 
 def _task_key(value):
@@ -78,40 +64,6 @@ def _task_key(value):
     if text in {"", "-"}:
         return None
     return text
-
-
-def _metric_row(label_text, value_text="-", value_object_name="sideMetricValue"):
-    row = QFrame()
-    row.setObjectName("sideMetricRow")
-    row_layout = QHBoxLayout(row)
-    row_layout.setContentsMargins(12, 10, 12, 10)
-    row_layout.setSpacing(10)
-
-    label = QLabel(label_text)
-    label.setObjectName("sideMetricLabel")
-    value = QLabel(value_text)
-    value.setObjectName(value_object_name)
-    value.setWordWrap(True)
-    value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-    row_layout.addWidget(label)
-    row_layout.addStretch(1)
-    row_layout.addWidget(value)
-    return row, label, value
-
-
-def _format_pose(pose):
-    if not isinstance(pose, dict):
-        return _display(pose)
-
-    try:
-        x = float(pose.get("x"))
-        y = float(pose.get("y"))
-        yaw = float(pose.get("yaw", 0.0))
-    except (TypeError, ValueError):
-        return _display(pose)
-
-    return f"x={x:.2f}, y={y:.2f}, yaw={yaw:.2f}"
 
 
 class PatrolResumeDialog(QDialog):
@@ -547,32 +499,10 @@ class TaskMonitorPage(QWidget):
         feedback_row, _feedback_text, self.detail_feedback_label = _metric_row("피드백")
         pose_row, _pose_text, self.detail_pose_label = _metric_row("위치")
 
-        self.result_info_panel = QFrame()
-        self.result_info_panel.setObjectName("taskResultPanel")
-        result_layout = QVBoxLayout(self.result_info_panel)
-        result_layout.setContentsMargins(14, 14, 14, 14)
-        result_layout.setSpacing(8)
-        result_title = QLabel("결과 정보")
-        result_title.setObjectName("sectionTitle")
-        (
-            result_code_row,
-            _result_code_text,
-            self.detail_result_code_label,
-        ) = _metric_row("결과")
-        (
-            reason_code_row,
-            _reason_code_text,
-            self.detail_reason_code_label,
-        ) = _metric_row("사유")
-        (
-            result_message_row,
-            _result_message_text,
-            self.detail_result_message_label,
-        ) = _metric_row("메시지")
-        result_layout.addWidget(result_title)
-        result_layout.addWidget(result_code_row)
-        result_layout.addWidget(reason_code_row)
-        result_layout.addWidget(result_message_row)
+        self.result_info_panel = TaskResultInfoPanel()
+        self.detail_result_code_label = self.result_info_panel.result_code_label
+        self.detail_reason_code_label = self.result_info_panel.reason_code_label
+        self.detail_result_message_label = self.result_info_panel.result_message_label
 
         detail_action_row = QHBoxLayout()
         detail_action_row.setSpacing(8)
@@ -588,65 +518,20 @@ class TaskMonitorPage(QWidget):
         self.cancel_status_label.setWordWrap(True)
         self.cancel_status_label.setHidden(True)
 
-        self.patrol_map_placeholder = QFrame()
-        self.patrol_map_placeholder.setObjectName("patrolMapPlaceholder")
-        map_layout = QVBoxLayout(self.patrol_map_placeholder)
-        map_layout.setContentsMargins(16, 16, 16, 16)
-        self.fall_marker_label = QLabel("낙상 지점 미수신")
-        self.fall_marker_label.setObjectName("fallAlertMarker")
-        self.fall_marker_label.setWordWrap(True)
-        self.fall_marker_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        map_layout.addWidget(self.fall_marker_label)
-
-        self.fall_alert_panel = QFrame()
-        self.fall_alert_panel.setObjectName("fallAlertPanel")
-        alert_layout = QVBoxLayout(self.fall_alert_panel)
-        alert_layout.setContentsMargins(14, 14, 14, 14)
-        alert_layout.setSpacing(8)
-
-        alert_title = QLabel("낙상 감지")
-        alert_title.setObjectName("sectionTitle")
-        alert_task_row, _alert_task_text, self.fall_alert_task_label = _metric_row(
-            "task_id"
-        )
-        evidence_row, _evidence_text, self.evidence_image_id_label = _metric_row(
-            "증거사진"
-        )
-        frame_row, _frame_text, self.fall_frame_id_label = _metric_row("frame_id")
-        streak_row, _streak_text, self.fall_streak_label = _metric_row("누적 감지")
-
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
-        self.evidence_image_btn = QPushButton("증거사진 조회")
-        self.evidence_image_btn.setObjectName("secondaryButton")
-        self.evidence_image_btn.setEnabled(False)
+        self.fall_alert_section = FallAlertPanel()
+        self.patrol_map_placeholder = self.fall_alert_section.patrol_map_placeholder
+        self.fall_marker_label = self.fall_alert_section.fall_marker_label
+        self.fall_alert_panel = self.fall_alert_section.alert_panel
+        self.fall_alert_task_label = self.fall_alert_section.fall_alert_task_label
+        self.evidence_image_id_label = self.fall_alert_section.evidence_image_id_label
+        self.fall_frame_id_label = self.fall_alert_section.fall_frame_id_label
+        self.fall_streak_label = self.fall_alert_section.fall_streak_label
+        self.evidence_image_btn = self.fall_alert_section.evidence_image_btn
+        self.evidence_status_label = self.fall_alert_section.evidence_status_label
         self.evidence_image_btn.clicked.connect(self.open_fall_evidence_dialog)
-        self.resume_patrol_btn = QPushButton("현장 조치 후 순찰 재개")
-        self.resume_patrol_btn.setObjectName("patrolResumeButton")
-        self.resume_patrol_btn.setEnabled(False)
+        self.resume_patrol_btn = self.fall_alert_section.resume_patrol_btn
+        self.resume_status_label = self.fall_alert_section.resume_status_label
         self.resume_patrol_btn.clicked.connect(self.open_patrol_resume_dialog)
-        action_row.addWidget(self.evidence_image_btn)
-        action_row.addWidget(self.resume_patrol_btn)
-
-        self.evidence_status_label = QLabel("")
-        self.evidence_status_label.setObjectName("mutedText")
-        self.evidence_status_label.setWordWrap(True)
-        self.evidence_status_label.setHidden(True)
-
-        self.resume_status_label = QLabel("")
-        self.resume_status_label.setObjectName("mutedText")
-        self.resume_status_label.setWordWrap(True)
-        self.resume_status_label.setHidden(True)
-
-        alert_layout.addWidget(alert_title)
-        alert_layout.addWidget(alert_task_row)
-        alert_layout.addWidget(evidence_row)
-        alert_layout.addWidget(frame_row)
-        alert_layout.addWidget(streak_row)
-        alert_layout.addLayout(action_row)
-        alert_layout.addWidget(self.evidence_status_label)
-        alert_layout.addWidget(self.resume_status_label)
-        self.fall_alert_panel.setHidden(True)
 
         detail_layout.addWidget(detail_title)
         detail_layout.addWidget(task_id_row)
@@ -659,8 +544,7 @@ class TaskMonitorPage(QWidget):
         detail_layout.addWidget(self.result_info_panel)
         detail_layout.addLayout(detail_action_row)
         detail_layout.addWidget(self.cancel_status_label)
-        detail_layout.addWidget(self.patrol_map_placeholder)
-        detail_layout.addWidget(self.fall_alert_panel)
+        detail_layout.addWidget(self.fall_alert_section)
         detail_layout.addStretch(1)
 
         content_row.addWidget(list_card, 3)
@@ -866,25 +750,7 @@ class TaskMonitorPage(QWidget):
         self._render_fall_alert(task)
 
     def _render_result_info(self, task):
-        result_code = task.get("result_code") or task.get("task_outcome")
-        reason_code = task.get("reason_code") or task.get("latest_reason_code")
-        result_message = task.get("result_message") or task.get("message")
-
-        self.detail_result_code_label.setText(_display(result_code))
-        self.detail_reason_code_label.setText(_display(reason_code))
-        self.detail_result_message_label.setText(_display(result_message))
-
-        task_status = str(task.get("task_status") or "").strip().upper()
-        normalized_result_code = str(result_code or "").strip().upper()
-        if (
-            task_status in RESULT_ATTENTION_STATUSES
-            or normalized_result_code in RESULT_ATTENTION_CODES
-        ):
-            self.result_info_panel.setObjectName("taskResultPanelWarning")
-        else:
-            self.result_info_panel.setObjectName("taskResultPanel")
-        self.result_info_panel.style().unpolish(self.result_info_panel)
-        self.result_info_panel.style().polish(self.result_info_panel)
+        self.result_info_panel.render(task)
 
     def _sync_cancel_action(self, task):
         task = task or {}
@@ -996,37 +862,11 @@ class TaskMonitorPage(QWidget):
 
     def _render_fall_alert(self, task):
         alert = task.get("fall_alert") or {}
-        has_alert = bool(alert)
-        should_show = has_alert or self._can_resume_patrol(task)
-        self.fall_alert_panel.setHidden(not should_show)
-        self.evidence_status_label.setHidden(True)
-        self.resume_status_label.setHidden(True)
-
-        if not should_show:
-            self.fall_marker_label.setText("낙상 지점 미수신")
-            self.evidence_image_btn.setEnabled(False)
-            self.resume_patrol_btn.setEnabled(False)
-            return
-
-        task_id = task.get("task_id")
-        evidence_id = alert.get("evidence_image_id")
-        frame_id = alert.get("frame_id")
-        fall_streak_ms = alert.get("fall_streak_ms")
-        zone_text = alert.get("zone_name") or alert.get("zone_id") or "구역 미수신"
-        pose_text = _format_pose(alert.get("alert_pose") or alert.get("pose"))
-
-        self.fall_alert_task_label.setText(_display(task_id))
-        self.evidence_image_id_label.setText(_display(evidence_id))
-        self.fall_frame_id_label.setText(_display(frame_id))
-        self.fall_streak_label.setText(
-            f"{fall_streak_ms}ms" if fall_streak_ms not in (None, "") else "-"
+        self.fall_alert_section.render(
+            task,
+            can_resume=self._can_resume_patrol(task),
+            evidence_available=self._is_evidence_image_available(alert),
         )
-        self.fall_marker_label.setText(f"{zone_text}\n{pose_text}")
-        self.evidence_image_btn.setEnabled(
-            self._is_evidence_image_available(alert)
-        )
-        self.resume_patrol_btn.setEnabled(self._can_resume_patrol(task))
-        self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
 
     def _can_resume_patrol(self, task):
         task_type = str(task.get("task_type") or "").strip().upper()
