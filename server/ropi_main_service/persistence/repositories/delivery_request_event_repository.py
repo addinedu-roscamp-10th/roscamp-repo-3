@@ -9,7 +9,7 @@ from server.ropi_main_service.persistence.repositories.task_request_lookup_repos
 from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
-class LegacyDeliveryRequestRepository:
+class DeliveryRequestEventRepository:
     def __init__(
         self,
         *,
@@ -133,4 +133,4 @@ class LegacyDeliveryRequestRepository:
             conn.begin()
 
 
-__all__ = ["LegacyDeliveryRequestRepository"]
+__all__ = ["DeliveryRequestEventRepository"]

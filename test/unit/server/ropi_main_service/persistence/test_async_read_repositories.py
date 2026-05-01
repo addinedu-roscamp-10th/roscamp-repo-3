@@ -5,7 +5,7 @@ from server.ropi_main_service.persistence.repositories import inventory_reposito
 from server.ropi_main_service.persistence.repositories import patient_repository
 from server.ropi_main_service.persistence.repositories import staff_call_repository
 from server.ropi_main_service.persistence.repositories import (
-    legacy_delivery_request_repository,
+    delivery_request_event_repository,
 )
 from server.ropi_main_service.persistence.repositories import task_request_repository
 from server.ropi_main_service.persistence.repositories import (
@@ -185,7 +185,7 @@ def test_task_request_repository_async_create_delivery_request_uses_member_event
         fake_async_fetch_one,
     )
     monkeypatch.setattr(
-        legacy_delivery_request_repository,
+        delivery_request_event_repository,
         "async_execute",
         fake_async_execute,
     )

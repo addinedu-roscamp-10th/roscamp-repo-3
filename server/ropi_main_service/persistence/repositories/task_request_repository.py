@@ -17,8 +17,8 @@ from server.ropi_main_service.persistence.repositories.delivery_task_result_repo
 from server.ropi_main_service.persistence.repositories.idempotency_repository import (
     IdempotencyRepository,
 )
-from server.ropi_main_service.persistence.repositories.legacy_delivery_request_repository import (
-    LegacyDeliveryRequestRepository,
+from server.ropi_main_service.persistence.repositories.delivery_request_event_repository import (
+    DeliveryRequestEventRepository,
 )
 from server.ropi_main_service.persistence.repositories.patrol_task_repository import (
     PatrolTaskRepository,
@@ -67,7 +67,7 @@ class TaskRequestRepository:
         patrol_task_resume_repository=None,
         idempotency_repository=None,
         lookup_repository=None,
-        legacy_delivery_request_repository=None,
+        delivery_request_event_repository=None,
     ):
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
@@ -96,9 +96,9 @@ class TaskRequestRepository:
                 async_fetch_patrol_area_by_id=self._async_fetch_patrol_area_by_id,
             )
         )
-        self.legacy_delivery_request_repository = (
-            legacy_delivery_request_repository
-            or LegacyDeliveryRequestRepository(
+        self.delivery_request_event_repository = (
+            delivery_request_event_repository
+            or DeliveryRequestEventRepository(
                 lookup_repository=self.lookup_repository,
             )
         )
@@ -601,7 +601,7 @@ class TaskRequestRepository:
         detail,
         member_id,
     ):
-        return self.legacy_delivery_request_repository.create_delivery_request(
+        return self.delivery_request_event_repository.create_delivery_request(
             item_name=item_name,
             quantity=quantity,
             destination=destination,
@@ -619,7 +619,7 @@ class TaskRequestRepository:
         detail,
         member_id,
     ):
-        return await self.legacy_delivery_request_repository.async_create_delivery_request(
+        return await self.delivery_request_event_repository.async_create_delivery_request(
             item_name=item_name,
             quantity=quantity,
             destination=destination,

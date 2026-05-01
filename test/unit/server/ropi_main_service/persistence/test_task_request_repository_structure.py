@@ -1,3 +1,6 @@
+from server.ropi_main_service.persistence.repositories import (
+    DeliveryRequestEventRepository,
+)
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
     TaskRequestRepository,
 )
@@ -44,7 +47,7 @@ class FakeLookupRepository:
         return {"item_name": item_name}
 
 
-class FakeLegacyDeliveryRequestRepository:
+class FakeDeliveryRequestEventRepository:
     def __init__(self):
         self.created = None
 
@@ -53,11 +56,15 @@ class FakeLegacyDeliveryRequestRepository:
         return True, "물품 요청이 접수되었습니다."
 
 
+def test_delivery_request_event_repository_is_public_member_event_writer_name():
+    assert DeliveryRequestEventRepository.__name__ == "DeliveryRequestEventRepository"
+
+
 def test_task_request_repository_delegates_option_reads_to_lookup_repository():
     lookup_repository = FakeLookupRepository()
     repository = TaskRequestRepository(
         lookup_repository=lookup_repository,
-        legacy_delivery_request_repository=FakeLegacyDeliveryRequestRepository(),
+        delivery_request_event_repository=FakeDeliveryRequestEventRepository(),
     )
 
     assert repository.get_all_products() == [{"item_id": 1}]
@@ -79,11 +86,11 @@ def test_task_request_repository_delegates_option_reads_to_lookup_repository():
     ]
 
 
-def test_task_request_repository_delegates_legacy_delivery_request_creation():
-    legacy_repository = FakeLegacyDeliveryRequestRepository()
+def test_task_request_repository_delegates_delivery_request_event_creation():
+    event_repository = FakeDeliveryRequestEventRepository()
     repository = TaskRequestRepository(
         lookup_repository=FakeLookupRepository(),
-        legacy_delivery_request_repository=legacy_repository,
+        delivery_request_event_repository=event_repository,
     )
 
     assert repository.create_delivery_request(
@@ -95,7 +102,7 @@ def test_task_request_repository_delegates_legacy_delivery_request_creation():
         member_id="7",
     ) == (True, "물품 요청이 접수되었습니다.")
 
-    assert legacy_repository.created == {
+    assert event_repository.created == {
         "item_name": "물티슈",
         "quantity": 2,
         "destination": "301호",

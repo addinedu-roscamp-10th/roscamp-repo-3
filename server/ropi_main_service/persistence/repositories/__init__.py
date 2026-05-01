@@ -1,6 +1,6 @@
 from .caregiver_repository import CaregiverRepository
+from .delivery_request_event_repository import DeliveryRequestEventRepository
 from .inventory_repository import InventoryRepository
-from .legacy_delivery_request_repository import LegacyDeliveryRequestRepository
 from .patient_repository import PatientRepository
 from .patrol_task_create_repository import (
     PatrolPathSnapshotBuilder,
@@ -25,7 +25,7 @@ __all__ = [
     "TaskRequestRepository",
     "TaskMonitorRepository",
     "DeliveryRequestRepository",
-    "LegacyDeliveryRequestRepository",
+    "DeliveryRequestEventRepository",
     "InventoryRepository",
     "PatientRepository",
     "PatrolPathSnapshotBuilder",
