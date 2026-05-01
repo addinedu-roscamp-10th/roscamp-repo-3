@@ -1,6 +1,6 @@
 import logging
 
-from PyQt6.QtCore import Qt, QThread, QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -21,6 +21,7 @@ from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePane
 from ui.utils.pages.caregiver.task_request_workers import (
     DeliveryCancelWorker,
 )
+from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.widgets.admin_shell import PageHeader
 
 
@@ -248,18 +249,12 @@ class TaskRequestPage(QWidget):
         if self.cancel_thread is not None:
             return
 
-        self.cancel_thread = QThread(self)
-        self.cancel_worker = DeliveryCancelWorker(task_id=task_id)
-        self.cancel_worker.moveToThread(self.cancel_thread)
-
-        self.cancel_thread.started.connect(self.cancel_worker.run)
-        self.cancel_worker.finished.connect(self._handle_cancel_finished)
-        self.cancel_worker.finished.connect(self.cancel_thread.quit)
-        self.cancel_worker.finished.connect(self.cancel_worker.deleteLater)
-        self.cancel_thread.finished.connect(self.cancel_thread.deleteLater)
-        self.cancel_thread.finished.connect(self._clear_cancel_thread)
-
-        self.cancel_thread.start()
+        self.cancel_thread, self.cancel_worker = start_worker_thread(
+            self,
+            worker=DeliveryCancelWorker(task_id=task_id),
+            finished_handler=self._handle_cancel_finished,
+            clear_handler=self._clear_cancel_thread,
+        )
 
     def _handle_cancel_finished(self, success, response):
         response = response or {}

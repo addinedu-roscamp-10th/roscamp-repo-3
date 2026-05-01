@@ -3,7 +3,7 @@ import binascii
 import logging
 from datetime import datetime
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -29,6 +29,7 @@ from ui.utils.pages.caregiver.task_monitor_detail_panels import (
 )
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_workers import PatrolResumeWorker
+from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.network.service_clients import TaskMonitorRemoteService
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.admin_shell import PageHeader
@@ -815,18 +816,12 @@ class TaskMonitorPage(QWidget):
         if self.task_cancel_thread is not None:
             return
 
-        self.task_cancel_thread = QThread(self)
-        self.task_cancel_worker = TaskCancelWorker(payload=payload)
-        self.task_cancel_worker.moveToThread(self.task_cancel_thread)
-
-        self.task_cancel_thread.started.connect(self.task_cancel_worker.run)
-        self.task_cancel_worker.finished.connect(self._handle_task_cancel_finished)
-        self.task_cancel_worker.finished.connect(self.task_cancel_thread.quit)
-        self.task_cancel_worker.finished.connect(self.task_cancel_worker.deleteLater)
-        self.task_cancel_thread.finished.connect(self.task_cancel_thread.deleteLater)
-        self.task_cancel_thread.finished.connect(self._clear_task_cancel_thread)
-
-        self.task_cancel_thread.start()
+        self.task_cancel_thread, self.task_cancel_worker = start_worker_thread(
+            self,
+            worker=TaskCancelWorker(payload=payload),
+            finished_handler=self._handle_task_cancel_finished,
+            clear_handler=self._clear_task_cancel_thread,
+        )
 
     def _handle_task_cancel_finished(self, success, response):
         response = response or {}
@@ -908,22 +903,12 @@ class TaskMonitorPage(QWidget):
         if self.fall_evidence_thread is not None:
             return
 
-        self.fall_evidence_thread = QThread(self)
-        self.fall_evidence_worker = FallEvidenceImageLookupWorker(payload=payload)
-        self.fall_evidence_worker.moveToThread(self.fall_evidence_thread)
-
-        self.fall_evidence_thread.started.connect(self.fall_evidence_worker.run)
-        self.fall_evidence_worker.finished.connect(self._handle_fall_evidence_finished)
-        self.fall_evidence_worker.finished.connect(self.fall_evidence_thread.quit)
-        self.fall_evidence_worker.finished.connect(
-            self.fall_evidence_worker.deleteLater
+        self.fall_evidence_thread, self.fall_evidence_worker = start_worker_thread(
+            self,
+            worker=FallEvidenceImageLookupWorker(payload=payload),
+            finished_handler=self._handle_fall_evidence_finished,
+            clear_handler=self._clear_fall_evidence_thread,
         )
-        self.fall_evidence_thread.finished.connect(
-            self.fall_evidence_thread.deleteLater
-        )
-        self.fall_evidence_thread.finished.connect(self._clear_fall_evidence_thread)
-
-        self.fall_evidence_thread.start()
 
     def _handle_fall_evidence_finished(self, success, response):
         response = response or {}
@@ -1014,22 +999,12 @@ class TaskMonitorPage(QWidget):
         if self.patrol_resume_thread is not None:
             return
 
-        self.patrol_resume_thread = QThread(self)
-        self.patrol_resume_worker = PatrolResumeWorker(payload=payload)
-        self.patrol_resume_worker.moveToThread(self.patrol_resume_thread)
-
-        self.patrol_resume_thread.started.connect(self.patrol_resume_worker.run)
-        self.patrol_resume_worker.finished.connect(self._handle_patrol_resume_finished)
-        self.patrol_resume_worker.finished.connect(self.patrol_resume_thread.quit)
-        self.patrol_resume_worker.finished.connect(
-            self.patrol_resume_worker.deleteLater
+        self.patrol_resume_thread, self.patrol_resume_worker = start_worker_thread(
+            self,
+            worker=PatrolResumeWorker(payload=payload),
+            finished_handler=self._handle_patrol_resume_finished,
+            clear_handler=self._clear_patrol_resume_thread,
         )
-        self.patrol_resume_thread.finished.connect(
-            self.patrol_resume_thread.deleteLater
-        )
-        self.patrol_resume_thread.finished.connect(self._clear_patrol_resume_thread)
-
-        self.patrol_resume_thread.start()
 
     def _handle_patrol_resume_finished(self, success, response):
         response = response or {}
@@ -1071,22 +1046,14 @@ class TaskMonitorPage(QWidget):
         if self.snapshot_thread is not None:
             return False
 
-        self.snapshot_thread = QThread(self)
-        self.snapshot_worker = TaskMonitorSnapshotLoadWorker(
-            consumer_id=self.consumer_id,
-        )
-        self.snapshot_worker.moveToThread(self.snapshot_thread)
-
-        self.snapshot_thread.started.connect(self.snapshot_worker.run)
-        self.snapshot_worker.finished.connect(self._handle_snapshot_loaded)
-        self.snapshot_worker.finished.connect(self.snapshot_thread.quit)
-        self.snapshot_worker.finished.connect(self.snapshot_worker.deleteLater)
-        self.snapshot_thread.finished.connect(self.snapshot_thread.deleteLater)
-        self.snapshot_thread.finished.connect(self._clear_snapshot_thread)
-
         self.refresh_snapshot_btn.setEnabled(False)
         self.stream_status_label.setText(status_text)
-        self.snapshot_thread.start()
+        self.snapshot_thread, self.snapshot_worker = start_worker_thread(
+            self,
+            worker=TaskMonitorSnapshotLoadWorker(consumer_id=self.consumer_id),
+            finished_handler=self._handle_snapshot_loaded,
+            clear_handler=self._clear_snapshot_thread,
+        )
         return True
 
     def _handle_snapshot_loaded(self, success, response):
@@ -1115,24 +1082,20 @@ class TaskMonitorPage(QWidget):
         if self.task_event_thread is not None:
             return
 
-        self.task_event_thread = QThread(self)
-        self.task_event_worker = TaskEventStreamWorker(
-            consumer_id=self.consumer_id,
-            last_seq=last_seq,
-        )
-        self.task_event_worker.moveToThread(self.task_event_thread)
-
-        self.task_event_thread.started.connect(self.task_event_worker.run)
-        self.task_event_worker.batch_received.connect(self._handle_task_event_batch)
-        self.task_event_worker.failed.connect(self._handle_task_event_stream_failed)
-        self.task_event_worker.finished.connect(self.task_event_thread.quit)
-        self.task_event_worker.finished.connect(self.task_event_worker.deleteLater)
-        self.task_event_thread.finished.connect(self.task_event_thread.deleteLater)
-        self.task_event_thread.finished.connect(self._clear_task_event_stream_thread)
-
         self.stream_status_label.setText("이벤트 스트림 연결 중")
         self.reconnect_stream_btn.setEnabled(True)
-        self.task_event_thread.start()
+        self.task_event_thread, self.task_event_worker = start_worker_thread(
+            self,
+            worker=TaskEventStreamWorker(
+                consumer_id=self.consumer_id,
+                last_seq=last_seq,
+            ),
+            clear_handler=self._clear_task_event_stream_thread,
+            worker_signal_connections={
+                "batch_received": self._handle_task_event_batch,
+                "failed": self._handle_task_event_stream_failed,
+            },
+        )
 
     def _handle_task_event_batch(self, batch):
         if not isinstance(batch, dict):
