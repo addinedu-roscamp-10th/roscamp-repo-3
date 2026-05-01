@@ -3,7 +3,7 @@ from server.ropi_main_service.application.delivery_config import (
     get_delivery_runtime_config,
 )
 from server.ropi_main_service.application.patrol_config import get_patrol_runtime_config
-from server.ropi_main_service.persistence.connection import fetch_all, fetch_one, get_connection
+from server.ropi_main_service.persistence.connection import fetch_one, get_connection
 from server.ropi_main_service.persistence.repositories.delivery_task_repository import (
     DEFAULT_PICKUP_GOAL_POSE_ID,
     DeliveryTaskRepository,
@@ -16,6 +16,9 @@ from server.ropi_main_service.persistence.repositories.delivery_task_result_repo
 )
 from server.ropi_main_service.persistence.repositories.idempotency_repository import (
     IdempotencyRepository,
+)
+from server.ropi_main_service.persistence.repositories.legacy_delivery_request_repository import (
+    LegacyDeliveryRequestRepository,
 )
 from server.ropi_main_service.persistence.repositories.patrol_task_repository import (
     PatrolTaskRepository,
@@ -33,9 +36,13 @@ from server.ropi_main_service.persistence.repositories.patrol_task_result_reposi
 from server.ropi_main_service.persistence.repositories.patrol_task_resume_repository import (
     PatrolTaskResumeRepository,
 )
+from server.ropi_main_service.persistence.repositories.task_request_common import (
+    parse_numeric_identifier,
+)
+from server.ropi_main_service.persistence.repositories.task_request_lookup_repository import (
+    TaskRequestLookupRepository,
+)
 from server.ropi_main_service.persistence.async_connection import (
-    async_execute,
-    async_fetch_all,
     async_fetch_one,
     async_transaction,
 )
@@ -59,9 +66,12 @@ class TaskRequestRepository:
         patrol_task_result_repository=None,
         patrol_task_resume_repository=None,
         idempotency_repository=None,
+        lookup_repository=None,
+        legacy_delivery_request_repository=None,
     ):
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
+        self.lookup_repository = lookup_repository or TaskRequestLookupRepository()
         self.delivery_task_repository = delivery_task_repository or DeliveryTaskRepository(
             runtime_config=self.runtime_config
         )
@@ -86,34 +96,36 @@ class TaskRequestRepository:
                 async_fetch_patrol_area_by_id=self._async_fetch_patrol_area_by_id,
             )
         )
+        self.legacy_delivery_request_repository = (
+            legacy_delivery_request_repository
+            or LegacyDeliveryRequestRepository(
+                lookup_repository=self.lookup_repository,
+            )
+        )
 
     def get_all_products(self):
-        return fetch_all(load_sql("task_request/list_items.sql"))
+        return self.lookup_repository.get_all_products()
 
     async def async_get_all_products(self):
-        return await async_fetch_all(load_sql("task_request/list_items.sql"))
+        return await self.lookup_repository.async_get_all_products()
 
     def get_enabled_goal_poses(self):
-        return fetch_all(load_sql("task_request/list_enabled_goal_poses.sql"))
+        return self.lookup_repository.get_enabled_goal_poses()
 
     async def async_get_enabled_goal_poses(self):
-        return await async_fetch_all(
-            load_sql("task_request/list_enabled_goal_poses.sql")
-        )
+        return await self.lookup_repository.async_get_enabled_goal_poses()
 
     def get_delivery_destinations(self):
-        return fetch_all(load_sql("task_request/list_delivery_destinations.sql"))
+        return self.lookup_repository.get_delivery_destinations()
 
     async def async_get_delivery_destinations(self):
-        return await async_fetch_all(
-            load_sql("task_request/list_delivery_destinations.sql")
-        )
+        return await self.lookup_repository.async_get_delivery_destinations()
 
     def get_patrol_areas(self):
-        return fetch_all(load_sql("task_request/list_patrol_areas.sql"))
+        return self.lookup_repository.get_patrol_areas()
 
     async def async_get_patrol_areas(self):
-        return await async_fetch_all(load_sql("task_request/list_patrol_areas.sql"))
+        return await self.lookup_repository.async_get_patrol_areas()
 
     def get_product_by_id(self, item_id, conn=None):
         numeric_item_id = self._parse_numeric_identifier(item_id)
@@ -126,10 +138,7 @@ class TaskRequestRepository:
         return self._fetch_product("item_name = %s", (item_name,), conn=conn)
 
     async def async_get_product_by_name(self, item_name):
-        return await async_fetch_one(
-            load_sql("task_request/find_item_by_name.sql"),
-            (item_name,),
-        )
+        return await self.lookup_repository.async_get_product_by_name(item_name)
 
     def create_delivery_task(
         self,
@@ -592,46 +601,14 @@ class TaskRequestRepository:
         detail,
         member_id,
     ):
-        conn = get_connection()
-        try:
-            self._begin(conn)
-            with conn.cursor() as cur:
-                product = self.get_product_by_name(item_name, conn=conn)
-
-                if not product:
-                    conn.rollback()
-                    return False, "선택한 물품이 존재하지 않습니다."
-
-                current_qty = int(product["quantity"])
-                if int(quantity) > current_qty:
-                    conn.rollback()
-                    return False, f"재고가 부족합니다. 현재 재고: {current_qty}"
-
-                description = (
-                    f"[물품 요청] 물품종류={item_name}, 수량={quantity}, 목적지={destination}, "
-                    f"우선순위={priority}, 설명={detail.strip() if detail and detail.strip() else '없음'}"
-                )
-
-                cur.execute(
-                    load_sql("member_event/insert_member_event.sql"),
-                    (
-                        self._parse_numeric_identifier(member_id) or 1,
-                        "DELIVERY_REQUESTED",
-                        "물품 요청",
-                        "CARE",
-                        "INFO",
-                        "물품 요청",
-                        description,
-                    ),
-                )
-
-                conn.commit()
-                return True, "물품 요청이 접수되었습니다."
-        except Exception as exc:
-            conn.rollback()
-            return False, f"물품 요청 등록 중 오류가 발생했습니다: {exc}"
-        finally:
-            conn.close()
+        return self.legacy_delivery_request_repository.create_delivery_request(
+            item_name=item_name,
+            quantity=quantity,
+            destination=destination,
+            priority=priority,
+            detail=detail,
+            member_id=member_id,
+        )
 
     async def async_create_delivery_request(
         self,
@@ -642,116 +619,44 @@ class TaskRequestRepository:
         detail,
         member_id,
     ):
-        try:
-            product = await self.async_get_product_by_name(item_name)
-
-            if not product:
-                return False, "선택한 물품이 존재하지 않습니다."
-
-            current_qty = int(product["quantity"])
-            if int(quantity) > current_qty:
-                return False, f"재고가 부족합니다. 현재 재고: {current_qty}"
-
-            description = (
-                f"[물품 요청] 물품종류={item_name}, 수량={quantity}, 목적지={destination}, "
-                f"우선순위={priority}, 설명={detail.strip() if detail and detail.strip() else '없음'}"
-            )
-
-            await async_execute(
-                load_sql("member_event/insert_member_event.sql"),
-                (
-                    self._parse_numeric_identifier(member_id) or 1,
-                    "DELIVERY_REQUESTED",
-                    "물품 요청",
-                    "CARE",
-                    "INFO",
-                    "물품 요청",
-                    description,
-                ),
-            )
-
-            return True, "물품 요청이 접수되었습니다."
-        except Exception as exc:
-            return False, f"물품 요청 등록 중 오류가 발생했습니다: {exc}"
+        return await self.legacy_delivery_request_repository.async_create_delivery_request(
+            item_name=item_name,
+            quantity=quantity,
+            destination=destination,
+            priority=priority,
+            detail=detail,
+            member_id=member_id,
+        )
 
     def _fetch_product(self, where_clause, params, *, conn=None):
-        own_conn = False
+        return self.lookup_repository.fetch_product(where_clause, params, conn=conn)
 
-        if conn is None:
-            conn = get_connection()
-            own_conn = True
+    async def _async_fetch_product_by_id(self, cur, item_id):
+        return await self.lookup_repository.async_fetch_product_by_id(cur, item_id)
 
-        try:
-            with conn.cursor() as cur:
-                cur.execute(self._product_query_for(where_clause), params)
-                return cur.fetchone()
-        finally:
-            if own_conn:
-                conn.close()
+    def _product_query_for(self, where_clause):
+        return self.lookup_repository.product_query_for(where_clause)
 
-    @staticmethod
-    async def _async_fetch_product_by_id(cur, item_id):
-        await cur.execute(
-            load_sql("task_request/find_item_by_id.sql"),
-            (item_id,),
+    def _caregiver_exists(self, cur, caregiver_id) -> bool:
+        return self.lookup_repository.caregiver_exists(cur, caregiver_id)
+
+    async def _async_caregiver_exists(self, cur, caregiver_id) -> bool:
+        return await self.lookup_repository.async_caregiver_exists(cur, caregiver_id)
+
+    def _goal_pose_exists(self, cur, goal_pose_id) -> bool:
+        return self.lookup_repository.goal_pose_exists(cur, goal_pose_id)
+
+    async def _async_goal_pose_exists(self, cur, goal_pose_id) -> bool:
+        return await self.lookup_repository.async_goal_pose_exists(cur, goal_pose_id)
+
+    def _fetch_patrol_area_by_id(self, cur, patrol_area_id):
+        return self.lookup_repository.fetch_patrol_area_by_id(cur, patrol_area_id)
+
+    async def _async_fetch_patrol_area_by_id(self, cur, patrol_area_id):
+        return await self.lookup_repository.async_fetch_patrol_area_by_id(
+            cur,
+            patrol_area_id,
         )
-        return await cur.fetchone()
-
-    @staticmethod
-    def _product_query_for(where_clause):
-        if where_clause == "item_id = %s":
-            return load_sql("task_request/find_item_by_id.sql")
-        if where_clause == "item_name = %s":
-            return load_sql("task_request/find_item_by_name.sql")
-        raise ValueError(f"Unsupported product lookup: {where_clause}")
-
-    @staticmethod
-    def _caregiver_exists(cur, caregiver_id) -> bool:
-        cur.execute(
-            load_sql("task_request/caregiver_exists.sql"),
-            (caregiver_id,),
-        )
-        return cur.fetchone() is not None
-
-    @staticmethod
-    async def _async_caregiver_exists(cur, caregiver_id) -> bool:
-        await cur.execute(
-            load_sql("task_request/caregiver_exists.sql"),
-            (caregiver_id,),
-        )
-        return await cur.fetchone() is not None
-
-    @staticmethod
-    def _goal_pose_exists(cur, goal_pose_id) -> bool:
-        cur.execute(
-            load_sql("task_request/goal_pose_exists.sql"),
-            (goal_pose_id,),
-        )
-        return cur.fetchone() is not None
-
-    @staticmethod
-    async def _async_goal_pose_exists(cur, goal_pose_id) -> bool:
-        await cur.execute(
-            load_sql("task_request/goal_pose_exists.sql"),
-            (goal_pose_id,),
-        )
-        return await cur.fetchone() is not None
-
-    @staticmethod
-    def _fetch_patrol_area_by_id(cur, patrol_area_id):
-        cur.execute(
-            load_sql("task_request/find_patrol_area_by_id.sql"),
-            (patrol_area_id,),
-        )
-        return cur.fetchone()
-
-    @staticmethod
-    async def _async_fetch_patrol_area_by_id(cur, patrol_area_id):
-        await cur.execute(
-            load_sql("task_request/find_patrol_area_by_id.sql"),
-            (patrol_area_id,),
-        )
-        return await cur.fetchone()
 
     @classmethod
     def _validate_patrol_area_for_create(cls, area):
@@ -805,14 +710,7 @@ class TaskRequestRepository:
 
     @staticmethod
     def _parse_numeric_identifier(value):
-        raw = str(value or "").strip()
-        if raw.isdigit():
-            return int(raw)
-
-        digits = "".join(ch for ch in raw if ch.isdigit())
-        if not digits:
-            return None
-        return int(digits)
+        return parse_numeric_identifier(value)
 
     @staticmethod
     def _begin(conn):

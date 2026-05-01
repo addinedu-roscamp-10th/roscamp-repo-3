@@ -4,7 +4,13 @@ from server.ropi_main_service.persistence.repositories import caregiver_reposito
 from server.ropi_main_service.persistence.repositories import inventory_repository
 from server.ropi_main_service.persistence.repositories import patient_repository
 from server.ropi_main_service.persistence.repositories import staff_call_repository
+from server.ropi_main_service.persistence.repositories import (
+    legacy_delivery_request_repository,
+)
 from server.ropi_main_service.persistence.repositories import task_request_repository
+from server.ropi_main_service.persistence.repositories import (
+    task_request_lookup_repository,
+)
 from server.ropi_main_service.persistence.repositories import user_repository
 from server.ropi_main_service.persistence.repositories import visit_guide_repository
 from server.ropi_main_service.persistence.repositories import visitor_info_repository
@@ -173,8 +179,16 @@ def test_task_request_repository_async_create_delivery_request_uses_member_event
         execute_calls.append((query, params))
         return 1
 
-    monkeypatch.setattr(task_request_repository, "async_fetch_one", fake_async_fetch_one)
-    monkeypatch.setattr(task_request_repository, "async_execute", fake_async_execute)
+    monkeypatch.setattr(
+        task_request_lookup_repository,
+        "async_fetch_one",
+        fake_async_fetch_one,
+    )
+    monkeypatch.setattr(
+        legacy_delivery_request_repository,
+        "async_execute",
+        fake_async_execute,
+    )
 
     result = asyncio.run(
         task_request_repository.DeliveryRequestRepository().async_create_delivery_request(
