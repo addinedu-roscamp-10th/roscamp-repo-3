@@ -293,6 +293,106 @@ def test_task_monitor_page_snapshot_failure_falls_back_to_full_stream(monkeypatc
         page.close()
 
 
+def test_task_monitor_page_exposes_manual_refresh_reconnect_and_update_time(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+    snapshot_statuses = []
+    reconnect_last_seq_values = []
+    stopped_streams = []
+
+    monkeypatch.setattr(
+        page,
+        "_start_snapshot_load",
+        lambda *, status_text="초기 상태 조회 중": snapshot_statuses.append(status_text),
+    )
+    monkeypatch.setattr(
+        page,
+        "_stop_task_event_stream_thread",
+        lambda: stopped_streams.append(True),
+    )
+    monkeypatch.setattr(
+        page,
+        "_start_task_event_stream",
+        lambda *, last_seq=0: reconnect_last_seq_values.append(last_seq),
+    )
+
+    try:
+        assert page.refresh_snapshot_btn.text() == "새로고침"
+        assert page.reconnect_stream_btn.text() == "스트림 재연결"
+        assert page.last_update_label.text() == "마지막 업데이트: -"
+
+        page.refresh_snapshot()
+        assert snapshot_statuses == ["수동 새로고침 중"]
+
+        page._last_event_seq = 44
+        page.reconnect_task_event_stream()
+        assert stopped_streams == [True]
+        assert reconnect_last_seq_values == [44]
+        assert "재연결" in page.stream_status_label.text()
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_task_monitor_page_updates_watermark_and_last_update_label(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+    started_last_seq_values = []
+    monkeypatch.setattr(
+        page,
+        "_start_task_event_stream",
+        lambda *, last_seq=0: started_last_seq_values.append(last_seq),
+    )
+
+    try:
+        page._handle_snapshot_loaded(
+            True,
+            {
+                "result_code": "ACCEPTED",
+                "last_event_seq": 12,
+                "tasks": [],
+            },
+        )
+
+        assert page._last_event_seq == 12
+        assert started_last_seq_values == [12]
+        assert "snapshot" in page.last_update_label.text()
+        assert page.refresh_snapshot_btn.isEnabled() is True
+
+        page._handle_task_event_batch(
+            {
+                "batch_end_seq": 21,
+                "events": [
+                    {
+                        "event_type": "TASK_UPDATED",
+                        "payload": {
+                            "task_id": "2001",
+                            "task_type": "PATROL",
+                            "task_status": "RUNNING",
+                        },
+                    }
+                ],
+            }
+        )
+
+        assert page._last_event_seq == 21
+        assert "event" in page.last_update_label.text()
+        assert "21" in page.stream_status_label.text()
+
+        page._handle_task_event_stream_failed("connection lost")
+        assert "이벤트 스트림 중단" in page.stream_status_label.text()
+        assert page.reconnect_stream_btn.isEnabled() is True
+    finally:
+        page.shutdown()
+        page.close()
+
+
 def test_task_monitor_page_starts_fall_evidence_lookup_from_selected_alert(monkeypatch):
     _app()
 

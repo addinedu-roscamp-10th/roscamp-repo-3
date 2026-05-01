@@ -1,6 +1,7 @@
 import base64
 import binascii
 import logging
+from datetime import datetime
 
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
@@ -433,6 +434,7 @@ class TaskMonitorPage(QWidget):
         self._tasks = {}
         self._row_by_task_id = {}
         self._selected_task_id = None
+        self._last_event_seq = 0
         self._resume_dialog = None
         self.snapshot_thread = None
         self.snapshot_worker = None
@@ -472,8 +474,23 @@ class TaskMonitorPage(QWidget):
 
         list_title = QLabel("작업 목록")
         list_title.setObjectName("sectionTitle")
+        list_header = QHBoxLayout()
+        list_header.setSpacing(8)
+        self.refresh_snapshot_btn = QPushButton("새로고침")
+        self.refresh_snapshot_btn.setObjectName("secondaryButton")
+        self.refresh_snapshot_btn.clicked.connect(self.refresh_snapshot)
+        self.reconnect_stream_btn = QPushButton("스트림 재연결")
+        self.reconnect_stream_btn.setObjectName("secondaryButton")
+        self.reconnect_stream_btn.clicked.connect(self.reconnect_task_event_stream)
+        list_header.addWidget(list_title)
+        list_header.addStretch(1)
+        list_header.addWidget(self.refresh_snapshot_btn)
+        list_header.addWidget(self.reconnect_stream_btn)
+
         self.stream_status_label = QLabel("이벤트 스트림 연결 대기")
         self.stream_status_label.setObjectName("mutedText")
+        self.last_update_label = QLabel("마지막 업데이트: -")
+        self.last_update_label.setObjectName("mutedText")
         self.empty_state_label = QLabel("수신된 작업 이벤트가 없습니다.")
         self.empty_state_label.setObjectName("mutedText")
 
@@ -488,8 +505,9 @@ class TaskMonitorPage(QWidget):
         self.task_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.task_table.itemSelectionChanged.connect(self._handle_table_selection_changed)
 
-        list_layout.addWidget(list_title)
+        list_layout.addLayout(list_header)
         list_layout.addWidget(self.stream_status_label)
+        list_layout.addWidget(self.last_update_label)
         list_layout.addWidget(self.empty_state_label)
         list_layout.addWidget(self.task_table, 1)
 
@@ -615,14 +633,17 @@ class TaskMonitorPage(QWidget):
 
         if event_type == "TASK_UPDATED":
             self._apply_task_updated(payload)
+            self._mark_last_update("event")
             return
 
         if event_type == "ACTION_FEEDBACK_UPDATED":
             self._apply_action_feedback_updated(payload)
+            self._mark_last_update("event")
             return
 
         if event_type in {"ALERT_CREATED", "FALL_ALERT_CREATED"}:
             self._apply_alert_created(payload)
+            self._mark_last_update("event")
 
     def apply_snapshot(self, snapshot):
         snapshot = snapshot if isinstance(snapshot, dict) else {}
@@ -902,6 +923,7 @@ class TaskMonitorPage(QWidget):
         message = _display(response.get("result_message"))
         self.cancel_status_label.setText(f"{result_code} / {reason_code}: {message}")
         self.cancel_status_label.setHidden(False)
+        self._mark_last_update("cancel")
 
     def _clear_task_cancel_thread(self):
         self.task_cancel_thread = None
@@ -1126,14 +1148,23 @@ class TaskMonitorPage(QWidget):
             self._apply_task_updated(response)
         else:
             self._render_detail(self._tasks.get("task_id:" + str(self._selected_task_id)))
+        self._mark_last_update("patrol resume")
 
     def _clear_patrol_resume_thread(self):
         self.patrol_resume_thread = None
         self.patrol_resume_worker = None
 
-    def _start_snapshot_load(self):
+    def refresh_snapshot(self):
+        self._start_snapshot_load(status_text="수동 새로고침 중")
+
+    def reconnect_task_event_stream(self):
+        self.stream_status_label.setText("이벤트 스트림 재연결 중")
+        self._stop_task_event_stream_thread()
+        self._start_task_event_stream(last_seq=self._last_event_seq)
+
+    def _start_snapshot_load(self, *, status_text="초기 상태 조회 중"):
         if self.snapshot_thread is not None:
-            return
+            return False
 
         self.snapshot_thread = QThread(self)
         self.snapshot_worker = TaskMonitorSnapshotLoadWorker(
@@ -1148,8 +1179,10 @@ class TaskMonitorPage(QWidget):
         self.snapshot_thread.finished.connect(self.snapshot_thread.deleteLater)
         self.snapshot_thread.finished.connect(self._clear_snapshot_thread)
 
-        self.stream_status_label.setText("초기 상태 조회 중")
+        self.refresh_snapshot_btn.setEnabled(False)
+        self.stream_status_label.setText(status_text)
         self.snapshot_thread.start()
+        return True
 
     def _handle_snapshot_loaded(self, success, response):
         last_seq = 0
@@ -1159,15 +1192,19 @@ class TaskMonitorPage(QWidget):
                 last_seq = int(response.get("last_event_seq") or 0)
             except (TypeError, ValueError):
                 last_seq = 0
+            self._last_event_seq = last_seq
             self.stream_status_label.setText("초기 상태 조회 완료")
+            self._mark_last_update("snapshot")
         else:
             self.stream_status_label.setText(f"초기 상태 조회 실패: {response}")
 
+        self.refresh_snapshot_btn.setEnabled(True)
         self._start_task_event_stream(last_seq=last_seq)
 
     def _clear_snapshot_thread(self):
         self.snapshot_thread = None
         self.snapshot_worker = None
+        self.refresh_snapshot_btn.setEnabled(True)
 
     def _start_task_event_stream(self, *, last_seq=0):
         if self.task_event_thread is not None:
@@ -1189,24 +1226,38 @@ class TaskMonitorPage(QWidget):
         self.task_event_thread.finished.connect(self._clear_task_event_stream_thread)
 
         self.stream_status_label.setText("이벤트 스트림 연결 중")
+        self.reconnect_stream_btn.setEnabled(True)
         self.task_event_thread.start()
 
     def _handle_task_event_batch(self, batch):
         if not isinstance(batch, dict):
             return
 
-        self.stream_status_label.setText("이벤트 스트림 수신 중")
+        try:
+            self._last_event_seq = int(batch.get("batch_end_seq") or self._last_event_seq)
+        except (TypeError, ValueError):
+            pass
+
+        self.stream_status_label.setText(
+            f"이벤트 스트림 수신 중 (seq {self._last_event_seq})"
+        )
         for event in batch.get("events") or []:
             if isinstance(event, dict):
                 self.apply_stream_event(event)
+        self._mark_last_update("event")
 
     def _handle_task_event_stream_failed(self, error):
         logger.debug("task monitor event stream stopped: %s", error)
         self.stream_status_label.setText(f"이벤트 스트림 중단: {error}")
+        self.reconnect_stream_btn.setEnabled(True)
 
     def _clear_task_event_stream_thread(self):
         self.task_event_thread = None
         self.task_event_worker = None
+
+    def _mark_last_update(self, source):
+        current_time = datetime.now().strftime("%H:%M:%S")
+        self.last_update_label.setText(f"마지막 업데이트: {current_time} ({source})")
 
     def _stop_task_event_stream_thread(self):
         worker = self.task_event_worker
