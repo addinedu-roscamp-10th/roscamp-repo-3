@@ -871,6 +871,59 @@ def test_async_delivery_cancel_publishes_task_update(control_service_server):
     assert published_events[0][1]["latest_reason_code"] == "USER_CANCEL_REQUESTED"
 
 
+def test_async_common_cancel_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=23,
+        payload={
+            "service": "task_request",
+            "method": "cancel_task",
+            "kwargs": {
+                "task_id": "2001",
+                "caregiver_id": 7,
+                "reason": "operator_cancel",
+            },
+        },
+    )
+    published_events = []
+
+    class FakeTaskRequestService:
+        async def async_cancel_task(self, **kwargs):
+            return {
+                "result_code": "CANCEL_REQUESTED",
+                "result_message": "순찰 중단 요청이 접수되었습니다.",
+                "reason_code": "USER_CANCEL_REQUESTED",
+                "task_id": kwargs["task_id"],
+                "task_type": "PATROL",
+                "task_status": "CANCEL_REQUESTED",
+                "phase": "CANCEL_REQUESTED",
+                "assigned_robot_id": "pinky3",
+                "cancel_requested": True,
+                "cancellable": False,
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"task_request": FakeTaskRequestService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "TASK_CANCEL"
+    assert published_events[0][1]["task_type"] == "PATROL"
+    assert published_events[0][1]["task_status"] == "CANCEL_REQUESTED"
+    assert published_events[0][1]["latest_reason_code"] == "USER_CANCEL_REQUESTED"
+
+
 def test_async_response_build_does_not_block_event_loop(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_HEARTBEAT,

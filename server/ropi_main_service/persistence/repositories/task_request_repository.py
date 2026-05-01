@@ -24,6 +24,9 @@ from server.ropi_main_service.persistence.repositories.patrol_task_create_reposi
     PatrolPathSnapshotBuilder,
     PatrolTaskCreateRepository,
 )
+from server.ropi_main_service.persistence.repositories.patrol_task_cancel_repository import (
+    PatrolTaskCancelRepository,
+)
 from server.ropi_main_service.persistence.repositories.patrol_task_result_repository import (
     PatrolTaskResultRepository,
 )
@@ -52,6 +55,7 @@ class TaskRequestRepository:
         patrol_runtime_config=None,
         patrol_task_repository=None,
         patrol_task_create_repository=None,
+        patrol_task_cancel_repository=None,
         patrol_task_result_repository=None,
         patrol_task_resume_repository=None,
         idempotency_repository=None,
@@ -64,6 +68,7 @@ class TaskRequestRepository:
         self.delivery_task_cancel_repository = delivery_task_cancel_repository or DeliveryTaskCancelRepository()
         self.delivery_task_result_repository = delivery_task_result_repository or DeliveryTaskResultRepository()
         self.patrol_task_repository = patrol_task_repository or PatrolTaskRepository()
+        self.patrol_task_cancel_repository = patrol_task_cancel_repository or PatrolTaskCancelRepository()
         self.patrol_task_result_repository = patrol_task_result_repository or PatrolTaskResultRepository()
         self.patrol_task_resume_repository = patrol_task_resume_repository or PatrolTaskResumeRepository()
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
@@ -409,6 +414,38 @@ class TaskRequestRepository:
     async def async_get_delivery_task_cancel_target(self, task_id):
         return await self.delivery_task_cancel_repository.async_get_delivery_task_cancel_target(task_id)
 
+    def get_task_cancel_target(self, task_id):
+        numeric_task_id = self._parse_numeric_identifier(task_id)
+        if numeric_task_id is None:
+            return self._build_task_cancel_target_response(
+                result_code="REJECTED",
+                result_message="task_id를 확인할 수 없습니다.",
+                reason_code="TASK_ID_INVALID",
+                task_id=None,
+            )
+
+        row = fetch_one(
+            load_sql("task_request/find_task_cancel_target.sql"),
+            (numeric_task_id,),
+        )
+        return self._format_task_cancel_target(row, task_id=numeric_task_id)
+
+    async def async_get_task_cancel_target(self, task_id):
+        numeric_task_id = self._parse_numeric_identifier(task_id)
+        if numeric_task_id is None:
+            return self._build_task_cancel_target_response(
+                result_code="REJECTED",
+                result_message="task_id를 확인할 수 없습니다.",
+                reason_code="TASK_ID_INVALID",
+                task_id=None,
+            )
+
+        row = await async_fetch_one(
+            load_sql("task_request/find_task_cancel_target.sql"),
+            (numeric_task_id,),
+        )
+        return self._format_task_cancel_target(row, task_id=numeric_task_id)
+
     def record_delivery_task_cancel_result(self, *, task_id, cancel_response):
         return self.delivery_task_cancel_repository.record_delivery_task_cancel_result(
             task_id=task_id,
@@ -418,6 +455,42 @@ class TaskRequestRepository:
     async def async_record_delivery_task_cancel_result(self, *, task_id, cancel_response):
         return await self.delivery_task_cancel_repository.async_record_delivery_task_cancel_result(
             task_id=task_id,
+            cancel_response=cancel_response,
+        )
+
+    def get_patrol_task_cancel_target(self, task_id):
+        return self.patrol_task_cancel_repository.get_patrol_task_cancel_target(task_id)
+
+    async def async_get_patrol_task_cancel_target(self, task_id):
+        return await self.patrol_task_cancel_repository.async_get_patrol_task_cancel_target(task_id)
+
+    def record_patrol_task_cancel_result(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        reason,
+        cancel_response,
+    ):
+        return self.patrol_task_cancel_repository.record_patrol_task_cancel_result(
+            task_id=task_id,
+            caregiver_id=caregiver_id,
+            reason=reason,
+            cancel_response=cancel_response,
+        )
+
+    async def async_record_patrol_task_cancel_result(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        reason,
+        cancel_response,
+    ):
+        return await self.patrol_task_cancel_repository.async_record_patrol_task_cancel_result(
+            task_id=task_id,
+            caregiver_id=caregiver_id,
+            reason=reason,
             cancel_response=cancel_response,
         )
 
@@ -687,6 +760,48 @@ class TaskRequestRepository:
     @staticmethod
     def _build_patrol_path_snapshot(area):
         return PatrolPathSnapshotBuilder.build(area)
+
+    @classmethod
+    def _format_task_cancel_target(cls, row, *, task_id):
+        if not row:
+            return cls._build_task_cancel_target_response(
+                result_code="REJECTED",
+                result_message="task를 찾을 수 없습니다.",
+                reason_code="TASK_NOT_FOUND",
+                task_id=task_id,
+            )
+
+        return cls._build_task_cancel_target_response(
+            result_code="ACCEPTED",
+            task_id=row.get("task_id"),
+            task_type=row.get("task_type"),
+            task_status=row.get("task_status"),
+            phase=row.get("phase"),
+            assigned_robot_id=row.get("assigned_robot_id"),
+        )
+
+    @staticmethod
+    def _build_task_cancel_target_response(
+        *,
+        result_code,
+        result_message=None,
+        reason_code=None,
+        task_id=None,
+        task_type=None,
+        task_status=None,
+        phase=None,
+        assigned_robot_id=None,
+    ):
+        return {
+            "result_code": result_code,
+            "result_message": result_message,
+            "reason_code": reason_code,
+            "task_id": task_id,
+            "task_type": task_type,
+            "task_status": task_status,
+            "phase": phase,
+            "assigned_robot_id": assigned_robot_id,
+        }
 
     @staticmethod
     def _parse_numeric_identifier(value):

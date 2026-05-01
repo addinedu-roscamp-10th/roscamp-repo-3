@@ -106,6 +106,112 @@ def test_task_monitor_page_tracks_patrol_events_and_fall_marker():
         page.close()
 
 
+def test_task_monitor_page_exposes_cancel_action_by_task_type_and_status(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    SessionManager.login(UserSession(user_id="7", name="김보호", role="caregiver"))
+    page = TaskMonitorPage(autostart_stream=False)
+    started_payloads = []
+    monkeypatch.setattr(
+        page,
+        "_start_task_cancel",
+        lambda payload: started_payloads.append(payload),
+    )
+
+    try:
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "1001",
+                    "task_type": "DELIVERY",
+                    "task_status": "RUNNING",
+                    "phase": "MOVING_TO_DESTINATION",
+                    "assigned_robot_id": "pinky2",
+                    "cancellable": True,
+                },
+            }
+        )
+
+        assert page.cancel_task_btn.text() == "작업 취소"
+        assert page.cancel_task_btn.isEnabled() is True
+
+        page._request_task_cancel()
+
+        assert started_payloads == [
+            {
+                "task_id": "1001",
+                "caregiver_id": 7,
+                "reason": "operator_cancel",
+            }
+        ]
+        assert page.cancel_task_btn.isEnabled() is False
+        assert page.cancel_task_btn.text() == "취소 요청 전송 중..."
+        assert "취소 요청 전송 중" in page.cancel_status_label.text()
+
+        page._handle_task_cancel_finished(
+            True,
+            {
+                "result_code": "CANCEL_REQUESTED",
+                "result_message": "작업 취소 요청이 접수되었습니다.",
+                "reason_code": "USER_CANCEL_REQUESTED",
+                "task_id": "1001",
+                "task_type": "DELIVERY",
+                "task_status": "CANCEL_REQUESTED",
+                "phase": "CANCEL_REQUESTED",
+                "assigned_robot_id": "pinky2",
+                "cancellable": False,
+                "cancel_requested": True,
+            },
+        )
+
+        assert page.detail_task_status_label.text() == "CANCEL_REQUESTED"
+        assert page.cancel_task_btn.isEnabled() is False
+        assert page.cancel_task_btn.text() == "취소 처리 중"
+        assert "USER_CANCEL_REQUESTED" in page.cancel_status_label.text()
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "2001",
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "phase": "FOLLOW_PATROL_PATH",
+                    "assigned_robot_id": "pinky3",
+                    "cancellable": True,
+                },
+            }
+        )
+        page._select_task("2001")
+
+        assert page.cancel_task_btn.text() == "순찰 중단"
+        assert page.cancel_task_btn.isEnabled() is True
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "2001",
+                    "task_type": "PATROL",
+                    "task_status": "COMPLETED",
+                    "phase": "COMPLETED",
+                    "assigned_robot_id": "pinky3",
+                    "cancellable": False,
+                },
+            }
+        )
+
+        assert page.cancel_task_btn.isEnabled() is False
+        assert page.cancel_task_btn.text() == "취소 불가"
+    finally:
+        SessionManager.logout()
+        page.shutdown()
+        page.close()
+
+
 def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
     monkeypatch,
 ):

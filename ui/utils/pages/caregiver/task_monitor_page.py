@@ -32,6 +32,23 @@ WAITING_FALL_RESPONSE_PHASES = {
     "WAIT_FALL_RESPONSE",
     "WAITING_FALL_RESPONSE",
 }
+CANCELLABLE_TASK_STATUSES = {
+    "WAITING",
+    "WAITING_DISPATCH",
+    "READY",
+    "ASSIGNED",
+    "RUNNING",
+}
+CANCEL_IN_PROGRESS_STATUSES = {
+    "CANCEL_REQUESTED",
+    "CANCELLING",
+    "PREEMPTING",
+}
+TERMINAL_TASK_STATUSES = {
+    "CANCELLED",
+    "COMPLETED",
+    "FAILED",
+}
 
 
 def _display(value):
@@ -375,6 +392,40 @@ class FallEvidenceImageLookupWorker(QObject):
             )
 
 
+class TaskCancelWorker(QObject):
+    finished = pyqtSignal(bool, object)
+
+    def __init__(self, *, payload):
+        super().__init__()
+        self.payload = payload if isinstance(payload, dict) else {}
+
+    def run(self):
+        service = TaskMonitorRemoteService()
+
+        try:
+            response = service.cancel_task(**self.payload) or {}
+            result_code = str(response.get("result_code", "")).upper()
+            success = bool(response.get("cancel_requested")) or result_code in {
+                "ACCEPTED",
+                "CANCEL_REQUESTED",
+                "CANCELLED",
+            }
+            self.finished.emit(success, response)
+        except Exception as exc:
+            self.finished.emit(
+                False,
+                {
+                    "result_code": "CLIENT_ERROR",
+                    "result_message": f"작업 취소 요청 중 오류가 발생했습니다.\n{exc}",
+                    "reason_code": "CLIENT_EXCEPTION",
+                    "task_id": self.payload.get("task_id"),
+                    "task_status": None,
+                    "assigned_robot_id": None,
+                    "cancel_requested": False,
+                },
+            )
+
+
 class TaskMonitorPage(QWidget):
     def __init__(self, *, autostart_stream=True):
         super().__init__()
@@ -391,6 +442,8 @@ class TaskMonitorPage(QWidget):
         self.patrol_resume_worker = None
         self.fall_evidence_thread = None
         self.fall_evidence_worker = None
+        self.task_cancel_thread = None
+        self.task_cancel_worker = None
         self._fall_evidence_dialog = None
         self._build_ui()
         if autostart_stream:
@@ -461,6 +514,20 @@ class TaskMonitorPage(QWidget):
         feedback_row, _feedback_text, self.detail_feedback_label = _metric_row("피드백")
         pose_row, _pose_text, self.detail_pose_label = _metric_row("위치")
 
+        detail_action_row = QHBoxLayout()
+        detail_action_row.setSpacing(8)
+        self.cancel_task_btn = QPushButton("작업 취소")
+        self.cancel_task_btn.setObjectName("dangerButton")
+        self.cancel_task_btn.setEnabled(False)
+        self.cancel_task_btn.clicked.connect(self._request_task_cancel)
+        detail_action_row.addStretch(1)
+        detail_action_row.addWidget(self.cancel_task_btn)
+
+        self.cancel_status_label = QLabel("")
+        self.cancel_status_label.setObjectName("mutedText")
+        self.cancel_status_label.setWordWrap(True)
+        self.cancel_status_label.setHidden(True)
+
         self.patrol_map_placeholder = QFrame()
         self.patrol_map_placeholder.setObjectName("patrolMapPlaceholder")
         map_layout = QVBoxLayout(self.patrol_map_placeholder)
@@ -529,6 +596,8 @@ class TaskMonitorPage(QWidget):
         detail_layout.addWidget(robot_row)
         detail_layout.addWidget(feedback_row)
         detail_layout.addWidget(pose_row)
+        detail_layout.addLayout(detail_action_row)
+        detail_layout.addWidget(self.cancel_status_label)
         detail_layout.addWidget(self.patrol_map_placeholder)
         detail_layout.addWidget(self.fall_alert_panel)
         detail_layout.addStretch(1)
@@ -727,7 +796,116 @@ class TaskMonitorPage(QWidget):
         self.detail_robot_label.setText(_display(task.get("assigned_robot_id")))
         self.detail_feedback_label.setText(_display(task.get("feedback_summary")))
         self.detail_pose_label.setText(_format_pose(task.get("pose")))
+        self.cancel_status_label.setHidden(True)
+        self._sync_cancel_action(task)
         self._render_fall_alert(task)
+
+    def _sync_cancel_action(self, task):
+        task = task or {}
+        task_id = task.get("task_id")
+        task_type = str(task.get("task_type") or "").strip().upper()
+        task_status = str(task.get("task_status") or "").strip().upper()
+        cancellable = task.get("cancellable")
+        default_text = "순찰 중단" if task_type == "PATROL" else "작업 취소"
+
+        self.cancel_task_btn.setProperty("task_id", task_id)
+        self.cancel_task_btn.setProperty("task_type", task_type)
+        self.cancel_task_btn.setProperty("task_status", task_status)
+        self.cancel_task_btn.setText(default_text)
+
+        if task_status in CANCEL_IN_PROGRESS_STATUSES:
+            self.cancel_task_btn.setText("취소 처리 중")
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if task_status in TERMINAL_TASK_STATUSES:
+            self.cancel_task_btn.setText("취소 불가")
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if _task_key(task_id) is None:
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if cancellable is not None:
+            self.cancel_task_btn.setEnabled(bool(cancellable))
+            return
+
+        self.cancel_task_btn.setEnabled(task_status in CANCELLABLE_TASK_STATUSES)
+
+    def _request_task_cancel(self):
+        task = self._current_task() or {}
+        task_id = _task_key(task.get("task_id"))
+        if task_id is None:
+            self.cancel_status_label.setText("취소할 task_id가 없습니다.")
+            self.cancel_status_label.setHidden(False)
+            return
+
+        current_user = SessionManager.current_user()
+        caregiver_id = getattr(current_user, "user_id", None)
+        if not str(caregiver_id or "").strip().isdigit():
+            self.cancel_status_label.setText("취소 요청자 caregiver_id가 없습니다.")
+            self.cancel_status_label.setHidden(False)
+            return
+
+        payload = {
+            "task_id": task_id,
+            "caregiver_id": int(caregiver_id),
+            "reason": "operator_cancel",
+        }
+        self.cancel_task_btn.setEnabled(False)
+        self.cancel_task_btn.setText("취소 요청 전송 중...")
+        self.cancel_status_label.setText("취소 요청 전송 중...")
+        self.cancel_status_label.setHidden(False)
+        self._start_task_cancel(payload)
+
+    def _start_task_cancel(self, payload):
+        if self.task_cancel_thread is not None:
+            return
+
+        self.task_cancel_thread = QThread(self)
+        self.task_cancel_worker = TaskCancelWorker(payload=payload)
+        self.task_cancel_worker.moveToThread(self.task_cancel_thread)
+
+        self.task_cancel_thread.started.connect(self.task_cancel_worker.run)
+        self.task_cancel_worker.finished.connect(self._handle_task_cancel_finished)
+        self.task_cancel_worker.finished.connect(self.task_cancel_thread.quit)
+        self.task_cancel_worker.finished.connect(self.task_cancel_worker.deleteLater)
+        self.task_cancel_thread.finished.connect(self.task_cancel_thread.deleteLater)
+        self.task_cancel_thread.finished.connect(self._clear_task_cancel_thread)
+
+        self.task_cancel_thread.start()
+
+    def _handle_task_cancel_finished(self, success, response):
+        response = response or {}
+        if not isinstance(response, dict):
+            response = {
+                "result_code": "CLIENT_ERROR",
+                "result_message": str(response),
+                "reason_code": "CLIENT_RESPONSE_INVALID",
+                "cancel_requested": False,
+            }
+        elif not success and not response.get("result_code"):
+            response = {
+                **response,
+                "result_code": "CLIENT_ERROR",
+                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
+            }
+
+        if response.get("task_id"):
+            self._apply_task_updated(response)
+        else:
+            self._render_detail(self._current_task())
+
+        result_code = _display(response.get("result_code"))
+        reason_code = _display(response.get("reason_code"))
+        message = _display(response.get("result_message"))
+        self.cancel_status_label.setText(f"{result_code} / {reason_code}: {message}")
+        self.cancel_status_label.setHidden(False)
+
+    def _clear_task_cancel_thread(self):
+        self.task_cancel_thread = None
+        self.task_cancel_worker = None
 
     def _render_fall_alert(self, task):
         alert = task.get("fall_alert") or {}
@@ -1064,6 +1242,14 @@ class TaskMonitorPage(QWidget):
             self.fall_evidence_thread.wait(1000)
         self._clear_fall_evidence_thread()
 
+    def _stop_task_cancel_thread(self):
+        if self.task_cancel_thread is None:
+            return
+        if self.task_cancel_thread.isRunning():
+            self.task_cancel_thread.quit()
+            self.task_cancel_thread.wait(1000)
+        self._clear_task_cancel_thread()
+
     def reset_page(self):
         if self.task_table.rowCount() > 0:
             self._render_detail(self._tasks.get("task_id:" + str(self._selected_task_id)))
@@ -1073,6 +1259,7 @@ class TaskMonitorPage(QWidget):
         self._stop_task_event_stream_thread()
         self._stop_patrol_resume_thread()
         self._stop_fall_evidence_thread()
+        self._stop_task_cancel_thread()
 
     def closeEvent(self, event):
         self.shutdown()
@@ -1083,6 +1270,7 @@ __all__ = [
     "FallEvidenceImageDialog",
     "FallEvidenceImageLookupWorker",
     "PatrolResumeDialog",
+    "TaskCancelWorker",
     "TaskMonitorPage",
     "TaskMonitorSnapshotLoadWorker",
 ]

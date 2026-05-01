@@ -123,6 +123,35 @@ def test_task_monitor_remote_service_exposes_snapshot_rpc(monkeypatch):
     ]
 
 
+def test_task_monitor_remote_service_exposes_common_cancel_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "CANCEL_REQUESTED", "task_id": "2001"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = TaskMonitorRemoteService().cancel_task(
+        task_id="2001",
+        caregiver_id=7,
+        reason="operator_cancel",
+    )
+
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert calls == [
+        (
+            "task_request",
+            "cancel_task",
+            {
+                "task_id": "2001",
+                "caregiver_id": 7,
+                "reason": "operator_cancel",
+            },
+        )
+    ]
+
+
 def test_task_monitor_remote_service_sends_fall_evidence_over_if_pat_007(monkeypatch):
     calls = []
 

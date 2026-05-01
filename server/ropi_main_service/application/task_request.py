@@ -9,6 +9,7 @@ from server.ropi_main_service.application.fall_response_command import (
     FallResponseCommandService,
 )
 from server.ropi_main_service.application.patrol_resume import PatrolResumeService
+from server.ropi_main_service.application.patrol_cancel import PatrolCancelService
 from server.ropi_main_service.application.patrol_task_create import PatrolTaskCreateService
 from server.ropi_main_service.ipc.uds_client import (
     UnixDomainSocketCommandClient,
@@ -38,6 +39,7 @@ class TaskRequestService:
         command_execution_recorder=None,
         fall_response_command_service=None,
         delivery_cancel_service=None,
+        patrol_cancel_service=None,
         patrol_resume_service=None,
         cancel_timeout_sec=5.0,
     ):
@@ -60,6 +62,15 @@ class TaskRequestService:
         self.delivery_cancel_service = (
             delivery_cancel_service
             or DeliveryCancelService(
+                repository=self.repository,
+                command_client=self.command_client,
+                command_execution_recorder=self.command_execution_recorder,
+                timeout_sec=self.cancel_timeout_sec,
+            )
+        )
+        self.patrol_cancel_service = (
+            patrol_cancel_service
+            or PatrolCancelService(
                 repository=self.repository,
                 command_client=self.command_client,
                 command_execution_recorder=self.command_execution_recorder,
@@ -229,6 +240,69 @@ class TaskRequestService:
             task_id=task_id,
             action_name=action_name,
         )
+
+    def cancel_task(self, task_id, caregiver_id=None, reason="operator_cancel", action_name=None):
+        target_response = self.repository.get_task_cancel_target(task_id)
+        if target_response.get("result_code") != self.ACCEPTED:
+            return target_response
+
+        task_type = str(target_response.get("task_type") or "").strip().upper()
+        if task_type == "DELIVERY":
+            return self.cancel_delivery_task(
+                task_id=task_id,
+                action_name=action_name,
+            )
+
+        if task_type == "PATROL":
+            self._sync_cancel_service_dependencies()
+            return self.patrol_cancel_service.cancel_patrol_task(
+                task_id=task_id,
+                caregiver_id=caregiver_id,
+                reason=reason,
+                action_name=action_name,
+            )
+
+        return self._unsupported_cancel_task_type_response(target_response)
+
+    async def async_cancel_task(
+        self,
+        task_id,
+        caregiver_id=None,
+        reason="operator_cancel",
+        action_name=None,
+    ):
+        async_cancel_target = getattr(
+            self.repository,
+            "async_get_task_cancel_target",
+            None,
+        )
+        if async_cancel_target is not None:
+            target_response = await async_cancel_target(task_id)
+        else:
+            target_response = await asyncio.to_thread(
+                self.repository.get_task_cancel_target,
+                task_id,
+            )
+        if target_response.get("result_code") != self.ACCEPTED:
+            return target_response
+
+        task_type = str(target_response.get("task_type") or "").strip().upper()
+        if task_type == "DELIVERY":
+            return await self.async_cancel_delivery_task(
+                task_id=task_id,
+                action_name=action_name,
+            )
+
+        if task_type == "PATROL":
+            self._sync_cancel_service_dependencies()
+            return await self.patrol_cancel_service.async_cancel_patrol_task(
+                task_id=task_id,
+                caregiver_id=caregiver_id,
+                reason=reason,
+                action_name=action_name,
+            )
+
+        return self._unsupported_cancel_task_type_response(target_response)
 
     def submit_delivery_request(
         self,
@@ -461,6 +535,25 @@ class TaskRequestService:
         self.delivery_cancel_service.command_client = self.command_client
         self.delivery_cancel_service.command_execution_recorder = self.command_execution_recorder
         self.delivery_cancel_service.timeout_sec = self.cancel_timeout_sec
+        self.patrol_cancel_service.repository = self.repository
+        self.patrol_cancel_service.command_client = self.command_client
+        self.patrol_cancel_service.command_execution_recorder = self.command_execution_recorder
+        self.patrol_cancel_service.timeout_sec = self.cancel_timeout_sec
+
+    @staticmethod
+    def _unsupported_cancel_task_type_response(target_response):
+        return {
+            "result_code": "NOT_ALLOWED",
+            "result_message": "지원하지 않는 task 유형은 취소할 수 없습니다.",
+            "reason_code": "TASK_TYPE_NOT_CANCELLABLE",
+            "task_id": target_response.get("task_id"),
+            "task_type": target_response.get("task_type"),
+            "task_status": target_response.get("task_status"),
+            "phase": target_response.get("phase"),
+            "assigned_robot_id": target_response.get("assigned_robot_id"),
+            "cancellable": False,
+            "cancel_requested": False,
+        }
 
     def _sync_resume_service_dependencies(self):
         self.fall_response_command_service.command_client = self.command_client

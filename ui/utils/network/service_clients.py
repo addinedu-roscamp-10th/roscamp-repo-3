@@ -144,6 +144,21 @@ class TaskMonitorRemoteService:
             limit=limit,
         )
 
+    def cancel_task(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        reason="operator_cancel",
+    ):
+        return _rpc(
+            "task_request",
+            "cancel_task",
+            task_id=str(task_id).strip(),
+            caregiver_id=caregiver_id,
+            reason=reason,
+        )
+
     def get_fall_evidence_image(
         self,
         *,

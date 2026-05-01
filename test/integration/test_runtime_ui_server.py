@@ -185,6 +185,46 @@ def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(
     ]
 
 
+def test_ui_client_cancel_patrol_task_hits_real_server_and_db(
+    patched_ui_endpoint,
+    active_patrol_task_seed,
+):
+    task_id = active_patrol_task_seed["task_id"]
+
+    response = TaskMonitorRemoteService().cancel_task(
+        task_id=task_id,
+        caregiver_id=7,
+        reason="operator_cancel",
+    )
+
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert response["task_id"] == task_id
+    assert response["task_type"] == "PATROL"
+    assert response["task_status"] == "CANCEL_REQUESTED"
+    assert response["cancel_requested"] is True
+
+    task_row = safe_fetch_one(
+        "SELECT task_status, phase, latest_reason_code FROM task "
+        f"WHERE task_id = {int(task_id)}"
+    )
+    patrol_row = safe_fetch_one(
+        "SELECT patrol_status FROM patrol_task_detail "
+        f"WHERE task_id = {int(task_id)}"
+    )
+    event_row = safe_fetch_one(
+        "SELECT event_name, reason_code FROM task_event_log "
+        f"WHERE task_id = {int(task_id)} "
+        "ORDER BY task_event_log_id DESC LIMIT 1"
+    )
+
+    assert task_row["task_status"] == "CANCEL_REQUESTED"
+    assert task_row["phase"] == "CANCEL_REQUESTED"
+    assert task_row["latest_reason_code"] == "USER_CANCEL_REQUESTED"
+    assert patrol_row["patrol_status"] == "CANCEL_REQUESTED"
+    assert event_row["event_name"] == "PATROL_TASK_CANCEL_REQUESTED"
+    assert event_row["reason_code"] == "USER_CANCEL_REQUESTED"
+
+
 def test_ui_client_create_delivery_task_hits_real_server(patched_ui_endpoint, runtime_delivery_schema):
     payload = build_if_del_001_payload()
 

@@ -490,10 +490,18 @@ class ControlServiceServer:
         except Exception as exc:
             return self._error_response(frame, "RPC_ERROR", str(exc))
 
-        if service_name == "task_request" and method_name == "cancel_delivery_task":
+        if service_name == "task_request" and method_name in {
+            "cancel_delivery_task",
+            "cancel_task",
+        }:
+            source = (
+                "DELIVERY_CANCEL"
+                if method_name == "cancel_delivery_task"
+                else "TASK_CANCEL"
+            )
             await self._publish_task_updated_from_response(
                 result,
-                source="DELIVERY_CANCEL",
+                source=source,
             )
 
         result = self._attach_task_monitor_handoff_seq(result, task_monitor_handoff_seq)

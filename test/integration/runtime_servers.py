@@ -94,6 +94,18 @@ def ros_service_stub(tmp_path_factory):
                                     ],
                                 },
                             }
+                        elif request.get("command") == "cancel_action":
+                            payload = request.get("payload") or {}
+                            response = {
+                                "ok": True,
+                                "payload": {
+                                    "result_code": "CANCEL_REQUESTED",
+                                    "result_message": "action cancel request was accepted.",
+                                    "task_id": payload.get("task_id"),
+                                    "action_name": payload.get("action_name"),
+                                    "cancel_requested": True,
+                                },
+                            }
                         else:
                             response = {
                                 "ok": True,
