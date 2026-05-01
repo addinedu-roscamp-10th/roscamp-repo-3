@@ -29,6 +29,7 @@ from ui.utils.pages.caregiver.task_monitor_detail_panels import (
 )
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_workers import PatrolResumeWorker
+from ui.utils.core.responses import normalize_ui_response
 from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.network.service_clients import TaskMonitorRemoteService
 from ui.utils.session.session_manager import SessionManager
@@ -824,20 +825,11 @@ class TaskMonitorPage(QWidget):
         )
 
     def _handle_task_cancel_finished(self, success, response):
-        response = response or {}
-        if not isinstance(response, dict):
-            response = {
-                "result_code": "CLIENT_ERROR",
-                "result_message": str(response),
-                "reason_code": "CLIENT_RESPONSE_INVALID",
-                "cancel_requested": False,
-            }
-        elif not success and not response.get("result_code"):
-            response = {
-                **response,
-                "result_code": "CLIENT_ERROR",
-                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
-            }
+        response = normalize_ui_response(
+            response,
+            success=success,
+            default_fields={"cancel_requested": False},
+        )
 
         if response.get("task_id"):
             self._apply_task_updated(response)
@@ -911,19 +903,11 @@ class TaskMonitorPage(QWidget):
         )
 
     def _handle_fall_evidence_finished(self, success, response):
-        response = response or {}
-        if not isinstance(response, dict):
-            response = {
-                "result_code": "CLIENT_ERROR",
-                "result_message": str(response),
-                "reason_code": "CLIENT_RESPONSE_INVALID",
-            }
-        elif not response.get("result_code"):
-            response = {
-                **response,
-                "result_code": "CLIENT_ERROR",
-                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
-            }
+        response = normalize_ui_response(
+            response,
+            success=success,
+            require_result_code=True,
+        )
 
         self.evidence_image_btn.setText("증거사진 조회")
         self.evidence_image_btn.setEnabled(self._has_current_evidence_image())
@@ -1007,19 +991,7 @@ class TaskMonitorPage(QWidget):
         )
 
     def _handle_patrol_resume_finished(self, success, response):
-        response = response or {}
-        if not isinstance(response, dict):
-            response = {
-                "result_code": "CLIENT_ERROR",
-                "result_message": str(response),
-                "reason_code": "CLIENT_RESPONSE_INVALID",
-            }
-        elif not success and not response.get("result_code"):
-            response = {
-                **response,
-                "result_code": "CLIENT_ERROR",
-                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
-            }
+        response = normalize_ui_response(response, success=success)
 
         self.resume_status_label.setText(_display(response.get("result_message")))
         self.resume_status_label.setHidden(False)

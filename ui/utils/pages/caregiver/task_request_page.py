@@ -21,6 +21,7 @@ from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePane
 from ui.utils.pages.caregiver.task_request_workers import (
     DeliveryCancelWorker,
 )
+from ui.utils.core.responses import normalize_ui_response
 from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.widgets.admin_shell import PageHeader
 
@@ -257,20 +258,11 @@ class TaskRequestPage(QWidget):
         )
 
     def _handle_cancel_finished(self, success, response):
-        response = response or {}
-        if not isinstance(response, dict):
-            response = {
-                "result_code": "CLIENT_ERROR",
-                "result_message": str(response),
-                "reason_code": "CLIENT_RESPONSE_INVALID",
-                "cancel_requested": False,
-            }
-        elif not success and not response.get("result_code"):
-            response = {
-                **response,
-                "result_code": "CLIENT_ERROR",
-                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
-            }
+        response = normalize_ui_response(
+            response,
+            success=success,
+            default_fields={"cancel_requested": False},
+        )
 
         self.side_panel.show_delivery_result(response)
 
