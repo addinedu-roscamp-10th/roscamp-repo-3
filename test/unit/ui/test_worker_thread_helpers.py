@@ -18,6 +18,22 @@ TASK_REQUEST_PAGE = (
     / "caregiver"
     / "task_request_page.py"
 )
+DELIVERY_REQUEST_FORM = (
+    REPO_ROOT
+    / "ui"
+    / "utils"
+    / "pages"
+    / "caregiver"
+    / "delivery_request_form.py"
+)
+PATROL_REQUEST_FORM = (
+    REPO_ROOT
+    / "ui"
+    / "utils"
+    / "pages"
+    / "caregiver"
+    / "patrol_request_form.py"
+)
 
 
 class FakeSignal:
@@ -108,3 +124,13 @@ def test_task_request_and_monitor_pages_use_shared_worker_thread_helper():
     assert "from ui.utils.core.worker_threads import start_worker_thread" in request_source
     assert "QThread(" not in monitor_source
     assert "QThread(" not in request_source
+
+
+def test_task_request_forms_use_shared_worker_thread_helper():
+    delivery_source = DELIVERY_REQUEST_FORM.read_text(encoding="utf-8")
+    patrol_source = PATROL_REQUEST_FORM.read_text(encoding="utf-8")
+
+    assert "from ui.utils.core.worker_threads import start_worker_thread" in delivery_source
+    assert "from ui.utils.core.worker_threads import start_worker_thread" in patrol_source
+    assert "QThread(" not in delivery_source
+    assert "QThread(" not in patrol_source
