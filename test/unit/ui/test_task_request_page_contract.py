@@ -44,7 +44,7 @@ def test_task_request_page_uses_logger_instead_of_direct_print():
     assert "print(" not in source
 
 
-def test_task_request_page_exposes_scenario_tabs_and_preparation_states(monkeypatch):
+def test_task_request_page_exposes_delivery_patrol_and_disabled_follow_tabs(monkeypatch):
     _app()
 
     from ui.utils.pages.caregiver.task_request_page import (
@@ -65,9 +65,9 @@ def test_task_request_page_exposes_scenario_tabs_and_preparation_states(monkeypa
         assert tabs == [
             "물품 운반",
             "순찰",
-            "안내 (준비 중)",
-            "추종 (준비 중)",
+            "추종",
         ]
+        assert all("준비 중" not in text for text in tabs)
 
         assert page.delivery_form.submit_btn.isEnabled() is True
         page.patrol_btn.click()
@@ -75,14 +75,12 @@ def test_task_request_page_exposes_scenario_tabs_and_preparation_states(monkeypa
         assert page.patrol_form.submit_btn.isEnabled() is False
         assert page.patrol_form.submit_btn.text() == "순찰 요청 등록"
 
-        for button, form in [
-            (page.guide_btn, page.guide_form),
-            (page.follow_btn, page.follow_form),
-        ]:
-            button.click()
-            assert page.current_form is form
-            assert form.submit_btn.isEnabled() is False
-            assert "서버 workflow 연동 전" in form.not_ready_label.text()
+        assert not hasattr(page, "guide_btn")
+        assert not hasattr(page, "guide_form")
+        assert page.follow_btn.isEnabled() is False
+        assert not hasattr(page, "follow_form")
+        page.follow_btn.click()
+        assert page.current_form is page.patrol_form
     finally:
         page.close()
 

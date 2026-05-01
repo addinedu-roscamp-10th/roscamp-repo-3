@@ -15,9 +15,6 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.pages.caregiver.task_request_forms import (
     DeliveryRequestForm,
-    FollowRequestForm,
-    GuideRequestForm,
-    NotReadyScenarioForm,
     PatrolRequestForm,
 )
 from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
@@ -50,13 +47,12 @@ class TaskRequestPage(QWidget):
 
         self.delivery_btn = QPushButton("물품 운반")
         self.patrol_btn = QPushButton("순찰")
-        self.guide_btn = QPushButton("안내 (준비 중)")
-        self.follow_btn = QPushButton("추종 (준비 중)")
+        self.follow_btn = QPushButton("추종")
+        self.follow_btn.setEnabled(False)
 
         for btn in [
             self.delivery_btn,
             self.patrol_btn,
-            self.guide_btn,
             self.follow_btn,
         ]:
             btn.setObjectName("scenarioTabButton")
@@ -107,8 +103,6 @@ class TaskRequestPage(QWidget):
 
         self.delivery_btn.clicked.connect(self.show_delivery_page)
         self.patrol_btn.clicked.connect(self.show_patrol_page)
-        self.guide_btn.clicked.connect(self.show_guide_page)
-        self.follow_btn.clicked.connect(self.show_follow_page)
         self.side_panel.cancel_task_btn.clicked.connect(self._request_delivery_cancel)
 
         self.content_row.addWidget(
@@ -150,13 +144,9 @@ class TaskRequestPage(QWidget):
         logger.debug("initialize task request forms")
         self.delivery_form = DeliveryRequestForm()
         self.patrol_form = PatrolRequestForm()
-        self.guide_form = GuideRequestForm()
-        self.follow_form = FollowRequestForm()
         self.forms = [
             self.delivery_form,
             self.patrol_form,
-            self.guide_form,
-            self.follow_form,
         ]
 
         self.delivery_form.preview_changed.connect(self.side_panel.update_preview)
@@ -211,8 +201,6 @@ class TaskRequestPage(QWidget):
         form_to_button = {
             self.delivery_form: self.delivery_btn,
             self.patrol_form: self.patrol_btn,
-            self.guide_form: self.guide_btn,
-            self.follow_form: self.follow_btn,
         }
         for target_form, button in form_to_button.items():
             button.setChecked(target_form is form)
@@ -228,14 +216,6 @@ class TaskRequestPage(QWidget):
         self._show_form(self.patrol_form)
         self.patrol_form.emit_preview_changed()
         logger.debug("switched to patrol page")
-
-    def show_guide_page(self):
-        self._show_form(self.guide_form)
-        logger.debug("switched to guide page")
-
-    def show_follow_page(self):
-        self._show_form(self.follow_form)
-        logger.debug("switched to follow page")
 
     def _request_delivery_cancel(self):
         task_id = self.cancel_task_btn.property("task_id")
@@ -330,9 +310,6 @@ class TaskRequestPage(QWidget):
 
 __all__ = [
     "DeliveryRequestForm",
-    "FollowRequestForm",
-    "GuideRequestForm",
-    "NotReadyScenarioForm",
     "PatrolRequestForm",
     "TaskRequestPage",
 ]
