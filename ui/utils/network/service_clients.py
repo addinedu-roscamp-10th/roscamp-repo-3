@@ -212,6 +212,20 @@ class CoordinateConfigRemoteService:
             path_json=path_json,
         )
 
+    def get_map_asset(
+        self,
+        *,
+        asset_type,
+        map_id=None,
+        encoding=None,
+    ):
+        return self._rpc(
+            "get_map_asset",
+            asset_type=asset_type,
+            map_id=map_id,
+            encoding=encoding,
+        )
+
 
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"

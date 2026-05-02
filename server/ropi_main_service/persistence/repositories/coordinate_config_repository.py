@@ -15,6 +15,7 @@ from server.ropi_main_service.persistence.sql_loader import load_sql
 
 ACTIVE_MAP_PROFILE_SQL = load_sql("coordinate_config/get_active_map_profile.sql")
 FIND_GOAL_POSE_SQL = load_sql("coordinate_config/find_goal_pose.sql")
+FIND_MAP_PROFILE_SQL = load_sql("coordinate_config/find_map_profile.sql")
 FIND_OPERATION_ZONE_SQL = load_sql("coordinate_config/find_operation_zone.sql")
 FIND_PATROL_AREA_SQL = load_sql("coordinate_config/find_patrol_area.sql")
 INSERT_OPERATION_ZONE_SQL = load_sql("coordinate_config/insert_operation_zone.sql")
@@ -37,6 +38,12 @@ class CoordinateConfigRepository:
 
     async def async_get_active_map_profile(self):
         return await async_fetch_one(ACTIVE_MAP_PROFILE_SQL)
+
+    def get_map_profile(self, *, map_id):
+        return fetch_one(FIND_MAP_PROFILE_SQL, (str(map_id),))
+
+    async def async_get_map_profile(self, *, map_id):
+        return await async_fetch_one(FIND_MAP_PROFILE_SQL, (str(map_id),))
 
     def get_operation_zones(self, *, map_id, include_disabled=True):
         return fetch_all(
@@ -540,6 +547,7 @@ class CoordinateConfigRepository:
 __all__ = [
     "ACTIVE_MAP_PROFILE_SQL",
     "FIND_GOAL_POSE_SQL",
+    "FIND_MAP_PROFILE_SQL",
     "FIND_OPERATION_ZONE_SQL",
     "FIND_PATROL_AREA_SQL",
     "INSERT_OPERATION_ZONE_SQL",

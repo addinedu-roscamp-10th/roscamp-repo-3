@@ -311,6 +311,35 @@ def test_coordinate_config_remote_service_exposes_patrol_area_path_update_rpc(
     ]
 
 
+def test_coordinate_config_remote_service_exposes_map_asset_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "OK", "asset_type": "YAML"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = CoordinateConfigRemoteService().get_map_asset(
+        asset_type="YAML",
+        map_id="map_test11_0423",
+        encoding="TEXT",
+    )
+
+    assert response["result_code"] == "OK"
+    assert calls == [
+        (
+            "coordinate_config",
+            "get_map_asset",
+            {
+                "asset_type": "YAML",
+                "map_id": "map_test11_0423",
+                "encoding": "TEXT",
+            },
+        )
+    ]
+
+
 def test_task_monitor_remote_service_sends_fall_evidence_over_if_pat_007(monkeypatch):
     calls = []
 

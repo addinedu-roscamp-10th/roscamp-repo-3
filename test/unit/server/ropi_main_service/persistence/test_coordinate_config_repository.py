@@ -52,6 +52,28 @@ def test_coordinate_config_repository_fetches_active_map_and_child_rows(monkeypa
     assert calls[3][2] == ("map_test11_0423", False)
 
 
+def test_coordinate_config_repository_fetches_map_profile_by_id(monkeypatch):
+    calls = []
+
+    def fake_fetch_one(query, params=None):
+        calls.append((query, params))
+        return {"map_id": "map_test11_0423"}
+
+    monkeypatch.setattr(coordinate_config_repository, "fetch_one", fake_fetch_one)
+
+    row = coordinate_config_repository.CoordinateConfigRepository().get_map_profile(
+        map_id="map_test11_0423",
+    )
+
+    assert row == {"map_id": "map_test11_0423"}
+    assert calls == [
+        (
+            coordinate_config_repository.FIND_MAP_PROFILE_SQL,
+            ("map_test11_0423",),
+        )
+    ]
+
+
 def test_coordinate_config_repository_exposes_async_fetch_methods(monkeypatch):
     calls = []
 
@@ -114,6 +136,35 @@ def test_coordinate_config_repository_exposes_async_fetch_methods(monkeypatch):
             coordinate_config_repository.LIST_PATROL_AREAS_SQL,
             ("map_test11_0423", False),
         ),
+    ]
+
+
+def test_coordinate_config_repository_fetches_map_profile_by_id_async(monkeypatch):
+    calls = []
+
+    async def fake_async_fetch_one(query, params=None):
+        calls.append((query, params))
+        return {"map_id": "map_test11_0423"}
+
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "async_fetch_one",
+        fake_async_fetch_one,
+    )
+
+    async def scenario():
+        return await coordinate_config_repository.CoordinateConfigRepository().async_get_map_profile(
+            map_id="map_test11_0423",
+        )
+
+    row = asyncio.run(scenario())
+
+    assert row == {"map_id": "map_test11_0423"}
+    assert calls == [
+        (
+            coordinate_config_repository.FIND_MAP_PROFILE_SQL,
+            ("map_test11_0423",),
+        )
     ]
 
 

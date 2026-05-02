@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import asyncio
 import json
 from datetime import datetime, timezone
@@ -19,6 +21,9 @@ class FakeCoordinateConfigRepository:
             "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
             "frame_id": "",
             "is_active": 1,
+        }
+        self.map_profiles_by_id = {
+            "map_test11_0423": self.map_profile,
         }
         self.operation_zones = [
             {
@@ -83,6 +88,14 @@ class FakeCoordinateConfigRepository:
     async def async_get_active_map_profile(self):
         self.calls.append(("async_get_active_map_profile",))
         return self.map_profile
+
+    def get_map_profile(self, *, map_id):
+        self.calls.append(("get_map_profile", map_id))
+        return self.map_profiles_by_id.get(map_id)
+
+    async def async_get_map_profile(self, *, map_id):
+        self.calls.append(("async_get_map_profile", map_id))
+        return self.map_profiles_by_id.get(map_id)
 
     def get_operation_zones(self, *, map_id, include_disabled=True):
         self.calls.append(("get_operation_zones", map_id, include_disabled))
@@ -1007,3 +1020,115 @@ def test_update_patrol_area_path_async_uses_async_repository_method():
             },
         ),
     ]
+
+
+def test_get_map_asset_returns_active_map_yaml_text_with_hash(tmp_path):
+    repository = FakeCoordinateConfigRepository()
+    yaml_path = tmp_path / "map.yaml"
+    yaml_text = "image: map.pgm\nresolution: 0.020\norigin: [0, 0, 0]\n"
+    yaml_path.write_text(yaml_text, encoding="utf-8")
+    repository.map_profile["yaml_path"] = str(yaml_path)
+
+    response = _service(repository).get_map_asset(asset_type="yaml")
+
+    assert response["result_code"] == "OK"
+    assert response["reason_code"] is None
+    assert response["map_id"] == "map_test11_0423"
+    assert response["asset_type"] == "YAML"
+    assert response["encoding"] == "TEXT"
+    assert response["content_text"] == yaml_text
+    assert response["content_base64"] is None
+    assert response["size_bytes"] == len(yaml_text.encode("utf-8"))
+    assert response["sha256"] == hashlib.sha256(yaml_text.encode("utf-8")).hexdigest()
+    assert repository.calls == [("get_active_map_profile",)]
+
+
+def test_get_map_asset_returns_requested_map_pgm_base64_with_hash(tmp_path):
+    repository = FakeCoordinateConfigRepository()
+    pgm_path = tmp_path / "map.pgm"
+    pgm_bytes = b"P5\n2 1\n255\n\x00\xff"
+    pgm_path.write_bytes(pgm_bytes)
+    map_profile = dict(repository.map_profile)
+    map_profile["map_id"] = "map_alt"
+    map_profile["pgm_path"] = str(pgm_path)
+    repository.map_profiles_by_id["map_alt"] = map_profile
+
+    response = _service(repository).get_map_asset(
+        map_id="map_alt",
+        asset_type="PGM",
+    )
+
+    assert response["result_code"] == "OK"
+    assert response["map_id"] == "map_alt"
+    assert response["asset_type"] == "PGM"
+    assert response["encoding"] == "BASE64"
+    assert response["content_text"] is None
+    assert response["content_base64"] == base64.b64encode(pgm_bytes).decode("ascii")
+    assert response["size_bytes"] == len(pgm_bytes)
+    assert response["sha256"] == hashlib.sha256(pgm_bytes).hexdigest()
+    assert repository.calls == [("get_map_profile", "map_alt")]
+
+
+def test_get_map_asset_rejects_invalid_asset_type_without_db_read():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).get_map_asset(asset_type="PNG")
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "MAP_ASSET_REQUEST_INVALID"
+    assert response["content_text"] is None
+    assert response["content_base64"] is None
+    assert repository.calls == []
+
+
+def test_get_map_asset_reports_missing_requested_map():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).get_map_asset(
+        map_id="missing_map",
+        asset_type="YAML",
+    )
+
+    assert response["result_code"] == "NOT_FOUND"
+    assert response["reason_code"] == "MAP_NOT_FOUND"
+    assert response["map_id"] == "missing_map"
+    assert repository.calls == [("get_map_profile", "missing_map")]
+
+
+def test_get_map_asset_rejects_payload_too_large(tmp_path):
+    repository = FakeCoordinateConfigRepository()
+    yaml_path = tmp_path / "map.yaml"
+    yaml_path.write_text("image: map.pgm\n", encoding="utf-8")
+    repository.map_profile["yaml_path"] = str(yaml_path)
+
+    service = CoordinateConfigService(
+        repository=repository,
+        clock=lambda: datetime(2026, 5, 2, 3, 10, 0, tzinfo=timezone.utc),
+        map_asset_max_bytes=1,
+    )
+
+    response = service.get_map_asset(asset_type="YAML")
+
+    assert response["result_code"] == "PAYLOAD_TOO_LARGE"
+    assert response["reason_code"] == "MAP_ASSET_TOO_LARGE"
+    assert response["size_bytes"] == len("image: map.pgm\n".encode("utf-8"))
+    assert response["content_text"] is None
+    assert response["content_base64"] is None
+
+
+def test_get_map_asset_async_uses_async_repository_method(tmp_path):
+    repository = FakeCoordinateConfigRepository()
+    yaml_path = tmp_path / "map.yaml"
+    yaml_path.write_text("image: map.pgm\n", encoding="utf-8")
+    repository.map_profile["yaml_path"] = str(yaml_path)
+
+    response = asyncio.run(
+        _service(repository).async_get_map_asset(
+            map_id="map_test11_0423",
+            asset_type="YAML",
+        )
+    )
+
+    assert response["result_code"] == "OK"
+    assert response["encoding"] == "TEXT"
+    assert repository.calls == [("async_get_map_profile", "map_test11_0423")]
