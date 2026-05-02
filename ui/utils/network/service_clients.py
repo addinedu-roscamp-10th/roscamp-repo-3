@@ -128,11 +128,13 @@ class CoordinateConfigRemoteService:
         self,
         *,
         include_disabled=True,
+        include_zone_boundaries=True,
         include_patrol_paths=True,
     ):
         return self._rpc(
             "get_active_map_bundle",
             include_disabled=include_disabled,
+            include_zone_boundaries=include_zone_boundaries,
             include_patrol_paths=include_patrol_paths,
         )
 
@@ -170,6 +172,20 @@ class CoordinateConfigRemoteService:
             zone_name=zone_name,
             zone_type=zone_type,
             is_enabled=is_enabled,
+        )
+
+    def update_operation_zone_boundary(
+        self,
+        *,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        return self._rpc(
+            "update_operation_zone_boundary",
+            zone_id=zone_id,
+            expected_revision=expected_revision,
+            boundary_json=boundary_json,
         )
 
     def update_goal_pose(

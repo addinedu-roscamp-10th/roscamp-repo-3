@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QPointF
+from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QColor, QPainterPath, QPen
 
 from ui.utils.widgets.map_canvas import MapCanvasWidget, MapTransform
@@ -12,6 +12,10 @@ class PatrolMapOverlay(MapCanvasWidget):
         self.current_waypoint_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
+        self.zone_boundary_pixel_points = []
+        self.selected_zone_boundary_vertex_index = None
+        self.goal_pose_pixel_points = []
+        self.selected_goal_pose_pixel_point = None
         self.status_text = "순찰 맵 미수신"
 
     def render(self, task):
@@ -78,12 +82,68 @@ class PatrolMapOverlay(MapCanvasWidget):
         self.current_waypoint_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
+        self.zone_boundary_pixel_points = []
+        self.selected_zone_boundary_vertex_index = None
+        self.goal_pose_pixel_points = []
+        self.selected_goal_pose_pixel_point = None
         self.clear_map(status_text)
 
     def draw_overlay(self, painter, target):
+        self._draw_zone_boundary(painter, target)
+        self._draw_goal_poses(painter, target)
         self._draw_route(painter, target)
         self._draw_robot(painter, target)
         self._draw_fall_alert(painter, target)
+
+    def _draw_zone_boundary(self, painter, target):
+        points = [
+            point
+            for point in (
+                self.to_view_point(pixel, target)
+                for pixel in self.zone_boundary_pixel_points
+            )
+            if point is not None
+        ]
+        if not points:
+            return
+
+        if len(points) >= 3:
+            path = QPainterPath(points[0])
+            for point in points[1:]:
+                path.lineTo(point)
+            path.closeSubpath()
+            fill_color = QColor("#F97316")
+            fill_color.setAlpha(55)
+            painter.setBrush(fill_color)
+            painter.setPen(QPen(QColor("#EA580C"), 2))
+            painter.drawPath(path)
+        elif len(points) == 2:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor("#EA580C"), 2))
+            painter.drawLine(points[0], points[1])
+
+        for index, point in enumerate(points):
+            selected = index == self.selected_zone_boundary_vertex_index
+            painter.setPen(QPen(QColor("#7C2D12"), 2))
+            painter.setBrush(QColor("#FDBA74" if selected else "#FFEDD5"))
+            painter.drawEllipse(point, 6 if selected else 4, 6 if selected else 4)
+
+    def _draw_goal_poses(self, painter, target):
+        for point in (
+            self.to_view_point(pixel, target) for pixel in self.goal_pose_pixel_points
+        ):
+            if point is None:
+                continue
+            painter.setPen(QPen(QColor("#0F172A"), 2))
+            painter.setBrush(QColor("#22C55E"))
+            painter.drawEllipse(point, 5, 5)
+
+        selected = self.to_view_point(self.selected_goal_pose_pixel_point, target)
+        if selected is None:
+            return
+        painter.setPen(QPen(QColor("#052E16"), 2))
+        painter.setBrush(QColor("#86EFAC"))
+        painter.drawEllipse(selected, 7, 7)
 
     def _draw_route(self, painter, target):
         points = [

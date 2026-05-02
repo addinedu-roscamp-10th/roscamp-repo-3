@@ -103,6 +103,7 @@ def parse_map_yaml_text(yaml_text):
 
 class MapCanvasWidget(QFrame):
     map_clicked = pyqtSignal(object)
+    map_dragged = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -252,6 +253,13 @@ class MapCanvasWidget(QFrame):
             if world_pose is not None:
                 self.map_clicked.emit(world_pose)
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            world_pose = self.view_to_world(event.position())
+            if world_pose is not None:
+                self.map_dragged.emit(world_pose)
+        super().mouseMoveEvent(event)
 
     def paintEvent(self, event):
         super().paintEvent(event)

@@ -59,6 +59,7 @@ class CoordinateConfigLoadWorker(QObject):
             service = self.service_factory()
             bundle = service.get_active_map_bundle(
                 include_disabled=True,
+                include_zone_boundaries=True,
                 include_patrol_paths=True,
             )
             if not _is_ok_response(bundle):
@@ -154,6 +155,26 @@ class OperationZoneSaveWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class OperationZoneBoundarySaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, *, payload, service_factory=CoordinateConfigRemoteService):
+        super().__init__()
+        self.payload = dict(payload or {})
+        self.service_factory = service_factory
+
+    def run(self):
+        try:
+            service = self.service_factory()
+            response = service.update_operation_zone_boundary(**self.payload)
+            if isinstance(response, dict) and response.get("result_code") == "UPDATED":
+                self.finished.emit(True, response)
+                return
+            self.finished.emit(False, _format_result_error(response))
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
 class PatrolAreaPathSaveWorker(QObject):
     finished = pyqtSignal(object, object)
 
@@ -197,7 +218,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.selected_operation_zone = None
         self.selected_operation_zone_index = None
         self.operation_zone_dirty = False
+        self.operation_zone_boundary_dirty = False
+        self.operation_zone_boundary_vertices = []
+        self.selected_operation_zone_boundary_vertex_index = None
         self._syncing_operation_zone_form = False
+        self._syncing_operation_zone_boundary_form = False
         self.selected_goal_pose = None
         self.selected_goal_pose_index = None
         self.goal_pose_dirty = False
@@ -302,6 +327,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.map_canvas.clear_map("좌표 설정 맵 미수신")
         self.map_canvas.setMinimumHeight(280)
         self.map_canvas.map_clicked.connect(self.handle_map_click)
+        self.map_canvas.map_dragged.connect(self.handle_map_drag)
 
         map_layout.addWidget(map_title)
         map_layout.addWidget(self.map_canvas)
@@ -377,6 +403,8 @@ class CoordinateZoneSettingsPage(QWidget):
 
         title = QLabel("Edit Panel")
         title.setObjectName("sectionTitle")
+        self.edit_mode_label = QLabel("선택 모드")
+        self.edit_mode_label.setObjectName("coordinateEditModeLabel")
         self.edit_placeholder_label = QLabel(
             "목록 또는 맵 marker를 선택하면 구역, 목표 좌표, 순찰 waypoint "
             "편집 폼이 여기에 표시됩니다."
@@ -394,6 +422,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(True)
 
         self.edit_panel_layout.addWidget(title)
+        self.edit_panel_layout.addWidget(self.edit_mode_label)
         self.edit_panel_layout.addWidget(self.operation_zone_new_button)
         self.edit_panel_layout.addWidget(self.edit_placeholder_label)
         self.edit_panel_layout.addWidget(self.operation_zone_form)
@@ -439,6 +468,59 @@ class CoordinateZoneSettingsPage(QWidget):
             self.operation_zone_enabled_check,
         ]:
             self._connect_operation_zone_dirty_signal(widget)
+
+        boundary_title = QLabel("boundary vertices")
+        boundary_title.setObjectName("fieldLabel")
+        self.operation_zone_boundary_table = QTableWidget(0, 3)
+        self.operation_zone_boundary_table.setObjectName("operationZoneBoundaryTable")
+        self.operation_zone_boundary_table.setHorizontalHeaderLabels(["#", "x", "y"])
+        self.operation_zone_boundary_table.horizontalHeader().setStretchLastSection(True)
+        self.operation_zone_boundary_table.cellClicked.connect(
+            lambda row, _column: self.select_operation_zone_boundary_vertex(row)
+        )
+        layout.addWidget(boundary_title, len(rows), 0)
+        layout.addWidget(self.operation_zone_boundary_table, len(rows), 1)
+
+        self.operation_zone_boundary_x_spin = self._coordinate_spin(
+            "operationZoneBoundaryXSpin"
+        )
+        self.operation_zone_boundary_y_spin = self._coordinate_spin(
+            "operationZoneBoundaryYSpin"
+        )
+        layout.addWidget(QLabel("vertex x"), len(rows) + 1, 0)
+        layout.addWidget(self.operation_zone_boundary_x_spin, len(rows) + 1, 1)
+        layout.addWidget(QLabel("vertex y"), len(rows) + 2, 0)
+        layout.addWidget(self.operation_zone_boundary_y_spin, len(rows) + 2, 1)
+
+        boundary_button_row = QHBoxLayout()
+        boundary_button_row.setSpacing(8)
+        self.operation_zone_boundary_delete_button = QPushButton("꼭짓점 삭제")
+        self.operation_zone_boundary_delete_button.setObjectName(
+            "operationZoneBoundaryDeleteButton"
+        )
+        self.operation_zone_boundary_clear_button = QPushButton("boundary 초기화")
+        self.operation_zone_boundary_clear_button.setObjectName(
+            "operationZoneBoundaryClearButton"
+        )
+        self.operation_zone_boundary_delete_button.clicked.connect(
+            self.delete_selected_operation_zone_boundary_vertex
+        )
+        self.operation_zone_boundary_clear_button.clicked.connect(
+            self.clear_operation_zone_boundary
+        )
+        boundary_button_row.addWidget(self.operation_zone_boundary_delete_button)
+        boundary_button_row.addWidget(self.operation_zone_boundary_clear_button)
+        layout.addLayout(boundary_button_row, len(rows) + 3, 1)
+
+        for widget in [
+            self.operation_zone_boundary_x_spin,
+            self.operation_zone_boundary_y_spin,
+        ]:
+            widget.valueChanged.connect(
+                lambda _value: (
+                    self._update_selected_operation_zone_boundary_vertex_from_form()
+                )
+            )
 
         return form
 
@@ -758,9 +840,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.operation_zone_form.setHidden(False)
         self.goal_pose_form.setHidden(True)
         self.patrol_area_form.setHidden(True)
+        self.edit_mode_label.setText("구역 boundary 편집 모드")
         self._clear_patrol_overlay()
         self._set_operation_zone_form(operation_zone, mode="edit")
         self.operation_zone_dirty = False
+        self.operation_zone_boundary_dirty = False
         self._sync_operation_zone_save_state()
 
     def start_operation_zone_create(self):
@@ -772,6 +856,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.operation_zone_form.setHidden(False)
         self.goal_pose_form.setHidden(True)
         self.patrol_area_form.setHidden(True)
+        self.edit_mode_label.setText("구역 생성 모드")
         self._clear_patrol_overlay()
         self._set_operation_zone_form(
             {
@@ -783,6 +868,7 @@ class CoordinateZoneSettingsPage(QWidget):
             mode="create",
         )
         self.operation_zone_dirty = False
+        self.operation_zone_boundary_dirty = False
         self.validation_message_label.setText("새 운영 구역을 입력하세요.")
         self._sync_operation_zone_save_state()
 
@@ -800,6 +886,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(False)
         self.patrol_area_form.setHidden(True)
+        self.edit_mode_label.setText("목표 좌표 편집 모드")
         self._clear_patrol_overlay()
         self._set_goal_pose_form(goal_pose)
         self.goal_pose_dirty = False
@@ -819,15 +906,66 @@ class CoordinateZoneSettingsPage(QWidget):
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(True)
         self.patrol_area_form.setHidden(False)
+        self.edit_mode_label.setText("순찰 경로 편집 모드")
         self._set_patrol_area_form(patrol_area)
         self.patrol_area_dirty = False
         self._sync_patrol_area_save_state()
 
     def handle_map_click(self, world_pose):
-        if self.selected_edit_type == "goal_pose":
+        if self.selected_edit_type == "operation_zone":
+            self.handle_map_click_for_operation_zone(world_pose)
+        elif self.selected_edit_type == "goal_pose":
             self.handle_map_click_for_goal_pose(world_pose)
         elif self.selected_edit_type == "patrol_area":
             self.handle_map_click_for_patrol_area(world_pose)
+
+    def handle_map_drag(self, world_pose):
+        if self.selected_edit_type == "operation_zone":
+            self.move_selected_operation_zone_boundary_vertex(world_pose)
+        elif self.selected_edit_type == "goal_pose":
+            self.handle_map_click_for_goal_pose(world_pose)
+        elif self.selected_edit_type == "patrol_area":
+            self.move_selected_patrol_waypoint_to_world(world_pose)
+
+    def handle_map_click_for_operation_zone(self, world_pose):
+        if self.selected_edit_type != "operation_zone" or not isinstance(world_pose, dict):
+            return
+        if self.operation_zone_mode == "create":
+            self.validation_message_label.setText(
+                "새 구역은 먼저 저장한 뒤 boundary를 편집할 수 있습니다."
+            )
+            return
+        try:
+            vertex = {
+                "x": float(world_pose.get("x")),
+                "y": float(world_pose.get("y")),
+            }
+        except (TypeError, ValueError):
+            return
+        if not self.map_canvas.contains_world_pose(vertex):
+            self.validation_message_label.setText(
+                "구역 boundary 꼭짓점이 맵 범위를 벗어나 추가할 수 없습니다."
+            )
+            return
+
+        selected = self._nearest_pose_index(
+            self.operation_zone_boundary_vertices,
+            vertex,
+        )
+        if selected is not None:
+            self.select_operation_zone_boundary_vertex(selected)
+            return
+
+        self.operation_zone_boundary_vertices.append(vertex)
+        self.selected_operation_zone_boundary_vertex_index = (
+            len(self.operation_zone_boundary_vertices) - 1
+        )
+        self._populate_operation_zone_boundary_table()
+        self._set_operation_zone_boundary_vertex_form(
+            self.selected_operation_zone_boundary_vertex_index
+        )
+        self._mark_operation_zone_boundary_dirty()
+        self._sync_operation_zone_overlay()
 
     def handle_map_click_for_goal_pose(self, world_pose):
         if self.selected_edit_type != "goal_pose" or not isinstance(world_pose, dict):
@@ -856,6 +994,11 @@ class CoordinateZoneSettingsPage(QWidget):
             self.validation_message_label.setText(
                 "순찰 waypoint가 맵 범위를 벗어나 추가할 수 없습니다."
             )
+            return
+
+        selected = self._nearest_pose_index(self.patrol_waypoint_rows, pose)
+        if selected is not None:
+            self.select_patrol_waypoint(selected)
             return
 
         self.patrol_waypoint_rows.append(pose)
@@ -897,6 +1040,7 @@ class CoordinateZoneSettingsPage(QWidget):
                     "운영 구역 변경을 취소했습니다."
                 )
             self.operation_zone_dirty = False
+            self.operation_zone_boundary_dirty = False
             self._sync_operation_zone_save_state()
         elif self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
             self._set_goal_pose_form(self.selected_goal_pose)
@@ -911,6 +1055,9 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def save_selected_operation_zone(self):
         if self.operation_zone_save_thread is not None:
+            return
+        if self.operation_zone_boundary_dirty and not self.operation_zone_dirty:
+            self.save_selected_operation_zone_boundary()
             return
         if not self.operation_zone_dirty:
             return
@@ -955,6 +1102,7 @@ class CoordinateZoneSettingsPage(QWidget):
             )
         finally:
             self._syncing_operation_zone_form = False
+        self._set_operation_zone_boundary_form(operation_zone)
 
     def _mark_operation_zone_dirty(self):
         if (
@@ -966,16 +1114,172 @@ class CoordinateZoneSettingsPage(QWidget):
         self.validation_message_label.setText("운영 구역 변경 사항이 저장 전입니다.")
         self._sync_operation_zone_save_state()
 
+    def _set_operation_zone_boundary_form(self, operation_zone):
+        boundary = (
+            operation_zone.get("boundary_json")
+            if isinstance(operation_zone, dict)
+            else None
+        )
+        boundary = boundary if isinstance(boundary, dict) else {}
+        raw_vertices = boundary.get("vertices")
+        if not isinstance(raw_vertices, list):
+            raw_vertices = []
+
+        self.operation_zone_boundary_vertices = [
+            {"x": _float_or_default(vertex.get("x")), "y": _float_or_default(vertex.get("y"))}
+            for vertex in raw_vertices
+            if isinstance(vertex, dict)
+        ]
+        self.selected_operation_zone_boundary_vertex_index = (
+            0 if self.operation_zone_boundary_vertices else None
+        )
+        self._populate_operation_zone_boundary_table()
+        self._set_operation_zone_boundary_vertex_form(
+            self.selected_operation_zone_boundary_vertex_index
+        )
+        self._sync_operation_zone_overlay()
+
+    def _populate_operation_zone_boundary_table(self):
+        self.operation_zone_boundary_table.setRowCount(
+            len(self.operation_zone_boundary_vertices)
+        )
+        for row_index, vertex in enumerate(self.operation_zone_boundary_vertices):
+            row_values = [
+                str(row_index + 1),
+                _waypoint_number_text(vertex.get("x")),
+                _waypoint_number_text(vertex.get("y")),
+            ]
+            for column_index, value in enumerate(row_values):
+                self.operation_zone_boundary_table.setItem(
+                    row_index,
+                    column_index,
+                    QTableWidgetItem(value),
+                )
+
+    def select_operation_zone_boundary_vertex(self, row_index):
+        try:
+            row_index = int(row_index)
+        except (TypeError, ValueError):
+            return
+        if not 0 <= row_index < len(self.operation_zone_boundary_vertices):
+            return
+        self.selected_operation_zone_boundary_vertex_index = row_index
+        self._set_operation_zone_boundary_vertex_form(row_index)
+        self._sync_operation_zone_overlay()
+
+    def _set_operation_zone_boundary_vertex_form(self, row_index):
+        enabled = row_index is not None and 0 <= row_index < len(
+            self.operation_zone_boundary_vertices
+        )
+        self._syncing_operation_zone_boundary_form = True
+        try:
+            self.operation_zone_boundary_x_spin.setEnabled(enabled)
+            self.operation_zone_boundary_y_spin.setEnabled(enabled)
+            self.operation_zone_boundary_delete_button.setEnabled(enabled)
+            self.operation_zone_boundary_clear_button.setEnabled(
+                bool(self.operation_zone_boundary_vertices)
+            )
+            if enabled:
+                vertex = self.operation_zone_boundary_vertices[row_index]
+                self.operation_zone_boundary_x_spin.setValue(
+                    _float_or_default(vertex.get("x"))
+                )
+                self.operation_zone_boundary_y_spin.setValue(
+                    _float_or_default(vertex.get("y"))
+                )
+            else:
+                self.operation_zone_boundary_x_spin.setValue(0.0)
+                self.operation_zone_boundary_y_spin.setValue(0.0)
+        finally:
+            self._syncing_operation_zone_boundary_form = False
+
+    def _update_selected_operation_zone_boundary_vertex_from_form(self):
+        if (
+            self._syncing_operation_zone_boundary_form
+            or self.selected_edit_type != "operation_zone"
+        ):
+            return
+        index = self.selected_operation_zone_boundary_vertex_index
+        if index is None or not 0 <= index < len(self.operation_zone_boundary_vertices):
+            return
+        self.operation_zone_boundary_vertices[index] = {
+            "x": self.operation_zone_boundary_x_spin.value(),
+            "y": self.operation_zone_boundary_y_spin.value(),
+        }
+        self._populate_operation_zone_boundary_table()
+        self._mark_operation_zone_boundary_dirty()
+        self._sync_operation_zone_overlay()
+
+    def delete_selected_operation_zone_boundary_vertex(self):
+        index = self.selected_operation_zone_boundary_vertex_index
+        if index is None or not 0 <= index < len(self.operation_zone_boundary_vertices):
+            return
+        del self.operation_zone_boundary_vertices[index]
+        if self.operation_zone_boundary_vertices:
+            self.selected_operation_zone_boundary_vertex_index = min(
+                index,
+                len(self.operation_zone_boundary_vertices) - 1,
+            )
+        else:
+            self.selected_operation_zone_boundary_vertex_index = None
+        self._populate_operation_zone_boundary_table()
+        self._set_operation_zone_boundary_vertex_form(
+            self.selected_operation_zone_boundary_vertex_index
+        )
+        self._mark_operation_zone_boundary_dirty()
+        self._sync_operation_zone_overlay()
+
+    def clear_operation_zone_boundary(self):
+        if not self.operation_zone_boundary_vertices:
+            return
+        self.operation_zone_boundary_vertices = []
+        self.selected_operation_zone_boundary_vertex_index = None
+        self._populate_operation_zone_boundary_table()
+        self._set_operation_zone_boundary_vertex_form(None)
+        self._mark_operation_zone_boundary_dirty()
+        self._sync_operation_zone_overlay()
+
+    def move_selected_operation_zone_boundary_vertex(self, world_pose):
+        if self.selected_edit_type != "operation_zone" or not isinstance(world_pose, dict):
+            return
+        index = self.selected_operation_zone_boundary_vertex_index
+        if index is None or not 0 <= index < len(self.operation_zone_boundary_vertices):
+            return
+        try:
+            vertex = {
+                "x": float(world_pose.get("x")),
+                "y": float(world_pose.get("y")),
+            }
+        except (TypeError, ValueError):
+            return
+        if not self.map_canvas.contains_world_pose(vertex):
+            return
+        self.operation_zone_boundary_vertices[index] = vertex
+        self._populate_operation_zone_boundary_table()
+        self._set_operation_zone_boundary_vertex_form(index)
+        self._mark_operation_zone_boundary_dirty()
+        self._sync_operation_zone_overlay()
+
+    def _mark_operation_zone_boundary_dirty(self):
+        if self.selected_edit_type != "operation_zone":
+            return
+        self.operation_zone_boundary_dirty = True
+        self.validation_message_label.setText(
+            "운영 구역 boundary 변경 사항이 저장 전입니다."
+        )
+        self._sync_operation_zone_save_state()
+
     def _sync_operation_zone_save_state(self):
         can_save = (
             self.selected_edit_type == "operation_zone"
-            and self.operation_zone_dirty
+            and (self.operation_zone_dirty or self.operation_zone_boundary_dirty)
             and self.map_canvas.map_loaded
             and self.operation_zone_save_thread is None
         )
         self.save_button.setEnabled(can_save)
         self.discard_button.setEnabled(
-            self.selected_edit_type == "operation_zone" and self.operation_zone_dirty
+            self.selected_edit_type == "operation_zone"
+            and (self.operation_zone_dirty or self.operation_zone_boundary_dirty)
         )
 
     def _build_operation_zone_save_payload(self):
@@ -1004,6 +1308,64 @@ class CoordinateZoneSettingsPage(QWidget):
             "is_enabled": is_enabled,
         }
 
+    def save_selected_operation_zone_boundary(self):
+        if self.operation_zone_save_thread is not None:
+            return
+        if (
+            not self.operation_zone_boundary_dirty
+            or not self.selected_operation_zone
+            or self.operation_zone_mode == "create"
+        ):
+            return
+
+        if 0 < len(self.operation_zone_boundary_vertices) < 3:
+            self.validation_message_label.setText(
+                "구역 boundary는 최소 3개 꼭짓점이 필요합니다."
+            )
+            return
+
+        for vertex in self.operation_zone_boundary_vertices:
+            if not self.map_canvas.contains_world_pose(vertex):
+                self.validation_message_label.setText(
+                    "구역 boundary 꼭짓점이 맵 범위를 벗어나 저장할 수 없습니다."
+                )
+                return
+
+        payload = self._build_operation_zone_boundary_save_payload()
+        self.save_button.setEnabled(False)
+        self.discard_button.setEnabled(False)
+        self.validation_message_label.setText("운영 구역 boundary를 저장하는 중입니다.")
+        self.operation_zone_save_thread, self.operation_zone_save_worker = (
+            start_worker_thread(
+                self,
+                worker=OperationZoneBoundarySaveWorker(payload=payload),
+                finished_handler=self._handle_operation_zone_boundary_save_finished,
+                clear_handler=self._clear_operation_zone_save_thread,
+            )
+        )
+
+    def _build_operation_zone_boundary_save_payload(self):
+        return {
+            "zone_id": self.selected_operation_zone.get("zone_id"),
+            "expected_revision": int(self.selected_operation_zone.get("revision") or 0),
+            "boundary_json": self._current_operation_zone_boundary_json(),
+        }
+
+    def _current_operation_zone_boundary_json(self):
+        if not self.operation_zone_boundary_vertices:
+            return None
+        return {
+            "type": "POLYGON",
+            "header": {"frame_id": self._active_map_frame_id()},
+            "vertices": [
+                {
+                    "x": _float_or_default(vertex.get("x")),
+                    "y": _float_or_default(vertex.get("y")),
+                }
+                for vertex in self.operation_zone_boundary_vertices
+            ],
+        }
+
     def _handle_operation_zone_save_finished(self, ok, response):
         if not ok:
             self.validation_message_label.setText(str(response))
@@ -1019,13 +1381,44 @@ class CoordinateZoneSettingsPage(QWidget):
             self._sync_operation_zone_save_state()
             return
 
+        boundary_dirty = self.operation_zone_boundary_dirty
+        if boundary_dirty:
+            operation_zone = {
+                **operation_zone,
+                "boundary_json": self._current_operation_zone_boundary_json(),
+            }
         self._replace_operation_zone_row(operation_zone)
         self.selected_operation_zone = dict(operation_zone)
         self.operation_zone_mode = "edit"
         self._set_operation_zone_form(operation_zone, mode="edit")
         self.operation_zone_dirty = False
+        self.operation_zone_boundary_dirty = boundary_dirty
         self.validation_message_label.setText("운영 구역을 저장했습니다.")
         self._populate_goal_pose_form_options()
+        self._sync_operation_zone_save_state()
+
+    def _handle_operation_zone_boundary_save_finished(self, ok, response):
+        if not ok:
+            self.validation_message_label.setText(str(response))
+            self.operation_zone_boundary_dirty = True
+            self._sync_operation_zone_save_state()
+            return
+
+        response = response if isinstance(response, dict) else {}
+        operation_zone = response.get("operation_zone")
+        if not isinstance(operation_zone, dict):
+            self.validation_message_label.setText(
+                "운영 구역 boundary 저장 결과가 비어 있습니다."
+            )
+            self.operation_zone_boundary_dirty = True
+            self._sync_operation_zone_save_state()
+            return
+
+        self._replace_operation_zone_row(operation_zone)
+        self.selected_operation_zone = dict(operation_zone)
+        self._set_operation_zone_form(operation_zone, mode="edit")
+        self.operation_zone_boundary_dirty = False
+        self.validation_message_label.setText("운영 구역 boundary를 저장했습니다.")
         self._sync_operation_zone_save_state()
 
     def _replace_operation_zone_row(self, operation_zone):
@@ -1209,6 +1602,28 @@ class CoordinateZoneSettingsPage(QWidget):
         self._mark_patrol_area_dirty()
         self._sync_patrol_overlay()
 
+    def move_selected_patrol_waypoint_to_world(self, world_pose):
+        if self.selected_edit_type != "patrol_area" or not isinstance(world_pose, dict):
+            return
+        index = self.selected_patrol_waypoint_index
+        if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
+            return
+        try:
+            pose = {
+                "x": float(world_pose.get("x")),
+                "y": float(world_pose.get("y")),
+                "yaw": _float_or_default(self.patrol_waypoint_rows[index].get("yaw")),
+            }
+        except (TypeError, ValueError):
+            return
+        if not self.map_canvas.contains_world_pose(pose):
+            return
+        self.patrol_waypoint_rows[index] = pose
+        self._populate_patrol_waypoint_table()
+        self._set_patrol_waypoint_form(index)
+        self._mark_patrol_area_dirty()
+        self._sync_patrol_overlay()
+
     def _sync_patrol_waypoint_buttons(self):
         index = self.selected_patrol_waypoint_index
         has_selection = index is not None and 0 <= index < len(self.patrol_waypoint_rows)
@@ -1305,7 +1720,56 @@ class CoordinateZoneSettingsPage(QWidget):
         map_profile = self.current_bundle.get("map_profile") or {}
         return str(map_profile.get("frame_id") or "map").strip()
 
+    def _sync_operation_zone_overlay(self):
+        self.map_canvas.zone_boundary_pixel_points = [
+            pixel
+            for pixel in (
+                self.map_canvas.world_to_pixel(vertex)
+                for vertex in self.operation_zone_boundary_vertices
+            )
+            if pixel is not None
+        ]
+        self.map_canvas.selected_zone_boundary_vertex_index = (
+            self.selected_operation_zone_boundary_vertex_index
+        )
+        self.map_canvas.route_pixel_points = []
+        self.map_canvas.current_waypoint_index = None
+        self.map_canvas.goal_pose_pixel_points = []
+        self.map_canvas.selected_goal_pose_pixel_point = None
+        self.map_canvas.robot_pixel_point = None
+        self.map_canvas.fall_alert_pixel_point = None
+        self.map_canvas.update()
+
+    def _sync_goal_pose_overlay(self):
+        self.map_canvas.goal_pose_pixel_points = [
+            pixel
+            for pixel in (
+                self.map_canvas.world_to_pixel(
+                    {"x": row.get("pose_x"), "y": row.get("pose_y")}
+                )
+                for row in self.goal_pose_rows
+            )
+            if pixel is not None
+        ]
+        self.map_canvas.selected_goal_pose_pixel_point = self.map_canvas.world_to_pixel(
+            {
+                "x": self.goal_pose_x_spin.value(),
+                "y": self.goal_pose_y_spin.value(),
+            }
+        )
+        self.map_canvas.zone_boundary_pixel_points = []
+        self.map_canvas.selected_zone_boundary_vertex_index = None
+        self.map_canvas.route_pixel_points = []
+        self.map_canvas.current_waypoint_index = None
+        self.map_canvas.robot_pixel_point = None
+        self.map_canvas.fall_alert_pixel_point = None
+        self.map_canvas.update()
+
     def _sync_patrol_overlay(self):
+        self.map_canvas.zone_boundary_pixel_points = []
+        self.map_canvas.selected_zone_boundary_vertex_index = None
+        self.map_canvas.goal_pose_pixel_points = []
+        self.map_canvas.selected_goal_pose_pixel_point = None
         self.map_canvas.route_pixel_points = [
             pixel
             for pixel in (
@@ -1324,7 +1788,33 @@ class CoordinateZoneSettingsPage(QWidget):
         self.map_canvas.current_waypoint_index = None
         self.map_canvas.robot_pixel_point = None
         self.map_canvas.fall_alert_pixel_point = None
+        self.map_canvas.zone_boundary_pixel_points = []
+        self.map_canvas.selected_zone_boundary_vertex_index = None
+        self.map_canvas.goal_pose_pixel_points = []
+        self.map_canvas.selected_goal_pose_pixel_point = None
         self.map_canvas.update()
+
+    def _nearest_pose_index(self, poses, world_pose, *, threshold_world=0.08):
+        if not isinstance(world_pose, dict):
+            return None
+        try:
+            target_x = float(world_pose.get("x"))
+            target_y = float(world_pose.get("y"))
+        except (TypeError, ValueError):
+            return None
+        best_index = None
+        best_distance = float(threshold_world)
+        for index, pose in enumerate(poses or []):
+            try:
+                pose_x = float(pose.get("x"))
+                pose_y = float(pose.get("y"))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            distance = ((pose_x - target_x) ** 2 + (pose_y - target_y) ** 2) ** 0.5
+            if distance <= best_distance:
+                best_index = index
+                best_distance = distance
+        return best_index
 
     def save_selected_goal_pose(self):
         if self.goal_pose_save_thread is not None:
@@ -1373,6 +1863,7 @@ class CoordinateZoneSettingsPage(QWidget):
             self.goal_pose_enabled_check.setChecked(bool(goal_pose.get("is_enabled")))
         finally:
             self._syncing_goal_pose_form = False
+        self._sync_goal_pose_overlay()
 
     def _populate_goal_pose_form_options(self):
         current_zone_id = self.goal_pose_zone_combo.currentData()
@@ -1393,6 +1884,7 @@ class CoordinateZoneSettingsPage(QWidget):
             return
         self.goal_pose_dirty = True
         self.validation_message_label.setText("목표 좌표 변경 사항이 저장 전입니다.")
+        self._sync_goal_pose_overlay()
         self._sync_goal_pose_save_state()
 
     def _sync_goal_pose_save_state(self):
@@ -1701,6 +2193,7 @@ __all__ = [
     "CoordinateConfigLoadWorker",
     "CoordinateZoneSettingsPage",
     "GoalPoseSaveWorker",
+    "OperationZoneBoundarySaveWorker",
     "OperationZoneSaveWorker",
     "PatrolAreaPathSaveWorker",
 ]

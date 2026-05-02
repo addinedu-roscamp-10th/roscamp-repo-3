@@ -47,6 +47,17 @@ def _sample_bundle():
                 "zone_name": "301호",
                 "zone_type": "ROOM",
                 "revision": 1,
+                "boundary_json": {
+                    "type": "POLYGON",
+                    "header": {"frame_id": "map"},
+                    "vertices": [
+                        {"x": 0.0, "y": 0.0},
+                        {"x": 1.0, "y": 0.0},
+                        {"x": 1.0, "y": 1.0},
+                    ],
+                },
+                "boundary_vertex_count": 3,
+                "boundary_frame_id": "map",
                 "is_enabled": True,
             }
         ],
@@ -122,6 +133,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         new_zone_button = page.findChild(QPushButton, "operationZoneNewButton")
         assert new_zone_button.text() == "새 구역"
         assert new_zone_button.parent() is not page.operation_zone_form
+        assert page.findChild(QLabel, "coordinateEditModeLabel") is not None
 
         map_canvas = page.findChild(MapCanvasWidget, "coordinateZoneMapCanvas")
         assert map_canvas is not None
@@ -131,6 +143,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert page.findChild(QTableWidget, "operationZoneTable") is not None
         assert page.findChild(QTableWidget, "goalPoseTable") is not None
         assert page.findChild(QTableWidget, "patrolAreaTable") is not None
+        assert page.findChild(QTableWidget, "operationZoneBoundaryTable") is not None
 
         labels = _label_texts(page)
         assert "Active Map" in labels
@@ -152,11 +165,18 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
     pgm_bytes = b"P5\n2 1\n255\n\x00\xff"
 
     class FakeCoordinateService:
-        def get_active_map_bundle(self, *, include_disabled, include_patrol_paths):
+        def get_active_map_bundle(
+            self,
+            *,
+            include_disabled,
+            include_zone_boundaries,
+            include_patrol_paths,
+        ):
             calls.append(
                 (
                     "get_active_map_bundle",
                     include_disabled,
+                    include_zone_boundaries,
                     include_patrol_paths,
                 )
             )
@@ -185,7 +205,7 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
     worker.run()
 
     assert calls == [
-        ("get_active_map_bundle", True, True),
+        ("get_active_map_bundle", True, True, True),
         ("get_map_asset", "YAML", "map_test", "TEXT"),
         ("get_map_asset", "PGM", "map_test", "BASE64"),
     ]
@@ -262,6 +282,13 @@ def test_coordinate_zone_settings_page_selects_operation_zone_into_edit_form():
             == "ROOM"
         )
         assert page.findChild(QCheckBox, "operationZoneEnabledCheck").isChecked() is True
+        boundary_table = page.findChild(QTableWidget, "operationZoneBoundaryTable")
+        assert boundary_table.rowCount() == 3
+        assert boundary_table.item(2, 2).text() == "1.0000"
+        assert len(page.map_canvas.zone_boundary_pixel_points) == 3
+        assert page.findChild(QLabel, "coordinateEditModeLabel").text() == (
+            "구역 boundary 편집 모드"
+        )
         assert page.save_button.isEnabled() is False
     finally:
         page.close()
@@ -307,6 +334,48 @@ def test_coordinate_zone_settings_page_operation_zone_dirty_create_and_discard()
         assert zone_id_input.text() == ""
         assert zone_name_input.text() == ""
         assert page.operation_zone_dirty is False
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_operation_zone_boundary_click_drag_and_discard():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+
+        page.handle_map_click_for_operation_zone({"x": 0.5, "y": 1.5})
+
+        boundary_table = page.findChild(QTableWidget, "operationZoneBoundaryTable")
+        assert boundary_table.rowCount() == 4
+        assert boundary_table.item(3, 1).text() == "0.5000"
+        assert page.selected_operation_zone_boundary_vertex_index == 3
+        assert page.operation_zone_boundary_dirty is True
+        assert page.save_button.isEnabled() is True
+
+        page.move_selected_operation_zone_boundary_vertex({"x": 0.25, "y": 1.25})
+
+        assert boundary_table.item(3, 1).text() == "0.2500"
+        assert boundary_table.item(3, 2).text() == "1.2500"
+        assert page.operation_zone_boundary_vertices[3] == {"x": 0.25, "y": 1.25}
+
+        page.discard_current_edit()
+
+        assert boundary_table.rowCount() == 3
+        assert page.operation_zone_boundary_dirty is False
         assert page.save_button.isEnabled() is False
     finally:
         page.close()
@@ -382,6 +451,52 @@ def test_operation_zone_save_worker_sends_if_loc_002_and_003_payloads():
     assert emitted[1][1]["operation_zone"]["revision"] == 2
 
 
+def test_operation_zone_boundary_save_worker_sends_if_loc_007_payload():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        OperationZoneBoundarySaveWorker,
+    )
+
+    calls = []
+
+    class FakeCoordinateService:
+        def update_operation_zone_boundary(self, **payload):
+            calls.append(payload)
+            return {
+                "result_code": "UPDATED",
+                "operation_zone": {
+                    "zone_id": payload["zone_id"],
+                    "revision": payload["expected_revision"] + 1,
+                    "boundary_json": payload["boundary_json"],
+                },
+            }
+
+    payload = {
+        "zone_id": "room_301",
+        "expected_revision": 1,
+        "boundary_json": {
+            "type": "POLYGON",
+            "header": {"frame_id": "map"},
+            "vertices": [
+                {"x": 0.0, "y": 0.0},
+                {"x": 1.0, "y": 0.0},
+                {"x": 1.0, "y": 1.0},
+            ],
+        },
+    }
+    emitted = []
+    worker = OperationZoneBoundarySaveWorker(
+        payload=payload,
+        service_factory=FakeCoordinateService,
+    )
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["operation_zone"]["revision"] == 2
+
+
 def test_coordinate_zone_settings_page_applies_operation_zone_save_success():
     _app()
 
@@ -440,6 +555,59 @@ def test_coordinate_zone_settings_page_applies_operation_zone_save_success():
         assert page.findChild(QComboBox, "goalPoseZoneCombo").findData(
             "caregiver_room"
         ) >= 0
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_applies_operation_zone_boundary_save_success():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        page.handle_map_click_for_operation_zone({"x": 0.5, "y": 1.5})
+
+        page._handle_operation_zone_boundary_save_finished(
+            True,
+            {
+                "result_code": "UPDATED",
+                "operation_zone": {
+                    "zone_id": "room_301",
+                    "zone_name": "301호",
+                    "zone_type": "ROOM",
+                    "revision": 2,
+                    "boundary_json": {
+                        "type": "POLYGON",
+                        "header": {"frame_id": "map"},
+                        "vertices": [
+                            {"x": 0.0, "y": 0.0},
+                            {"x": 1.0, "y": 0.0},
+                            {"x": 1.0, "y": 1.0},
+                            {"x": 0.5, "y": 1.5},
+                        ],
+                    },
+                    "boundary_vertex_count": 4,
+                    "boundary_frame_id": "map",
+                    "is_enabled": True,
+                },
+            },
+        )
+
+        assert page.selected_operation_zone["revision"] == 2
+        assert page.operation_zone_boundary_dirty is False
+        assert page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 4
+        assert page.validation_message_label.text() == "운영 구역 boundary를 저장했습니다."
     finally:
         page.close()
 
@@ -743,6 +911,40 @@ def test_coordinate_zone_settings_page_patrol_path_map_click_edit_and_discard():
         assert waypoint_table.rowCount() == 2
         assert page.patrol_area_dirty is False
         assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_patrol_waypoint_click_selects_and_drag_moves():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+
+        page.handle_map_click_for_patrol_area({"x": 0.0, "y": 0.2})
+
+        waypoint_table = page.findChild(QTableWidget, "patrolWaypointTable")
+        assert waypoint_table.rowCount() == 2
+        assert page.selected_patrol_waypoint_index == 0
+
+        page.move_selected_patrol_waypoint_to_world({"x": 0.4, "y": 0.6})
+
+        assert waypoint_table.item(0, 1).text() == "0.4000"
+        assert waypoint_table.item(0, 2).text() == "0.6000"
+        assert page.patrol_waypoint_rows[0]["yaw"] == 0.0
+        assert page.patrol_area_dirty is True
     finally:
         page.close()
 

@@ -164,6 +164,7 @@ def test_coordinate_config_remote_service_exposes_active_map_bundle_rpc(monkeypa
 
     response = CoordinateConfigRemoteService().get_active_map_bundle(
         include_disabled=False,
+        include_zone_boundaries=False,
         include_patrol_paths=False,
     )
 
@@ -174,6 +175,7 @@ def test_coordinate_config_remote_service_exposes_active_map_bundle_rpc(monkeypa
             "get_active_map_bundle",
             {
                 "include_disabled": False,
+                "include_zone_boundaries": False,
                 "include_patrol_paths": False,
             },
         )
@@ -205,6 +207,20 @@ def test_coordinate_config_remote_service_exposes_operation_zone_mutation_rpcs(
         zone_type="STAFF_STATION",
         is_enabled=False,
     )
+    boundary_json = {
+        "type": "POLYGON",
+        "header": {"frame_id": "map"},
+        "vertices": [
+            {"x": 0.0, "y": 0.0},
+            {"x": 1.0, "y": 0.0},
+            {"x": 1.0, "y": 1.0},
+        ],
+    }
+    service.update_operation_zone_boundary(
+        zone_id="caregiver_room",
+        expected_revision=2,
+        boundary_json=boundary_json,
+    )
 
     assert calls == [
         (
@@ -227,6 +243,15 @@ def test_coordinate_config_remote_service_exposes_operation_zone_mutation_rpcs(
                 "zone_name": "보호사실",
                 "zone_type": "STAFF_STATION",
                 "is_enabled": False,
+            },
+        ),
+        (
+            "coordinate_config",
+            "update_operation_zone_boundary",
+            {
+                "zone_id": "caregiver_room",
+                "expected_revision": 2,
+                "boundary_json": boundary_json,
             },
         ),
     ]
