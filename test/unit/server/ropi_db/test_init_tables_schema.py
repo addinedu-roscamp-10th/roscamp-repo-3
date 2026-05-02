@@ -126,6 +126,23 @@ def test_operation_zone_does_not_store_patrol_robot_hint():
     assert "`default_robot_id`" not in seed_sql
 
 
+def test_operation_zone_supports_optional_boundary_polygon():
+    ddl = _ddl()
+    seed_sql = _seed_sql()
+
+    operation_zone_section = ddl.split("CREATE TABLE `operation_zone`", 1)[1].split(
+        "CREATE TABLE `patrol_area`",
+        1,
+    )[0]
+
+    assert "`boundary_json` JSON NULL" in operation_zone_section
+    assert "`boundary_json`" in seed_sql
+    assert '"type":"POLYGON"' in seed_sql
+    assert '"vertices"' in seed_sql
+    assert '"frame_id":"map"' in seed_sql
+    assert "`path_json`" not in operation_zone_section
+
+
 def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
     seed_sql = _seed_sql()
 

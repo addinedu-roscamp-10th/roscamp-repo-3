@@ -166,6 +166,7 @@ CREATE TABLE `operation_zone` (
     `zone_name` VARCHAR(100) NOT NULL,
     `zone_type` VARCHAR(50) NOT NULL,
     `revision` INT UNSIGNED NOT NULL DEFAULT 1,
+    `boundary_json` JSON NULL,
     `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
     `created_at` DATETIME NOT NULL,
     `updated_at` DATETIME NOT NULL,

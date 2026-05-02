@@ -164,15 +164,27 @@ VALUES
 -- operation_zone
 -- =========================
 INSERT INTO `operation_zone`
-(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `is_enabled`,
- `created_at`, `updated_at`)
+(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `boundary_json`,
+ `is_enabled`, `created_at`, `updated_at`)
 VALUES
-('room_301', 'map_test11_0423', '301호', 'ROOM', 1, TRUE, NOW(), NOW()),
-('room_302', 'map_test11_0423', '302호', 'ROOM', 1, TRUE, NOW(), NOW()),
-('room_305', 'map_test11_0423', '305호', 'ROOM', 1, TRUE, NOW(), NOW()),
-('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1, TRUE, NOW(), NOW()),
-('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1, TRUE, NOW(), NOW()),
-('dock', 'map_test11_0423', '충전소', 'DOCK', 1, TRUE, NOW(), NOW());
+('room_301', 'map_test11_0423', '301호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":1.2,"y":-0.4},{"x":2.2,"y":-0.4},{"x":2.2,"y":0.5},{"x":1.2,"y":0.5}]}',
+ TRUE, NOW(), NOW()),
+('room_302', 'map_test11_0423', '302호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":2.6,"y":0.6},{"x":3.4,"y":0.6},{"x":3.4,"y":1.4},{"x":2.6,"y":1.4}]}',
+ TRUE, NOW(), NOW()),
+('room_305', 'map_test11_0423', '305호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":3.5},{"x":1.5,"y":3.5},{"x":1.5,"y":4.5},{"x":0.5,"y":4.5}]}',
+ TRUE, NOW(), NOW()),
+('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":-0.7,"y":0.8},{"x":0.3,"y":0.8},{"x":0.3,"y":1.6},{"x":-0.7,"y":1.6}]}',
+ TRUE, NOW(), NOW()),
+('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":-0.3,"y":-0.9},{"x":0.6,"y":-0.9},{"x":0.6,"y":-0.1},{"x":-0.3,"y":-0.1}]}',
+ TRUE, NOW(), NOW()),
+('dock', 'map_test11_0423', '충전소', 'DOCK', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":-0.1},{"x":1.2,"y":-0.1},{"x":1.2,"y":0.6},{"x":0.5,"y":0.6}]}',
+ TRUE, NOW(), NOW());
 
 -- =========================
 -- patrol_area
