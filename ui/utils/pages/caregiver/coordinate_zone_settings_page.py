@@ -16,6 +16,14 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
+from ui.utils.pages.caregiver.coordinate_pose_editing import (
+    coerce_point2d,
+    coerce_pose2d,
+    delete_index,
+    move_index,
+    nearest_pose_index,
+    replace_index,
+)
 from ui.utils.pages.caregiver.coordinate_zone_settings_workers import (
     CoordinateConfigLoadWorker,
     GoalPoseSaveWorker,
@@ -791,12 +799,8 @@ class CoordinateZoneSettingsPage(QWidget):
                 "새 구역은 먼저 저장한 뒤 boundary를 편집할 수 있습니다."
             )
             return
-        try:
-            vertex = {
-                "x": float(world_pose.get("x")),
-                "y": float(world_pose.get("y")),
-            }
-        except (TypeError, ValueError):
+        vertex = coerce_point2d(world_pose)
+        if vertex is None:
             return
         if not self.map_canvas.contains_world_pose(vertex):
             self.validation_message_label.setText(
@@ -804,7 +808,7 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             return
 
-        selected = self._nearest_pose_index(
+        selected = nearest_pose_index(
             self.operation_zone_boundary_vertices,
             vertex,
         )
@@ -826,25 +830,18 @@ class CoordinateZoneSettingsPage(QWidget):
     def handle_map_click_for_goal_pose(self, world_pose):
         if self.selected_edit_type != "goal_pose" or not isinstance(world_pose, dict):
             return
-        try:
-            x = float(world_pose.get("x"))
-            y = float(world_pose.get("y"))
-        except (TypeError, ValueError):
+        point = coerce_point2d(world_pose)
+        if point is None:
             return
-        self.goal_pose_x_spin.setValue(x)
-        self.goal_pose_y_spin.setValue(y)
+        self.goal_pose_x_spin.setValue(point["x"])
+        self.goal_pose_y_spin.setValue(point["y"])
         self._mark_goal_pose_dirty()
 
     def handle_map_click_for_patrol_area(self, world_pose):
         if self.selected_edit_type != "patrol_area" or not isinstance(world_pose, dict):
             return
-        try:
-            pose = {
-                "x": float(world_pose.get("x")),
-                "y": float(world_pose.get("y")),
-                "yaw": 0.0,
-            }
-        except (TypeError, ValueError):
+        pose = coerce_pose2d(world_pose)
+        if pose is None:
             return
         if not self.map_canvas.contains_world_pose(pose):
             self.validation_message_label.setText(
@@ -852,7 +849,7 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             return
 
-        selected = self._nearest_pose_index(self.patrol_waypoint_rows, pose)
+        selected = nearest_pose_index(self.patrol_waypoint_rows, pose)
         if selected is not None:
             self.select_patrol_waypoint(selected)
             return
@@ -1058,26 +1055,30 @@ class CoordinateZoneSettingsPage(QWidget):
         index = self.selected_operation_zone_boundary_vertex_index
         if index is None or not 0 <= index < len(self.operation_zone_boundary_vertices):
             return
-        self.operation_zone_boundary_vertices[index] = {
-            "x": self.operation_zone_boundary_x_spin.value(),
-            "y": self.operation_zone_boundary_y_spin.value(),
-        }
+        next_vertices = replace_index(
+            self.operation_zone_boundary_vertices,
+            index,
+            {
+                "x": self.operation_zone_boundary_x_spin.value(),
+                "y": self.operation_zone_boundary_y_spin.value(),
+            },
+        )
+        if next_vertices is None:
+            return
+        self.operation_zone_boundary_vertices = next_vertices
         self._populate_operation_zone_boundary_table()
         self._mark_operation_zone_boundary_dirty()
         self._sync_operation_zone_overlay()
 
     def delete_selected_operation_zone_boundary_vertex(self):
         index = self.selected_operation_zone_boundary_vertex_index
-        if index is None or not 0 <= index < len(self.operation_zone_boundary_vertices):
+        deleted = delete_index(self.operation_zone_boundary_vertices, index)
+        if deleted is None:
             return
-        del self.operation_zone_boundary_vertices[index]
-        if self.operation_zone_boundary_vertices:
-            self.selected_operation_zone_boundary_vertex_index = min(
-                index,
-                len(self.operation_zone_boundary_vertices) - 1,
-            )
-        else:
-            self.selected_operation_zone_boundary_vertex_index = None
+        (
+            self.operation_zone_boundary_vertices,
+            self.selected_operation_zone_boundary_vertex_index,
+        ) = deleted
         self._populate_operation_zone_boundary_table()
         self._set_operation_zone_boundary_vertex_form(
             self.selected_operation_zone_boundary_vertex_index
@@ -1101,16 +1102,19 @@ class CoordinateZoneSettingsPage(QWidget):
         index = self.selected_operation_zone_boundary_vertex_index
         if index is None or not 0 <= index < len(self.operation_zone_boundary_vertices):
             return
-        try:
-            vertex = {
-                "x": float(world_pose.get("x")),
-                "y": float(world_pose.get("y")),
-            }
-        except (TypeError, ValueError):
+        vertex = coerce_point2d(world_pose)
+        if vertex is None:
             return
         if not self.map_canvas.contains_world_pose(vertex):
             return
-        self.operation_zone_boundary_vertices[index] = vertex
+        next_vertices = replace_index(
+            self.operation_zone_boundary_vertices,
+            index,
+            vertex,
+        )
+        if next_vertices is None:
+            return
+        self.operation_zone_boundary_vertices = next_vertices
         self._populate_operation_zone_boundary_table()
         self._set_operation_zone_boundary_vertex_form(index)
         self._mark_operation_zone_boundary_dirty()
@@ -1420,28 +1424,28 @@ class CoordinateZoneSettingsPage(QWidget):
         if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
             return
 
-        self.patrol_waypoint_rows[index] = {
-            "x": self.patrol_waypoint_x_spin.value(),
-            "y": self.patrol_waypoint_y_spin.value(),
-            "yaw": self.patrol_waypoint_yaw_spin.value(),
-        }
+        next_waypoints = replace_index(
+            self.patrol_waypoint_rows,
+            index,
+            {
+                "x": self.patrol_waypoint_x_spin.value(),
+                "y": self.patrol_waypoint_y_spin.value(),
+                "yaw": self.patrol_waypoint_yaw_spin.value(),
+            },
+        )
+        if next_waypoints is None:
+            return
+        self.patrol_waypoint_rows = next_waypoints
         self._populate_patrol_waypoint_table()
         self._mark_patrol_area_dirty()
         self._sync_patrol_overlay()
 
     def delete_selected_patrol_waypoint(self):
         index = self.selected_patrol_waypoint_index
-        if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
+        deleted = delete_index(self.patrol_waypoint_rows, index)
+        if deleted is None:
             return
-
-        del self.patrol_waypoint_rows[index]
-        if self.patrol_waypoint_rows:
-            self.selected_patrol_waypoint_index = min(
-                index,
-                len(self.patrol_waypoint_rows) - 1,
-            )
-        else:
-            self.selected_patrol_waypoint_index = None
+        self.patrol_waypoint_rows, self.selected_patrol_waypoint_index = deleted
         self._populate_patrol_waypoint_table()
         self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
         self._mark_patrol_area_dirty()
@@ -1449,19 +1453,12 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def move_selected_patrol_waypoint(self, offset):
         index = self.selected_patrol_waypoint_index
-        if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
+        moved = move_index(self.patrol_waypoint_rows, index, offset)
+        if moved is None:
             return
-        next_index = index + int(offset)
-        if not 0 <= next_index < len(self.patrol_waypoint_rows):
-            return
-
-        self.patrol_waypoint_rows[index], self.patrol_waypoint_rows[next_index] = (
-            self.patrol_waypoint_rows[next_index],
-            self.patrol_waypoint_rows[index],
-        )
-        self.selected_patrol_waypoint_index = next_index
+        self.patrol_waypoint_rows, self.selected_patrol_waypoint_index = moved
         self._populate_patrol_waypoint_table()
-        self._set_patrol_waypoint_form(next_index)
+        self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
         self._mark_patrol_area_dirty()
         self._sync_patrol_overlay()
 
@@ -1471,17 +1468,18 @@ class CoordinateZoneSettingsPage(QWidget):
         index = self.selected_patrol_waypoint_index
         if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
             return
-        try:
-            pose = {
-                "x": float(world_pose.get("x")),
-                "y": float(world_pose.get("y")),
-                "yaw": _float_or_default(self.patrol_waypoint_rows[index].get("yaw")),
-            }
-        except (TypeError, ValueError):
+        pose = coerce_pose2d(
+            world_pose,
+            default_yaw=_float_or_default(self.patrol_waypoint_rows[index].get("yaw")),
+        )
+        if pose is None:
             return
         if not self.map_canvas.contains_world_pose(pose):
             return
-        self.patrol_waypoint_rows[index] = pose
+        next_waypoints = replace_index(self.patrol_waypoint_rows, index, pose)
+        if next_waypoints is None:
+            return
+        self.patrol_waypoint_rows = next_waypoints
         self._populate_patrol_waypoint_table()
         self._set_patrol_waypoint_form(index)
         self._mark_patrol_area_dirty()
@@ -1634,28 +1632,6 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def _clear_patrol_overlay(self):
         self.map_canvas.clear_configuration_overlay()
-
-    def _nearest_pose_index(self, poses, world_pose, *, threshold_world=0.08):
-        if not isinstance(world_pose, dict):
-            return None
-        try:
-            target_x = float(world_pose.get("x"))
-            target_y = float(world_pose.get("y"))
-        except (TypeError, ValueError):
-            return None
-        best_index = None
-        best_distance = float(threshold_world)
-        for index, pose in enumerate(poses or []):
-            try:
-                pose_x = float(pose.get("x"))
-                pose_y = float(pose.get("y"))
-            except (AttributeError, TypeError, ValueError):
-                continue
-            distance = ((pose_x - target_x) ** 2 + (pose_y - target_y) ** 2) ** 0.5
-            if distance <= best_distance:
-                best_index = index
-                best_distance = distance
-        return best_index
 
     def save_selected_goal_pose(self):
         if self.goal_pose_save_thread is not None:
@@ -1920,22 +1896,9 @@ def _patrol_path_poses(path_json):
         return []
     return [
         pose
-        for pose in (_normalize_patrol_pose(pose) for pose in poses)
+        for pose in (coerce_pose2d(pose) for pose in poses)
         if pose is not None
     ]
-
-
-def _normalize_patrol_pose(pose):
-    if not isinstance(pose, dict):
-        return None
-    try:
-        return {
-            "x": float(pose.get("x")),
-            "y": float(pose.get("y")),
-            "yaw": float(pose.get("yaw", 0.0)),
-        }
-    except (TypeError, ValueError):
-        return None
 
 
 def _patrol_path_frame_id(patrol_area):
