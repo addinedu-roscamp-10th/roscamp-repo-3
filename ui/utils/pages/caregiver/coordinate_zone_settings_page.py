@@ -24,6 +24,11 @@ from ui.utils.pages.caregiver.coordinate_boundary_editing import (
     replace_selected_boundary_vertex,
     selected_boundary_vertex,
 )
+from ui.utils.pages.caregiver.coordinate_goal_pose_editing import (
+    build_goal_pose_update_payload,
+    goal_pose_from_save_response,
+    goal_pose_world_point_from_payload,
+)
 from ui.utils.pages.caregiver.coordinate_pose_editing import (
     coerce_point2d,
     coerce_pose2d,
@@ -1412,9 +1417,8 @@ class CoordinateZoneSettingsPage(QWidget):
             return
 
         payload = self._build_goal_pose_update_payload()
-        if not self.map_canvas.contains_world_pose(
-            {"x": payload["pose_x"], "y": payload["pose_y"]}
-        ):
+        world_point = goal_pose_world_point_from_payload(payload)
+        if world_point is None or not self.map_canvas.contains_world_pose(world_point):
             self.validation_message_label.setText(
                 "좌표가 맵 범위를 벗어나 저장할 수 없습니다."
             )
@@ -1495,17 +1499,17 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _build_goal_pose_update_payload(self):
-        return {
-            "goal_pose_id": self.goal_pose_id_label.text().strip(),
-            "expected_updated_at": self.selected_goal_pose.get("updated_at"),
-            "zone_id": self.goal_pose_zone_combo.currentData(),
-            "purpose": self.goal_pose_purpose_combo.currentText().strip(),
-            "pose_x": self.goal_pose_x_spin.value(),
-            "pose_y": self.goal_pose_y_spin.value(),
-            "pose_yaw": self.goal_pose_yaw_spin.value(),
-            "frame_id": self.goal_pose_frame_id_label.text().strip(),
-            "is_enabled": self.goal_pose_enabled_check.isChecked(),
-        }
+        return build_goal_pose_update_payload(
+            selected_goal_pose=self.selected_goal_pose,
+            goal_pose_id=self.goal_pose_id_label.text(),
+            zone_id=self.goal_pose_zone_combo.currentData(),
+            purpose=self.goal_pose_purpose_combo.currentText(),
+            pose_x=self.goal_pose_x_spin.value(),
+            pose_y=self.goal_pose_y_spin.value(),
+            pose_yaw=self.goal_pose_yaw_spin.value(),
+            frame_id=self.goal_pose_frame_id_label.text(),
+            is_enabled=self.goal_pose_enabled_check.isChecked(),
+        )
 
     def _handle_goal_pose_save_finished(self, ok, response):
         if not ok:
@@ -1514,9 +1518,8 @@ class CoordinateZoneSettingsPage(QWidget):
             self._sync_goal_pose_save_state()
             return
 
-        response = response if isinstance(response, dict) else {}
-        updated_goal_pose = response.get("goal_pose")
-        if not isinstance(updated_goal_pose, dict):
+        updated_goal_pose = goal_pose_from_save_response(response)
+        if updated_goal_pose is None:
             self.validation_message_label.setText("목표 좌표 저장 결과가 비어 있습니다.")
             self.goal_pose_dirty = True
             self._sync_goal_pose_save_state()
