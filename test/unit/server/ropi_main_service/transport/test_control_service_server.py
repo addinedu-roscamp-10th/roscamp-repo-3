@@ -100,6 +100,12 @@ def test_rpc_dispatch_routes_to_registered_service(control_service_server):
     assert response.is_response is True
 
 
+def test_coordinate_config_rpc_service_is_registered():
+    assert tcp_server.SERVICE_REGISTRY["coordinate_config"].__name__ == (
+        "CoordinateConfigService"
+    )
+
+
 def test_task_monitor_snapshot_rpc_uses_stream_watermark_for_handoff(
     control_service_server,
 ):

@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.action_feedback import RosActionFeedbackService
 from server.ropi_main_service.application.caregiver import CaregiverService
+from server.ropi_main_service.application.coordinate_config import CoordinateConfigService
 from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
@@ -169,6 +170,7 @@ class CaregiverFacade:
 
 SERVICE_REGISTRY = {
     "caregiver": CaregiverFacade,
+    "coordinate_config": CoordinateConfigService,
     "patient": PatientService,
     "inventory": InventoryService,
     "fall_evidence_image": FallEvidenceImageService,

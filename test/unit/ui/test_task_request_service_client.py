@@ -4,6 +4,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
 )
 from ui.utils.network import service_clients
 from ui.utils.network.service_clients import (
+    CoordinateConfigRemoteService,
     DeliveryRequestRemoteService,
     TaskMonitorRemoteService,
 )
@@ -147,6 +148,33 @@ def test_task_monitor_remote_service_exposes_common_cancel_rpc(monkeypatch):
                 "task_id": "2001",
                 "caregiver_id": 7,
                 "reason": "operator_cancel",
+            },
+        )
+    ]
+
+
+def test_coordinate_config_remote_service_exposes_active_map_bundle_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "OK", "map_profile": {"map_id": "map_test11_0423"}}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = CoordinateConfigRemoteService().get_active_map_bundle(
+        include_disabled=False,
+        include_patrol_paths=False,
+    )
+
+    assert response["result_code"] == "OK"
+    assert calls == [
+        (
+            "coordinate_config",
+            "get_active_map_bundle",
+            {
+                "include_disabled": False,
+                "include_patrol_paths": False,
             },
         )
     ]

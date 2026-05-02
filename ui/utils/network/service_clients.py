@@ -118,6 +118,25 @@ class DeliveryRequestRemoteService:
         return self._rpc("cancel_delivery_task", **kwargs)
 
 
+class CoordinateConfigRemoteService:
+    _SERVICE_NAME = "coordinate_config"
+
+    def _rpc(self, method: str, **kwargs):
+        return _rpc(self._SERVICE_NAME, method, **kwargs)
+
+    def get_active_map_bundle(
+        self,
+        *,
+        include_disabled=True,
+        include_patrol_paths=True,
+    ):
+        return self._rpc(
+            "get_active_map_bundle",
+            include_disabled=include_disabled,
+            include_patrol_paths=include_patrol_paths,
+        )
+
+
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"
 
