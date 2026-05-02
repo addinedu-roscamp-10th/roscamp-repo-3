@@ -16,9 +16,19 @@ from ui.utils.pages.caregiver.coordinate_pose_editing import (
     coerce_point2d,
     coerce_pose2d,
     delete_index,
-    move_index,
     nearest_pose_index,
     replace_index,
+)
+from ui.utils.pages.caregiver.coordinate_waypoint_editing import (
+    append_patrol_waypoint,
+    delete_selected_patrol_waypoint as delete_patrol_waypoint,
+    move_selected_patrol_waypoint as move_patrol_waypoint,
+    move_selected_patrol_waypoint_to_world as move_patrol_waypoint_to_world,
+    patrol_path_payload_poses,
+    patrol_waypoint_buttons_state,
+    patrol_waypoint_table_rows,
+    replace_selected_patrol_waypoint,
+    selected_patrol_waypoint,
 )
 from ui.utils.pages.caregiver.coordinate_zone_settings_forms import (
     build_goal_pose_form,
@@ -639,8 +649,11 @@ class CoordinateZoneSettingsPage(QWidget):
             self.select_patrol_waypoint(selected)
             return
 
-        self.patrol_waypoint_rows.append(pose)
-        self.selected_patrol_waypoint_index = len(self.patrol_waypoint_rows) - 1
+        edit = append_patrol_waypoint(self.patrol_waypoint_rows, pose)
+        if edit is None:
+            return
+        self.patrol_waypoint_rows = edit.waypoints
+        self.selected_patrol_waypoint_index = edit.selected_index
         self._populate_patrol_waypoint_table()
         self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
         self._mark_patrol_area_dirty()
@@ -1144,14 +1157,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_patrol_overlay()
 
     def _populate_patrol_waypoint_table(self):
-        self.patrol_waypoint_table.setRowCount(len(self.patrol_waypoint_rows))
-        for row_index, pose in enumerate(self.patrol_waypoint_rows):
-            row_values = [
-                str(row_index + 1),
-                _waypoint_number_text(pose.get("x")),
-                _waypoint_number_text(pose.get("y")),
-                _waypoint_number_text(pose.get("yaw")),
-            ]
+        table_rows = patrol_waypoint_table_rows(self.patrol_waypoint_rows)
+        self.patrol_waypoint_table.setRowCount(len(table_rows))
+        for row_index, row_values in enumerate(table_rows):
             for column_index, value in enumerate(row_values):
                 self.patrol_waypoint_table.setItem(
                     row_index,
@@ -1172,9 +1180,8 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_patrol_overlay()
 
     def _set_patrol_waypoint_form(self, row_index):
-        enabled = row_index is not None and 0 <= row_index < len(
-            self.patrol_waypoint_rows
-        )
+        selected = selected_patrol_waypoint(self.patrol_waypoint_rows, row_index)
+        enabled = selected is not None
         self._syncing_patrol_waypoint_form = True
         try:
             for widget in [
@@ -1184,11 +1191,14 @@ class CoordinateZoneSettingsPage(QWidget):
             ]:
                 widget.setEnabled(enabled)
             if enabled:
-                pose = self.patrol_waypoint_rows[row_index]
-                self.patrol_waypoint_x_spin.setValue(_float_or_default(pose.get("x")))
-                self.patrol_waypoint_y_spin.setValue(_float_or_default(pose.get("y")))
+                self.patrol_waypoint_x_spin.setValue(
+                    _float_or_default(selected.get("x"))
+                )
+                self.patrol_waypoint_y_spin.setValue(
+                    _float_or_default(selected.get("y"))
+                )
                 self.patrol_waypoint_yaw_spin.setValue(
-                    _float_or_default(pose.get("yaw"))
+                    _float_or_default(selected.get("yaw"))
                 )
             else:
                 self.patrol_waypoint_x_spin.setValue(0.0)
@@ -1208,28 +1218,27 @@ class CoordinateZoneSettingsPage(QWidget):
         if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
             return
 
-        next_waypoints = replace_index(
+        edit = replace_selected_patrol_waypoint(
             self.patrol_waypoint_rows,
             index,
-            {
-                "x": self.patrol_waypoint_x_spin.value(),
-                "y": self.patrol_waypoint_y_spin.value(),
-                "yaw": self.patrol_waypoint_yaw_spin.value(),
-            },
+            x=self.patrol_waypoint_x_spin.value(),
+            y=self.patrol_waypoint_y_spin.value(),
+            yaw=self.patrol_waypoint_yaw_spin.value(),
         )
-        if next_waypoints is None:
+        if edit is None:
             return
-        self.patrol_waypoint_rows = next_waypoints
+        self.patrol_waypoint_rows = edit.waypoints
         self._populate_patrol_waypoint_table()
         self._mark_patrol_area_dirty()
         self._sync_patrol_overlay()
 
     def delete_selected_patrol_waypoint(self):
         index = self.selected_patrol_waypoint_index
-        deleted = delete_index(self.patrol_waypoint_rows, index)
-        if deleted is None:
+        edit = delete_patrol_waypoint(self.patrol_waypoint_rows, index)
+        if edit is None:
             return
-        self.patrol_waypoint_rows, self.selected_patrol_waypoint_index = deleted
+        self.patrol_waypoint_rows = edit.waypoints
+        self.selected_patrol_waypoint_index = edit.selected_index
         self._populate_patrol_waypoint_table()
         self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
         self._mark_patrol_area_dirty()
@@ -1237,10 +1246,11 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def move_selected_patrol_waypoint(self, offset):
         index = self.selected_patrol_waypoint_index
-        moved = move_index(self.patrol_waypoint_rows, index, offset)
-        if moved is None:
+        edit = move_patrol_waypoint(self.patrol_waypoint_rows, index, offset)
+        if edit is None:
             return
-        self.patrol_waypoint_rows, self.selected_patrol_waypoint_index = moved
+        self.patrol_waypoint_rows = edit.waypoints
+        self.selected_patrol_waypoint_index = edit.selected_index
         self._populate_patrol_waypoint_table()
         self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
         self._mark_patrol_area_dirty()
@@ -1252,31 +1262,30 @@ class CoordinateZoneSettingsPage(QWidget):
         index = self.selected_patrol_waypoint_index
         if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
             return
-        pose = coerce_pose2d(
+        edit = move_patrol_waypoint_to_world(
+            self.patrol_waypoint_rows,
+            index,
             world_pose,
-            default_yaw=_float_or_default(self.patrol_waypoint_rows[index].get("yaw")),
         )
-        if pose is None:
+        if edit is None:
             return
+        pose = edit.waypoints[edit.selected_index]
         if not self.map_canvas.contains_world_pose(pose):
             return
-        next_waypoints = replace_index(self.patrol_waypoint_rows, index, pose)
-        if next_waypoints is None:
-            return
-        self.patrol_waypoint_rows = next_waypoints
+        self.patrol_waypoint_rows = edit.waypoints
         self._populate_patrol_waypoint_table()
         self._set_patrol_waypoint_form(index)
         self._mark_patrol_area_dirty()
         self._sync_patrol_overlay()
 
     def _sync_patrol_waypoint_buttons(self):
-        index = self.selected_patrol_waypoint_index
-        has_selection = index is not None and 0 <= index < len(self.patrol_waypoint_rows)
-        self.patrol_waypoint_delete_button.setEnabled(has_selection)
-        self.patrol_waypoint_up_button.setEnabled(has_selection and index > 0)
-        self.patrol_waypoint_down_button.setEnabled(
-            has_selection and index < len(self.patrol_waypoint_rows) - 1
+        state = patrol_waypoint_buttons_state(
+            self.patrol_waypoint_rows,
+            self.selected_patrol_waypoint_index,
         )
+        self.patrol_waypoint_delete_button.setEnabled(state["delete"])
+        self.patrol_waypoint_up_button.setEnabled(state["up"])
+        self.patrol_waypoint_down_button.setEnabled(state["down"])
 
     def _mark_patrol_area_dirty(self):
         if self.selected_edit_type != "patrol_area":
@@ -1311,14 +1320,7 @@ class CoordinateZoneSettingsPage(QWidget):
             ),
             "path_json": {
                 "header": {"frame_id": self._active_map_frame_id()},
-                "poses": [
-                    {
-                        "x": _float_or_default(pose.get("x")),
-                        "y": _float_or_default(pose.get("y")),
-                        "yaw": _float_or_default(pose.get("yaw")),
-                    }
-                    for pose in self.patrol_waypoint_rows
-                ],
+                "poses": patrol_path_payload_poses(self.patrol_waypoint_rows),
             },
         }
 
