@@ -3,7 +3,15 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QTableWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+)
 
 
 _APP = None
@@ -52,6 +60,7 @@ def _sample_bundle():
                 "pose_yaw": 0.0,
                 "frame_id": "map",
                 "is_enabled": True,
+                "updated_at": "2026-05-02T03:00:00Z",
             }
         ],
         "patrol_areas": [
@@ -70,7 +79,7 @@ def _sample_bundle():
 def _sample_map_assets():
     pgm_bytes = b"P5\n2 2\n255\n\x00\x80\xc0\xff"
     return {
-        "yaml_text": "image: map.pgm\nresolution: 0.02\norigin: [0.0, 0.0, 0.0]\n",
+        "yaml_text": "image: map.pgm\nresolution: 1.0\norigin: [0.0, 0.0, 0.0]\n",
         "pgm_bytes": pgm_bytes,
         "yaml_sha256": "yaml-sha",
         "pgm_sha256": "pgm-sha",
@@ -209,6 +218,200 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         assert patrol_table.item(0, 3).text() == "비활성"
         assert page.validation_message_label.text() == "맵과 좌표 설정을 불러왔습니다."
         assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_selects_goal_pose_into_edit_form():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+
+        assert page.selected_edit_type == "goal_pose"
+        assert page.selected_goal_pose["goal_pose_id"] == "delivery_room_301"
+        assert page.findChild(QLabel, "goalPoseIdLabel").text() == "delivery_room_301"
+        assert (
+            page.findChild(QComboBox, "goalPoseZoneCombo").currentData()
+            == "room_301"
+        )
+        assert (
+            page.findChild(QComboBox, "goalPosePurposeCombo").currentText()
+            == "DESTINATION"
+        )
+        assert page.findChild(QDoubleSpinBox, "goalPoseXSpin").value() == 1.7
+        assert page.findChild(QDoubleSpinBox, "goalPoseYSpin").value() == 0.02
+        assert page.findChild(QDoubleSpinBox, "goalPoseYawSpin").value() == 0.0
+        assert page.findChild(QLabel, "goalPoseFrameIdLabel").text() == "map"
+        assert page.findChild(QCheckBox, "goalPoseEnabledCheck").isChecked() is True
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_goal_pose_dirty_and_map_click_preview():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+
+        page.findChild(QDoubleSpinBox, "goalPoseYawSpin").setValue(1.57)
+
+        assert page.goal_pose_dirty is True
+        assert page.save_button.isEnabled() is True
+        assert page.discard_button.isEnabled() is True
+        assert "저장 전" in page.validation_message_label.text()
+
+        page.handle_map_click_for_goal_pose({"x": 0.02, "y": 0.04})
+
+        assert page.findChild(QDoubleSpinBox, "goalPoseXSpin").value() == 0.02
+        assert page.findChild(QDoubleSpinBox, "goalPoseYSpin").value() == 0.04
+        assert page.goal_pose_dirty is True
+    finally:
+        page.close()
+
+
+def test_goal_pose_save_worker_sends_if_loc_004_payload():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        GoalPoseSaveWorker,
+    )
+
+    calls = []
+
+    class FakeCoordinateService:
+        def update_goal_pose(self, **payload):
+            calls.append(payload)
+            return {
+                "result_code": "UPDATED",
+                "goal_pose": {
+                    **payload,
+                    "updated_at": "2026-05-02T03:30:00Z",
+                },
+            }
+
+    payload = {
+        "goal_pose_id": "delivery_room_301",
+        "expected_updated_at": "2026-05-02T03:00:00Z",
+        "zone_id": "room_301",
+        "purpose": "DESTINATION",
+        "pose_x": 1.72,
+        "pose_y": 0.03,
+        "pose_yaw": 1.57,
+        "frame_id": "map",
+        "is_enabled": True,
+    }
+    emitted = []
+    worker = GoalPoseSaveWorker(
+        payload=payload,
+        service_factory=FakeCoordinateService,
+    )
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["goal_pose"]["updated_at"] == "2026-05-02T03:30:00Z"
+
+
+def test_coordinate_zone_settings_page_applies_goal_pose_save_success():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        page._handle_goal_pose_save_finished(
+            True,
+            {
+                "result_code": "UPDATED",
+                "goal_pose": {
+                    "goal_pose_id": "delivery_room_301",
+                    "zone_id": "room_301",
+                    "zone_name": "301호",
+                    "purpose": "DESTINATION",
+                    "pose_x": 1.72,
+                    "pose_y": 0.03,
+                    "pose_yaw": 1.57,
+                    "frame_id": "map",
+                    "is_enabled": True,
+                    "updated_at": "2026-05-02T03:30:00Z",
+                },
+            },
+        )
+
+        goal_table = page.findChild(QTableWidget, "goalPoseTable")
+        assert goal_table.item(0, 3).text() == "x=1.72, y=0.03, yaw=1.57"
+        assert page.selected_goal_pose["updated_at"] == "2026-05-02T03:30:00Z"
+        assert page.goal_pose_dirty is False
+        assert page.save_button.isEnabled() is False
+        assert page.validation_message_label.text() == "목표 좌표를 저장했습니다."
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_keeps_dirty_values_on_goal_pose_save_failure():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        page.findChild(QDoubleSpinBox, "goalPoseXSpin").setValue(0.01)
+
+        page._handle_goal_pose_save_finished(
+            False,
+            "GOAL_POSE_STALE: 다른 사용자가 먼저 좌표를 수정했습니다.",
+        )
+
+        assert page.findChild(QDoubleSpinBox, "goalPoseXSpin").value() == 0.01
+        assert page.goal_pose_dirty is True
+        assert page.save_button.isEnabled() is True
+        assert "GOAL_POSE_STALE" in page.validation_message_label.text()
     finally:
         page.close()
 
