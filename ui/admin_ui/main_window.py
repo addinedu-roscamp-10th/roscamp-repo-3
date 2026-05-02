@@ -366,6 +366,7 @@ class CaregiverMainWindow(QMainWindow):
         ("home", "홈"),
         ("task_request", "작업 요청"),
         ("task_monitor", "작업 모니터"),
+        ("coordinate_settings", "좌표/구역 설정"),
         ("robot_status", "로봇 상태"),
         ("inventory", "재고 관리"),
         ("patient", "어르신 정보"),
@@ -379,6 +380,7 @@ class CaregiverMainWindow(QMainWindow):
         self.login_window = None
         self.task_page = None
         self.task_monitor_page = None
+        self.coordinate_settings_page = None
         self.robot_status_page = None
         self.inventory_page = None
         self.patient_page = None
@@ -418,6 +420,9 @@ class CaregiverMainWindow(QMainWindow):
         self.home_btn = self.admin_shell.sidebar.button("home")
         self.task_btn = self.admin_shell.sidebar.button("task_request")
         self.task_monitor_btn = self.admin_shell.sidebar.button("task_monitor")
+        self.coordinate_settings_btn = self.admin_shell.sidebar.button(
+            "coordinate_settings"
+        )
         self.robot_status_btn = self.admin_shell.sidebar.button("robot_status")
         self.inventory_btn = self.admin_shell.sidebar.button("inventory")
         self.patient_btn = self.admin_shell.sidebar.button("patient")
@@ -458,6 +463,7 @@ class CaregiverMainWindow(QMainWindow):
             "home": self.show_home_page,
             "task_request": self.show_task_page,
             "task_monitor": self.show_task_monitor_page,
+            "coordinate_settings": self.show_coordinate_settings_page,
             "robot_status": self.show_robot_status_page,
             "inventory": self.show_inventory_page,
             "patient": self.show_patient_page,
@@ -486,6 +492,17 @@ class CaregiverMainWindow(QMainWindow):
     def show_task_monitor_page(self):
         from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
         self._show_or_create_page("task_monitor_page", TaskMonitorPage, "task_monitor")
+
+    def show_coordinate_settings_page(self):
+        from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+            CoordinateZoneSettingsPage,
+        )
+
+        self._show_or_create_page(
+            "coordinate_settings_page",
+            CoordinateZoneSettingsPage,
+            "coordinate_settings",
+        )
 
     def show_robot_status_page(self):
         from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
@@ -518,6 +535,7 @@ class CaregiverMainWindow(QMainWindow):
         for page in [
             self.task_page,
             self.task_monitor_page,
+            self.coordinate_settings_page,
             self.robot_status_page,
             self.inventory_page,
             self.patient_page,

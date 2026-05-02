@@ -12,6 +12,7 @@ NAV_ITEMS = [
     ("home", "홈"),
     ("task_request", "작업 요청"),
     ("task_monitor", "작업 모니터"),
+    ("coordinate_settings", "좌표/구역 설정"),
     ("robot_status", "로봇 상태"),
     ("inventory", "재고 관리"),
     ("patient", "어르신 정보"),
@@ -130,6 +131,11 @@ def test_caregiver_common_shell_routes_placeholder_pages():
         assert window.stack.currentWidget() is window.task_monitor_page
         assert window.task_monitor_btn.isChecked()
 
+        window.coordinate_settings_btn.click()
+        assert window.coordinate_settings_page is not None
+        assert window.stack.currentWidget() is window.coordinate_settings_page
+        assert window.coordinate_settings_btn.isChecked()
+
         window.system_health_btn.click()
         assert window.system_health_page is not None
         assert window.stack.currentWidget() is window.system_health_page
@@ -152,6 +158,7 @@ def test_caregiver_shell_pages_use_common_page_header():
         ("home", None),
         ("task_request", window.task_btn),
         ("task_monitor", window.task_monitor_btn),
+        ("coordinate_settings", window.coordinate_settings_btn),
         ("robot_status", window.robot_status_btn),
         ("inventory", window.inventory_btn),
         ("patient", window.patient_btn),
@@ -188,6 +195,7 @@ def test_caregiver_shell_status_strip_only_appears_on_status_context_pages():
         ("home", None, True),
         ("task_request", window.task_btn, False),
         ("task_monitor", window.task_monitor_btn, False),
+        ("coordinate_settings", window.coordinate_settings_btn, False),
         ("robot_status", window.robot_status_btn, False),
         ("inventory", window.inventory_btn, False),
         ("patient", window.patient_btn, False),
