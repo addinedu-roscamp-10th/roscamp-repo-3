@@ -73,6 +73,7 @@ class FakeCoordinateConfigRepository:
         self.existing_zone = None
         self.create_result = None
         self.update_result = None
+        self.goal_pose_update_result = None
 
     def get_active_map_profile(self):
         self.calls.append(("get_active_map_profile",))
@@ -224,6 +225,87 @@ class FakeCoordinateConfigRepository:
                 "is_enabled": kwargs["is_enabled"],
                 "created_at": datetime(2026, 5, 2, 12, 0, 0),
                 "updated_at": datetime(2026, 5, 2, 12, 3, 0),
+            },
+        }
+
+    def update_goal_pose(
+        self,
+        *,
+        map_id,
+        goal_pose_id,
+        expected_updated_at,
+        zone_id,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled,
+    ):
+        self.calls.append(
+            (
+                "update_goal_pose",
+                map_id,
+                goal_pose_id,
+                expected_updated_at,
+                zone_id,
+                purpose,
+                pose_x,
+                pose_y,
+                pose_yaw,
+                frame_id,
+                is_enabled,
+            )
+        )
+        return self.goal_pose_update_result or {
+            "status": "UPDATED",
+            "goal_pose": {
+                "goal_pose_id": goal_pose_id,
+                "map_id": map_id,
+                "zone_id": zone_id,
+                "zone_name": "301호" if zone_id == "room_301" else None,
+                "purpose": purpose,
+                "pose_x": pose_x,
+                "pose_y": pose_y,
+                "pose_yaw": pose_yaw,
+                "frame_id": frame_id,
+                "is_enabled": is_enabled,
+                "created_at": datetime(2026, 5, 2, 12, 0, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 4, 0),
+            },
+        }
+
+    async def async_update_goal_pose(self, **kwargs):
+        self.calls.append(
+            (
+                "async_update_goal_pose",
+                kwargs["map_id"],
+                kwargs["goal_pose_id"],
+                kwargs["expected_updated_at"],
+                kwargs["zone_id"],
+                kwargs["purpose"],
+                kwargs["pose_x"],
+                kwargs["pose_y"],
+                kwargs["pose_yaw"],
+                kwargs["frame_id"],
+                kwargs["is_enabled"],
+            )
+        )
+        return self.goal_pose_update_result or {
+            "status": "UPDATED",
+            "goal_pose": {
+                "goal_pose_id": kwargs["goal_pose_id"],
+                "map_id": kwargs["map_id"],
+                "zone_id": kwargs["zone_id"],
+                "zone_name": "301호" if kwargs["zone_id"] == "room_301" else None,
+                "purpose": kwargs["purpose"],
+                "pose_x": kwargs["pose_x"],
+                "pose_y": kwargs["pose_y"],
+                "pose_yaw": kwargs["pose_yaw"],
+                "frame_id": kwargs["frame_id"],
+                "is_enabled": kwargs["is_enabled"],
+                "created_at": datetime(2026, 5, 2, 12, 0, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 4, 0),
             },
         }
 
@@ -512,6 +594,187 @@ def test_update_operation_zone_async_uses_async_repository_method():
             1,
             "301호",
             "ROOM",
+            False,
+        ),
+    ]
+
+
+def test_update_goal_pose_updates_existing_pose_on_active_map():
+    repository = FakeCoordinateConfigRepository()
+    repository.existing_zone = repository.operation_zones[0]
+
+    response = _service(repository).update_goal_pose(
+        goal_pose_id="delivery_room_301",
+        expected_updated_at="2026-05-02T12:01:00",
+        zone_id="room_301",
+        purpose="destination",
+        pose_x="1.7",
+        pose_y="0.02",
+        pose_yaw="0",
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert response["reason_code"] is None
+    assert response["goal_pose"] == {
+        "goal_pose_id": "delivery_room_301",
+        "map_id": "map_test11_0423",
+        "zone_id": "room_301",
+        "zone_name": "301호",
+        "purpose": "DESTINATION",
+        "pose_x": 1.7,
+        "pose_y": 0.02,
+        "pose_yaw": 0.0,
+        "frame_id": "map",
+        "is_enabled": True,
+        "created_at": "2026-05-02T12:00:00",
+        "updated_at": "2026-05-02T12:04:00",
+    }
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        ("get_operation_zone", "room_301"),
+        (
+            "update_goal_pose",
+            "map_test11_0423",
+            "delivery_room_301",
+            "2026-05-02T12:01:00",
+            "room_301",
+            "DESTINATION",
+            1.7,
+            0.02,
+            0.0,
+            "map",
+            True,
+        ),
+    ]
+
+
+def test_update_goal_pose_rejects_frame_mismatch():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).update_goal_pose(
+        goal_pose_id="delivery_room_301",
+        expected_updated_at=None,
+        zone_id=None,
+        purpose="DESTINATION",
+        pose_x=1.7,
+        pose_y=0.02,
+        pose_yaw=0.0,
+        frame_id="odom",
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "FRAME_ID_MISMATCH"
+    assert response["goal_pose"] is None
+    assert repository.calls == [("get_active_map_profile",)]
+
+
+def test_update_goal_pose_rejects_invalid_purpose():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).update_goal_pose(
+        goal_pose_id="delivery_room_301",
+        expected_updated_at=None,
+        zone_id=None,
+        purpose="GUIDE",
+        pose_x=1.7,
+        pose_y=0.02,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "GOAL_POSE_PURPOSE_INVALID"
+    assert response["goal_pose"] is None
+    assert repository.calls == [("get_active_map_profile",)]
+
+
+def test_update_goal_pose_rejects_missing_zone():
+    repository = FakeCoordinateConfigRepository()
+    repository.existing_zone = None
+
+    response = _service(repository).update_goal_pose(
+        goal_pose_id="delivery_room_301",
+        expected_updated_at=None,
+        zone_id="room_999",
+        purpose="DESTINATION",
+        pose_x=1.7,
+        pose_y=0.02,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "NOT_FOUND"
+    assert response["reason_code"] == "ZONE_NOT_FOUND"
+    assert response["goal_pose"] is None
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        ("get_operation_zone", "room_999"),
+    ]
+
+
+def test_update_goal_pose_reports_stale_write_conflict():
+    repository = FakeCoordinateConfigRepository()
+    repository.goal_pose_update_result = {
+        "status": "STALE",
+        "goal_pose": repository.goal_poses[0],
+    }
+
+    response = _service(repository).update_goal_pose(
+        goal_pose_id="delivery_room_301",
+        expected_updated_at="2026-05-02T12:00:00",
+        zone_id=None,
+        purpose="DESTINATION",
+        pose_x=1.7,
+        pose_y=0.02,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "CONFLICT"
+    assert response["reason_code"] == "GOAL_POSE_STALE"
+    assert response["goal_pose"] is None
+
+
+def test_update_goal_pose_async_uses_async_repository_method():
+    repository = FakeCoordinateConfigRepository()
+    repository.existing_zone = repository.operation_zones[0]
+
+    response = asyncio.run(
+        _service(repository).async_update_goal_pose(
+            goal_pose_id="delivery_room_301",
+            expected_updated_at=None,
+            zone_id="room_301",
+            purpose="destination",
+            pose_x="1.7",
+            pose_y="0.02",
+            pose_yaw="0",
+            frame_id="map",
+            is_enabled="false",
+        )
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert response["goal_pose"]["is_enabled"] is False
+    assert repository.calls == [
+        ("async_get_active_map_profile",),
+        ("async_get_operation_zone", "room_301"),
+        (
+            "async_update_goal_pose",
+            "map_test11_0423",
+            "delivery_room_301",
+            None,
+            "room_301",
+            "DESTINATION",
+            1.7,
+            0.02,
+            0.0,
+            "map",
             False,
         ),
     ]

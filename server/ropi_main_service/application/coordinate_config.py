@@ -20,6 +20,7 @@ ALLOWED_OPERATION_ZONE_TYPES = {
     "RESTRICTED",
     "OTHER",
 }
+ALLOWED_GOAL_POSE_PURPOSES = {"PICKUP", "DESTINATION", "DOCK"}
 ZONE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")
 
 
@@ -262,6 +263,118 @@ class CoordinateConfigService:
 
         return self._format_operation_zone_update_result(result)
 
+    def update_goal_pose(
+        self,
+        *,
+        goal_pose_id,
+        expected_updated_at=None,
+        zone_id=None,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled,
+    ):
+        map_profile, error = self._resolve_active_map(
+            error_factory=self._goal_pose_error,
+        )
+        if error:
+            return error
+
+        normalized, error = self._normalize_goal_pose_input(
+            goal_pose_id=goal_pose_id,
+            expected_updated_at=expected_updated_at,
+            zone_id=zone_id,
+            purpose=purpose,
+            pose_x=pose_x,
+            pose_y=pose_y,
+            pose_yaw=pose_yaw,
+            frame_id=frame_id,
+            is_enabled=is_enabled,
+            active_frame_id=map_profile["frame_id"],
+        )
+        if error:
+            return error
+
+        zone_error = self._validate_goal_pose_zone(
+            map_id=map_profile["map_id"],
+            zone_id=normalized["zone_id"],
+        )
+        if zone_error:
+            return zone_error
+
+        try:
+            result = self.repository.update_goal_pose(
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return self._goal_pose_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="목적지 좌표 수정 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return self._format_goal_pose_update_result(result)
+
+    async def async_update_goal_pose(
+        self,
+        *,
+        goal_pose_id,
+        expected_updated_at=None,
+        zone_id=None,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled,
+    ):
+        map_profile, error = await self._async_resolve_active_map(
+            error_factory=self._goal_pose_error,
+        )
+        if error:
+            return error
+
+        normalized, error = self._normalize_goal_pose_input(
+            goal_pose_id=goal_pose_id,
+            expected_updated_at=expected_updated_at,
+            zone_id=zone_id,
+            purpose=purpose,
+            pose_x=pose_x,
+            pose_y=pose_y,
+            pose_yaw=pose_yaw,
+            frame_id=frame_id,
+            is_enabled=is_enabled,
+            active_frame_id=map_profile["frame_id"],
+        )
+        if error:
+            return error
+
+        zone_error = await self._async_validate_goal_pose_zone(
+            map_id=map_profile["map_id"],
+            zone_id=normalized["zone_id"],
+        )
+        if zone_error:
+            return zone_error
+
+        try:
+            result = await self._call_async_or_thread(
+                "async_update_goal_pose",
+                "update_goal_pose",
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return self._goal_pose_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="목적지 좌표 수정 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return self._format_goal_pose_update_result(result)
+
     async def async_get_active_map_bundle(
         self,
         *,
@@ -318,20 +431,29 @@ class CoordinateConfigService:
         sync_method = getattr(self.repository, sync_name)
         return await asyncio.to_thread(sync_method, **kwargs)
 
-    def _resolve_active_map(self, *, map_id=None):
+    def _resolve_active_map(self, *, map_id=None, error_factory=None):
         active_map = self.repository.get_active_map_profile()
-        return self._format_active_map_resolution(active_map, map_id=map_id)
+        return self._format_active_map_resolution(
+            active_map,
+            map_id=map_id,
+            error_factory=error_factory,
+        )
 
-    async def _async_resolve_active_map(self, *, map_id=None):
+    async def _async_resolve_active_map(self, *, map_id=None, error_factory=None):
         active_map = await self._call_async_or_thread(
             "async_get_active_map_profile",
             "get_active_map_profile",
         )
-        return self._format_active_map_resolution(active_map, map_id=map_id)
+        return self._format_active_map_resolution(
+            active_map,
+            map_id=map_id,
+            error_factory=error_factory,
+        )
 
-    def _format_active_map_resolution(self, active_map, *, map_id=None):
+    def _format_active_map_resolution(self, active_map, *, map_id=None, error_factory=None):
+        error_factory = error_factory or self._operation_zone_error
         if not active_map:
-            return None, self._operation_zone_error(
+            return None, error_factory(
                 result_code="NOT_FOUND",
                 reason_code="ACTIVE_MAP_NOT_FOUND",
                 result_message="활성 map_profile이 없습니다.",
@@ -340,7 +462,7 @@ class CoordinateConfigService:
         map_profile = self._format_map_profile(active_map)
         requested_map_id = self._normalize_optional_text(map_id)
         if requested_map_id and requested_map_id != map_profile["map_id"]:
-            return None, self._operation_zone_error(
+            return None, error_factory(
                 result_code="REJECTED",
                 reason_code="MAP_NOT_ACTIVE",
                 result_message="phase 1에서는 active map만 수정할 수 있습니다.",
@@ -419,6 +541,35 @@ class CoordinateConfigService:
             result_message="구역 수정 결과를 확인할 수 없습니다.",
         )
 
+    @classmethod
+    def _format_goal_pose_update_result(cls, result):
+        result = result if isinstance(result, dict) else {}
+        status = result.get("status")
+        if status == "UPDATED":
+            return {
+                "result_code": "UPDATED",
+                "result_message": None,
+                "reason_code": None,
+                "goal_pose": cls._format_goal_pose(result.get("goal_pose") or {}),
+            }
+        if status == "NOT_FOUND":
+            return cls._goal_pose_error(
+                result_code="NOT_FOUND",
+                reason_code="GOAL_POSE_NOT_FOUND",
+                result_message="수정할 목적지 좌표를 찾을 수 없습니다.",
+            )
+        if status == "STALE":
+            return cls._goal_pose_error(
+                result_code="CONFLICT",
+                reason_code="GOAL_POSE_STALE",
+                result_message="목적지 좌표가 최신 값과 일치하지 않습니다.",
+            )
+        return cls._goal_pose_error(
+            result_code="UNAVAILABLE",
+            reason_code="CONFIG_WRITE_FAILED",
+            result_message="목적지 좌표 수정 결과를 확인할 수 없습니다.",
+        )
+
     @staticmethod
     def _operation_zone_error(*, result_code, reason_code, result_message):
         return {
@@ -426,6 +577,15 @@ class CoordinateConfigService:
             "result_message": result_message,
             "reason_code": reason_code,
             "operation_zone": None,
+        }
+
+    @staticmethod
+    def _goal_pose_error(*, result_code, reason_code, result_message):
+        return {
+            "result_code": result_code,
+            "result_message": result_message,
+            "reason_code": reason_code,
+            "goal_pose": None,
         }
 
     @classmethod
@@ -477,6 +637,118 @@ class CoordinateConfigService:
             "zone_type": normalized_zone_type,
             "is_enabled": cls._bool(is_enabled),
         }, None
+
+    @classmethod
+    def _normalize_goal_pose_input(
+        cls,
+        *,
+        goal_pose_id,
+        expected_updated_at,
+        zone_id,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled,
+        active_frame_id,
+    ):
+        normalized_goal_pose_id = cls._normalize_optional_text(goal_pose_id)
+        if (
+            not normalized_goal_pose_id
+            or len(normalized_goal_pose_id) > 100
+            or not ZONE_ID_PATTERN.match(normalized_goal_pose_id)
+        ):
+            return None, cls._goal_pose_error(
+                result_code="INVALID_REQUEST",
+                reason_code="GOAL_POSE_NOT_FOUND",
+                result_message="goal_pose_id가 유효하지 않습니다.",
+            )
+
+        normalized_purpose = cls._normalize_optional_text(purpose)
+        if normalized_purpose:
+            normalized_purpose = normalized_purpose.upper()
+        if normalized_purpose not in ALLOWED_GOAL_POSE_PURPOSES:
+            return None, cls._goal_pose_error(
+                result_code="INVALID_REQUEST",
+                reason_code="GOAL_POSE_PURPOSE_INVALID",
+                result_message="purpose가 유효하지 않습니다.",
+            )
+
+        normalized_frame_id = cls._normalize_optional_text(frame_id)
+        if normalized_frame_id != active_frame_id:
+            return None, cls._goal_pose_error(
+                result_code="INVALID_REQUEST",
+                reason_code="FRAME_ID_MISMATCH",
+                result_message="frame_id가 active map frame과 일치하지 않습니다.",
+            )
+
+        parsed_pose_x = cls._optional_float(pose_x)
+        parsed_pose_y = cls._optional_float(pose_y)
+        parsed_pose_yaw = cls._optional_float(pose_yaw)
+        if parsed_pose_x is None or parsed_pose_y is None or parsed_pose_yaw is None:
+            return None, cls._goal_pose_error(
+                result_code="INVALID_REQUEST",
+                reason_code="COORDINATE_OUT_OF_MAP_BOUNDS",
+                result_message="좌표 값이 유효하지 않습니다.",
+            )
+
+        normalized_zone_id = cls._normalize_optional_text(zone_id)
+        if normalized_zone_id and (
+            len(normalized_zone_id) > 100
+            or not ZONE_ID_PATTERN.match(normalized_zone_id)
+        ):
+            return None, cls._goal_pose_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_ID_INVALID",
+                result_message="zone_id가 유효하지 않습니다.",
+            )
+
+        return {
+            "goal_pose_id": normalized_goal_pose_id,
+            "expected_updated_at": cls._normalize_optional_text(expected_updated_at),
+            "zone_id": normalized_zone_id,
+            "purpose": normalized_purpose,
+            "pose_x": parsed_pose_x,
+            "pose_y": parsed_pose_y,
+            "pose_yaw": parsed_pose_yaw,
+            "frame_id": normalized_frame_id,
+            "is_enabled": cls._bool(is_enabled),
+        }, None
+
+    def _validate_goal_pose_zone(self, *, map_id, zone_id):
+        if zone_id is None:
+            return None
+
+        zone = self.repository.get_operation_zone(zone_id=zone_id)
+        return self._format_goal_pose_zone_validation(
+            map_id=map_id,
+            zone=zone,
+        )
+
+    async def _async_validate_goal_pose_zone(self, *, map_id, zone_id):
+        if zone_id is None:
+            return None
+
+        zone = await self._call_async_or_thread(
+            "async_get_operation_zone",
+            "get_operation_zone",
+            zone_id=zone_id,
+        )
+        return self._format_goal_pose_zone_validation(
+            map_id=map_id,
+            zone=zone,
+        )
+
+    @classmethod
+    def _format_goal_pose_zone_validation(cls, *, map_id, zone):
+        if not zone or zone.get("map_id") != map_id:
+            return cls._goal_pose_error(
+                result_code="NOT_FOUND",
+                reason_code="ZONE_NOT_FOUND",
+                result_message="연결할 구역을 찾을 수 없습니다.",
+            )
+        return None
 
     def _generated_at(self):
         value = self._clock()

@@ -232,6 +232,47 @@ def test_coordinate_config_remote_service_exposes_operation_zone_mutation_rpcs(
     ]
 
 
+def test_coordinate_config_remote_service_exposes_goal_pose_update_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "UPDATED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = CoordinateConfigRemoteService().update_goal_pose(
+        goal_pose_id="delivery_room_301",
+        expected_updated_at="2026-05-02T12:01:00",
+        zone_id="room_301",
+        purpose="DESTINATION",
+        pose_x=1.7,
+        pose_y=0.02,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert calls == [
+        (
+            "coordinate_config",
+            "update_goal_pose",
+            {
+                "goal_pose_id": "delivery_room_301",
+                "expected_updated_at": "2026-05-02T12:01:00",
+                "zone_id": "room_301",
+                "purpose": "DESTINATION",
+                "pose_x": 1.7,
+                "pose_y": 0.02,
+                "pose_yaw": 0.0,
+                "frame_id": "map",
+                "is_enabled": True,
+            },
+        )
+    ]
+
+
 def test_task_monitor_remote_service_sends_fall_evidence_over_if_pat_007(monkeypatch):
     calls = []
 

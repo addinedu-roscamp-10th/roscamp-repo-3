@@ -358,3 +358,181 @@ def test_coordinate_config_repository_exposes_async_operation_zone_mutations(
         ),
         (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("room_301",)),
     ]
+
+
+def test_coordinate_config_repository_updates_goal_pose_with_stale_check(
+    monkeypatch,
+):
+    locked_row = {
+        "goal_pose_id": "delivery_room_301",
+        "map_id": "map_test11_0423",
+        "updated_at": "2026-05-02T12:01:00",
+    }
+    updated_row = {
+        "goal_pose_id": "delivery_room_301",
+        "map_id": "map_test11_0423",
+        "zone_id": "room_301",
+        "purpose": "DESTINATION",
+    }
+    cursor = FakeCursor(rows=[locked_row, updated_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_goal_pose(
+        map_id="map_test11_0423",
+        goal_pose_id="delivery_room_301",
+        expected_updated_at="2026-05-02T12:01:00",
+        zone_id="room_301",
+        purpose="DESTINATION",
+        pose_x=1.7,
+        pose_y=0.02,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert result == {"status": "UPDATED", "goal_pose": updated_row}
+    assert connection.began is True
+    assert connection.committed is True
+    lock_query, lock_params = cursor.calls[0]
+    update_query, update_params = cursor.calls[1]
+    select_query, select_params = cursor.calls[2]
+    assert lock_query == coordinate_config_repository.LOCK_GOAL_POSE_SQL
+    assert lock_params == ("delivery_room_301", "map_test11_0423")
+    assert "UPDATE goal_pose" in update_query
+    assert update_params == (
+        "room_301",
+        "DESTINATION",
+        1.7,
+        0.02,
+        0.0,
+        "map",
+        True,
+        "delivery_room_301",
+        "map_test11_0423",
+    )
+    assert select_query == coordinate_config_repository.FIND_GOAL_POSE_SQL
+    assert select_params == ("delivery_room_301",)
+
+
+def test_coordinate_config_repository_reports_goal_pose_stale_conflict(
+    monkeypatch,
+):
+    cursor = FakeCursor(
+        rows=[
+            {
+                "goal_pose_id": "delivery_room_301",
+                "map_id": "map_test11_0423",
+                "updated_at": "2026-05-02T12:02:00",
+            }
+        ]
+    )
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_goal_pose(
+        map_id="map_test11_0423",
+        goal_pose_id="delivery_room_301",
+        expected_updated_at="2026-05-02T12:01:00",
+        zone_id="room_301",
+        purpose="DESTINATION",
+        pose_x=1.7,
+        pose_y=0.02,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert result["status"] == "STALE"
+    assert connection.committed is True
+    assert len(cursor.calls) == 1
+
+
+def test_coordinate_config_repository_exposes_async_goal_pose_update(monkeypatch):
+    calls = []
+    rows = [
+        {
+            "goal_pose_id": "delivery_room_301",
+            "map_id": "map_test11_0423",
+            "updated_at": "2026-05-02T12:01:00",
+        },
+        {
+            "goal_pose_id": "delivery_room_301",
+            "map_id": "map_test11_0423",
+            "purpose": "DESTINATION",
+        },
+    ]
+
+    class AsyncCursor:
+        async def execute(self, query, params=None):
+            calls.append((query, params))
+
+        async def fetchone(self):
+            return rows.pop(0)
+
+    @asynccontextmanager
+    async def fake_async_transaction():
+        yield AsyncCursor()
+
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "async_transaction",
+        fake_async_transaction,
+    )
+
+    async def scenario():
+        return await coordinate_config_repository.CoordinateConfigRepository().async_update_goal_pose(
+            map_id="map_test11_0423",
+            goal_pose_id="delivery_room_301",
+            expected_updated_at=None,
+            zone_id=None,
+            purpose="DESTINATION",
+            pose_x=1.7,
+            pose_y=0.02,
+            pose_yaw=0.0,
+            frame_id="map",
+            is_enabled=False,
+        )
+
+    result = asyncio.run(scenario())
+
+    assert result == {
+        "status": "UPDATED",
+        "goal_pose": {
+            "goal_pose_id": "delivery_room_301",
+            "map_id": "map_test11_0423",
+            "purpose": "DESTINATION",
+        },
+    }
+    assert calls == [
+        (
+            coordinate_config_repository.LOCK_GOAL_POSE_SQL,
+            ("delivery_room_301", "map_test11_0423"),
+        ),
+        (
+            coordinate_config_repository.UPDATE_GOAL_POSE_SQL,
+            (
+                None,
+                "DESTINATION",
+                1.7,
+                0.02,
+                0.0,
+                "map",
+                False,
+                "delivery_room_301",
+                "map_test11_0423",
+            ),
+        ),
+        (
+            coordinate_config_repository.FIND_GOAL_POSE_SQL,
+            ("delivery_room_301",),
+        ),
+    ]

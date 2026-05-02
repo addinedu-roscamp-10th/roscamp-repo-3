@@ -172,6 +172,32 @@ class CoordinateConfigRemoteService:
             is_enabled=is_enabled,
         )
 
+    def update_goal_pose(
+        self,
+        *,
+        goal_pose_id,
+        expected_updated_at=None,
+        zone_id=None,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled,
+    ):
+        return self._rpc(
+            "update_goal_pose",
+            goal_pose_id=goal_pose_id,
+            expected_updated_at=expected_updated_at,
+            zone_id=zone_id,
+            purpose=purpose,
+            pose_x=pose_x,
+            pose_y=pose_y,
+            pose_yaw=pose_yaw,
+            frame_id=frame_id,
+            is_enabled=is_enabled,
+        )
+
 
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"
