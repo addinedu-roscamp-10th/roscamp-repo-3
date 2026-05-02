@@ -375,6 +375,80 @@ class CoordinateConfigService:
 
         return self._format_goal_pose_update_result(result)
 
+    def update_patrol_area_path(
+        self,
+        *,
+        patrol_area_id,
+        expected_revision,
+        path_json,
+    ):
+        map_profile, error = self._resolve_active_map(
+            error_factory=self._patrol_area_error,
+        )
+        if error:
+            return error
+
+        normalized, error = self._normalize_patrol_area_path_input(
+            patrol_area_id=patrol_area_id,
+            expected_revision=expected_revision,
+            path_json=path_json,
+            active_frame_id=map_profile["frame_id"],
+        )
+        if error:
+            return error
+
+        try:
+            result = self.repository.update_patrol_area_path(
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return self._patrol_area_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="순찰 경로 수정 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return self._format_patrol_area_update_result(result)
+
+    async def async_update_patrol_area_path(
+        self,
+        *,
+        patrol_area_id,
+        expected_revision,
+        path_json,
+    ):
+        map_profile, error = await self._async_resolve_active_map(
+            error_factory=self._patrol_area_error,
+        )
+        if error:
+            return error
+
+        normalized, error = self._normalize_patrol_area_path_input(
+            patrol_area_id=patrol_area_id,
+            expected_revision=expected_revision,
+            path_json=path_json,
+            active_frame_id=map_profile["frame_id"],
+        )
+        if error:
+            return error
+
+        try:
+            result = await self._call_async_or_thread(
+                "async_update_patrol_area_path",
+                "update_patrol_area_path",
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return self._patrol_area_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="순찰 경로 수정 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return self._format_patrol_area_update_result(result)
+
     async def async_get_active_map_bundle(
         self,
         *,
@@ -570,6 +644,38 @@ class CoordinateConfigService:
             result_message="목적지 좌표 수정 결과를 확인할 수 없습니다.",
         )
 
+    @classmethod
+    def _format_patrol_area_update_result(cls, result):
+        result = result if isinstance(result, dict) else {}
+        status = result.get("status")
+        if status == "UPDATED":
+            return {
+                "result_code": "UPDATED",
+                "result_message": None,
+                "reason_code": None,
+                "patrol_area": cls._format_patrol_area(
+                    result.get("patrol_area") or {},
+                    include_patrol_path=True,
+                ),
+            }
+        if status == "NOT_FOUND":
+            return cls._patrol_area_error(
+                result_code="NOT_FOUND",
+                reason_code="PATROL_AREA_NOT_FOUND",
+                result_message="수정할 순찰 구역을 찾을 수 없습니다.",
+            )
+        if status == "REVISION_CONFLICT":
+            return cls._patrol_area_error(
+                result_code="CONFLICT",
+                reason_code="PATROL_AREA_REVISION_CONFLICT",
+                result_message="순찰 경로 revision이 최신 값과 일치하지 않습니다.",
+            )
+        return cls._patrol_area_error(
+            result_code="UNAVAILABLE",
+            reason_code="CONFIG_WRITE_FAILED",
+            result_message="순찰 경로 수정 결과를 확인할 수 없습니다.",
+        )
+
     @staticmethod
     def _operation_zone_error(*, result_code, reason_code, result_message):
         return {
@@ -586,6 +692,15 @@ class CoordinateConfigService:
             "result_message": result_message,
             "reason_code": reason_code,
             "goal_pose": None,
+        }
+
+    @staticmethod
+    def _patrol_area_error(*, result_code, reason_code, result_message):
+        return {
+            "result_code": result_code,
+            "result_message": result_message,
+            "reason_code": reason_code,
+            "patrol_area": None,
         }
 
     @classmethod
@@ -749,6 +864,94 @@ class CoordinateConfigService:
                 result_message="연결할 구역을 찾을 수 없습니다.",
             )
         return None
+
+    @classmethod
+    def _normalize_patrol_area_path_input(
+        cls,
+        *,
+        patrol_area_id,
+        expected_revision,
+        path_json,
+        active_frame_id,
+    ):
+        normalized_patrol_area_id = cls._normalize_optional_text(patrol_area_id)
+        if (
+            not normalized_patrol_area_id
+            or len(normalized_patrol_area_id) > 100
+            or not ZONE_ID_PATTERN.match(normalized_patrol_area_id)
+        ):
+            return None, cls._patrol_area_error(
+                result_code="INVALID_REQUEST",
+                reason_code="PATROL_AREA_NOT_FOUND",
+                result_message="patrol_area_id가 유효하지 않습니다.",
+            )
+
+        revision = cls._optional_int(expected_revision)
+        if revision is None or revision < 1:
+            return None, cls._patrol_area_error(
+                result_code="INVALID_REQUEST",
+                reason_code="PATROL_AREA_REVISION_CONFLICT",
+                result_message="expected_revision이 유효하지 않습니다.",
+            )
+
+        path = cls._json_object(path_json)
+        header = path.get("header")
+        if not isinstance(header, dict):
+            return None, cls._patrol_area_error(
+                result_code="INVALID_REQUEST",
+                reason_code="PATROL_PATH_INVALID",
+                result_message="path_json.header가 유효하지 않습니다.",
+            )
+
+        frame_id = cls._normalize_optional_text(header.get("frame_id"))
+        if frame_id != active_frame_id:
+            return None, cls._patrol_area_error(
+                result_code="INVALID_REQUEST",
+                reason_code="FRAME_ID_MISMATCH",
+                result_message="순찰 경로 frame_id가 active map frame과 일치하지 않습니다.",
+            )
+
+        raw_poses = path.get("poses")
+        if not isinstance(raw_poses, list):
+            return None, cls._patrol_area_error(
+                result_code="INVALID_REQUEST",
+                reason_code="PATROL_PATH_INVALID",
+                result_message="path_json.poses가 유효하지 않습니다.",
+            )
+        if len(raw_poses) < 2:
+            return None, cls._patrol_area_error(
+                result_code="INVALID_REQUEST",
+                reason_code="PATROL_PATH_TOO_SHORT",
+                result_message="순찰 경로는 최소 두 개 이상의 waypoint가 필요합니다.",
+            )
+
+        poses = []
+        for pose in raw_poses:
+            if not isinstance(pose, dict):
+                return None, cls._patrol_area_error(
+                    result_code="INVALID_REQUEST",
+                    reason_code="PATROL_PATH_INVALID",
+                    result_message="순찰 waypoint shape이 유효하지 않습니다.",
+                )
+            x = cls._optional_float(pose.get("x"))
+            y = cls._optional_float(pose.get("y"))
+            yaw = cls._optional_float(pose.get("yaw"))
+            if x is None or y is None or yaw is None:
+                return None, cls._patrol_area_error(
+                    result_code="INVALID_REQUEST",
+                    reason_code="PATROL_PATH_INVALID",
+                    result_message="순찰 waypoint 좌표가 유효하지 않습니다.",
+                )
+            poses.append({"x": x, "y": y, "yaw": yaw})
+
+        return {
+            "patrol_area_id": normalized_patrol_area_id,
+            "expected_revision": revision,
+            "path_json": {
+                "header": {"frame_id": frame_id},
+                "poses": poses,
+            },
+        }, None
 
     def _generated_at(self):
         value = self._clock()

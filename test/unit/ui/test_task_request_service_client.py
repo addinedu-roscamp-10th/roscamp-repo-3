@@ -273,6 +273,44 @@ def test_coordinate_config_remote_service_exposes_goal_pose_update_rpc(monkeypat
     ]
 
 
+def test_coordinate_config_remote_service_exposes_patrol_area_path_update_rpc(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "UPDATED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    response = CoordinateConfigRemoteService().update_patrol_area_path(
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        path_json=path_json,
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert calls == [
+        (
+            "coordinate_config",
+            "update_patrol_area_path",
+            {
+                "patrol_area_id": "patrol_ward_night_01",
+                "expected_revision": 7,
+                "path_json": path_json,
+            },
+        )
+    ]
+
+
 def test_task_monitor_remote_service_sends_fall_evidence_over_if_pat_007(monkeypatch):
     calls = []
 

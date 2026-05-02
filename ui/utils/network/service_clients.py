@@ -198,6 +198,20 @@ class CoordinateConfigRemoteService:
             is_enabled=is_enabled,
         )
 
+    def update_patrol_area_path(
+        self,
+        *,
+        patrol_area_id,
+        expected_revision,
+        path_json,
+    ):
+        return self._rpc(
+            "update_patrol_area_path",
+            patrol_area_id=patrol_area_id,
+            expected_revision=expected_revision,
+            path_json=path_json,
+        )
+
 
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"

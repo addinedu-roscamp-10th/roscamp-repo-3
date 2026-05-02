@@ -536,3 +536,166 @@ def test_coordinate_config_repository_exposes_async_goal_pose_update(monkeypatch
             ("delivery_room_301",),
         ),
     ]
+
+
+def test_coordinate_config_repository_updates_patrol_area_path_with_revision_lock(
+    monkeypatch,
+):
+    locked_row = {
+        "patrol_area_id": "patrol_ward_night_01",
+        "map_id": "map_test11_0423",
+        "revision": 7,
+    }
+    updated_row = {
+        "patrol_area_id": "patrol_ward_night_01",
+        "map_id": "map_test11_0423",
+        "revision": 8,
+    }
+    cursor = FakeCursor(rows=[locked_row, updated_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_patrol_area_path(
+        map_id="map_test11_0423",
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        path_json=path_json,
+    )
+
+    assert result == {"status": "UPDATED", "patrol_area": updated_row}
+    assert connection.began is True
+    assert connection.committed is True
+    lock_query, lock_params = cursor.calls[0]
+    update_query, update_params = cursor.calls[1]
+    select_query, select_params = cursor.calls[2]
+    assert lock_query == coordinate_config_repository.LOCK_PATROL_AREA_SQL
+    assert lock_params == ("patrol_ward_night_01", "map_test11_0423")
+    assert "revision = revision + 1" in update_query
+    assert update_params[1:] == ("patrol_ward_night_01", "map_test11_0423")
+    assert update_params[0] == (
+        '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0},'
+        '{"x":1.0,"y":1.0,"yaw":0.0}]}'
+    )
+    assert select_query == coordinate_config_repository.FIND_PATROL_AREA_SQL
+    assert select_params == ("patrol_ward_night_01",)
+
+
+def test_coordinate_config_repository_reports_patrol_area_revision_conflict(
+    monkeypatch,
+):
+    cursor = FakeCursor(
+        rows=[
+            {
+                "patrol_area_id": "patrol_ward_night_01",
+                "map_id": "map_test11_0423",
+                "revision": 8,
+            }
+        ]
+    )
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_patrol_area_path(
+        map_id="map_test11_0423",
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        path_json={"header": {"frame_id": "map"}, "poses": []},
+    )
+
+    assert result["status"] == "REVISION_CONFLICT"
+    assert connection.committed is True
+    assert len(cursor.calls) == 1
+
+
+def test_coordinate_config_repository_exposes_async_patrol_area_path_update(
+    monkeypatch,
+):
+    calls = []
+    rows = [
+        {
+            "patrol_area_id": "patrol_ward_night_01",
+            "map_id": "map_test11_0423",
+            "revision": 7,
+        },
+        {
+            "patrol_area_id": "patrol_ward_night_01",
+            "map_id": "map_test11_0423",
+            "revision": 8,
+        },
+    ]
+
+    class AsyncCursor:
+        async def execute(self, query, params=None):
+            calls.append((query, params))
+
+        async def fetchone(self):
+            return rows.pop(0)
+
+    @asynccontextmanager
+    async def fake_async_transaction():
+        yield AsyncCursor()
+
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "async_transaction",
+        fake_async_transaction,
+    )
+
+    async def scenario():
+        return await coordinate_config_repository.CoordinateConfigRepository().async_update_patrol_area_path(
+            map_id="map_test11_0423",
+            patrol_area_id="patrol_ward_night_01",
+            expected_revision=7,
+            path_json={
+                "header": {"frame_id": "map"},
+                "poses": [
+                    {"x": 0.0, "y": 0.0, "yaw": 0.0},
+                    {"x": 1.0, "y": 1.0, "yaw": 0.0},
+                ],
+            },
+        )
+
+    result = asyncio.run(scenario())
+
+    assert result == {
+        "status": "UPDATED",
+        "patrol_area": {
+            "patrol_area_id": "patrol_ward_night_01",
+            "map_id": "map_test11_0423",
+            "revision": 8,
+        },
+    }
+    assert calls == [
+        (
+            coordinate_config_repository.LOCK_PATROL_AREA_SQL,
+            ("patrol_ward_night_01", "map_test11_0423"),
+        ),
+        (
+            coordinate_config_repository.UPDATE_PATROL_AREA_PATH_SQL,
+            (
+                '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0},'
+                '{"x":1.0,"y":1.0,"yaw":0.0}]}',
+                "patrol_ward_night_01",
+                "map_test11_0423",
+            ),
+        ),
+        (
+            coordinate_config_repository.FIND_PATROL_AREA_SQL,
+            ("patrol_ward_night_01",),
+        ),
+    ]

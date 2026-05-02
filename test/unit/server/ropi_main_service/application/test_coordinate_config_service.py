@@ -74,6 +74,7 @@ class FakeCoordinateConfigRepository:
         self.create_result = None
         self.update_result = None
         self.goal_pose_update_result = None
+        self.patrol_area_update_result = None
 
     def get_active_map_profile(self):
         self.calls.append(("get_active_map_profile",))
@@ -306,6 +307,66 @@ class FakeCoordinateConfigRepository:
                 "is_enabled": kwargs["is_enabled"],
                 "created_at": datetime(2026, 5, 2, 12, 0, 0),
                 "updated_at": datetime(2026, 5, 2, 12, 4, 0),
+            },
+        }
+
+    def update_patrol_area_path(
+        self,
+        *,
+        map_id,
+        patrol_area_id,
+        expected_revision,
+        path_json,
+    ):
+        self.calls.append(
+            (
+                "update_patrol_area_path",
+                map_id,
+                patrol_area_id,
+                expected_revision,
+                path_json,
+            )
+        )
+        return self.patrol_area_update_result or {
+            "status": "UPDATED",
+            "patrol_area": {
+                "patrol_area_id": patrol_area_id,
+                "map_id": map_id,
+                "patrol_area_name": "야간 병동 순찰",
+                "revision": expected_revision + 1,
+                "path_json": path_json,
+                "waypoint_count": len(path_json["poses"]),
+                "path_frame_id": path_json["header"]["frame_id"],
+                "is_enabled": True,
+                "created_at": datetime(2026, 5, 2, 12, 0, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 5, 0),
+            },
+        }
+
+    async def async_update_patrol_area_path(self, **kwargs):
+        self.calls.append(
+            (
+                "async_update_patrol_area_path",
+                kwargs["map_id"],
+                kwargs["patrol_area_id"],
+                kwargs["expected_revision"],
+                kwargs["path_json"],
+            )
+        )
+        path_json = kwargs["path_json"]
+        return self.patrol_area_update_result or {
+            "status": "UPDATED",
+            "patrol_area": {
+                "patrol_area_id": kwargs["patrol_area_id"],
+                "map_id": kwargs["map_id"],
+                "patrol_area_name": "야간 병동 순찰",
+                "revision": kwargs["expected_revision"] + 1,
+                "path_json": path_json,
+                "waypoint_count": len(path_json["poses"]),
+                "path_frame_id": path_json["header"]["frame_id"],
+                "is_enabled": True,
+                "created_at": datetime(2026, 5, 2, 12, 0, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 5, 0),
             },
         }
 
@@ -776,5 +837,173 @@ def test_update_goal_pose_async_uses_async_repository_method():
             0.0,
             "map",
             False,
+        ),
+    ]
+
+
+def test_update_patrol_area_path_replaces_path_and_increments_revision():
+    repository = FakeCoordinateConfigRepository()
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": "0.1666", "y": "-0.4497", "yaw": "1.5708"},
+            {"x": "1.6946", "y": "0.0043", "yaw": "0"},
+        ],
+    }
+
+    response = _service(repository).update_patrol_area_path(
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision="7",
+        path_json=path_json,
+    )
+
+    normalized_path = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.1666, "y": -0.4497, "yaw": 1.5708},
+            {"x": 1.6946, "y": 0.0043, "yaw": 0.0},
+        ],
+    }
+    assert response["result_code"] == "UPDATED"
+    assert response["reason_code"] is None
+    assert response["patrol_area"] == {
+        "patrol_area_id": "patrol_ward_night_01",
+        "map_id": "map_test11_0423",
+        "patrol_area_name": "야간 병동 순찰",
+        "revision": 8,
+        "path_json": normalized_path,
+        "waypoint_count": 2,
+        "path_frame_id": "map",
+        "is_enabled": True,
+        "created_at": "2026-05-02T12:00:00",
+        "updated_at": "2026-05-02T12:05:00",
+    }
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        (
+            "update_patrol_area_path",
+            "map_test11_0423",
+            "patrol_ward_night_01",
+            7,
+            normalized_path,
+        ),
+    ]
+
+
+def test_update_patrol_area_path_rejects_frame_mismatch():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).update_patrol_area_path(
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        path_json={
+            "header": {"frame_id": "odom"},
+            "poses": [
+                {"x": 0.0, "y": 0.0, "yaw": 0.0},
+                {"x": 1.0, "y": 1.0, "yaw": 0.0},
+            ],
+        },
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "FRAME_ID_MISMATCH"
+    assert response["patrol_area"] is None
+    assert repository.calls == [("get_active_map_profile",)]
+
+
+def test_update_patrol_area_path_rejects_path_with_too_few_poses():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).update_patrol_area_path(
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        path_json={
+            "header": {"frame_id": "map"},
+            "poses": [{"x": 0.0, "y": 0.0, "yaw": 0.0}],
+        },
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "PATROL_PATH_TOO_SHORT"
+    assert response["patrol_area"] is None
+
+
+def test_update_patrol_area_path_rejects_invalid_pose_shape():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).update_patrol_area_path(
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        path_json={
+            "header": {"frame_id": "map"},
+            "poses": [
+                {"x": 0.0, "y": 0.0, "yaw": 0.0},
+                {"x": "bad", "y": 1.0, "yaw": 0.0},
+            ],
+        },
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "PATROL_PATH_INVALID"
+    assert response["patrol_area"] is None
+
+
+def test_update_patrol_area_path_reports_revision_conflict():
+    repository = FakeCoordinateConfigRepository()
+    repository.patrol_area_update_result = {
+        "status": "REVISION_CONFLICT",
+        "patrol_area": repository.patrol_areas[0],
+    }
+
+    response = _service(repository).update_patrol_area_path(
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        path_json={
+            "header": {"frame_id": "map"},
+            "poses": [
+                {"x": 0.0, "y": 0.0, "yaw": 0.0},
+                {"x": 1.0, "y": 1.0, "yaw": 0.0},
+            ],
+        },
+    )
+
+    assert response["result_code"] == "CONFLICT"
+    assert response["reason_code"] == "PATROL_AREA_REVISION_CONFLICT"
+    assert response["patrol_area"] is None
+
+
+def test_update_patrol_area_path_async_uses_async_repository_method():
+    repository = FakeCoordinateConfigRepository()
+
+    response = asyncio.run(
+        _service(repository).async_update_patrol_area_path(
+            patrol_area_id="patrol_ward_night_01",
+            expected_revision="7",
+            path_json={
+                "header": {"frame_id": "map"},
+                "poses": [
+                    {"x": "0.0", "y": "0.0", "yaw": "0.0"},
+                    {"x": "1.0", "y": "1.0", "yaw": "0.0"},
+                ],
+            },
+        )
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert response["patrol_area"]["revision"] == 8
+    assert repository.calls == [
+        ("async_get_active_map_profile",),
+        (
+            "async_update_patrol_area_path",
+            "map_test11_0423",
+            "patrol_ward_night_01",
+            7,
+            {
+                "header": {"frame_id": "map"},
+                "poses": [
+                    {"x": 0.0, "y": 0.0, "yaw": 0.0},
+                    {"x": 1.0, "y": 1.0, "yaw": 0.0},
+                ],
+            },
         ),
     ]
