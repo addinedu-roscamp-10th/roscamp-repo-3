@@ -12,12 +12,22 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
+from ui.utils.pages.caregiver.coordinate_boundary_editing import (
+    append_boundary_vertex,
+    boundary_json_from_vertices,
+    boundary_table_rows,
+    boundary_vertex_buttons_state,
+    boundary_vertices_from_json,
+    clear_boundary_vertices as clear_boundary_vertex_list,
+    delete_selected_boundary_vertex as delete_boundary_vertex,
+    move_selected_boundary_vertex_to_world as move_boundary_vertex_to_world,
+    replace_selected_boundary_vertex,
+    selected_boundary_vertex,
+)
 from ui.utils.pages.caregiver.coordinate_pose_editing import (
     coerce_point2d,
     coerce_pose2d,
-    delete_index,
     nearest_pose_index,
-    replace_index,
 )
 from ui.utils.pages.caregiver.coordinate_waypoint_editing import (
     append_patrol_waypoint,
@@ -611,10 +621,11 @@ class CoordinateZoneSettingsPage(QWidget):
             self.select_operation_zone_boundary_vertex(selected)
             return
 
-        self.operation_zone_boundary_vertices.append(vertex)
-        self.selected_operation_zone_boundary_vertex_index = (
-            len(self.operation_zone_boundary_vertices) - 1
-        )
+        edit = append_boundary_vertex(self.operation_zone_boundary_vertices, vertex)
+        if edit is None:
+            return
+        self.operation_zone_boundary_vertices = edit.vertices
+        self.selected_operation_zone_boundary_vertex_index = edit.selected_index
         self._populate_operation_zone_boundary_table()
         self._set_operation_zone_boundary_vertex_form(
             self.selected_operation_zone_boundary_vertex_index
@@ -771,16 +782,7 @@ class CoordinateZoneSettingsPage(QWidget):
             if isinstance(operation_zone, dict)
             else None
         )
-        boundary = boundary if isinstance(boundary, dict) else {}
-        raw_vertices = boundary.get("vertices")
-        if not isinstance(raw_vertices, list):
-            raw_vertices = []
-
-        self.operation_zone_boundary_vertices = [
-            {"x": _float_or_default(vertex.get("x")), "y": _float_or_default(vertex.get("y"))}
-            for vertex in raw_vertices
-            if isinstance(vertex, dict)
-        ]
+        self.operation_zone_boundary_vertices = boundary_vertices_from_json(boundary)
         self.selected_operation_zone_boundary_vertex_index = (
             0 if self.operation_zone_boundary_vertices else None
         )
@@ -791,15 +793,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_operation_zone_overlay()
 
     def _populate_operation_zone_boundary_table(self):
-        self.operation_zone_boundary_table.setRowCount(
-            len(self.operation_zone_boundary_vertices)
-        )
-        for row_index, vertex in enumerate(self.operation_zone_boundary_vertices):
-            row_values = [
-                str(row_index + 1),
-                _waypoint_number_text(vertex.get("x")),
-                _waypoint_number_text(vertex.get("y")),
-            ]
+        table_rows = boundary_table_rows(self.operation_zone_boundary_vertices)
+        self.operation_zone_boundary_table.setRowCount(len(table_rows))
+        for row_index, row_values in enumerate(table_rows):
             for column_index, value in enumerate(row_values):
                 self.operation_zone_boundary_table.setItem(
                     row_index,
@@ -819,24 +815,29 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_operation_zone_overlay()
 
     def _set_operation_zone_boundary_vertex_form(self, row_index):
-        enabled = row_index is not None and 0 <= row_index < len(
-            self.operation_zone_boundary_vertices
+        selected = selected_boundary_vertex(
+            self.operation_zone_boundary_vertices,
+            row_index,
+        )
+        enabled = selected is not None
+        button_state = boundary_vertex_buttons_state(
+            self.operation_zone_boundary_vertices,
+            row_index,
         )
         self._syncing_operation_zone_boundary_form = True
         try:
             self.operation_zone_boundary_x_spin.setEnabled(enabled)
             self.operation_zone_boundary_y_spin.setEnabled(enabled)
-            self.operation_zone_boundary_delete_button.setEnabled(enabled)
-            self.operation_zone_boundary_clear_button.setEnabled(
-                bool(self.operation_zone_boundary_vertices)
+            self.operation_zone_boundary_delete_button.setEnabled(
+                button_state["delete"]
             )
+            self.operation_zone_boundary_clear_button.setEnabled(button_state["clear"])
             if enabled:
-                vertex = self.operation_zone_boundary_vertices[row_index]
                 self.operation_zone_boundary_x_spin.setValue(
-                    _float_or_default(vertex.get("x"))
+                    _float_or_default(selected.get("x"))
                 )
                 self.operation_zone_boundary_y_spin.setValue(
-                    _float_or_default(vertex.get("y"))
+                    _float_or_default(selected.get("y"))
                 )
             else:
                 self.operation_zone_boundary_x_spin.setValue(0.0)
@@ -853,30 +854,26 @@ class CoordinateZoneSettingsPage(QWidget):
         index = self.selected_operation_zone_boundary_vertex_index
         if index is None or not 0 <= index < len(self.operation_zone_boundary_vertices):
             return
-        next_vertices = replace_index(
+        edit = replace_selected_boundary_vertex(
             self.operation_zone_boundary_vertices,
             index,
-            {
-                "x": self.operation_zone_boundary_x_spin.value(),
-                "y": self.operation_zone_boundary_y_spin.value(),
-            },
+            x=self.operation_zone_boundary_x_spin.value(),
+            y=self.operation_zone_boundary_y_spin.value(),
         )
-        if next_vertices is None:
+        if edit is None:
             return
-        self.operation_zone_boundary_vertices = next_vertices
+        self.operation_zone_boundary_vertices = edit.vertices
         self._populate_operation_zone_boundary_table()
         self._mark_operation_zone_boundary_dirty()
         self._sync_operation_zone_overlay()
 
     def delete_selected_operation_zone_boundary_vertex(self):
         index = self.selected_operation_zone_boundary_vertex_index
-        deleted = delete_index(self.operation_zone_boundary_vertices, index)
-        if deleted is None:
+        edit = delete_boundary_vertex(self.operation_zone_boundary_vertices, index)
+        if edit is None:
             return
-        (
-            self.operation_zone_boundary_vertices,
-            self.selected_operation_zone_boundary_vertex_index,
-        ) = deleted
+        self.operation_zone_boundary_vertices = edit.vertices
+        self.selected_operation_zone_boundary_vertex_index = edit.selected_index
         self._populate_operation_zone_boundary_table()
         self._set_operation_zone_boundary_vertex_form(
             self.selected_operation_zone_boundary_vertex_index
@@ -885,10 +882,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_operation_zone_overlay()
 
     def clear_operation_zone_boundary(self):
-        if not self.operation_zone_boundary_vertices:
+        edit = clear_boundary_vertex_list(self.operation_zone_boundary_vertices)
+        if edit is None:
             return
-        self.operation_zone_boundary_vertices = []
-        self.selected_operation_zone_boundary_vertex_index = None
+        self.operation_zone_boundary_vertices = edit.vertices
+        self.selected_operation_zone_boundary_vertex_index = edit.selected_index
         self._populate_operation_zone_boundary_table()
         self._set_operation_zone_boundary_vertex_form(None)
         self._mark_operation_zone_boundary_dirty()
@@ -900,19 +898,17 @@ class CoordinateZoneSettingsPage(QWidget):
         index = self.selected_operation_zone_boundary_vertex_index
         if index is None or not 0 <= index < len(self.operation_zone_boundary_vertices):
             return
-        vertex = coerce_point2d(world_pose)
-        if vertex is None:
-            return
-        if not self.map_canvas.contains_world_pose(vertex):
-            return
-        next_vertices = replace_index(
+        edit = move_boundary_vertex_to_world(
             self.operation_zone_boundary_vertices,
             index,
-            vertex,
+            world_pose,
         )
-        if next_vertices is None:
+        if edit is None:
             return
-        self.operation_zone_boundary_vertices = next_vertices
+        vertex = edit.vertices[edit.selected_index]
+        if not self.map_canvas.contains_world_pose(vertex):
+            return
+        self.operation_zone_boundary_vertices = edit.vertices
         self._populate_operation_zone_boundary_table()
         self._set_operation_zone_boundary_vertex_form(index)
         self._mark_operation_zone_boundary_dirty()
@@ -1016,19 +1012,10 @@ class CoordinateZoneSettingsPage(QWidget):
         }
 
     def _current_operation_zone_boundary_json(self):
-        if not self.operation_zone_boundary_vertices:
-            return None
-        return {
-            "type": "POLYGON",
-            "header": {"frame_id": self._active_map_frame_id()},
-            "vertices": [
-                {
-                    "x": _float_or_default(vertex.get("x")),
-                    "y": _float_or_default(vertex.get("y")),
-                }
-                for vertex in self.operation_zone_boundary_vertices
-            ],
-        }
+        return boundary_json_from_vertices(
+            self.operation_zone_boundary_vertices,
+            frame_id=self._active_map_frame_id(),
+        )
 
     def _handle_operation_zone_save_finished(self, ok, response):
         if not ok:
@@ -1676,10 +1663,6 @@ def _patrol_path_frame_id(patrol_area):
     if isinstance(patrol_area, dict) and patrol_area.get("path_frame_id"):
         return str(patrol_area.get("path_frame_id")).strip()
     return ""
-
-
-def _waypoint_number_text(value):
-    return f"{_float_or_default(value):.4f}"
 
 
 __all__ = [
