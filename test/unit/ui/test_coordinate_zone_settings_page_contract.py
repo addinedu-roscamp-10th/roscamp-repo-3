@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableWidget,
 )
@@ -111,6 +112,9 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert discard_button.text() == "변경 취소"
         assert save_button.isEnabled() is False
         assert discard_button.isEnabled() is False
+        new_zone_button = page.findChild(QPushButton, "operationZoneNewButton")
+        assert new_zone_button.text() == "새 구역"
+        assert new_zone_button.parent() is not page.operation_zone_form
 
         map_canvas = page.findChild(MapCanvasWidget, "coordinateZoneMapCanvas")
         assert map_canvas is not None
@@ -218,6 +222,249 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         assert patrol_table.item(0, 3).text() == "비활성"
         assert page.validation_message_label.text() == "맵과 좌표 설정을 불러왔습니다."
         assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_selects_operation_zone_into_edit_form():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+
+        assert page.selected_edit_type == "operation_zone"
+        assert page.operation_zone_mode == "edit"
+        assert page.selected_operation_zone["zone_id"] == "room_301"
+        assert page.findChild(QLineEdit, "operationZoneIdInput").text() == "room_301"
+        assert page.findChild(QLineEdit, "operationZoneIdInput").isReadOnly() is True
+        assert page.findChild(QLineEdit, "operationZoneNameInput").text() == "301호"
+        assert (
+            page.findChild(QComboBox, "operationZoneTypeCombo").currentText()
+            == "ROOM"
+        )
+        assert page.findChild(QCheckBox, "operationZoneEnabledCheck").isChecked() is True
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_operation_zone_dirty_create_and_discard():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.start_operation_zone_create()
+
+        zone_id_input = page.findChild(QLineEdit, "operationZoneIdInput")
+        zone_name_input = page.findChild(QLineEdit, "operationZoneNameInput")
+        zone_type_combo = page.findChild(QComboBox, "operationZoneTypeCombo")
+        enabled_check = page.findChild(QCheckBox, "operationZoneEnabledCheck")
+
+        assert page.operation_zone_mode == "create"
+        assert zone_id_input.isReadOnly() is False
+
+        zone_id_input.setText("caregiver_room")
+        zone_name_input.setText("보호사실")
+        zone_type_combo.setCurrentText("STAFF_STATION")
+        enabled_check.setChecked(True)
+
+        assert page.operation_zone_dirty is True
+        assert page.save_button.isEnabled() is True
+        assert page.discard_button.isEnabled() is True
+
+        page.discard_current_edit()
+
+        assert zone_id_input.text() == ""
+        assert zone_name_input.text() == ""
+        assert page.operation_zone_dirty is False
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_operation_zone_save_worker_sends_if_loc_002_and_003_payloads():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        OperationZoneSaveWorker,
+    )
+
+    calls = []
+
+    class FakeCoordinateService:
+        def create_operation_zone(self, **payload):
+            calls.append(("create", payload))
+            return {
+                "result_code": "CREATED",
+                "operation_zone": {**payload, "revision": 1},
+            }
+
+        def update_operation_zone(self, **payload):
+            calls.append(("update", payload))
+            return {
+                "result_code": "UPDATED",
+                "operation_zone": {
+                    "zone_id": payload["zone_id"],
+                    "zone_name": payload["zone_name"],
+                    "zone_type": payload["zone_type"],
+                    "revision": payload["expected_revision"] + 1,
+                    "is_enabled": payload["is_enabled"],
+                },
+            }
+
+    emitted = []
+    create_payload = {
+        "zone_id": "caregiver_room",
+        "zone_name": "보호사실",
+        "zone_type": "STAFF_STATION",
+        "map_id": "map_test",
+        "is_enabled": True,
+    }
+    update_payload = {
+        "zone_id": "room_301",
+        "expected_revision": 1,
+        "zone_name": "301호",
+        "zone_type": "ROOM",
+        "is_enabled": False,
+    }
+
+    create_worker = OperationZoneSaveWorker(
+        mode="create",
+        payload=create_payload,
+        service_factory=FakeCoordinateService,
+    )
+    update_worker = OperationZoneSaveWorker(
+        mode="edit",
+        payload=update_payload,
+        service_factory=FakeCoordinateService,
+    )
+    create_worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+    update_worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+
+    create_worker.run()
+    update_worker.run()
+
+    assert calls == [
+        ("create", create_payload),
+        ("update", update_payload),
+    ]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["operation_zone"]["zone_id"] == "caregiver_room"
+    assert emitted[1][0] is True
+    assert emitted[1][1]["operation_zone"]["revision"] == 2
+
+
+def test_coordinate_zone_settings_page_applies_operation_zone_save_success():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        page._handle_operation_zone_save_finished(
+            True,
+            {
+                "result_code": "UPDATED",
+                "operation_zone": {
+                    "zone_id": "room_301",
+                    "zone_name": "301호",
+                    "zone_type": "ROOM",
+                    "revision": 2,
+                    "is_enabled": False,
+                },
+            },
+        )
+
+        zone_table = page.findChild(QTableWidget, "operationZoneTable")
+        assert zone_table.item(0, 0).text() == "room_301"
+        assert zone_table.item(0, 3).text() == "비활성"
+        assert page.selected_operation_zone["revision"] == 2
+        assert page.operation_zone_dirty is False
+        assert page.validation_message_label.text() == "운영 구역을 저장했습니다."
+
+        page.start_operation_zone_create()
+        page._handle_operation_zone_save_finished(
+            True,
+            {
+                "result_code": "CREATED",
+                "operation_zone": {
+                    "zone_id": "caregiver_room",
+                    "zone_name": "보호사실",
+                    "zone_type": "STAFF_STATION",
+                    "revision": 1,
+                    "is_enabled": True,
+                },
+            },
+        )
+
+        assert zone_table.rowCount() == 2
+        assert zone_table.item(1, 0).text() == "caregiver_room"
+        assert page.findChild(QComboBox, "goalPoseZoneCombo").findData(
+            "caregiver_room"
+        ) >= 0
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_keeps_operation_zone_dirty_on_failure():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        page.findChild(QLineEdit, "operationZoneNameInput").setText("301호-수정")
+
+        page._handle_operation_zone_save_finished(
+            False,
+            "ZONE_REVISION_CONFLICT: 다른 사용자가 먼저 구역을 수정했습니다.",
+        )
+
+        assert page.findChild(QLineEdit, "operationZoneNameInput").text() == "301호-수정"
+        assert page.operation_zone_dirty is True
+        assert page.save_button.isEnabled() is True
+        assert "ZONE_REVISION_CONFLICT" in page.validation_message_label.text()
     finally:
         page.close()
 

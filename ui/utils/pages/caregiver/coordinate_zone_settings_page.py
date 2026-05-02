@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -32,6 +33,18 @@ ACTIVE_MAP_FIELDS = [
     ("pgm_path", "pgm_path"),
 ]
 GOAL_POSE_PURPOSES = ["PICKUP", "DESTINATION", "DOCK"]
+OPERATION_ZONE_TYPES = [
+    "ROOM",
+    "ENTRANCE",
+    "CORRIDOR",
+    "NURSE_STATION",
+    "STAFF_STATION",
+    "CAREGIVER_ROOM",
+    "SUPPLY_STATION",
+    "DOCK",
+    "RESTRICTED",
+    "OTHER",
+]
 
 
 class CoordinateConfigLoadWorker(QObject):
@@ -111,6 +124,36 @@ class GoalPoseSaveWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class OperationZoneSaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, *, mode, payload, service_factory=CoordinateConfigRemoteService):
+        super().__init__()
+        self.mode = str(mode or "").strip()
+        self.payload = dict(payload or {})
+        self.service_factory = service_factory
+
+    def run(self):
+        try:
+            service = self.service_factory()
+            if self.mode == "create":
+                response = service.create_operation_zone(**self.payload)
+                success_code = "CREATED"
+            else:
+                response = service.update_operation_zone(**self.payload)
+                success_code = "UPDATED"
+
+            if (
+                isinstance(response, dict)
+                and response.get("result_code") == success_code
+            ):
+                self.finished.emit(True, response)
+                return
+            self.finished.emit(False, _format_result_error(response))
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
 class CoordinateZoneSettingsPage(QWidget):
     def __init__(self):
         super().__init__()
@@ -120,12 +163,19 @@ class CoordinateZoneSettingsPage(QWidget):
         self.load_worker = None
         self.goal_pose_save_thread = None
         self.goal_pose_save_worker = None
+        self.operation_zone_save_thread = None
+        self.operation_zone_save_worker = None
         self._worker_stop_wait_ms = 1500
         self.current_bundle = {}
         self.operation_zone_rows = []
         self.goal_pose_rows = []
         self.patrol_area_rows = []
         self.selected_edit_type = None
+        self.operation_zone_mode = None
+        self.selected_operation_zone = None
+        self.selected_operation_zone_index = None
+        self.operation_zone_dirty = False
+        self._syncing_operation_zone_form = False
         self.selected_goal_pose = None
         self.selected_goal_pose_index = None
         self.goal_pose_dirty = False
@@ -273,6 +323,10 @@ class CoordinateZoneSettingsPage(QWidget):
         self.tables[object_name] = table
         if object_name == "goalPoseTable":
             table.cellClicked.connect(lambda row, _column: self.select_goal_pose(row))
+        if object_name == "operationZoneTable":
+            table.cellClicked.connect(
+                lambda row, _column: self.select_operation_zone(row)
+            )
 
         layout.addWidget(title)
         layout.addWidget(table)
@@ -300,14 +354,61 @@ class CoordinateZoneSettingsPage(QWidget):
         )
         self.edit_placeholder_label.setObjectName("mutedText")
         self.edit_placeholder_label.setWordWrap(True)
+        self.operation_zone_new_button = QPushButton("새 구역")
+        self.operation_zone_new_button.setObjectName("operationZoneNewButton")
+        self.operation_zone_new_button.clicked.connect(self.start_operation_zone_create)
+        self.operation_zone_form = self._build_operation_zone_form()
+        self.operation_zone_form.setHidden(True)
         self.goal_pose_form = self._build_goal_pose_form()
         self.goal_pose_form.setHidden(True)
 
         self.edit_panel_layout.addWidget(title)
+        self.edit_panel_layout.addWidget(self.operation_zone_new_button)
         self.edit_panel_layout.addWidget(self.edit_placeholder_label)
+        self.edit_panel_layout.addWidget(self.operation_zone_form)
         self.edit_panel_layout.addWidget(self.goal_pose_form)
         self.edit_panel_layout.addStretch(1)
         return panel
+
+    def _build_operation_zone_form(self):
+        form = QFrame()
+        form.setObjectName("operationZoneEditForm")
+        layout = QGridLayout(form)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(10)
+
+        self.operation_zone_id_input = QLineEdit()
+        self.operation_zone_id_input.setObjectName("operationZoneIdInput")
+        self.operation_zone_name_input = QLineEdit()
+        self.operation_zone_name_input.setObjectName("operationZoneNameInput")
+        self.operation_zone_type_combo = QComboBox()
+        self.operation_zone_type_combo.setObjectName("operationZoneTypeCombo")
+        self.operation_zone_type_combo.addItems(OPERATION_ZONE_TYPES)
+        self.operation_zone_enabled_check = QCheckBox("활성")
+        self.operation_zone_enabled_check.setObjectName("operationZoneEnabledCheck")
+
+        rows = [
+            ("구역 ID", self.operation_zone_id_input),
+            ("구역명", self.operation_zone_name_input),
+            ("구역 유형", self.operation_zone_type_combo),
+            ("사용 여부", self.operation_zone_enabled_check),
+        ]
+        for row_index, (label_text, widget) in enumerate(rows):
+            label = QLabel(label_text)
+            label.setObjectName("fieldLabel")
+            layout.addWidget(label, row_index, 0)
+            layout.addWidget(widget, row_index, 1)
+
+        for widget in [
+            self.operation_zone_id_input,
+            self.operation_zone_name_input,
+            self.operation_zone_type_combo,
+            self.operation_zone_enabled_check,
+        ]:
+            self._connect_operation_zone_dirty_signal(widget)
+
+        return form
 
     def _build_goal_pose_form(self):
         form = QFrame()
@@ -386,6 +487,18 @@ class CoordinateZoneSettingsPage(QWidget):
             )
         elif isinstance(widget, QCheckBox):
             widget.toggled.connect(lambda _checked: self._mark_goal_pose_dirty())
+
+    def _connect_operation_zone_dirty_signal(self, widget):
+        if isinstance(widget, QLineEdit):
+            widget.textChanged.connect(lambda _text: self._mark_operation_zone_dirty())
+        elif isinstance(widget, QComboBox):
+            widget.currentIndexChanged.connect(
+                lambda _index: self._mark_operation_zone_dirty()
+            )
+        elif isinstance(widget, QCheckBox):
+            widget.toggled.connect(
+                lambda _checked: self._mark_operation_zone_dirty()
+            )
 
     def _build_validation_panel(self):
         panel = QFrame()
@@ -507,6 +620,45 @@ class CoordinateZoneSettingsPage(QWidget):
         self.save_button.setEnabled(False)
         self.discard_button.setEnabled(False)
 
+    def select_operation_zone(self, row_index):
+        try:
+            row_index = int(row_index)
+            operation_zone = self.operation_zone_rows[row_index]
+        except (IndexError, TypeError, ValueError):
+            return
+
+        self.selected_edit_type = "operation_zone"
+        self.operation_zone_mode = "edit"
+        self.selected_operation_zone_index = row_index
+        self.selected_operation_zone = dict(operation_zone)
+        self.edit_placeholder_label.setHidden(True)
+        self.operation_zone_form.setHidden(False)
+        self.goal_pose_form.setHidden(True)
+        self._set_operation_zone_form(operation_zone, mode="edit")
+        self.operation_zone_dirty = False
+        self._sync_operation_zone_save_state()
+
+    def start_operation_zone_create(self):
+        self.selected_edit_type = "operation_zone"
+        self.operation_zone_mode = "create"
+        self.selected_operation_zone = None
+        self.selected_operation_zone_index = None
+        self.edit_placeholder_label.setHidden(True)
+        self.operation_zone_form.setHidden(False)
+        self.goal_pose_form.setHidden(True)
+        self._set_operation_zone_form(
+            {
+                "zone_id": "",
+                "zone_name": "",
+                "zone_type": "ROOM",
+                "is_enabled": True,
+            },
+            mode="create",
+        )
+        self.operation_zone_dirty = False
+        self.validation_message_label.setText("새 운영 구역을 입력하세요.")
+        self._sync_operation_zone_save_state()
+
     def select_goal_pose(self, row_index):
         try:
             row_index = int(row_index)
@@ -518,6 +670,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.selected_goal_pose_index = row_index
         self.selected_goal_pose = dict(goal_pose)
         self.edit_placeholder_label.setHidden(True)
+        self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(False)
         self._set_goal_pose_form(goal_pose)
         self.goal_pose_dirty = False
@@ -536,15 +689,183 @@ class CoordinateZoneSettingsPage(QWidget):
         self._mark_goal_pose_dirty()
 
     def save_current_edit(self):
-        if self.selected_edit_type == "goal_pose":
+        if self.selected_edit_type == "operation_zone":
+            self.save_selected_operation_zone()
+        elif self.selected_edit_type == "goal_pose":
             self.save_selected_goal_pose()
 
     def discard_current_edit(self):
-        if self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
+        if self.selected_edit_type == "operation_zone":
+            if self.operation_zone_mode == "create":
+                self._set_operation_zone_form(
+                    {
+                        "zone_id": "",
+                        "zone_name": "",
+                        "zone_type": "ROOM",
+                        "is_enabled": True,
+                    },
+                    mode="create",
+                )
+                self.validation_message_label.setText(
+                    "새 운영 구역 입력을 취소했습니다."
+                )
+            elif self.selected_operation_zone:
+                self._set_operation_zone_form(
+                    self.selected_operation_zone,
+                    mode="edit",
+                )
+                self.validation_message_label.setText(
+                    "운영 구역 변경을 취소했습니다."
+                )
+            self.operation_zone_dirty = False
+            self._sync_operation_zone_save_state()
+        elif self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
             self._set_goal_pose_form(self.selected_goal_pose)
             self.goal_pose_dirty = False
             self.validation_message_label.setText("목표 좌표 변경을 취소했습니다.")
             self._sync_goal_pose_save_state()
+
+    def save_selected_operation_zone(self):
+        if self.operation_zone_save_thread is not None:
+            return
+        if not self.operation_zone_dirty:
+            return
+
+        payload = self._build_operation_zone_save_payload()
+        if not payload["zone_id"] or not payload["zone_name"]:
+            self.validation_message_label.setText("구역 ID와 구역명을 입력하세요.")
+            return
+
+        self.save_button.setEnabled(False)
+        self.discard_button.setEnabled(False)
+        self.validation_message_label.setText("운영 구역을 저장하는 중입니다.")
+        self.operation_zone_save_thread, self.operation_zone_save_worker = (
+            start_worker_thread(
+                self,
+                worker=OperationZoneSaveWorker(
+                    mode=self.operation_zone_mode,
+                    payload=payload,
+                ),
+                finished_handler=self._handle_operation_zone_save_finished,
+                clear_handler=self._clear_operation_zone_save_thread,
+            )
+        )
+
+    def _set_operation_zone_form(self, operation_zone, *, mode):
+        operation_zone = operation_zone if isinstance(operation_zone, dict) else {}
+        self._syncing_operation_zone_form = True
+        try:
+            self.operation_zone_id_input.setReadOnly(mode != "create")
+            self.operation_zone_id_input.setText(
+                _display_empty(operation_zone.get("zone_id"))
+            )
+            self.operation_zone_name_input.setText(
+                _display_empty(operation_zone.get("zone_name"))
+            )
+            self._set_combo_text(
+                self.operation_zone_type_combo,
+                _display_empty(operation_zone.get("zone_type")) or "ROOM",
+            )
+            self.operation_zone_enabled_check.setChecked(
+                bool(operation_zone.get("is_enabled", True))
+            )
+        finally:
+            self._syncing_operation_zone_form = False
+
+    def _mark_operation_zone_dirty(self):
+        if (
+            self._syncing_operation_zone_form
+            or self.selected_edit_type != "operation_zone"
+        ):
+            return
+        self.operation_zone_dirty = True
+        self.validation_message_label.setText("운영 구역 변경 사항이 저장 전입니다.")
+        self._sync_operation_zone_save_state()
+
+    def _sync_operation_zone_save_state(self):
+        can_save = (
+            self.selected_edit_type == "operation_zone"
+            and self.operation_zone_dirty
+            and self.map_canvas.map_loaded
+            and self.operation_zone_save_thread is None
+        )
+        self.save_button.setEnabled(can_save)
+        self.discard_button.setEnabled(
+            self.selected_edit_type == "operation_zone" and self.operation_zone_dirty
+        )
+
+    def _build_operation_zone_save_payload(self):
+        zone_id = self.operation_zone_id_input.text().strip()
+        zone_name = self.operation_zone_name_input.text().strip()
+        zone_type = self.operation_zone_type_combo.currentText().strip()
+        is_enabled = self.operation_zone_enabled_check.isChecked()
+
+        if self.operation_zone_mode == "create":
+            map_profile = self.current_bundle.get("map_profile") or {}
+            return {
+                "zone_id": zone_id,
+                "zone_name": zone_name,
+                "zone_type": zone_type,
+                "map_id": map_profile.get("map_id"),
+                "is_enabled": is_enabled,
+            }
+
+        return {
+            "zone_id": zone_id,
+            "expected_revision": int(
+                self.selected_operation_zone.get("revision", 0)
+            ),
+            "zone_name": zone_name,
+            "zone_type": zone_type,
+            "is_enabled": is_enabled,
+        }
+
+    def _handle_operation_zone_save_finished(self, ok, response):
+        if not ok:
+            self.validation_message_label.setText(str(response))
+            self.operation_zone_dirty = True
+            self._sync_operation_zone_save_state()
+            return
+
+        response = response if isinstance(response, dict) else {}
+        operation_zone = response.get("operation_zone")
+        if not isinstance(operation_zone, dict):
+            self.validation_message_label.setText("운영 구역 저장 결과가 비어 있습니다.")
+            self.operation_zone_dirty = True
+            self._sync_operation_zone_save_state()
+            return
+
+        self._replace_operation_zone_row(operation_zone)
+        self.selected_operation_zone = dict(operation_zone)
+        self.operation_zone_mode = "edit"
+        self._set_operation_zone_form(operation_zone, mode="edit")
+        self.operation_zone_dirty = False
+        self.validation_message_label.setText("운영 구역을 저장했습니다.")
+        self._populate_goal_pose_form_options()
+        self._sync_operation_zone_save_state()
+
+    def _replace_operation_zone_row(self, operation_zone):
+        zone_id = operation_zone.get("zone_id")
+        for index, row in enumerate(self.operation_zone_rows):
+            if row.get("zone_id") == zone_id:
+                self.operation_zone_rows[index] = dict(operation_zone)
+                self.selected_operation_zone_index = index
+                break
+        else:
+            self.operation_zone_rows.append(dict(operation_zone))
+            self.selected_operation_zone_index = len(self.operation_zone_rows) - 1
+
+        self.current_bundle["operation_zones"] = self.operation_zone_rows
+        self._set_table_rows(
+            self.tables["operationZoneTable"],
+            self.operation_zone_rows,
+            [
+                "zone_id",
+                "zone_name",
+                "zone_type",
+                ("is_enabled", _enabled_text),
+            ],
+        )
 
     def save_selected_goal_pose(self):
         if self.goal_pose_save_thread is not None:
@@ -715,6 +1036,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.goal_pose_save_worker = None
         self._sync_goal_pose_save_state()
 
+    def _clear_operation_zone_save_thread(self):
+        self.operation_zone_save_thread = None
+        self.operation_zone_save_worker = None
+        self._sync_operation_zone_save_state()
+
     def _stop_load_thread(self):
         if self.load_thread is None:
             return True
@@ -729,6 +1055,7 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def shutdown(self):
         self._stop_load_thread()
+        self._stop_operation_zone_save_thread()
         self._stop_goal_pose_save_thread()
 
     def closeEvent(self, event):
@@ -757,6 +1084,20 @@ class CoordinateZoneSettingsPage(QWidget):
             stopped = True
         if stopped:
             self._clear_goal_pose_save_thread()
+        return stopped
+
+    def _stop_operation_zone_save_thread(self):
+        if self.operation_zone_save_thread is None:
+            return True
+        if self.operation_zone_save_thread.isRunning():
+            self.operation_zone_save_thread.quit()
+            stopped = bool(
+                self.operation_zone_save_thread.wait(self._worker_stop_wait_ms)
+            )
+        else:
+            stopped = True
+        if stopped:
+            self._clear_operation_zone_save_thread()
         return stopped
 
 
@@ -799,6 +1140,12 @@ def _display(value):
     return str(value)
 
 
+def _display_empty(value):
+    if value is None:
+        return ""
+    return str(value)
+
+
 def _float_or_default(value, default=0.0):
     try:
         return float(value)
@@ -836,4 +1183,5 @@ __all__ = [
     "CoordinateConfigLoadWorker",
     "CoordinateZoneSettingsPage",
     "GoalPoseSaveWorker",
+    "OperationZoneSaveWorker",
 ]
