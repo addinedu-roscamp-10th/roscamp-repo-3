@@ -24,19 +24,24 @@ class FakeAsyncCaregiverRepository:
     async def async_get_dashboard_summary(self):
         return {
             "available_robot_count": 2,
+            "total_robot_count": 5,
             "waiting_job_count": 3,
             "running_job_count": 1,
+            "warning_error_count": 4,
         }
 
     async def async_get_robot_board(self):
         return [
             {
                 "robot_id": "pinky2",
+                "robot_type_name": "MOBILE",
                 "robot_status": "IDLE",
                 "current_location": "x=1.0, y=2.0",
                 "battery_percent": 90,
+                "current_task_id": 101,
                 "current_task_phase": None,
                 "current_task_status": None,
+                "last_seen_at": "2026-05-03T12:00:00",
             }
         ]
 
@@ -156,10 +161,17 @@ def test_caregiver_service_async_methods_keep_response_shape():
 
     assert result["summary"] == {
         "available_robot_count": 2,
+        "total_robot_count": 5,
         "waiting_job_count": 3,
         "running_job_count": 1,
+        "warning_error_count": 4,
     }
     assert result["robots"][0]["robot_name"] == "pinky2"
+    assert result["robots"][0]["robot_id"] == "pinky2"
+    assert result["robots"][0]["robot_role"] == "MOBILE"
+    assert result["robots"][0]["connection_status"] == "IDLE"
+    assert result["robots"][0]["current_task_id"] == 101
+    assert result["robots"][0]["last_seen_at"] == "2026-05-03T12:00:00"
     assert result["robots"][0]["chip_type"] == "green"
     assert result["timeline"] == [["12:00:00", "1", "DELIVERY_TASK_ACCEPTED", "accepted"]]
     assert result["flow"]["READY"] == [

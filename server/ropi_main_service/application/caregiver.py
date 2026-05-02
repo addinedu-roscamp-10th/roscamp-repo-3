@@ -25,8 +25,10 @@ class CaregiverService:
     def _format_dashboard_summary(row):
         return {
             "available_robot_count": row["available_robot_count"] if row else 0,
+            "total_robot_count": row.get("total_robot_count", 0) if row else 0,
             "waiting_job_count": row["waiting_job_count"] if row else 0,
             "running_job_count": row["running_job_count"] if row else 0,
+            "warning_error_count": row.get("warning_error_count", 0) if row else 0,
         }
 
     def get_robot_board_data(self):
@@ -54,6 +56,13 @@ class CaregiverService:
                 chip_type = "blue"
 
             result.append({
+                "robot_id": row["robot_id"],
+                "robot_role": row.get("robot_type_name") or "-",
+                "connection_status": status,
+                "battery_percent": row.get("battery_percent"),
+                "current_location": row["current_location"] or "-",
+                "current_task_id": row.get("current_task_id"),
+                "last_seen_at": row.get("last_seen_at"),
                 "robot_name": row["robot_id"],
                 "status": status,
                 "zone": row["current_location"] or "-",

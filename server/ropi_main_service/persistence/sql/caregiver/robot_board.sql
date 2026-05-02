@@ -9,7 +9,8 @@ SELECT
     rrs.battery_percent,
     t.task_id AS current_task_id,
     t.phase AS current_task_phase,
-    t.task_status AS current_task_status
+    t.task_status AS current_task_status,
+    rrs.last_seen_at
 FROM robot r
 LEFT JOIN robot_runtime_status rrs
   ON r.robot_id = rrs.robot_id
