@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.pages.caregiver.coordinate_boundary_editing import (
     append_boundary_vertex,
-    boundary_json_from_vertices,
     boundary_table_rows,
     boundary_vertex_buttons_state,
     boundary_vertices_from_json,
@@ -28,6 +27,11 @@ from ui.utils.pages.caregiver.coordinate_goal_pose_editing import (
     build_goal_pose_update_payload,
     goal_pose_from_save_response,
     goal_pose_world_point_from_payload,
+)
+from ui.utils.pages.caregiver.coordinate_operation_zone_editing import (
+    build_operation_zone_boundary_save_payload,
+    build_operation_zone_save_payload,
+    operation_zone_from_save_response,
 )
 from ui.utils.pages.caregiver.coordinate_patrol_area_editing import (
     build_patrol_area_path_save_payload,
@@ -952,30 +956,15 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _build_operation_zone_save_payload(self):
-        zone_id = self.operation_zone_id_input.text().strip()
-        zone_name = self.operation_zone_name_input.text().strip()
-        zone_type = self.operation_zone_type_combo.currentText().strip()
-        is_enabled = self.operation_zone_enabled_check.isChecked()
-
-        if self.operation_zone_mode == "create":
-            map_profile = self.current_bundle.get("map_profile") or {}
-            return {
-                "zone_id": zone_id,
-                "zone_name": zone_name,
-                "zone_type": zone_type,
-                "map_id": map_profile.get("map_id"),
-                "is_enabled": is_enabled,
-            }
-
-        return {
-            "zone_id": zone_id,
-            "expected_revision": int(
-                self.selected_operation_zone.get("revision", 0)
-            ),
-            "zone_name": zone_name,
-            "zone_type": zone_type,
-            "is_enabled": is_enabled,
-        }
+        return build_operation_zone_save_payload(
+            mode=self.operation_zone_mode,
+            selected_operation_zone=self.selected_operation_zone,
+            map_profile=self.current_bundle.get("map_profile"),
+            zone_id=self.operation_zone_id_input.text(),
+            zone_name=self.operation_zone_name_input.text(),
+            zone_type=self.operation_zone_type_combo.currentText(),
+            is_enabled=self.operation_zone_enabled_check.isChecked(),
+        )
 
     def save_selected_operation_zone_boundary(self):
         if self.operation_zone_save_thread is not None:
@@ -1014,15 +1003,9 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _build_operation_zone_boundary_save_payload(self):
-        return {
-            "zone_id": self.selected_operation_zone.get("zone_id"),
-            "expected_revision": int(self.selected_operation_zone.get("revision") or 0),
-            "boundary_json": self._current_operation_zone_boundary_json(),
-        }
-
-    def _current_operation_zone_boundary_json(self):
-        return boundary_json_from_vertices(
-            self.operation_zone_boundary_vertices,
+        return build_operation_zone_boundary_save_payload(
+            selected_operation_zone=self.selected_operation_zone,
+            boundary_vertices=self.operation_zone_boundary_vertices,
             frame_id=self._active_map_frame_id(),
         )
 
@@ -1033,9 +1016,8 @@ class CoordinateZoneSettingsPage(QWidget):
             self._sync_operation_zone_save_state()
             return
 
-        response = response if isinstance(response, dict) else {}
-        operation_zone = response.get("operation_zone")
-        if not isinstance(operation_zone, dict):
+        operation_zone = operation_zone_from_save_response(response)
+        if operation_zone is None:
             self.validation_message_label.setText("운영 구역 저장 결과가 비어 있습니다.")
             self.operation_zone_dirty = True
             self._sync_operation_zone_save_state()
@@ -1071,9 +1053,8 @@ class CoordinateZoneSettingsPage(QWidget):
             self._sync_operation_zone_save_state()
             return
 
-        response = response if isinstance(response, dict) else {}
-        operation_zone = response.get("operation_zone")
-        if not isinstance(operation_zone, dict):
+        operation_zone = operation_zone_from_save_response(response)
+        if operation_zone is None:
             self.validation_message_label.setText(
                 "운영 구역 boundary 저장 결과가 비어 있습니다."
             )
