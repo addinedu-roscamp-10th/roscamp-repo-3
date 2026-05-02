@@ -180,6 +180,58 @@ def test_coordinate_config_remote_service_exposes_active_map_bundle_rpc(monkeypa
     ]
 
 
+def test_coordinate_config_remote_service_exposes_operation_zone_mutation_rpcs(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "OK"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    service = CoordinateConfigRemoteService()
+
+    service.create_operation_zone(
+        zone_id="caregiver_room",
+        zone_name="보호사실",
+        zone_type="STAFF_STATION",
+        is_enabled=True,
+    )
+    service.update_operation_zone(
+        zone_id="caregiver_room",
+        expected_revision=1,
+        zone_name="보호사실",
+        zone_type="STAFF_STATION",
+        is_enabled=False,
+    )
+
+    assert calls == [
+        (
+            "coordinate_config",
+            "create_operation_zone",
+            {
+                "zone_id": "caregiver_room",
+                "zone_name": "보호사실",
+                "zone_type": "STAFF_STATION",
+                "map_id": None,
+                "is_enabled": True,
+            },
+        ),
+        (
+            "coordinate_config",
+            "update_operation_zone",
+            {
+                "zone_id": "caregiver_room",
+                "expected_revision": 1,
+                "zone_name": "보호사실",
+                "zone_type": "STAFF_STATION",
+                "is_enabled": False,
+            },
+        ),
+    ]
+
+
 def test_task_monitor_remote_service_sends_fall_evidence_over_if_pat_007(monkeypatch):
     calls = []
 

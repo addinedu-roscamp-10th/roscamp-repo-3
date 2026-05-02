@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 from server.ropi_main_service.persistence.repositories import (
     coordinate_config_repository,
@@ -113,4 +114,247 @@ def test_coordinate_config_repository_exposes_async_fetch_methods(monkeypatch):
             coordinate_config_repository.LIST_PATROL_AREAS_SQL,
             ("map_test11_0423", False),
         ),
+    ]
+
+
+class FakeCursor:
+    def __init__(self, rows=None):
+        self.calls = []
+        self.rows = list(rows or [])
+        self.rowcount = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, query, params=None):
+        self.calls.append((query, params))
+        self.rowcount = 1
+
+    def fetchone(self):
+        if not self.rows:
+            return None
+        return self.rows.pop(0)
+
+
+class FakeConnection:
+    def __init__(self, cursor):
+        self.cursor_obj = cursor
+        self.began = False
+        self.committed = False
+        self.rolled_back = False
+        self.closed = False
+
+    def cursor(self):
+        return self.cursor_obj
+
+    def begin(self):
+        self.began = True
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+    def close(self):
+        self.closed = True
+
+
+def test_coordinate_config_repository_creates_operation_zone_in_transaction(
+    monkeypatch,
+):
+    inserted_row = {
+        "zone_id": "caregiver_room",
+        "map_id": "map_test11_0423",
+        "zone_name": "보호사실",
+        "zone_type": "STAFF_STATION",
+    }
+    cursor = FakeCursor(rows=[inserted_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    row = coordinate_config_repository.CoordinateConfigRepository().create_operation_zone(
+        map_id="map_test11_0423",
+        zone_id="caregiver_room",
+        zone_name="보호사실",
+        zone_type="STAFF_STATION",
+        is_enabled=True,
+    )
+
+    assert row == inserted_row
+    assert connection.began is True
+    assert connection.committed is True
+    assert connection.rolled_back is False
+    assert connection.closed is True
+    insert_query, insert_params = cursor.calls[0]
+    select_query, select_params = cursor.calls[1]
+    assert "INSERT INTO operation_zone" in insert_query
+    assert insert_params == (
+        "caregiver_room",
+        "map_test11_0423",
+        "보호사실",
+        "STAFF_STATION",
+        True,
+    )
+    assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
+    assert select_params == ("caregiver_room",)
+
+
+def test_coordinate_config_repository_updates_operation_zone_with_revision_lock(
+    monkeypatch,
+):
+    locked_row = {"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 1}
+    updated_row = {
+        "zone_id": "room_301",
+        "map_id": "map_test11_0423",
+        "revision": 2,
+        "is_enabled": False,
+    }
+    cursor = FakeCursor(rows=[locked_row, updated_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_operation_zone(
+        map_id="map_test11_0423",
+        zone_id="room_301",
+        expected_revision=1,
+        zone_name="301호",
+        zone_type="ROOM",
+        is_enabled=False,
+    )
+
+    assert result == {"status": "UPDATED", "operation_zone": updated_row}
+    assert connection.began is True
+    assert connection.committed is True
+    lock_query, lock_params = cursor.calls[0]
+    update_query, update_params = cursor.calls[1]
+    select_query, select_params = cursor.calls[2]
+    assert lock_query == coordinate_config_repository.LOCK_OPERATION_ZONE_SQL
+    assert lock_params == ("room_301", "map_test11_0423")
+    assert "revision = revision + 1" in update_query
+    assert update_params == ("301호", "ROOM", False, "room_301", "map_test11_0423")
+    assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
+    assert select_params == ("room_301",)
+
+
+def test_coordinate_config_repository_reports_operation_zone_revision_conflict(
+    monkeypatch,
+):
+    cursor = FakeCursor(
+        rows=[{"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 2}]
+    )
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_operation_zone(
+        map_id="map_test11_0423",
+        zone_id="room_301",
+        expected_revision=1,
+        zone_name="301호",
+        zone_type="ROOM",
+        is_enabled=True,
+    )
+
+    assert result["status"] == "REVISION_CONFLICT"
+    assert connection.committed is True
+    assert len(cursor.calls) == 1
+
+
+def test_coordinate_config_repository_exposes_async_operation_zone_mutations(
+    monkeypatch,
+):
+    calls = []
+    rows = [
+        {"zone_id": "caregiver_room", "map_id": "map_test11_0423"},
+        {"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 1},
+        {"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 2},
+    ]
+
+    class AsyncCursor:
+        def __init__(self):
+            self.rowcount = 0
+
+        async def execute(self, query, params=None):
+            calls.append((query, params))
+            self.rowcount = 1
+
+        async def fetchone(self):
+            return rows.pop(0)
+
+    @asynccontextmanager
+    async def fake_async_transaction():
+        yield AsyncCursor()
+
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "async_transaction",
+        fake_async_transaction,
+    )
+
+    async def scenario():
+        repository = coordinate_config_repository.CoordinateConfigRepository()
+        created = await repository.async_create_operation_zone(
+            map_id="map_test11_0423",
+            zone_id="caregiver_room",
+            zone_name="보호사실",
+            zone_type="STAFF_STATION",
+            is_enabled=True,
+        )
+        updated = await repository.async_update_operation_zone(
+            map_id="map_test11_0423",
+            zone_id="room_301",
+            expected_revision=1,
+            zone_name="301호",
+            zone_type="ROOM",
+            is_enabled=False,
+        )
+        return created, updated
+
+    created, updated = asyncio.run(scenario())
+
+    assert created["zone_id"] == "caregiver_room"
+    assert updated == {
+        "status": "UPDATED",
+        "operation_zone": {
+            "zone_id": "room_301",
+            "map_id": "map_test11_0423",
+            "revision": 2,
+        },
+    }
+    assert calls == [
+        (
+            coordinate_config_repository.INSERT_OPERATION_ZONE_SQL,
+            (
+                "caregiver_room",
+                "map_test11_0423",
+                "보호사실",
+                "STAFF_STATION",
+                True,
+            ),
+        ),
+        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("caregiver_room",)),
+        (
+            coordinate_config_repository.LOCK_OPERATION_ZONE_SQL,
+            ("room_301", "map_test11_0423"),
+        ),
+        (
+            coordinate_config_repository.UPDATE_OPERATION_ZONE_SQL,
+            ("301호", "ROOM", False, "room_301", "map_test11_0423"),
+        ),
+        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("room_301",)),
     ]

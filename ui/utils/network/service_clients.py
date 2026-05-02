@@ -136,6 +136,42 @@ class CoordinateConfigRemoteService:
             include_patrol_paths=include_patrol_paths,
         )
 
+    def create_operation_zone(
+        self,
+        *,
+        zone_id,
+        zone_name,
+        zone_type,
+        map_id=None,
+        is_enabled=True,
+    ):
+        return self._rpc(
+            "create_operation_zone",
+            zone_id=zone_id,
+            zone_name=zone_name,
+            zone_type=zone_type,
+            map_id=map_id,
+            is_enabled=is_enabled,
+        )
+
+    def update_operation_zone(
+        self,
+        *,
+        zone_id,
+        expected_revision,
+        zone_name,
+        zone_type,
+        is_enabled,
+    ):
+        return self._rpc(
+            "update_operation_zone",
+            zone_id=zone_id,
+            expected_revision=expected_revision,
+            zone_name=zone_name,
+            zone_type=zone_type,
+            is_enabled=is_enabled,
+        )
+
 
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"
