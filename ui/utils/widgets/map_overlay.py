@@ -4,7 +4,7 @@ from PyQt6.QtGui import QColor, QPainterPath, QPen
 from ui.utils.widgets.map_canvas import MapCanvasWidget, MapTransform
 
 
-class PatrolMapOverlay(MapCanvasWidget):
+class OperationalMapOverlay(MapCanvasWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("patrolMapOverlay")
@@ -42,6 +42,11 @@ class PatrolMapOverlay(MapCanvasWidget):
         )
 
     def _sync_overlay_points(self, task):
+        self.zone_boundary_pixel_points = []
+        self.selected_zone_boundary_vertex_index = None
+        self.goal_pose_pixel_points = []
+        self.selected_goal_pose_pixel_point = None
+
         path = (
             task.get("patrol_path")
             if isinstance(task.get("patrol_path"), dict)
@@ -87,6 +92,50 @@ class PatrolMapOverlay(MapCanvasWidget):
         self.goal_pose_pixel_points = []
         self.selected_goal_pose_pixel_point = None
         self.clear_map(status_text)
+
+    def show_zone_boundary_editor(self, *, vertex_pixel_points, selected_index=None):
+        self.zone_boundary_pixel_points = list(vertex_pixel_points or [])
+        self.selected_zone_boundary_vertex_index = selected_index
+        self.goal_pose_pixel_points = []
+        self.selected_goal_pose_pixel_point = None
+        self.route_pixel_points = []
+        self.current_waypoint_index = None
+        self.robot_pixel_point = None
+        self.fall_alert_pixel_point = None
+        self.update()
+
+    def show_goal_pose_editor(self, *, goal_pose_pixel_points, selected_pixel_point=None):
+        self.goal_pose_pixel_points = list(goal_pose_pixel_points or [])
+        self.selected_goal_pose_pixel_point = selected_pixel_point
+        self.zone_boundary_pixel_points = []
+        self.selected_zone_boundary_vertex_index = None
+        self.route_pixel_points = []
+        self.current_waypoint_index = None
+        self.robot_pixel_point = None
+        self.fall_alert_pixel_point = None
+        self.update()
+
+    def show_patrol_path_editor(self, *, route_pixel_points, selected_waypoint_index=None):
+        self.route_pixel_points = list(route_pixel_points or [])
+        self.current_waypoint_index = selected_waypoint_index
+        self.zone_boundary_pixel_points = []
+        self.selected_zone_boundary_vertex_index = None
+        self.goal_pose_pixel_points = []
+        self.selected_goal_pose_pixel_point = None
+        self.robot_pixel_point = None
+        self.fall_alert_pixel_point = None
+        self.update()
+
+    def clear_configuration_overlay(self):
+        self.route_pixel_points = []
+        self.current_waypoint_index = None
+        self.robot_pixel_point = None
+        self.fall_alert_pixel_point = None
+        self.zone_boundary_pixel_points = []
+        self.selected_zone_boundary_vertex_index = None
+        self.goal_pose_pixel_points = []
+        self.selected_goal_pose_pixel_point = None
+        self.update()
 
     def draw_overlay(self, painter, target):
         self._draw_zone_boundary(painter, target)
@@ -214,4 +263,7 @@ class PatrolMapOverlay(MapCanvasWidget):
             return None
 
 
-__all__ = ["MapTransform", "PatrolMapOverlay"]
+PatrolMapOverlay = OperationalMapOverlay
+
+
+__all__ = ["MapTransform", "OperationalMapOverlay", "PatrolMapOverlay"]

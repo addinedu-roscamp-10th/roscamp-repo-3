@@ -1,7 +1,4 @@
-import base64
-import binascii
-
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,10 +15,16 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ui.utils.core.worker_threads import start_worker_thread
-from ui.utils.network.service_clients import CoordinateConfigRemoteService
+from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
+from ui.utils.pages.caregiver.coordinate_zone_settings_workers import (
+    CoordinateConfigLoadWorker,
+    GoalPoseSaveWorker,
+    OperationZoneBoundarySaveWorker,
+    OperationZoneSaveWorker,
+    PatrolAreaPathSaveWorker,
+)
 from ui.utils.widgets.admin_shell import PageHeader
-from ui.utils.widgets.map_overlay import PatrolMapOverlay
+from ui.utils.widgets.map_overlay import OperationalMapOverlay
 
 
 ACTIVE_MAP_FIELDS = [
@@ -45,153 +48,6 @@ OPERATION_ZONE_TYPES = [
     "RESTRICTED",
     "OTHER",
 ]
-
-
-class CoordinateConfigLoadWorker(QObject):
-    finished = pyqtSignal(object, object)
-
-    def __init__(self, *, service_factory=CoordinateConfigRemoteService):
-        super().__init__()
-        self.service_factory = service_factory
-
-    def run(self):
-        try:
-            service = self.service_factory()
-            bundle = service.get_active_map_bundle(
-                include_disabled=True,
-                include_zone_boundaries=True,
-                include_patrol_paths=True,
-            )
-            if not _is_ok_response(bundle):
-                self.finished.emit(False, _format_result_error(bundle))
-                return
-
-            map_profile = bundle.get("map_profile") or {}
-            map_id = map_profile.get("map_id")
-            yaml_asset = service.get_map_asset(
-                asset_type="YAML",
-                map_id=map_id,
-                encoding="TEXT",
-            )
-            if not _is_ok_response(yaml_asset):
-                self.finished.emit(False, _format_result_error(yaml_asset))
-                return
-
-            pgm_asset = service.get_map_asset(
-                asset_type="PGM",
-                map_id=map_id,
-                encoding="BASE64",
-            )
-            if not _is_ok_response(pgm_asset):
-                self.finished.emit(False, _format_result_error(pgm_asset))
-                return
-
-            yaml_text = str(yaml_asset.get("content_text") or "")
-            pgm_bytes = _decode_base64_asset(pgm_asset.get("content_base64"))
-            if not yaml_text or not pgm_bytes:
-                self.finished.emit(False, "맵 asset 응답이 비어 있습니다.")
-                return
-
-            self.finished.emit(
-                True,
-                {
-                    "bundle": bundle,
-                    "yaml_text": yaml_text,
-                    "pgm_bytes": pgm_bytes,
-                    "yaml_sha256": yaml_asset.get("sha256"),
-                    "pgm_sha256": pgm_asset.get("sha256"),
-                },
-            )
-        except Exception as exc:
-            self.finished.emit(False, str(exc))
-
-
-class GoalPoseSaveWorker(QObject):
-    finished = pyqtSignal(object, object)
-
-    def __init__(self, *, payload, service_factory=CoordinateConfigRemoteService):
-        super().__init__()
-        self.payload = dict(payload or {})
-        self.service_factory = service_factory
-
-    def run(self):
-        try:
-            response = self.service_factory().update_goal_pose(**self.payload)
-            if isinstance(response, dict) and response.get("result_code") == "UPDATED":
-                self.finished.emit(True, response)
-                return
-            self.finished.emit(False, _format_result_error(response))
-        except Exception as exc:
-            self.finished.emit(False, str(exc))
-
-
-class OperationZoneSaveWorker(QObject):
-    finished = pyqtSignal(object, object)
-
-    def __init__(self, *, mode, payload, service_factory=CoordinateConfigRemoteService):
-        super().__init__()
-        self.mode = str(mode or "").strip()
-        self.payload = dict(payload or {})
-        self.service_factory = service_factory
-
-    def run(self):
-        try:
-            service = self.service_factory()
-            if self.mode == "create":
-                response = service.create_operation_zone(**self.payload)
-                success_code = "CREATED"
-            else:
-                response = service.update_operation_zone(**self.payload)
-                success_code = "UPDATED"
-
-            if (
-                isinstance(response, dict)
-                and response.get("result_code") == success_code
-            ):
-                self.finished.emit(True, response)
-                return
-            self.finished.emit(False, _format_result_error(response))
-        except Exception as exc:
-            self.finished.emit(False, str(exc))
-
-
-class OperationZoneBoundarySaveWorker(QObject):
-    finished = pyqtSignal(object, object)
-
-    def __init__(self, *, payload, service_factory=CoordinateConfigRemoteService):
-        super().__init__()
-        self.payload = dict(payload or {})
-        self.service_factory = service_factory
-
-    def run(self):
-        try:
-            service = self.service_factory()
-            response = service.update_operation_zone_boundary(**self.payload)
-            if isinstance(response, dict) and response.get("result_code") == "UPDATED":
-                self.finished.emit(True, response)
-                return
-            self.finished.emit(False, _format_result_error(response))
-        except Exception as exc:
-            self.finished.emit(False, str(exc))
-
-
-class PatrolAreaPathSaveWorker(QObject):
-    finished = pyqtSignal(object, object)
-
-    def __init__(self, *, payload, service_factory=CoordinateConfigRemoteService):
-        super().__init__()
-        self.payload = dict(payload or {})
-        self.service_factory = service_factory
-
-    def run(self):
-        try:
-            response = self.service_factory().update_patrol_area_path(**self.payload)
-            if isinstance(response, dict) and response.get("result_code") == "UPDATED":
-                self.finished.emit(True, response)
-                return
-            self.finished.emit(False, _format_result_error(response))
-        except Exception as exc:
-            self.finished.emit(False, str(exc))
 
 
 class CoordinateZoneSettingsPage(QWidget):
@@ -322,7 +178,7 @@ class CoordinateZoneSettingsPage(QWidget):
 
         map_title = QLabel("Map Canvas")
         map_title.setObjectName("sectionTitle")
-        self.map_canvas = PatrolMapOverlay()
+        self.map_canvas = OperationalMapOverlay()
         self.map_canvas.setObjectName("coordinateZoneMapCanvas")
         self.map_canvas.clear_map("좌표 설정 맵 미수신")
         self.map_canvas.setMinimumHeight(280)
@@ -1382,17 +1238,24 @@ class CoordinateZoneSettingsPage(QWidget):
             return
 
         boundary_dirty = self.operation_zone_boundary_dirty
-        if boundary_dirty:
-            operation_zone = {
-                **operation_zone,
-                "boundary_json": self._current_operation_zone_boundary_json(),
-            }
+        pending_boundary_vertices = [
+            dict(vertex) for vertex in self.operation_zone_boundary_vertices
+        ]
+        pending_boundary_index = self.selected_operation_zone_boundary_vertex_index
         self._replace_operation_zone_row(operation_zone)
         self.selected_operation_zone = dict(operation_zone)
         self.operation_zone_mode = "edit"
         self._set_operation_zone_form(operation_zone, mode="edit")
         self.operation_zone_dirty = False
         self.operation_zone_boundary_dirty = boundary_dirty
+        if boundary_dirty:
+            self.operation_zone_boundary_vertices = pending_boundary_vertices
+            self.selected_operation_zone_boundary_vertex_index = pending_boundary_index
+            self._populate_operation_zone_boundary_table()
+            self._set_operation_zone_boundary_vertex_form(
+                self.selected_operation_zone_boundary_vertex_index
+            )
+            self._sync_operation_zone_overlay()
         self.validation_message_label.setText("운영 구역을 저장했습니다.")
         self._populate_goal_pose_form_options()
         self._sync_operation_zone_save_state()
@@ -1721,7 +1584,7 @@ class CoordinateZoneSettingsPage(QWidget):
         return str(map_profile.get("frame_id") or "map").strip()
 
     def _sync_operation_zone_overlay(self):
-        self.map_canvas.zone_boundary_pixel_points = [
+        vertex_pixel_points = [
             pixel
             for pixel in (
                 self.map_canvas.world_to_pixel(vertex)
@@ -1729,19 +1592,13 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             if pixel is not None
         ]
-        self.map_canvas.selected_zone_boundary_vertex_index = (
-            self.selected_operation_zone_boundary_vertex_index
+        self.map_canvas.show_zone_boundary_editor(
+            vertex_pixel_points=vertex_pixel_points,
+            selected_index=self.selected_operation_zone_boundary_vertex_index,
         )
-        self.map_canvas.route_pixel_points = []
-        self.map_canvas.current_waypoint_index = None
-        self.map_canvas.goal_pose_pixel_points = []
-        self.map_canvas.selected_goal_pose_pixel_point = None
-        self.map_canvas.robot_pixel_point = None
-        self.map_canvas.fall_alert_pixel_point = None
-        self.map_canvas.update()
 
     def _sync_goal_pose_overlay(self):
-        self.map_canvas.goal_pose_pixel_points = [
+        goal_pose_pixel_points = [
             pixel
             for pixel in (
                 self.map_canvas.world_to_pixel(
@@ -1751,26 +1608,18 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             if pixel is not None
         ]
-        self.map_canvas.selected_goal_pose_pixel_point = self.map_canvas.world_to_pixel(
-            {
-                "x": self.goal_pose_x_spin.value(),
-                "y": self.goal_pose_y_spin.value(),
-            }
+        self.map_canvas.show_goal_pose_editor(
+            goal_pose_pixel_points=goal_pose_pixel_points,
+            selected_pixel_point=self.map_canvas.world_to_pixel(
+                {
+                    "x": self.goal_pose_x_spin.value(),
+                    "y": self.goal_pose_y_spin.value(),
+                }
+            ),
         )
-        self.map_canvas.zone_boundary_pixel_points = []
-        self.map_canvas.selected_zone_boundary_vertex_index = None
-        self.map_canvas.route_pixel_points = []
-        self.map_canvas.current_waypoint_index = None
-        self.map_canvas.robot_pixel_point = None
-        self.map_canvas.fall_alert_pixel_point = None
-        self.map_canvas.update()
 
     def _sync_patrol_overlay(self):
-        self.map_canvas.zone_boundary_pixel_points = []
-        self.map_canvas.selected_zone_boundary_vertex_index = None
-        self.map_canvas.goal_pose_pixel_points = []
-        self.map_canvas.selected_goal_pose_pixel_point = None
-        self.map_canvas.route_pixel_points = [
+        route_pixel_points = [
             pixel
             for pixel in (
                 self.map_canvas.world_to_pixel(pose)
@@ -1778,21 +1627,13 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             if pixel is not None
         ]
-        self.map_canvas.current_waypoint_index = self.selected_patrol_waypoint_index
-        self.map_canvas.robot_pixel_point = None
-        self.map_canvas.fall_alert_pixel_point = None
-        self.map_canvas.update()
+        self.map_canvas.show_patrol_path_editor(
+            route_pixel_points=route_pixel_points,
+            selected_waypoint_index=self.selected_patrol_waypoint_index,
+        )
 
     def _clear_patrol_overlay(self):
-        self.map_canvas.route_pixel_points = []
-        self.map_canvas.current_waypoint_index = None
-        self.map_canvas.robot_pixel_point = None
-        self.map_canvas.fall_alert_pixel_point = None
-        self.map_canvas.zone_boundary_pixel_points = []
-        self.map_canvas.selected_zone_boundary_vertex_index = None
-        self.map_canvas.goal_pose_pixel_points = []
-        self.map_canvas.selected_goal_pose_pixel_point = None
-        self.map_canvas.update()
+        self.map_canvas.clear_configuration_overlay()
 
     def _nearest_pose_index(self, poses, world_pose, *, threshold_world=0.08):
         if not isinstance(world_pose, dict):
@@ -1998,16 +1839,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_patrol_area_save_state()
 
     def _stop_load_thread(self):
-        if self.load_thread is None:
-            return True
-        if self.load_thread.isRunning():
-            self.load_thread.quit()
-            stopped = bool(self.load_thread.wait(self._worker_stop_wait_ms))
-        else:
-            stopped = True
-        if stopped:
-            self._clear_load_thread()
-        return stopped
+        return stop_worker_thread(
+            self.load_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_load_thread,
+        )
 
     def shutdown(self):
         self._stop_load_thread()
@@ -2030,72 +1866,25 @@ class CoordinateZoneSettingsPage(QWidget):
                 table.setItem(row_index, column_index, QTableWidgetItem(value))
 
     def _stop_goal_pose_save_thread(self):
-        if self.goal_pose_save_thread is None:
-            return True
-        if self.goal_pose_save_thread.isRunning():
-            self.goal_pose_save_thread.quit()
-            stopped = bool(
-                self.goal_pose_save_thread.wait(self._worker_stop_wait_ms)
-            )
-        else:
-            stopped = True
-        if stopped:
-            self._clear_goal_pose_save_thread()
-        return stopped
+        return stop_worker_thread(
+            self.goal_pose_save_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_goal_pose_save_thread,
+        )
 
     def _stop_operation_zone_save_thread(self):
-        if self.operation_zone_save_thread is None:
-            return True
-        if self.operation_zone_save_thread.isRunning():
-            self.operation_zone_save_thread.quit()
-            stopped = bool(
-                self.operation_zone_save_thread.wait(self._worker_stop_wait_ms)
-            )
-        else:
-            stopped = True
-        if stopped:
-            self._clear_operation_zone_save_thread()
-        return stopped
+        return stop_worker_thread(
+            self.operation_zone_save_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_operation_zone_save_thread,
+        )
 
     def _stop_patrol_area_save_thread(self):
-        if self.patrol_area_save_thread is None:
-            return True
-        if self.patrol_area_save_thread.isRunning():
-            self.patrol_area_save_thread.quit()
-            stopped = bool(
-                self.patrol_area_save_thread.wait(self._worker_stop_wait_ms)
-            )
-        else:
-            stopped = True
-        if stopped:
-            self._clear_patrol_area_save_thread()
-        return stopped
-
-
-def _is_ok_response(response):
-    return isinstance(response, dict) and response.get("result_code") == "OK"
-
-
-def _format_result_error(response):
-    if not isinstance(response, dict):
-        return "좌표 설정 요청에 실패했습니다."
-    reason_code = response.get("reason_code")
-    message = response.get("result_message")
-    result_code = response.get("result_code")
-    if reason_code and message:
-        return f"{reason_code}: {message}"
-    if message:
-        return str(message)
-    if reason_code:
-        return str(reason_code)
-    return str(result_code or "좌표 설정 요청에 실패했습니다.")
-
-
-def _decode_base64_asset(value):
-    try:
-        return base64.b64decode(str(value or ""), validate=True)
-    except (binascii.Error, ValueError):
-        return b""
+        return stop_worker_thread(
+            self.patrol_area_save_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_patrol_area_save_thread,
+        )
 
 
 def _column_value(row, column):

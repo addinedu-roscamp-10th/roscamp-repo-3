@@ -29,4 +29,19 @@ def start_worker_thread(
     return thread, worker
 
 
-__all__ = ["start_worker_thread"]
+def stop_worker_thread(thread, *, wait_ms, clear_handler=None):
+    if thread is None:
+        return True
+
+    if thread.isRunning():
+        thread.quit()
+        stopped = bool(thread.wait(wait_ms))
+    else:
+        stopped = True
+
+    if stopped and clear_handler is not None:
+        clear_handler()
+    return stopped
+
+
+__all__ = ["start_worker_thread", "stop_worker_thread"]
