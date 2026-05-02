@@ -33,6 +33,11 @@ from ui.utils.pages.caregiver.coordinate_zone_settings_bundle import (
     normalize_coordinate_config_bundle,
     set_table_rows,
 )
+from ui.utils.pages.caregiver.coordinate_zone_settings_edit_state import (
+    edit_discard_enabled,
+    edit_save_enabled,
+    replace_row_by_key,
+)
 from ui.utils.pages.caregiver.coordinate_zone_settings_workers import (
     CoordinateConfigLoadWorker,
     GoalPoseSaveWorker,
@@ -910,16 +915,22 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_operation_zone_save_state()
 
     def _sync_operation_zone_save_state(self):
-        can_save = (
-            self.selected_edit_type == "operation_zone"
-            and (self.operation_zone_dirty or self.operation_zone_boundary_dirty)
-            and self.map_canvas.map_loaded
-            and self.operation_zone_save_thread is None
+        dirty = self.operation_zone_dirty or self.operation_zone_boundary_dirty
+        self.save_button.setEnabled(
+            edit_save_enabled(
+                selected_edit_type=self.selected_edit_type,
+                expected_edit_type="operation_zone",
+                dirty=dirty,
+                map_loaded=self.map_canvas.map_loaded,
+                save_thread=self.operation_zone_save_thread,
+            )
         )
-        self.save_button.setEnabled(can_save)
         self.discard_button.setEnabled(
-            self.selected_edit_type == "operation_zone"
-            and (self.operation_zone_dirty or self.operation_zone_boundary_dirty)
+            edit_discard_enabled(
+                selected_edit_type=self.selected_edit_type,
+                expected_edit_type="operation_zone",
+                dirty=dirty,
+            )
         )
 
     def _build_operation_zone_save_payload(self):
@@ -1069,15 +1080,13 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_operation_zone_save_state()
 
     def _replace_operation_zone_row(self, operation_zone):
-        zone_id = operation_zone.get("zone_id")
-        for index, row in enumerate(self.operation_zone_rows):
-            if row.get("zone_id") == zone_id:
-                self.operation_zone_rows[index] = dict(operation_zone)
-                self.selected_operation_zone_index = index
-                break
-        else:
-            self.operation_zone_rows.append(dict(operation_zone))
-            self.selected_operation_zone_index = len(self.operation_zone_rows) - 1
+        replacement = replace_row_by_key(
+            self.operation_zone_rows,
+            operation_zone,
+            "zone_id",
+        )
+        self.operation_zone_rows = replacement.rows
+        self.selected_operation_zone_index = replacement.selected_index
 
         self.current_bundle["operation_zones"] = self.operation_zone_rows
         set_table_rows(
@@ -1277,15 +1286,21 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_patrol_area_save_state()
 
     def _sync_patrol_area_save_state(self):
-        can_save = (
-            self.selected_edit_type == "patrol_area"
-            and self.patrol_area_dirty
-            and self.map_canvas.map_loaded
-            and self.patrol_area_save_thread is None
+        self.save_button.setEnabled(
+            edit_save_enabled(
+                selected_edit_type=self.selected_edit_type,
+                expected_edit_type="patrol_area",
+                dirty=self.patrol_area_dirty,
+                map_loaded=self.map_canvas.map_loaded,
+                save_thread=self.patrol_area_save_thread,
+            )
         )
-        self.save_button.setEnabled(can_save)
         self.discard_button.setEnabled(
-            self.selected_edit_type == "patrol_area" and self.patrol_area_dirty
+            edit_discard_enabled(
+                selected_edit_type=self.selected_edit_type,
+                expected_edit_type="patrol_area",
+                dirty=self.patrol_area_dirty,
+            )
         )
 
     def _build_patrol_area_path_save_payload(self):
@@ -1330,15 +1345,13 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_patrol_area_save_state()
 
     def _replace_patrol_area_row(self, updated_patrol_area):
-        patrol_area_id = updated_patrol_area.get("patrol_area_id")
-        for index, row in enumerate(self.patrol_area_rows):
-            if row.get("patrol_area_id") == patrol_area_id:
-                self.patrol_area_rows[index] = dict(updated_patrol_area)
-                self.selected_patrol_area_index = index
-                break
-        else:
-            self.patrol_area_rows.append(dict(updated_patrol_area))
-            self.selected_patrol_area_index = len(self.patrol_area_rows) - 1
+        replacement = replace_row_by_key(
+            self.patrol_area_rows,
+            updated_patrol_area,
+            "patrol_area_id",
+        )
+        self.patrol_area_rows = replacement.rows
+        self.selected_patrol_area_index = replacement.selected_index
 
         self.current_bundle["patrol_areas"] = self.patrol_area_rows
         set_table_rows(
@@ -1475,15 +1488,21 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_goal_pose_save_state()
 
     def _sync_goal_pose_save_state(self):
-        can_save = (
-            self.selected_edit_type == "goal_pose"
-            and self.goal_pose_dirty
-            and self.map_canvas.map_loaded
-            and self.goal_pose_save_thread is None
+        self.save_button.setEnabled(
+            edit_save_enabled(
+                selected_edit_type=self.selected_edit_type,
+                expected_edit_type="goal_pose",
+                dirty=self.goal_pose_dirty,
+                map_loaded=self.map_canvas.map_loaded,
+                save_thread=self.goal_pose_save_thread,
+            )
         )
-        self.save_button.setEnabled(can_save)
         self.discard_button.setEnabled(
-            self.selected_edit_type == "goal_pose" and self.goal_pose_dirty
+            edit_discard_enabled(
+                selected_edit_type=self.selected_edit_type,
+                expected_edit_type="goal_pose",
+                dirty=self.goal_pose_dirty,
+            )
         )
 
     def _build_goal_pose_update_payload(self):
@@ -1522,15 +1541,13 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_goal_pose_save_state()
 
     def _replace_goal_pose_row(self, updated_goal_pose):
-        goal_pose_id = updated_goal_pose.get("goal_pose_id")
-        for index, row in enumerate(self.goal_pose_rows):
-            if row.get("goal_pose_id") == goal_pose_id:
-                self.goal_pose_rows[index] = dict(updated_goal_pose)
-                self.selected_goal_pose_index = index
-                break
-        else:
-            self.goal_pose_rows.append(dict(updated_goal_pose))
-            self.selected_goal_pose_index = len(self.goal_pose_rows) - 1
+        replacement = replace_row_by_key(
+            self.goal_pose_rows,
+            updated_goal_pose,
+            "goal_pose_id",
+        )
+        self.goal_pose_rows = replacement.rows
+        self.selected_goal_pose_index = replacement.selected_index
 
         self.current_bundle["goal_poses"] = self.goal_pose_rows
         set_table_rows(
