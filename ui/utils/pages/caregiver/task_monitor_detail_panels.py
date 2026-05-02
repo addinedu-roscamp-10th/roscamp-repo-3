@@ -123,7 +123,7 @@ class TaskResultInfoPanel(QFrame):
         self.style().polish(self)
 
 
-class FallAlertPanel(QWidget):
+class PatrolRuntimePanel(QWidget):
     def __init__(self):
         super().__init__()
         root = QVBoxLayout(self)
@@ -234,7 +234,7 @@ class FallAlertPanel(QWidget):
 
 
 __all__ = [
-    "FallAlertPanel",
+    "PatrolRuntimePanel",
     "TaskResultInfoPanel",
     "_display",
     "_format_pose",

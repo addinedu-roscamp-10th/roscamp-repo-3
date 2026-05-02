@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.utils.pages.caregiver.task_monitor_detail_panels import (
-    FallAlertPanel,
+    PatrolRuntimePanel,
     TaskResultInfoPanel,
     _display,
     _format_pose,
@@ -520,20 +520,20 @@ class TaskMonitorPage(QWidget):
         self.cancel_status_label.setWordWrap(True)
         self.cancel_status_label.setHidden(True)
 
-        self.fall_alert_section = FallAlertPanel()
-        self.patrol_map_placeholder = self.fall_alert_section.patrol_map_placeholder
-        self.patrol_map_overlay = self.fall_alert_section.patrol_map_overlay
-        self.fall_marker_label = self.fall_alert_section.fall_marker_label
-        self.fall_alert_panel = self.fall_alert_section.alert_panel
-        self.fall_alert_task_label = self.fall_alert_section.fall_alert_task_label
-        self.evidence_image_id_label = self.fall_alert_section.evidence_image_id_label
-        self.fall_frame_id_label = self.fall_alert_section.fall_frame_id_label
-        self.fall_streak_label = self.fall_alert_section.fall_streak_label
-        self.evidence_image_btn = self.fall_alert_section.evidence_image_btn
-        self.evidence_status_label = self.fall_alert_section.evidence_status_label
+        self.patrol_runtime_section = PatrolRuntimePanel()
+        self.patrol_map_placeholder = self.patrol_runtime_section.patrol_map_placeholder
+        self.patrol_map_overlay = self.patrol_runtime_section.patrol_map_overlay
+        self.fall_marker_label = self.patrol_runtime_section.fall_marker_label
+        self.fall_alert_panel = self.patrol_runtime_section.alert_panel
+        self.fall_alert_task_label = self.patrol_runtime_section.fall_alert_task_label
+        self.evidence_image_id_label = self.patrol_runtime_section.evidence_image_id_label
+        self.fall_frame_id_label = self.patrol_runtime_section.fall_frame_id_label
+        self.fall_streak_label = self.patrol_runtime_section.fall_streak_label
+        self.evidence_image_btn = self.patrol_runtime_section.evidence_image_btn
+        self.evidence_status_label = self.patrol_runtime_section.evidence_status_label
         self.evidence_image_btn.clicked.connect(self.open_fall_evidence_dialog)
-        self.resume_patrol_btn = self.fall_alert_section.resume_patrol_btn
-        self.resume_status_label = self.fall_alert_section.resume_status_label
+        self.resume_patrol_btn = self.patrol_runtime_section.resume_patrol_btn
+        self.resume_status_label = self.patrol_runtime_section.resume_status_label
         self.resume_patrol_btn.clicked.connect(self.open_patrol_resume_dialog)
 
         detail_layout.addWidget(detail_title)
@@ -547,7 +547,7 @@ class TaskMonitorPage(QWidget):
         detail_layout.addWidget(self.result_info_panel)
         detail_layout.addLayout(detail_action_row)
         detail_layout.addWidget(self.cancel_status_label)
-        detail_layout.addWidget(self.fall_alert_section)
+        detail_layout.addWidget(self.patrol_runtime_section)
         detail_layout.addStretch(1)
 
         content_row.addWidget(list_card, 3)
@@ -853,7 +853,7 @@ class TaskMonitorPage(QWidget):
 
     def _render_fall_alert(self, task):
         alert = task.get("fall_alert") or {}
-        self.fall_alert_section.render(
+        self.patrol_runtime_section.render(
             task,
             can_resume=self._can_resume_patrol(task),
             evidence_available=self._is_evidence_image_available(alert),

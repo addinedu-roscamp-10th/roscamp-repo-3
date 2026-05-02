@@ -216,7 +216,7 @@ def test_task_monitor_page_shows_result_reason_and_message_prominently():
     _app()
 
     from ui.utils.pages.caregiver.task_monitor_detail_panels import (
-        FallAlertPanel,
+        PatrolRuntimePanel,
         TaskResultInfoPanel,
     )
     from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
@@ -225,7 +225,7 @@ def test_task_monitor_page_shows_result_reason_and_message_prominently():
 
     try:
         assert isinstance(page.result_info_panel, TaskResultInfoPanel)
-        assert isinstance(page.fall_alert_section, FallAlertPanel)
+        assert isinstance(page.patrol_runtime_section, PatrolRuntimePanel)
 
         page.apply_stream_event(
             {

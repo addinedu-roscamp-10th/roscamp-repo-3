@@ -53,12 +53,12 @@ def test_result_info_panel_renders_result_reason_message_and_warning_state():
         panel.close()
 
 
-def test_fall_alert_panel_renders_marker_actions_and_hidden_state():
+def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
     _app()
 
-    from ui.utils.pages.caregiver.task_monitor_detail_panels import FallAlertPanel
+    from ui.utils.pages.caregiver.task_monitor_detail_panels import PatrolRuntimePanel
 
-    panel = FallAlertPanel()
+    panel = PatrolRuntimePanel()
 
     try:
         panel.render(
