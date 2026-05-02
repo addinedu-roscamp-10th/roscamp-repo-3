@@ -1,4 +1,5 @@
 import base64
+import copy
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -249,6 +250,126 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         assert patrol_table.item(0, 3).text() == "비활성"
         assert page.validation_message_label.text() == "맵과 좌표 설정을 불러왔습니다."
         assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_refresh_restores_selected_goal_pose_snapshot():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        page.findChild(QDoubleSpinBox, "goalPoseXSpin").setValue(0.01)
+
+        next_bundle = copy.deepcopy(_sample_bundle())
+        next_bundle["goal_poses"][0]["pose_x"] = 1.9
+        next_bundle["goal_poses"][0]["updated_at"] = "2026-05-02T03:40:00Z"
+
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": next_bundle,
+                **_sample_map_assets(),
+            }
+        )
+
+        goal_table = page.findChild(QTableWidget, "goalPoseTable")
+        assert goal_table.item(0, 3).text() == "x=1.90, y=0.02, yaw=0.00"
+        assert page.selected_edit_type == "goal_pose"
+        assert page.selected_goal_pose["updated_at"] == "2026-05-02T03:40:00Z"
+        assert page.findChild(QDoubleSpinBox, "goalPoseXSpin").value() == 1.9
+        assert page.goal_pose_dirty is False
+        assert page.save_button.isEnabled() is False
+        assert page.discard_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_refresh_clears_missing_selected_goal_pose():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+
+        next_bundle = copy.deepcopy(_sample_bundle())
+        next_bundle["goal_poses"] = []
+
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": next_bundle,
+                **_sample_map_assets(),
+            }
+        )
+
+        assert page.findChild(QTableWidget, "goalPoseTable").rowCount() == 0
+        assert page.selected_edit_type is None
+        assert page.selected_goal_pose is None
+        assert page.findChild(QLabel, "coordinateEditModeLabel").text() == "선택 모드"
+        assert page.edit_placeholder_label.isHidden() is False
+        assert page.goal_pose_form.isHidden() is True
+        assert page.save_button.isEnabled() is False
+        assert page.discard_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_refresh_clears_operation_zone_create_form():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.start_operation_zone_create()
+        page.findChild(QLineEdit, "operationZoneIdInput").setText("caregiver_room")
+
+        assert page.operation_zone_dirty is True
+
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+
+        assert page.selected_edit_type is None
+        assert page.operation_zone_mode is None
+        assert page.operation_zone_dirty is False
+        assert page.operation_zone_form.isHidden() is True
+        assert page.save_button.isEnabled() is False
+        assert page.discard_button.isEnabled() is False
     finally:
         page.close()
 

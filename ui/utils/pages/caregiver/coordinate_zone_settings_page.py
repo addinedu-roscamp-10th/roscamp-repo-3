@@ -25,6 +25,14 @@ from ui.utils.pages.caregiver.coordinate_zone_settings_forms import (
     build_operation_zone_form,
     build_patrol_area_form,
 )
+from ui.utils.pages.caregiver.coordinate_zone_settings_bundle import (
+    GOAL_POSE_TABLE_COLUMNS,
+    OPERATION_ZONE_TABLE_COLUMNS,
+    PATROL_AREA_TABLE_COLUMNS,
+    find_row_index_by_value,
+    normalize_coordinate_config_bundle,
+    set_table_rows,
+)
 from ui.utils.pages.caregiver.coordinate_zone_settings_workers import (
     CoordinateConfigLoadWorker,
     GoalPoseSaveWorker,
@@ -351,49 +359,109 @@ class CoordinateZoneSettingsPage(QWidget):
         self.discard_button.setEnabled(False)
 
     def apply_bundle(self, bundle):
-        bundle = bundle if isinstance(bundle, dict) else {}
-        self.current_bundle = bundle
-        self.operation_zone_rows = [
-            row for row in bundle.get("operation_zones") or [] if isinstance(row, dict)
-        ]
-        self.goal_pose_rows = [
-            row for row in bundle.get("goal_poses") or [] if isinstance(row, dict)
-        ]
-        self.patrol_area_rows = [
-            row for row in bundle.get("patrol_areas") or [] if isinstance(row, dict)
-        ]
-        self.apply_active_map(bundle.get("map_profile") or {})
+        selected = self._capture_selected_bundle_selection()
+        normalized = normalize_coordinate_config_bundle(bundle)
+        self.current_bundle = normalized.source
+        self.operation_zone_rows = normalized.operation_zones
+        self.goal_pose_rows = normalized.goal_poses
+        self.patrol_area_rows = normalized.patrol_areas
+        self.apply_active_map(normalized.map_profile)
         self._populate_goal_pose_form_options()
-        self._set_table_rows(
+        self._refresh_bundle_tables()
+        self._restore_selected_bundle_selection(selected)
+
+    def _refresh_bundle_tables(self):
+        set_table_rows(
             self.tables["operationZoneTable"],
             self.operation_zone_rows,
-            [
-                "zone_id",
-                "zone_name",
-                "zone_type",
-                ("is_enabled", _enabled_text),
-            ],
+            OPERATION_ZONE_TABLE_COLUMNS,
         )
-        self._set_table_rows(
+        set_table_rows(
             self.tables["goalPoseTable"],
             self.goal_pose_rows,
-            [
-                "goal_pose_id",
-                "purpose",
-                ("zone_name", _zone_label),
-                ("pose", _goal_pose_text),
-            ],
+            GOAL_POSE_TABLE_COLUMNS,
         )
-        self._set_table_rows(
+        set_table_rows(
             self.tables["patrolAreaTable"],
             self.patrol_area_rows,
-            [
-                "patrol_area_id",
-                "revision",
-                ("waypoint_count", _waypoint_count_text),
-                ("is_enabled", _enabled_text),
-            ],
+            PATROL_AREA_TABLE_COLUMNS,
         )
+
+    def _capture_selected_bundle_selection(self):
+        if (
+            self.selected_edit_type == "operation_zone"
+            and self.operation_zone_mode == "create"
+        ):
+            return ("operation_zone_create", None)
+        if self.selected_edit_type == "operation_zone" and self.selected_operation_zone:
+            return (
+                "operation_zone",
+                self.selected_operation_zone.get("zone_id"),
+            )
+        if self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
+            return ("goal_pose", self.selected_goal_pose.get("goal_pose_id"))
+        if self.selected_edit_type == "patrol_area" and self.selected_patrol_area:
+            return ("patrol_area", self.selected_patrol_area.get("patrol_area_id"))
+        return None
+
+    def _restore_selected_bundle_selection(self, selected):
+        if not isinstance(selected, tuple) or len(selected) != 2:
+            return
+        edit_type, row_id = selected
+        if edit_type == "operation_zone":
+            row_index = find_row_index_by_value(
+                self.operation_zone_rows,
+                "zone_id",
+                row_id,
+            )
+            if row_index is not None:
+                self.select_operation_zone(row_index)
+                return
+        elif edit_type == "goal_pose":
+            row_index = find_row_index_by_value(
+                self.goal_pose_rows,
+                "goal_pose_id",
+                row_id,
+            )
+            if row_index is not None:
+                self.select_goal_pose(row_index)
+                return
+        elif edit_type == "patrol_area":
+            row_index = find_row_index_by_value(
+                self.patrol_area_rows,
+                "patrol_area_id",
+                row_id,
+            )
+            if row_index is not None:
+                self.select_patrol_area(row_index)
+                return
+        self._clear_current_edit_selection()
+
+    def _clear_current_edit_selection(self):
+        self.selected_edit_type = None
+        self.operation_zone_mode = None
+        self.selected_operation_zone = None
+        self.selected_operation_zone_index = None
+        self.operation_zone_dirty = False
+        self.operation_zone_boundary_dirty = False
+        self.operation_zone_boundary_vertices = []
+        self.selected_operation_zone_boundary_vertex_index = None
+        self.selected_goal_pose = None
+        self.selected_goal_pose_index = None
+        self.goal_pose_dirty = False
+        self.selected_patrol_area = None
+        self.selected_patrol_area_index = None
+        self.patrol_area_dirty = False
+        self.patrol_waypoint_rows = []
+        self.selected_patrol_waypoint_index = None
+        self.edit_mode_label.setText("선택 모드")
+        self.edit_placeholder_label.setHidden(False)
+        self.operation_zone_form.setHidden(True)
+        self.goal_pose_form.setHidden(True)
+        self.patrol_area_form.setHidden(True)
+        self.map_canvas.clear_configuration_overlay()
+        self.save_button.setEnabled(False)
+        self.discard_button.setEnabled(False)
 
     def apply_load_error(self, message):
         self.map_canvas.clear_map("좌표 설정 맵 로드 실패")
@@ -1012,15 +1080,10 @@ class CoordinateZoneSettingsPage(QWidget):
             self.selected_operation_zone_index = len(self.operation_zone_rows) - 1
 
         self.current_bundle["operation_zones"] = self.operation_zone_rows
-        self._set_table_rows(
+        set_table_rows(
             self.tables["operationZoneTable"],
             self.operation_zone_rows,
-            [
-                "zone_id",
-                "zone_name",
-                "zone_type",
-                ("is_enabled", _enabled_text),
-            ],
+            OPERATION_ZONE_TABLE_COLUMNS,
         )
 
     def save_selected_patrol_area_path(self):
@@ -1278,15 +1341,10 @@ class CoordinateZoneSettingsPage(QWidget):
             self.selected_patrol_area_index = len(self.patrol_area_rows) - 1
 
         self.current_bundle["patrol_areas"] = self.patrol_area_rows
-        self._set_table_rows(
+        set_table_rows(
             self.tables["patrolAreaTable"],
             self.patrol_area_rows,
-            [
-                "patrol_area_id",
-                "revision",
-                ("waypoint_count", _waypoint_count_text),
-                ("is_enabled", _enabled_text),
-            ],
+            PATROL_AREA_TABLE_COLUMNS,
         )
 
     def _active_map_frame_id(self):
@@ -1475,15 +1533,10 @@ class CoordinateZoneSettingsPage(QWidget):
             self.selected_goal_pose_index = len(self.goal_pose_rows) - 1
 
         self.current_bundle["goal_poses"] = self.goal_pose_rows
-        self._set_table_rows(
+        set_table_rows(
             self.tables["goalPoseTable"],
             self.goal_pose_rows,
-            [
-                "goal_pose_id",
-                "purpose",
-                ("zone_name", _zone_label),
-                ("pose", _goal_pose_text),
-            ],
+            GOAL_POSE_TABLE_COLUMNS,
         )
 
     @staticmethod
@@ -1543,16 +1596,6 @@ class CoordinateZoneSettingsPage(QWidget):
         self.shutdown()
         super().closeEvent(event)
 
-    @staticmethod
-    def _set_table_rows(table, rows, columns):
-        rows = rows if isinstance(rows, list) else []
-        table.setRowCount(len(rows))
-        for row_index, row in enumerate(rows):
-            row = row if isinstance(row, dict) else {}
-            for column_index, column in enumerate(columns):
-                value = _column_value(row, column)
-                table.setItem(row_index, column_index, QTableWidgetItem(value))
-
     def _stop_goal_pose_save_thread(self):
         return stop_worker_thread(
             self.goal_pose_save_thread,
@@ -1573,13 +1616,6 @@ class CoordinateZoneSettingsPage(QWidget):
             wait_ms=self._worker_stop_wait_ms,
             clear_handler=self._clear_patrol_area_save_thread,
         )
-
-
-def _column_value(row, column):
-    if isinstance(column, tuple):
-        key, formatter = column
-        return formatter(row, row.get(key))
-    return _display(row.get(column))
 
 
 def _display(value):
@@ -1625,32 +1661,6 @@ def _patrol_path_frame_id(patrol_area):
 
 def _waypoint_number_text(value):
     return f"{_float_or_default(value):.4f}"
-
-
-def _enabled_text(_row, value):
-    return "활성" if bool(value) else "비활성"
-
-
-def _zone_label(row, value):
-    return _display(value or row.get("zone_id"))
-
-
-def _goal_pose_text(row, _value):
-    try:
-        x = float(row.get("pose_x"))
-        y = float(row.get("pose_y"))
-        yaw = float(row.get("pose_yaw"))
-    except (TypeError, ValueError):
-        return "-"
-    return f"x={x:.2f}, y={y:.2f}, yaw={yaw:.2f}"
-
-
-def _waypoint_count_text(row, value):
-    if value not in (None, ""):
-        return str(value)
-    path_json = row.get("path_json")
-    poses = path_json.get("poses") if isinstance(path_json, dict) else []
-    return str(len(poses)) if isinstance(poses, list) else "0"
 
 
 __all__ = [
