@@ -1,0 +1,66 @@
+import os
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PyQt6.QtWidgets import QApplication
+
+
+_APP = None
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _app():
+    global _APP
+    _APP = QApplication.instance() or QApplication([])
+    return _APP
+
+
+def test_patrol_map_overlay_loads_pgm_yaml_and_converts_world_coordinates():
+    _app()
+
+    from ui.utils.widgets.map_overlay import PatrolMapOverlay
+
+    overlay = PatrolMapOverlay()
+
+    try:
+        overlay.render(
+            {
+                "task_type": "PATROL",
+                "patrol_map": {
+                    "map_id": "map_test11_0423",
+                    "frame_id": "map",
+                    "yaml_path": str(
+                        PROJECT_ROOT
+                        / "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml"
+                    ),
+                    "pgm_path": str(
+                        PROJECT_ROOT
+                        / "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm"
+                    ),
+                },
+                "patrol_path": {
+                    "frame_id": "map",
+                    "waypoint_count": 3,
+                    "current_waypoint_index": 1,
+                    "poses": [
+                        {"x": 0.1665755137108074, "y": -0.4496830900440016, "yaw": 1.57},
+                        {"x": 1.6946025435218914, "y": 0.0043433854992070454, "yaw": 0.0},
+                    ],
+                },
+                "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
+                "fall_alert": {
+                    "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                },
+            }
+        )
+
+        assert overlay.map_loaded is True
+        assert overlay.map_image_size == (105, 59)
+        assert overlay.route_pixel_points[0] == (18, 46)
+        assert overlay.route_pixel_points[1] == (94, 24)
+        assert overlay.current_waypoint_index == 1
+        assert overlay.robot_pixel_point is not None
+        assert overlay.fall_alert_pixel_point == (56, 15)
+    finally:
+        overlay.close()

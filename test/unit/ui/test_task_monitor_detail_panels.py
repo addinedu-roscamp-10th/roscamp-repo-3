@@ -66,6 +66,12 @@ def test_fall_alert_panel_renders_marker_actions_and_hidden_state():
                 "task_id": "2001",
                 "task_type": "PATROL",
                 "phase": "WAIT_FALL_RESPONSE",
+                "patrol_map": {
+                    "map_id": "map_test11_0423",
+                    "frame_id": "map",
+                    "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
+                    "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
+                },
                 "fall_alert": {
                     "result_seq": 44,
                     "frame_id": "frame-44",
@@ -87,6 +93,7 @@ def test_fall_alert_panel_renders_marker_actions_and_hidden_state():
         assert panel.resume_patrol_btn.isEnabled() is True
         assert "3층 복도" in panel.fall_marker_label.text()
         assert "x=0.93" in panel.fall_marker_label.text()
+        assert panel.patrol_map_overlay.fall_alert_pixel_point is not None
 
         panel.render({}, can_resume=False, evidence_available=False)
 
@@ -94,5 +101,6 @@ def test_fall_alert_panel_renders_marker_actions_and_hidden_state():
         assert panel.evidence_image_btn.isEnabled() is False
         assert panel.resume_patrol_btn.isEnabled() is False
         assert panel.fall_marker_label.text() == "낙상 지점 미수신"
+        assert panel.patrol_map_overlay.fall_alert_pixel_point is None
     finally:
         panel.close()

@@ -19,9 +19,26 @@ class FakeTaskMonitorRepository:
                     "result_message": "순찰 workflow 실패",
                     "phase": "WAIT_FALL_RESPONSE",
                     "assigned_robot_id": "pinky3",
+                    "map_id": "map_test11_0423",
+                    "map_name": "map_test11_0423",
+                    "map_revision": 1,
+                    "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
+                    "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
+                    "map_frame_id": "map",
                     "patrol_area_id": "ward_3f",
                     "patrol_area_name": "3층 병동",
                     "patrol_area_revision": 2,
+                    "patrol_path_frame_id": "map",
+                    "waypoint_count": 3,
+                    "current_waypoint_index": 1,
+                    "path_snapshot_json": {
+                        "header": {"frame_id": "map"},
+                        "poses": [
+                            {"x": 0.1666, "y": -0.4497, "yaw": 1.5708},
+                            {"x": 1.6946, "y": 0.0043, "yaw": 0.0},
+                            {"x": 0.8577, "y": 0.2560, "yaw": 0.0},
+                        ],
+                    },
                     "latest_reason_code": "FALL_DETECTED",
                     "requested_at": datetime(2026, 4, 30, 10, 0, 0),
                     "started_at": datetime(2026, 4, 30, 10, 1, 0),
@@ -100,6 +117,24 @@ def test_task_monitor_snapshot_formats_nested_feedback_robot_and_alert():
     assert task["assigned_robot_id"] == "pinky3"
     assert task["cancellable"] is True
     assert task["patrol_area_name"] == "3층 병동"
+    assert task["patrol_map"] == {
+        "map_id": "map_test11_0423",
+        "map_name": "map_test11_0423",
+        "map_revision": 1,
+        "frame_id": "map",
+        "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
+        "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
+    }
+    assert task["patrol_path"] == {
+        "frame_id": "map",
+        "waypoint_count": 3,
+        "current_waypoint_index": 1,
+        "poses": [
+            {"x": 0.1666, "y": -0.4497, "yaw": 1.5708},
+            {"x": 1.6946, "y": 0.0043, "yaw": 0.0},
+            {"x": 0.8577, "y": 0.2560, "yaw": 0.0},
+        ],
+    }
     assert task["latest_feedback"] == {
         "feedback_summary": "MOVING / 남은 거리 1.25m",
         "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},

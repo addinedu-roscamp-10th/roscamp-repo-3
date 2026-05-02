@@ -522,6 +522,7 @@ class TaskMonitorPage(QWidget):
 
         self.fall_alert_section = FallAlertPanel()
         self.patrol_map_placeholder = self.fall_alert_section.patrol_map_placeholder
+        self.patrol_map_overlay = self.fall_alert_section.patrol_map_overlay
         self.fall_marker_label = self.fall_alert_section.fall_marker_label
         self.fall_alert_panel = self.fall_alert_section.alert_panel
         self.fall_alert_task_label = self.fall_alert_section.fall_alert_task_label
@@ -620,8 +621,11 @@ class TaskMonitorPage(QWidget):
                 normalized["pose"] = latest_feedback.get("pose")
 
         latest_robot = normalized.get("latest_robot")
-        if isinstance(latest_robot, dict) and not normalized.get("assigned_robot_id"):
-            normalized["assigned_robot_id"] = latest_robot.get("robot_id")
+        if isinstance(latest_robot, dict):
+            if not normalized.get("assigned_robot_id"):
+                normalized["assigned_robot_id"] = latest_robot.get("robot_id")
+            if latest_robot.get("pose") is not None and not normalized.get("pose"):
+                normalized["pose"] = latest_robot.get("pose")
 
         latest_alert = normalized.get("latest_alert")
         if isinstance(latest_alert, dict):

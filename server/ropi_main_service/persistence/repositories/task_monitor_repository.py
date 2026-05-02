@@ -20,9 +20,19 @@ SELECT
     t.result_message,
     t.phase,
     t.assigned_robot_id,
+    t.map_id,
+    mp.map_name,
+    mp.map_revision,
+    mp.yaml_path,
+    mp.pgm_path,
+    mp.frame_id AS map_frame_id,
     ptd.patrol_area_id,
     pa.patrol_area_name,
     ptd.patrol_area_revision,
+    ptd.frame_id AS patrol_path_frame_id,
+    ptd.waypoint_count,
+    ptd.current_waypoint_index,
+    ptd.path_snapshot_json,
     t.latest_reason_code,
     t.created_at AS requested_at,
     t.started_at,
@@ -52,6 +62,8 @@ LEFT JOIN patrol_task_detail ptd
     ON ptd.task_id = t.task_id
 LEFT JOIN patrol_area pa
     ON pa.patrol_area_id = ptd.patrol_area_id
+LEFT JOIN map_profile mp
+    ON mp.map_id = t.map_id
 LEFT JOIN robot_runtime_status rrs
     ON rrs.robot_id = t.assigned_robot_id
 LEFT JOIN robot_data_log feedback

@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.utils.widgets.map_overlay import PatrolMapOverlay
+
 
 RESULT_ATTENTION_STATUSES = {
     "CANCEL_REQUESTED",
@@ -132,10 +134,13 @@ class FallAlertPanel(QWidget):
         self.patrol_map_placeholder.setObjectName("patrolMapPlaceholder")
         map_layout = QVBoxLayout(self.patrol_map_placeholder)
         map_layout.setContentsMargins(16, 16, 16, 16)
+        map_layout.setSpacing(8)
+        self.patrol_map_overlay = PatrolMapOverlay()
         self.fall_marker_label = QLabel("낙상 지점 미수신")
         self.fall_marker_label.setObjectName("fallAlertMarker")
         self.fall_marker_label.setWordWrap(True)
         self.fall_marker_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        map_layout.addWidget(self.patrol_map_overlay)
         map_layout.addWidget(self.fall_marker_label)
 
         self.alert_panel = QFrame()
@@ -198,6 +203,7 @@ class FallAlertPanel(QWidget):
         alert = task.get("fall_alert") or {}
         has_alert = bool(alert)
         should_show = has_alert or bool(can_resume)
+        self.patrol_map_overlay.render(task)
         self.alert_panel.setHidden(not should_show)
         self.evidence_status_label.setHidden(True)
         self.resume_status_label.setHidden(True)

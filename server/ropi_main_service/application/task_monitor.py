@@ -181,9 +181,11 @@ class TaskMonitorService:
     @classmethod
     def _format_task(cls, row):
         task_status = row.get("task_status") or "UNKNOWN"
+        task_type = row.get("task_type") or "UNKNOWN"
+        is_patrol = str(task_type or "").strip().upper() == "PATROL"
         task = {
             "task_id": row.get("task_id"),
-            "task_type": row.get("task_type") or "UNKNOWN",
+            "task_type": task_type,
             "task_status": task_status,
             "task_outcome": row.get("task_outcome") or row.get("result_code"),
             "result_code": row.get("result_code") or row.get("task_outcome"),
@@ -191,9 +193,12 @@ class TaskMonitorService:
             "result_message": row.get("result_message"),
             "phase": row.get("phase"),
             "assigned_robot_id": row.get("assigned_robot_id"),
+            "map_id": row.get("map_id"),
             "patrol_area_id": row.get("patrol_area_id"),
             "patrol_area_name": row.get("patrol_area_name"),
             "patrol_area_revision": row.get("patrol_area_revision"),
+            "patrol_map": cls._format_patrol_map(row) if is_patrol else None,
+            "patrol_path": cls._format_patrol_path(row) if is_patrol else None,
             "cancellable": task_status in CANCELLABLE_TASK_STATUSES,
             "latest_reason_code": row.get("latest_reason_code"),
             "requested_at": cls._isoformat(row.get("requested_at") or row.get("created_at")),
@@ -205,6 +210,72 @@ class TaskMonitorService:
             "latest_alert": cls._format_latest_alert(row),
         }
         return task
+
+    @classmethod
+    def _format_patrol_map(cls, row):
+        nested = row.get("patrol_map")
+        if isinstance(nested, dict):
+            map_id = nested.get("map_id")
+            yaml_path = nested.get("yaml_path")
+            pgm_path = nested.get("pgm_path")
+            if not (map_id or yaml_path or pgm_path):
+                return None
+            return {
+                "map_id": map_id,
+                "map_name": nested.get("map_name"),
+                "map_revision": cls._optional_int(nested.get("map_revision")),
+                "frame_id": nested.get("frame_id") or "map",
+                "yaml_path": yaml_path,
+                "pgm_path": pgm_path,
+            }
+
+        map_id = row.get("map_id")
+        yaml_path = row.get("yaml_path")
+        pgm_path = row.get("pgm_path")
+        if not (map_id or yaml_path or pgm_path):
+            return None
+
+        return {
+            "map_id": map_id,
+            "map_name": row.get("map_name"),
+            "map_revision": cls._optional_int(row.get("map_revision")),
+            "frame_id": row.get("map_frame_id") or "map",
+            "yaml_path": yaml_path,
+            "pgm_path": pgm_path,
+        }
+
+    @classmethod
+    def _format_patrol_path(cls, row):
+        nested = row.get("patrol_path")
+        if isinstance(nested, dict):
+            path_json = nested
+            row_frame_id = nested.get("frame_id")
+            row_waypoint_count = nested.get("waypoint_count")
+            row_current_waypoint_index = nested.get("current_waypoint_index")
+        else:
+            path_json = cls._json_object(row.get("path_snapshot_json"))
+            row_frame_id = row.get("patrol_path_frame_id")
+            row_waypoint_count = row.get("waypoint_count")
+            row_current_waypoint_index = row.get("current_waypoint_index")
+
+        poses = path_json.get("poses")
+        if not isinstance(poses, list):
+            poses = []
+
+        header = path_json.get("header") if isinstance(path_json.get("header"), dict) else {}
+        waypoint_count = cls._optional_int(row_waypoint_count)
+        if waypoint_count is None:
+            waypoint_count = len(poses)
+
+        if not poses and waypoint_count <= 0 and not row_frame_id:
+            return None
+
+        return {
+            "frame_id": row_frame_id or header.get("frame_id") or "map",
+            "waypoint_count": waypoint_count,
+            "current_waypoint_index": cls._optional_int(row_current_waypoint_index),
+            "poses": poses,
+        }
 
     @classmethod
     def _format_latest_feedback(cls, row):

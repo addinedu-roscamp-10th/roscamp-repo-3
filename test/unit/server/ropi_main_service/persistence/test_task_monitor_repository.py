@@ -88,6 +88,11 @@ def test_task_monitor_repository_reads_watermark_and_tasks_in_one_transaction(
     assert "MAX(task_event_log_id)" in watermark_query
     assert watermark_params is None
     assert "FROM task t" in task_query
+    assert "t.map_id" in task_query
+    assert "ptd.path_snapshot_json" in task_query
+    assert "ptd.current_waypoint_index" in task_query
+    assert "LEFT JOIN map_profile mp" in task_query
+    assert "mp.map_id = t.map_id" in task_query
     assert "t.task_type IN (%s)" in task_query
     assert "t.task_status IN (%s, %s)" in task_query
     assert task_params == ("PATROL", "RUNNING", "WAIT_FALL_RESPONSE", 25)

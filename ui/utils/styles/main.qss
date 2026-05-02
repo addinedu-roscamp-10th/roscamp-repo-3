@@ -743,6 +743,13 @@ QFrame#patrolMapPlaceholder {
     min-height: 116px;
 }
 
+QFrame#patrolMapOverlay {
+    background: #0F172A;
+    border: 1px solid #1E293B;
+    border-radius: 14px;
+    min-height: 160px;
+}
+
 QFrame#fallAlertPanel,
 QFrame#patrolResumeFormPanel {
     background: #F8FAFC;
