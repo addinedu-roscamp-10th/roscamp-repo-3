@@ -29,6 +29,11 @@ from ui.utils.pages.caregiver.coordinate_goal_pose_editing import (
     goal_pose_from_save_response,
     goal_pose_world_point_from_payload,
 )
+from ui.utils.pages.caregiver.coordinate_patrol_area_editing import (
+    build_patrol_area_path_save_payload,
+    patrol_area_from_path_save_response,
+    patrol_path_poses_from_save_payload,
+)
 from ui.utils.pages.caregiver.coordinate_pose_editing import (
     coerce_point2d,
     coerce_pose2d,
@@ -39,7 +44,6 @@ from ui.utils.pages.caregiver.coordinate_waypoint_editing import (
     delete_selected_patrol_waypoint as delete_patrol_waypoint,
     move_selected_patrol_waypoint as move_patrol_waypoint,
     move_selected_patrol_waypoint_to_world as move_patrol_waypoint_to_world,
-    patrol_path_payload_poses,
     patrol_waypoint_buttons_state,
     patrol_waypoint_table_rows,
     replace_selected_patrol_waypoint,
@@ -1107,7 +1111,7 @@ class CoordinateZoneSettingsPage(QWidget):
             return
 
         payload = self._build_patrol_area_path_save_payload()
-        poses = payload["path_json"]["poses"]
+        poses = patrol_path_poses_from_save_payload(payload)
         if len(poses) < 2:
             self.validation_message_label.setText(
                 "순찰 경로는 최소 2개 waypoint가 필요합니다."
@@ -1305,16 +1309,12 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _build_patrol_area_path_save_payload(self):
-        return {
-            "patrol_area_id": self.patrol_area_id_label.text().strip(),
-            "expected_revision": int(
-                self.selected_patrol_area.get("revision") or 0
-            ),
-            "path_json": {
-                "header": {"frame_id": self._active_map_frame_id()},
-                "poses": patrol_path_payload_poses(self.patrol_waypoint_rows),
-            },
-        }
+        return build_patrol_area_path_save_payload(
+            selected_patrol_area=self.selected_patrol_area,
+            patrol_area_id=self.patrol_area_id_label.text(),
+            frame_id=self._active_map_frame_id(),
+            waypoints=self.patrol_waypoint_rows,
+        )
 
     def _handle_patrol_area_path_save_finished(self, ok, response):
         if not ok:
@@ -1323,9 +1323,8 @@ class CoordinateZoneSettingsPage(QWidget):
             self._sync_patrol_area_save_state()
             return
 
-        response = response if isinstance(response, dict) else {}
-        patrol_area = response.get("patrol_area")
-        if not isinstance(patrol_area, dict):
+        patrol_area = patrol_area_from_path_save_response(response)
+        if patrol_area is None:
             self.validation_message_label.setText("순찰 경로 저장 결과가 비어 있습니다.")
             self.patrol_area_dirty = True
             self._sync_patrol_area_save_state()
