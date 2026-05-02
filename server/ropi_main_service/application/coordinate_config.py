@@ -1,9 +1,20 @@
 import asyncio
-import json
 import re
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from server.ropi_main_service.application.coordinate_config_assets import MapAssetReader
+from server.ropi_main_service.application.coordinate_config_formatters import (
+    bool_value,
+    format_goal_pose,
+    format_map_profile,
+    format_operation_zone,
+    format_patrol_area,
+    generated_at,
+    json_object,
+    normalize_optional_text,
+    optional_float,
+    optional_int,
+)
 from server.ropi_main_service.persistence.repositories.coordinate_config_repository import (
     CoordinateConfigRepository,
 )
@@ -39,15 +50,15 @@ class CoordinateConfigService:
         include_zone_boundaries=True,
         include_patrol_paths=True,
     ):
-        include_disabled = self._bool(include_disabled)
-        include_zone_boundaries = self._bool(include_zone_boundaries)
-        include_patrol_paths = self._bool(include_patrol_paths)
+        include_disabled = bool_value(include_disabled)
+        include_zone_boundaries = bool_value(include_zone_boundaries)
+        include_patrol_paths = bool_value(include_patrol_paths)
 
         active_map = self.repository.get_active_map_profile()
         if not active_map:
             return self._not_found_response()
 
-        map_profile = self._format_map_profile(active_map)
+        map_profile = format_map_profile(active_map)
         map_id = map_profile["map_id"]
         operation_zones = self.repository.get_operation_zones(
             map_id=map_id,
@@ -172,7 +183,7 @@ class CoordinateConfigService:
             "result_code": "CREATED",
             "result_message": None,
             "reason_code": None,
-            "operation_zone": self._format_operation_zone(row or {}),
+            "operation_zone": format_operation_zone(row or {}),
         }
 
     async def async_create_operation_zone(
@@ -227,7 +238,7 @@ class CoordinateConfigService:
             "result_code": "CREATED",
             "result_message": None,
             "reason_code": None,
-            "operation_zone": self._format_operation_zone(row or {}),
+            "operation_zone": format_operation_zone(row or {}),
         }
 
     def update_operation_zone(
@@ -252,7 +263,7 @@ class CoordinateConfigService:
         if error:
             return error
 
-        revision = self._optional_int(expected_revision)
+        revision = optional_int(expected_revision)
         if revision is None or revision < 1:
             return self._operation_zone_error(
                 result_code="INVALID_REQUEST",
@@ -297,7 +308,7 @@ class CoordinateConfigService:
         if error:
             return error
 
-        revision = self._optional_int(expected_revision)
+        revision = optional_int(expected_revision)
         if revision is None or revision < 1:
             return self._operation_zone_error(
                 result_code="INVALID_REQUEST",
@@ -585,9 +596,9 @@ class CoordinateConfigService:
         include_zone_boundaries=True,
         include_patrol_paths=True,
     ):
-        include_disabled = self._bool(include_disabled)
-        include_zone_boundaries = self._bool(include_zone_boundaries)
-        include_patrol_paths = self._bool(include_patrol_paths)
+        include_disabled = bool_value(include_disabled)
+        include_zone_boundaries = bool_value(include_zone_boundaries)
+        include_patrol_paths = bool_value(include_patrol_paths)
 
         active_map = await self._call_async_or_thread(
             "async_get_active_map_profile",
@@ -596,7 +607,7 @@ class CoordinateConfigService:
         if not active_map:
             return self._not_found_response()
 
-        map_profile = self._format_map_profile(active_map)
+        map_profile = format_map_profile(active_map)
         map_id = map_profile["map_id"]
 
         operation_zones, goal_poses, patrol_areas = await asyncio.gather(
@@ -665,8 +676,8 @@ class CoordinateConfigService:
                 result_message="활성 map_profile이 없습니다.",
             )
 
-        map_profile = self._format_map_profile(active_map)
-        requested_map_id = self._normalize_optional_text(map_id)
+        map_profile = format_map_profile(active_map)
+        requested_map_id = normalize_optional_text(map_id)
         if requested_map_id and requested_map_id != map_profile["map_id"]:
             return None, error_factory(
                 result_code="REJECTED",
@@ -690,18 +701,18 @@ class CoordinateConfigService:
             "result_code": "OK",
             "result_message": None,
             "reason_code": None,
-            "generated_at": self._generated_at(),
+            "generated_at": generated_at(self._clock),
             "map_profile": map_profile,
             "operation_zones": [
-                self._format_operation_zone(
+                format_operation_zone(
                     row,
                     include_boundary=include_zone_boundaries,
                 )
                 for row in operation_zones or []
             ],
-            "goal_poses": [self._format_goal_pose(row) for row in goal_poses or []],
+            "goal_poses": [format_goal_pose(row) for row in goal_poses or []],
             "patrol_areas": [
-                self._format_patrol_area(
+                format_patrol_area(
                     row,
                     include_patrol_path=include_patrol_paths,
                 )
@@ -714,7 +725,7 @@ class CoordinateConfigService:
             "result_code": "NOT_FOUND",
             "result_message": "활성 map_profile이 없습니다.",
             "reason_code": "ACTIVE_MAP_NOT_FOUND",
-            "generated_at": self._generated_at(),
+            "generated_at": generated_at(self._clock),
             "map_profile": None,
             "operation_zones": [],
             "goal_poses": [],
@@ -730,7 +741,7 @@ class CoordinateConfigService:
                 "result_code": "UPDATED",
                 "result_message": None,
                 "reason_code": None,
-                "operation_zone": cls._format_operation_zone(
+                "operation_zone": format_operation_zone(
                     result.get("operation_zone") or {}
                 ),
             }
@@ -761,7 +772,7 @@ class CoordinateConfigService:
                 "result_code": "UPDATED",
                 "result_message": None,
                 "reason_code": None,
-                "goal_pose": cls._format_goal_pose(result.get("goal_pose") or {}),
+                "goal_pose": format_goal_pose(result.get("goal_pose") or {}),
             }
         if status == "NOT_FOUND":
             return cls._goal_pose_error(
@@ -790,7 +801,7 @@ class CoordinateConfigService:
                 "result_code": "UPDATED",
                 "result_message": None,
                 "reason_code": None,
-                "patrol_area": cls._format_patrol_area(
+                "patrol_area": format_patrol_area(
                     result.get("patrol_area") or {},
                     include_patrol_path=True,
                 ),
@@ -814,7 +825,7 @@ class CoordinateConfigService:
         )
 
     def _resolve_map_profile_for_asset(self, *, map_id):
-        requested_map_id = self._normalize_optional_text(map_id)
+        requested_map_id = normalize_optional_text(map_id)
         if requested_map_id:
             map_profile = self.repository.get_map_profile(map_id=requested_map_id)
             if not map_profile:
@@ -836,7 +847,7 @@ class CoordinateConfigService:
         return map_profile, None
 
     async def _async_resolve_map_profile_for_asset(self, *, map_id):
-        requested_map_id = self._normalize_optional_text(map_id)
+        requested_map_id = normalize_optional_text(map_id)
         if requested_map_id:
             map_profile = await self._call_async_or_thread(
                 "async_get_map_profile",
@@ -900,7 +911,7 @@ class CoordinateConfigService:
         zone_type,
         is_enabled,
     ):
-        normalized_zone_id = cls._normalize_optional_text(zone_id)
+        normalized_zone_id = normalize_optional_text(zone_id)
         if (
             not normalized_zone_id
             or len(normalized_zone_id) > 100
@@ -912,7 +923,7 @@ class CoordinateConfigService:
                 result_message="zone_id가 유효하지 않습니다.",
             )
 
-        normalized_zone_name = cls._normalize_optional_text(zone_name)
+        normalized_zone_name = normalize_optional_text(zone_name)
         if not normalized_zone_name or len(normalized_zone_name) > 100:
             return None, cls._operation_zone_error(
                 result_code="INVALID_REQUEST",
@@ -920,7 +931,7 @@ class CoordinateConfigService:
                 result_message="zone_name이 유효하지 않습니다.",
             )
 
-        normalized_zone_type = cls._normalize_optional_text(zone_type)
+        normalized_zone_type = normalize_optional_text(zone_type)
         if normalized_zone_type:
             normalized_zone_type = normalized_zone_type.upper()
         if (
@@ -938,7 +949,7 @@ class CoordinateConfigService:
             "zone_id": normalized_zone_id,
             "zone_name": normalized_zone_name,
             "zone_type": normalized_zone_type,
-            "is_enabled": cls._bool(is_enabled),
+            "is_enabled": bool_value(is_enabled),
         }, None
 
     @classmethod
@@ -950,7 +961,7 @@ class CoordinateConfigService:
         boundary_json,
         active_frame_id,
     ):
-        normalized_zone_id = cls._normalize_optional_text(zone_id)
+        normalized_zone_id = normalize_optional_text(zone_id)
         if (
             not normalized_zone_id
             or len(normalized_zone_id) > 100
@@ -962,7 +973,7 @@ class CoordinateConfigService:
                 result_message="zone_id가 유효하지 않습니다.",
             )
 
-        revision = cls._optional_int(expected_revision)
+        revision = optional_int(expected_revision)
         if revision is None or revision < 1:
             return None, cls._operation_zone_error(
                 result_code="INVALID_REQUEST",
@@ -977,7 +988,7 @@ class CoordinateConfigService:
                 "boundary_json": None,
             }, None
 
-        boundary = cls._json_object(boundary_json)
+        boundary = json_object(boundary_json)
         if not boundary:
             return None, cls._operation_zone_error(
                 result_code="INVALID_REQUEST",
@@ -985,7 +996,7 @@ class CoordinateConfigService:
                 result_message="boundary_json shape이 유효하지 않습니다.",
             )
 
-        boundary_type = cls._normalize_optional_text(boundary.get("type"))
+        boundary_type = normalize_optional_text(boundary.get("type"))
         if boundary_type:
             boundary_type = boundary_type.upper()
         if boundary_type != "POLYGON":
@@ -1003,7 +1014,7 @@ class CoordinateConfigService:
                 result_message="boundary_json.header가 유효하지 않습니다.",
             )
 
-        frame_id = cls._normalize_optional_text(header.get("frame_id"))
+        frame_id = normalize_optional_text(header.get("frame_id"))
         if not frame_id:
             return None, cls._operation_zone_error(
                 result_code="INVALID_REQUEST",
@@ -1039,8 +1050,8 @@ class CoordinateConfigService:
                     reason_code="ZONE_BOUNDARY_INVALID",
                     result_message="구역 boundary 꼭짓점 shape이 유효하지 않습니다.",
                 )
-            x = cls._optional_float(vertex.get("x"))
-            y = cls._optional_float(vertex.get("y"))
+            x = optional_float(vertex.get("x"))
+            y = optional_float(vertex.get("y"))
             if x is None or y is None:
                 return None, cls._operation_zone_error(
                     result_code="INVALID_REQUEST",
@@ -1074,7 +1085,7 @@ class CoordinateConfigService:
         is_enabled,
         active_frame_id,
     ):
-        normalized_goal_pose_id = cls._normalize_optional_text(goal_pose_id)
+        normalized_goal_pose_id = normalize_optional_text(goal_pose_id)
         if (
             not normalized_goal_pose_id
             or len(normalized_goal_pose_id) > 100
@@ -1086,7 +1097,7 @@ class CoordinateConfigService:
                 result_message="goal_pose_id가 유효하지 않습니다.",
             )
 
-        normalized_purpose = cls._normalize_optional_text(purpose)
+        normalized_purpose = normalize_optional_text(purpose)
         if normalized_purpose:
             normalized_purpose = normalized_purpose.upper()
         if normalized_purpose not in ALLOWED_GOAL_POSE_PURPOSES:
@@ -1096,7 +1107,7 @@ class CoordinateConfigService:
                 result_message="purpose가 유효하지 않습니다.",
             )
 
-        normalized_frame_id = cls._normalize_optional_text(frame_id)
+        normalized_frame_id = normalize_optional_text(frame_id)
         if normalized_frame_id != active_frame_id:
             return None, cls._goal_pose_error(
                 result_code="INVALID_REQUEST",
@@ -1104,9 +1115,9 @@ class CoordinateConfigService:
                 result_message="frame_id가 active map frame과 일치하지 않습니다.",
             )
 
-        parsed_pose_x = cls._optional_float(pose_x)
-        parsed_pose_y = cls._optional_float(pose_y)
-        parsed_pose_yaw = cls._optional_float(pose_yaw)
+        parsed_pose_x = optional_float(pose_x)
+        parsed_pose_y = optional_float(pose_y)
+        parsed_pose_yaw = optional_float(pose_yaw)
         if parsed_pose_x is None or parsed_pose_y is None or parsed_pose_yaw is None:
             return None, cls._goal_pose_error(
                 result_code="INVALID_REQUEST",
@@ -1114,7 +1125,7 @@ class CoordinateConfigService:
                 result_message="좌표 값이 유효하지 않습니다.",
             )
 
-        normalized_zone_id = cls._normalize_optional_text(zone_id)
+        normalized_zone_id = normalize_optional_text(zone_id)
         if normalized_zone_id and (
             len(normalized_zone_id) > 100
             or not ZONE_ID_PATTERN.match(normalized_zone_id)
@@ -1127,14 +1138,14 @@ class CoordinateConfigService:
 
         return {
             "goal_pose_id": normalized_goal_pose_id,
-            "expected_updated_at": cls._normalize_optional_text(expected_updated_at),
+            "expected_updated_at": normalize_optional_text(expected_updated_at),
             "zone_id": normalized_zone_id,
             "purpose": normalized_purpose,
             "pose_x": parsed_pose_x,
             "pose_y": parsed_pose_y,
             "pose_yaw": parsed_pose_yaw,
             "frame_id": normalized_frame_id,
-            "is_enabled": cls._bool(is_enabled),
+            "is_enabled": bool_value(is_enabled),
         }, None
 
     def _validate_goal_pose_zone(self, *, map_id, zone_id):
@@ -1180,7 +1191,7 @@ class CoordinateConfigService:
         path_json,
         active_frame_id,
     ):
-        normalized_patrol_area_id = cls._normalize_optional_text(patrol_area_id)
+        normalized_patrol_area_id = normalize_optional_text(patrol_area_id)
         if (
             not normalized_patrol_area_id
             or len(normalized_patrol_area_id) > 100
@@ -1192,7 +1203,7 @@ class CoordinateConfigService:
                 result_message="patrol_area_id가 유효하지 않습니다.",
             )
 
-        revision = cls._optional_int(expected_revision)
+        revision = optional_int(expected_revision)
         if revision is None or revision < 1:
             return None, cls._patrol_area_error(
                 result_code="INVALID_REQUEST",
@@ -1200,7 +1211,7 @@ class CoordinateConfigService:
                 result_message="expected_revision이 유효하지 않습니다.",
             )
 
-        path = cls._json_object(path_json)
+        path = json_object(path_json)
         header = path.get("header")
         if not isinstance(header, dict):
             return None, cls._patrol_area_error(
@@ -1209,7 +1220,7 @@ class CoordinateConfigService:
                 result_message="path_json.header가 유효하지 않습니다.",
             )
 
-        frame_id = cls._normalize_optional_text(header.get("frame_id"))
+        frame_id = normalize_optional_text(header.get("frame_id"))
         if frame_id != active_frame_id:
             return None, cls._patrol_area_error(
                 result_code="INVALID_REQUEST",
@@ -1239,9 +1250,9 @@ class CoordinateConfigService:
                     reason_code="PATROL_PATH_INVALID",
                     result_message="순찰 waypoint shape이 유효하지 않습니다.",
                 )
-            x = cls._optional_float(pose.get("x"))
-            y = cls._optional_float(pose.get("y"))
-            yaw = cls._optional_float(pose.get("yaw"))
+            x = optional_float(pose.get("x"))
+            y = optional_float(pose.get("y"))
+            yaw = optional_float(pose.get("yaw"))
             if x is None or y is None or yaw is None:
                 return None, cls._patrol_area_error(
                     result_code="INVALID_REQUEST",
@@ -1258,160 +1269,5 @@ class CoordinateConfigService:
                 "poses": poses,
             },
         }, None
-
-    def _generated_at(self):
-        value = self._clock()
-        if isinstance(value, datetime):
-            return value.isoformat()
-        return str(value)
-
-    @classmethod
-    def _format_map_profile(cls, row):
-        return {
-            "map_id": row.get("map_id"),
-            "map_name": row.get("map_name"),
-            "map_revision": cls._optional_int(row.get("map_revision")) or 0,
-            "frame_id": row.get("frame_id") or "map",
-            "yaml_path": row.get("yaml_path"),
-            "pgm_path": row.get("pgm_path"),
-            "is_active": cls._bool(row.get("is_active")),
-        }
-
-    @classmethod
-    def _format_operation_zone(cls, row, *, include_boundary=True):
-        boundary_json = cls._json_object(row.get("boundary_json"))
-        if not boundary_json:
-            boundary_json = None
-
-        vertices = []
-        boundary_frame_id = None
-        if boundary_json is not None:
-            raw_vertices = boundary_json.get("vertices")
-            if isinstance(raw_vertices, list):
-                vertices = raw_vertices
-            header = boundary_json.get("header")
-            if isinstance(header, dict):
-                boundary_frame_id = cls._normalize_optional_text(header.get("frame_id"))
-
-        return {
-            "zone_id": row.get("zone_id"),
-            "map_id": row.get("map_id"),
-            "zone_name": row.get("zone_name"),
-            "zone_type": row.get("zone_type"),
-            "revision": cls._optional_int(row.get("revision")) or 0,
-            "boundary_json": boundary_json if include_boundary else None,
-            "boundary_vertex_count": len(vertices),
-            "boundary_frame_id": boundary_frame_id,
-            "is_enabled": cls._bool(row.get("is_enabled")),
-            "created_at": cls._isoformat(row.get("created_at")),
-            "updated_at": cls._isoformat(row.get("updated_at")),
-        }
-
-    @classmethod
-    def _format_goal_pose(cls, row):
-        return {
-            "goal_pose_id": row.get("goal_pose_id"),
-            "map_id": row.get("map_id"),
-            "zone_id": row.get("zone_id"),
-            "zone_name": row.get("zone_name"),
-            "purpose": row.get("purpose"),
-            "pose_x": cls._optional_float(row.get("pose_x")) or 0.0,
-            "pose_y": cls._optional_float(row.get("pose_y")) or 0.0,
-            "pose_yaw": cls._optional_float(row.get("pose_yaw")) or 0.0,
-            "frame_id": row.get("frame_id") or "map",
-            "is_enabled": cls._bool(row.get("is_enabled")),
-            "created_at": cls._isoformat(row.get("created_at")),
-            "updated_at": cls._isoformat(row.get("updated_at")),
-        }
-
-    @classmethod
-    def _format_patrol_area(cls, row, *, include_patrol_path):
-        path_json = cls._json_object(row.get("path_json"))
-        poses = path_json.get("poses")
-        if not isinstance(poses, list):
-            poses = []
-
-        header = (
-            path_json.get("header")
-            if isinstance(path_json.get("header"), dict)
-            else {}
-        )
-        waypoint_count = cls._optional_int(row.get("waypoint_count"))
-        if waypoint_count is None:
-            waypoint_count = len(poses)
-
-        return {
-            "patrol_area_id": row.get("patrol_area_id"),
-            "map_id": row.get("map_id"),
-            "patrol_area_name": row.get("patrol_area_name"),
-            "revision": cls._optional_int(row.get("revision")) or 0,
-            "path_json": path_json if include_patrol_path else None,
-            "waypoint_count": waypoint_count,
-            "path_frame_id": row.get("path_frame_id") or header.get("frame_id"),
-            "is_enabled": cls._bool(row.get("is_enabled")),
-            "created_at": cls._isoformat(row.get("created_at")),
-            "updated_at": cls._isoformat(row.get("updated_at")),
-        }
-
-    @staticmethod
-    def _json_object(value):
-        if isinstance(value, dict):
-            return value
-        if isinstance(value, bytes):
-            value = value.decode("utf-8")
-        if isinstance(value, str):
-            try:
-                loaded = json.loads(value)
-            except json.JSONDecodeError:
-                return {}
-            return loaded if isinstance(loaded, dict) else {}
-        return {}
-
-    @staticmethod
-    def _bool(value):
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, int):
-            return value != 0
-        text = str(value or "").strip().lower()
-        if text in {"1", "true", "yes", "y"}:
-            return True
-        if text in {"0", "false", "no", "n", ""}:
-            return False
-        return bool(value)
-
-    @staticmethod
-    def _optional_int(value):
-        if value in (None, ""):
-            return None
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _optional_float(value):
-        if value in (None, ""):
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _normalize_optional_text(value):
-        text = str(value or "").strip()
-        return text or None
-
-    @staticmethod
-    def _isoformat(value):
-        if value in (None, ""):
-            return None
-        if isinstance(value, datetime):
-            return value.isoformat()
-        if isinstance(value, date):
-            return value.isoformat()
-        return str(value)
-
 
 __all__ = ["CoordinateConfigService"]
