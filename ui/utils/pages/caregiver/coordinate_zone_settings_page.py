@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.network.service_clients import CoordinateConfigRemoteService
 from ui.utils.widgets.admin_shell import PageHeader
-from ui.utils.widgets.map_canvas import MapCanvasWidget
+from ui.utils.widgets.map_overlay import PatrolMapOverlay
 
 
 ACTIVE_MAP_FIELDS = [
@@ -154,6 +154,25 @@ class OperationZoneSaveWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class PatrolAreaPathSaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, *, payload, service_factory=CoordinateConfigRemoteService):
+        super().__init__()
+        self.payload = dict(payload or {})
+        self.service_factory = service_factory
+
+    def run(self):
+        try:
+            response = self.service_factory().update_patrol_area_path(**self.payload)
+            if isinstance(response, dict) and response.get("result_code") == "UPDATED":
+                self.finished.emit(True, response)
+                return
+            self.finished.emit(False, _format_result_error(response))
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
 class CoordinateZoneSettingsPage(QWidget):
     def __init__(self):
         super().__init__()
@@ -165,11 +184,14 @@ class CoordinateZoneSettingsPage(QWidget):
         self.goal_pose_save_worker = None
         self.operation_zone_save_thread = None
         self.operation_zone_save_worker = None
+        self.patrol_area_save_thread = None
+        self.patrol_area_save_worker = None
         self._worker_stop_wait_ms = 1500
         self.current_bundle = {}
         self.operation_zone_rows = []
         self.goal_pose_rows = []
         self.patrol_area_rows = []
+        self.patrol_waypoint_rows = []
         self.selected_edit_type = None
         self.operation_zone_mode = None
         self.selected_operation_zone = None
@@ -180,6 +202,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.selected_goal_pose_index = None
         self.goal_pose_dirty = False
         self._syncing_goal_pose_form = False
+        self.selected_patrol_area = None
+        self.selected_patrol_area_index = None
+        self.selected_patrol_waypoint_index = None
+        self.patrol_area_dirty = False
+        self._syncing_patrol_waypoint_form = False
         self._build_ui()
 
     def _build_ui(self):
@@ -270,11 +297,11 @@ class CoordinateZoneSettingsPage(QWidget):
 
         map_title = QLabel("Map Canvas")
         map_title.setObjectName("sectionTitle")
-        self.map_canvas = MapCanvasWidget()
+        self.map_canvas = PatrolMapOverlay()
         self.map_canvas.setObjectName("coordinateZoneMapCanvas")
         self.map_canvas.clear_map("좌표 설정 맵 미수신")
         self.map_canvas.setMinimumHeight(280)
-        self.map_canvas.map_clicked.connect(self.handle_map_click_for_goal_pose)
+        self.map_canvas.map_clicked.connect(self.handle_map_click)
 
         map_layout.addWidget(map_title)
         map_layout.addWidget(self.map_canvas)
@@ -327,6 +354,8 @@ class CoordinateZoneSettingsPage(QWidget):
             table.cellClicked.connect(
                 lambda row, _column: self.select_operation_zone(row)
             )
+        if object_name == "patrolAreaTable":
+            table.cellClicked.connect(lambda row, _column: self.select_patrol_area(row))
 
         layout.addWidget(title)
         layout.addWidget(table)
@@ -361,12 +390,15 @@ class CoordinateZoneSettingsPage(QWidget):
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form = self._build_goal_pose_form()
         self.goal_pose_form.setHidden(True)
+        self.patrol_area_form = self._build_patrol_area_form()
+        self.patrol_area_form.setHidden(True)
 
         self.edit_panel_layout.addWidget(title)
         self.edit_panel_layout.addWidget(self.operation_zone_new_button)
         self.edit_panel_layout.addWidget(self.edit_placeholder_label)
         self.edit_panel_layout.addWidget(self.operation_zone_form)
         self.edit_panel_layout.addWidget(self.goal_pose_form)
+        self.edit_panel_layout.addWidget(self.patrol_area_form)
         self.edit_panel_layout.addStretch(1)
         return panel
 
@@ -458,6 +490,97 @@ class CoordinateZoneSettingsPage(QWidget):
             self.goal_pose_enabled_check,
         ]:
             self._connect_goal_pose_dirty_signal(widget)
+
+        return form
+
+    def _build_patrol_area_form(self):
+        form = QFrame()
+        form.setObjectName("patrolAreaEditForm")
+        layout = QVBoxLayout(form)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        summary_layout = QGridLayout()
+        summary_layout.setHorizontalSpacing(10)
+        summary_layout.setVerticalSpacing(8)
+        self.patrol_area_id_label = self._readonly_value_label("patrolAreaIdLabel")
+        self.patrol_area_name_label = self._readonly_value_label("patrolAreaNameLabel")
+        self.patrol_area_revision_label = self._readonly_value_label(
+            "patrolAreaRevisionLabel"
+        )
+        self.patrol_path_frame_label = self._readonly_value_label("patrolPathFrameLabel")
+
+        summary_rows = [
+            ("순찰 구역 ID", self.patrol_area_id_label),
+            ("순찰 구역명", self.patrol_area_name_label),
+            ("경로 revision", self.patrol_area_revision_label),
+            ("frame_id", self.patrol_path_frame_label),
+        ]
+        for row_index, (label_text, widget) in enumerate(summary_rows):
+            label = QLabel(label_text)
+            label.setObjectName("fieldLabel")
+            summary_layout.addWidget(label, row_index, 0)
+            summary_layout.addWidget(widget, row_index, 1)
+        layout.addLayout(summary_layout)
+
+        self.patrol_waypoint_table = QTableWidget(0, 4)
+        self.patrol_waypoint_table.setObjectName("patrolWaypointTable")
+        self.patrol_waypoint_table.setHorizontalHeaderLabels(["#", "x", "y", "yaw"])
+        self.patrol_waypoint_table.horizontalHeader().setStretchLastSection(True)
+        self.patrol_waypoint_table.cellClicked.connect(
+            lambda row, _column: self.select_patrol_waypoint(row)
+        )
+        layout.addWidget(self.patrol_waypoint_table)
+
+        waypoint_form = QGridLayout()
+        waypoint_form.setHorizontalSpacing(10)
+        waypoint_form.setVerticalSpacing(8)
+        self.patrol_waypoint_x_spin = self._coordinate_spin("patrolWaypointXSpin")
+        self.patrol_waypoint_y_spin = self._coordinate_spin("patrolWaypointYSpin")
+        self.patrol_waypoint_yaw_spin = self._coordinate_spin("patrolWaypointYawSpin")
+        for row_index, (label_text, widget) in enumerate(
+            [
+                ("waypoint x", self.patrol_waypoint_x_spin),
+                ("waypoint y", self.patrol_waypoint_y_spin),
+                ("waypoint yaw(rad)", self.patrol_waypoint_yaw_spin),
+            ]
+        ):
+            label = QLabel(label_text)
+            label.setObjectName("fieldLabel")
+            waypoint_form.addWidget(label, row_index, 0)
+            waypoint_form.addWidget(widget, row_index, 1)
+        layout.addLayout(waypoint_form)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
+        self.patrol_waypoint_up_button = QPushButton("위로")
+        self.patrol_waypoint_up_button.setObjectName("patrolWaypointUpButton")
+        self.patrol_waypoint_down_button = QPushButton("아래로")
+        self.patrol_waypoint_down_button.setObjectName("patrolWaypointDownButton")
+        self.patrol_waypoint_delete_button = QPushButton("waypoint 삭제")
+        self.patrol_waypoint_delete_button.setObjectName("patrolWaypointDeleteButton")
+        self.patrol_waypoint_up_button.clicked.connect(
+            lambda: self.move_selected_patrol_waypoint(-1)
+        )
+        self.patrol_waypoint_down_button.clicked.connect(
+            lambda: self.move_selected_patrol_waypoint(1)
+        )
+        self.patrol_waypoint_delete_button.clicked.connect(
+            self.delete_selected_patrol_waypoint
+        )
+        button_row.addWidget(self.patrol_waypoint_up_button)
+        button_row.addWidget(self.patrol_waypoint_down_button)
+        button_row.addWidget(self.patrol_waypoint_delete_button)
+        layout.addLayout(button_row)
+
+        for widget in [
+            self.patrol_waypoint_x_spin,
+            self.patrol_waypoint_y_spin,
+            self.patrol_waypoint_yaw_spin,
+        ]:
+            widget.valueChanged.connect(
+                lambda _value: self._update_selected_patrol_waypoint_from_form()
+            )
 
         return form
 
@@ -634,6 +757,8 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(False)
         self.goal_pose_form.setHidden(True)
+        self.patrol_area_form.setHidden(True)
+        self._clear_patrol_overlay()
         self._set_operation_zone_form(operation_zone, mode="edit")
         self.operation_zone_dirty = False
         self._sync_operation_zone_save_state()
@@ -646,6 +771,8 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(False)
         self.goal_pose_form.setHidden(True)
+        self.patrol_area_form.setHidden(True)
+        self._clear_patrol_overlay()
         self._set_operation_zone_form(
             {
                 "zone_id": "",
@@ -672,9 +799,35 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(False)
+        self.patrol_area_form.setHidden(True)
+        self._clear_patrol_overlay()
         self._set_goal_pose_form(goal_pose)
         self.goal_pose_dirty = False
         self._sync_goal_pose_save_state()
+
+    def select_patrol_area(self, row_index):
+        try:
+            row_index = int(row_index)
+            patrol_area = self.patrol_area_rows[row_index]
+        except (IndexError, TypeError, ValueError):
+            return
+
+        self.selected_edit_type = "patrol_area"
+        self.selected_patrol_area_index = row_index
+        self.selected_patrol_area = dict(patrol_area)
+        self.edit_placeholder_label.setHidden(True)
+        self.operation_zone_form.setHidden(True)
+        self.goal_pose_form.setHidden(True)
+        self.patrol_area_form.setHidden(False)
+        self._set_patrol_area_form(patrol_area)
+        self.patrol_area_dirty = False
+        self._sync_patrol_area_save_state()
+
+    def handle_map_click(self, world_pose):
+        if self.selected_edit_type == "goal_pose":
+            self.handle_map_click_for_goal_pose(world_pose)
+        elif self.selected_edit_type == "patrol_area":
+            self.handle_map_click_for_patrol_area(world_pose)
 
     def handle_map_click_for_goal_pose(self, world_pose):
         if self.selected_edit_type != "goal_pose" or not isinstance(world_pose, dict):
@@ -688,11 +841,37 @@ class CoordinateZoneSettingsPage(QWidget):
         self.goal_pose_y_spin.setValue(y)
         self._mark_goal_pose_dirty()
 
+    def handle_map_click_for_patrol_area(self, world_pose):
+        if self.selected_edit_type != "patrol_area" or not isinstance(world_pose, dict):
+            return
+        try:
+            pose = {
+                "x": float(world_pose.get("x")),
+                "y": float(world_pose.get("y")),
+                "yaw": 0.0,
+            }
+        except (TypeError, ValueError):
+            return
+        if not self.map_canvas.contains_world_pose(pose):
+            self.validation_message_label.setText(
+                "순찰 waypoint가 맵 범위를 벗어나 추가할 수 없습니다."
+            )
+            return
+
+        self.patrol_waypoint_rows.append(pose)
+        self.selected_patrol_waypoint_index = len(self.patrol_waypoint_rows) - 1
+        self._populate_patrol_waypoint_table()
+        self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
+        self._mark_patrol_area_dirty()
+        self._sync_patrol_overlay()
+
     def save_current_edit(self):
         if self.selected_edit_type == "operation_zone":
             self.save_selected_operation_zone()
         elif self.selected_edit_type == "goal_pose":
             self.save_selected_goal_pose()
+        elif self.selected_edit_type == "patrol_area":
+            self.save_selected_patrol_area_path()
 
     def discard_current_edit(self):
         if self.selected_edit_type == "operation_zone":
@@ -724,6 +903,11 @@ class CoordinateZoneSettingsPage(QWidget):
             self.goal_pose_dirty = False
             self.validation_message_label.setText("목표 좌표 변경을 취소했습니다.")
             self._sync_goal_pose_save_state()
+        elif self.selected_edit_type == "patrol_area" and self.selected_patrol_area:
+            self._set_patrol_area_form(self.selected_patrol_area)
+            self.patrol_area_dirty = False
+            self.validation_message_label.setText("순찰 경로 변경을 취소했습니다.")
+            self._sync_patrol_area_save_state()
 
     def save_selected_operation_zone(self):
         if self.operation_zone_save_thread is not None:
@@ -866,6 +1050,281 @@ class CoordinateZoneSettingsPage(QWidget):
                 ("is_enabled", _enabled_text),
             ],
         )
+
+    def save_selected_patrol_area_path(self):
+        if self.patrol_area_save_thread is not None:
+            return
+        if not self.patrol_area_dirty or not self.selected_patrol_area:
+            return
+
+        payload = self._build_patrol_area_path_save_payload()
+        poses = payload["path_json"]["poses"]
+        if len(poses) < 2:
+            self.validation_message_label.setText(
+                "순찰 경로는 최소 2개 waypoint가 필요합니다."
+            )
+            return
+
+        for pose in poses:
+            if not self.map_canvas.contains_world_pose(pose):
+                self.validation_message_label.setText(
+                    "순찰 waypoint가 맵 범위를 벗어나 저장할 수 없습니다."
+                )
+                return
+
+        self.save_button.setEnabled(False)
+        self.discard_button.setEnabled(False)
+        self.validation_message_label.setText("순찰 경로를 저장하는 중입니다.")
+        self.patrol_area_save_thread, self.patrol_area_save_worker = (
+            start_worker_thread(
+                self,
+                worker=PatrolAreaPathSaveWorker(payload=payload),
+                finished_handler=self._handle_patrol_area_path_save_finished,
+                clear_handler=self._clear_patrol_area_save_thread,
+            )
+        )
+
+    def _set_patrol_area_form(self, patrol_area):
+        patrol_area = patrol_area if isinstance(patrol_area, dict) else {}
+        self.patrol_area_id_label.setText(_display(patrol_area.get("patrol_area_id")))
+        self.patrol_area_name_label.setText(
+            _display(patrol_area.get("patrol_area_name"))
+        )
+        self.patrol_area_revision_label.setText(_display(patrol_area.get("revision")))
+        frame_id = _patrol_path_frame_id(patrol_area) or self._active_map_frame_id()
+        self.patrol_path_frame_label.setText(_display(frame_id))
+        self.patrol_waypoint_rows = _patrol_path_poses(patrol_area.get("path_json"))
+        self.selected_patrol_waypoint_index = 0 if self.patrol_waypoint_rows else None
+        self._populate_patrol_waypoint_table()
+        self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
+        self._sync_patrol_overlay()
+
+    def _populate_patrol_waypoint_table(self):
+        self.patrol_waypoint_table.setRowCount(len(self.patrol_waypoint_rows))
+        for row_index, pose in enumerate(self.patrol_waypoint_rows):
+            row_values = [
+                str(row_index + 1),
+                _waypoint_number_text(pose.get("x")),
+                _waypoint_number_text(pose.get("y")),
+                _waypoint_number_text(pose.get("yaw")),
+            ]
+            for column_index, value in enumerate(row_values):
+                self.patrol_waypoint_table.setItem(
+                    row_index,
+                    column_index,
+                    QTableWidgetItem(value),
+                )
+
+    def select_patrol_waypoint(self, row_index):
+        try:
+            row_index = int(row_index)
+        except (TypeError, ValueError):
+            return
+        if not 0 <= row_index < len(self.patrol_waypoint_rows):
+            return
+
+        self.selected_patrol_waypoint_index = row_index
+        self._set_patrol_waypoint_form(row_index)
+        self._sync_patrol_overlay()
+
+    def _set_patrol_waypoint_form(self, row_index):
+        enabled = row_index is not None and 0 <= row_index < len(
+            self.patrol_waypoint_rows
+        )
+        self._syncing_patrol_waypoint_form = True
+        try:
+            for widget in [
+                self.patrol_waypoint_x_spin,
+                self.patrol_waypoint_y_spin,
+                self.patrol_waypoint_yaw_spin,
+            ]:
+                widget.setEnabled(enabled)
+            if enabled:
+                pose = self.patrol_waypoint_rows[row_index]
+                self.patrol_waypoint_x_spin.setValue(_float_or_default(pose.get("x")))
+                self.patrol_waypoint_y_spin.setValue(_float_or_default(pose.get("y")))
+                self.patrol_waypoint_yaw_spin.setValue(
+                    _float_or_default(pose.get("yaw"))
+                )
+            else:
+                self.patrol_waypoint_x_spin.setValue(0.0)
+                self.patrol_waypoint_y_spin.setValue(0.0)
+                self.patrol_waypoint_yaw_spin.setValue(0.0)
+        finally:
+            self._syncing_patrol_waypoint_form = False
+        self._sync_patrol_waypoint_buttons()
+
+    def _update_selected_patrol_waypoint_from_form(self):
+        if (
+            self._syncing_patrol_waypoint_form
+            or self.selected_edit_type != "patrol_area"
+        ):
+            return
+        index = self.selected_patrol_waypoint_index
+        if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
+            return
+
+        self.patrol_waypoint_rows[index] = {
+            "x": self.patrol_waypoint_x_spin.value(),
+            "y": self.patrol_waypoint_y_spin.value(),
+            "yaw": self.patrol_waypoint_yaw_spin.value(),
+        }
+        self._populate_patrol_waypoint_table()
+        self._mark_patrol_area_dirty()
+        self._sync_patrol_overlay()
+
+    def delete_selected_patrol_waypoint(self):
+        index = self.selected_patrol_waypoint_index
+        if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
+            return
+
+        del self.patrol_waypoint_rows[index]
+        if self.patrol_waypoint_rows:
+            self.selected_patrol_waypoint_index = min(
+                index,
+                len(self.patrol_waypoint_rows) - 1,
+            )
+        else:
+            self.selected_patrol_waypoint_index = None
+        self._populate_patrol_waypoint_table()
+        self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
+        self._mark_patrol_area_dirty()
+        self._sync_patrol_overlay()
+
+    def move_selected_patrol_waypoint(self, offset):
+        index = self.selected_patrol_waypoint_index
+        if index is None or not 0 <= index < len(self.patrol_waypoint_rows):
+            return
+        next_index = index + int(offset)
+        if not 0 <= next_index < len(self.patrol_waypoint_rows):
+            return
+
+        self.patrol_waypoint_rows[index], self.patrol_waypoint_rows[next_index] = (
+            self.patrol_waypoint_rows[next_index],
+            self.patrol_waypoint_rows[index],
+        )
+        self.selected_patrol_waypoint_index = next_index
+        self._populate_patrol_waypoint_table()
+        self._set_patrol_waypoint_form(next_index)
+        self._mark_patrol_area_dirty()
+        self._sync_patrol_overlay()
+
+    def _sync_patrol_waypoint_buttons(self):
+        index = self.selected_patrol_waypoint_index
+        has_selection = index is not None and 0 <= index < len(self.patrol_waypoint_rows)
+        self.patrol_waypoint_delete_button.setEnabled(has_selection)
+        self.patrol_waypoint_up_button.setEnabled(has_selection and index > 0)
+        self.patrol_waypoint_down_button.setEnabled(
+            has_selection and index < len(self.patrol_waypoint_rows) - 1
+        )
+
+    def _mark_patrol_area_dirty(self):
+        if self.selected_edit_type != "patrol_area":
+            return
+        self.patrol_area_dirty = True
+        self.validation_message_label.setText("순찰 경로 변경 사항이 저장 전입니다.")
+        self._sync_patrol_area_save_state()
+
+    def _sync_patrol_area_save_state(self):
+        can_save = (
+            self.selected_edit_type == "patrol_area"
+            and self.patrol_area_dirty
+            and self.map_canvas.map_loaded
+            and self.patrol_area_save_thread is None
+        )
+        self.save_button.setEnabled(can_save)
+        self.discard_button.setEnabled(
+            self.selected_edit_type == "patrol_area" and self.patrol_area_dirty
+        )
+
+    def _build_patrol_area_path_save_payload(self):
+        return {
+            "patrol_area_id": self.patrol_area_id_label.text().strip(),
+            "expected_revision": int(
+                self.selected_patrol_area.get("revision") or 0
+            ),
+            "path_json": {
+                "header": {"frame_id": self._active_map_frame_id()},
+                "poses": [
+                    {
+                        "x": _float_or_default(pose.get("x")),
+                        "y": _float_or_default(pose.get("y")),
+                        "yaw": _float_or_default(pose.get("yaw")),
+                    }
+                    for pose in self.patrol_waypoint_rows
+                ],
+            },
+        }
+
+    def _handle_patrol_area_path_save_finished(self, ok, response):
+        if not ok:
+            self.validation_message_label.setText(str(response))
+            self.patrol_area_dirty = True
+            self._sync_patrol_area_save_state()
+            return
+
+        response = response if isinstance(response, dict) else {}
+        patrol_area = response.get("patrol_area")
+        if not isinstance(patrol_area, dict):
+            self.validation_message_label.setText("순찰 경로 저장 결과가 비어 있습니다.")
+            self.patrol_area_dirty = True
+            self._sync_patrol_area_save_state()
+            return
+
+        self._replace_patrol_area_row(patrol_area)
+        self.selected_patrol_area = dict(patrol_area)
+        self._set_patrol_area_form(patrol_area)
+        self.patrol_area_dirty = False
+        self.validation_message_label.setText("순찰 경로를 저장했습니다.")
+        self._sync_patrol_area_save_state()
+
+    def _replace_patrol_area_row(self, updated_patrol_area):
+        patrol_area_id = updated_patrol_area.get("patrol_area_id")
+        for index, row in enumerate(self.patrol_area_rows):
+            if row.get("patrol_area_id") == patrol_area_id:
+                self.patrol_area_rows[index] = dict(updated_patrol_area)
+                self.selected_patrol_area_index = index
+                break
+        else:
+            self.patrol_area_rows.append(dict(updated_patrol_area))
+            self.selected_patrol_area_index = len(self.patrol_area_rows) - 1
+
+        self.current_bundle["patrol_areas"] = self.patrol_area_rows
+        self._set_table_rows(
+            self.tables["patrolAreaTable"],
+            self.patrol_area_rows,
+            [
+                "patrol_area_id",
+                "revision",
+                ("waypoint_count", _waypoint_count_text),
+                ("is_enabled", _enabled_text),
+            ],
+        )
+
+    def _active_map_frame_id(self):
+        map_profile = self.current_bundle.get("map_profile") or {}
+        return str(map_profile.get("frame_id") or "map").strip()
+
+    def _sync_patrol_overlay(self):
+        self.map_canvas.route_pixel_points = [
+            pixel
+            for pixel in (
+                self.map_canvas.world_to_pixel(pose)
+                for pose in self.patrol_waypoint_rows
+            )
+            if pixel is not None
+        ]
+        self.map_canvas.current_waypoint_index = self.selected_patrol_waypoint_index
+        self.map_canvas.robot_pixel_point = None
+        self.map_canvas.fall_alert_pixel_point = None
+        self.map_canvas.update()
+
+    def _clear_patrol_overlay(self):
+        self.map_canvas.route_pixel_points = []
+        self.map_canvas.current_waypoint_index = None
+        self.map_canvas.robot_pixel_point = None
+        self.map_canvas.fall_alert_pixel_point = None
+        self.map_canvas.update()
 
     def save_selected_goal_pose(self):
         if self.goal_pose_save_thread is not None:
@@ -1041,6 +1500,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.operation_zone_save_worker = None
         self._sync_operation_zone_save_state()
 
+    def _clear_patrol_area_save_thread(self):
+        self.patrol_area_save_thread = None
+        self.patrol_area_save_worker = None
+        self._sync_patrol_area_save_state()
+
     def _stop_load_thread(self):
         if self.load_thread is None:
             return True
@@ -1057,6 +1521,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self._stop_load_thread()
         self._stop_operation_zone_save_thread()
         self._stop_goal_pose_save_thread()
+        self._stop_patrol_area_save_thread()
 
     def closeEvent(self, event):
         self.shutdown()
@@ -1098,6 +1563,20 @@ class CoordinateZoneSettingsPage(QWidget):
             stopped = True
         if stopped:
             self._clear_operation_zone_save_thread()
+        return stopped
+
+    def _stop_patrol_area_save_thread(self):
+        if self.patrol_area_save_thread is None:
+            return True
+        if self.patrol_area_save_thread.isRunning():
+            self.patrol_area_save_thread.quit()
+            stopped = bool(
+                self.patrol_area_save_thread.wait(self._worker_stop_wait_ms)
+            )
+        else:
+            stopped = True
+        if stopped:
+            self._clear_patrol_area_save_thread()
         return stopped
 
 
@@ -1153,6 +1632,45 @@ def _float_or_default(value, default=0.0):
         return float(default)
 
 
+def _patrol_path_poses(path_json):
+    path_json = path_json if isinstance(path_json, dict) else {}
+    poses = path_json.get("poses")
+    if not isinstance(poses, list):
+        return []
+    return [
+        pose
+        for pose in (_normalize_patrol_pose(pose) for pose in poses)
+        if pose is not None
+    ]
+
+
+def _normalize_patrol_pose(pose):
+    if not isinstance(pose, dict):
+        return None
+    try:
+        return {
+            "x": float(pose.get("x")),
+            "y": float(pose.get("y")),
+            "yaw": float(pose.get("yaw", 0.0)),
+        }
+    except (TypeError, ValueError):
+        return None
+
+
+def _patrol_path_frame_id(patrol_area):
+    path_json = patrol_area.get("path_json") if isinstance(patrol_area, dict) else {}
+    header = path_json.get("header") if isinstance(path_json, dict) else {}
+    if isinstance(header, dict) and header.get("frame_id"):
+        return str(header.get("frame_id")).strip()
+    if isinstance(patrol_area, dict) and patrol_area.get("path_frame_id"):
+        return str(patrol_area.get("path_frame_id")).strip()
+    return ""
+
+
+def _waypoint_number_text(value):
+    return f"{_float_or_default(value):.4f}"
+
+
 def _enabled_text(_row, value):
     return "활성" if bool(value) else "비활성"
 
@@ -1184,4 +1702,5 @@ __all__ = [
     "CoordinateZoneSettingsPage",
     "GoalPoseSaveWorker",
     "OperationZoneSaveWorker",
+    "PatrolAreaPathSaveWorker",
 ]

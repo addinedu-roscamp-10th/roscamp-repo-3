@@ -71,6 +71,13 @@ def _sample_bundle():
                 "revision": 7,
                 "waypoint_count": 2,
                 "path_frame_id": "map",
+                "path_json": {
+                    "header": {"frame_id": "map"},
+                    "poses": [
+                        {"x": 0.0, "y": 0.2, "yaw": 0.0},
+                        {"x": 1.0, "y": 1.0, "yaw": 1.57},
+                    ],
+                },
                 "is_enabled": False,
             }
         ],
@@ -659,6 +666,243 @@ def test_coordinate_zone_settings_page_keeps_dirty_values_on_goal_pose_save_fail
         assert page.goal_pose_dirty is True
         assert page.save_button.isEnabled() is True
         assert "GOAL_POSE_STALE" in page.validation_message_label.text()
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_selects_patrol_area_into_waypoint_form():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+
+        assert page.selected_edit_type == "patrol_area"
+        assert page.selected_patrol_area["patrol_area_id"] == "patrol_ward_night_01"
+        assert (
+            page.findChild(QLabel, "patrolAreaIdLabel").text()
+            == "patrol_ward_night_01"
+        )
+        assert page.findChild(QLabel, "patrolAreaRevisionLabel").text() == "7"
+
+        waypoint_table = page.findChild(QTableWidget, "patrolWaypointTable")
+        assert waypoint_table.rowCount() == 2
+        assert waypoint_table.item(0, 1).text() == "0.0000"
+        assert waypoint_table.item(1, 3).text() == "1.5700"
+        assert len(page.map_canvas.route_pixel_points) == 2
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_patrol_path_map_click_edit_and_discard():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+
+        page.handle_map_click_for_patrol_area({"x": 0.5, "y": 0.5})
+
+        waypoint_table = page.findChild(QTableWidget, "patrolWaypointTable")
+        assert waypoint_table.rowCount() == 3
+        assert waypoint_table.item(2, 1).text() == "0.5000"
+        assert page.patrol_area_dirty is True
+        assert page.save_button.isEnabled() is True
+        assert page.discard_button.isEnabled() is True
+
+        page.select_patrol_waypoint(2)
+        page.findChild(QDoubleSpinBox, "patrolWaypointYawSpin").setValue(3.14)
+
+        assert waypoint_table.item(2, 3).text() == "3.1400"
+
+        page.discard_current_edit()
+
+        assert waypoint_table.rowCount() == 2
+        assert page.patrol_area_dirty is False
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_patrol_area_path_save_worker_sends_if_loc_005_payload():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        PatrolAreaPathSaveWorker,
+    )
+
+    calls = []
+
+    class FakeCoordinateService:
+        def update_patrol_area_path(self, **payload):
+            calls.append(payload)
+            return {
+                "result_code": "UPDATED",
+                "patrol_area": {
+                    "patrol_area_id": payload["patrol_area_id"],
+                    "revision": payload["expected_revision"] + 1,
+                    "path_json": payload["path_json"],
+                    "waypoint_count": len(payload["path_json"]["poses"]),
+                    "path_frame_id": payload["path_json"]["header"]["frame_id"],
+                    "is_enabled": True,
+                },
+            }
+
+    payload = {
+        "patrol_area_id": "patrol_ward_night_01",
+        "expected_revision": 7,
+        "path_json": {
+            "header": {"frame_id": "map"},
+            "poses": [
+                {"x": 0.0, "y": 0.2, "yaw": 0.0},
+                {"x": 1.0, "y": 1.0, "yaw": 1.57},
+            ],
+        },
+    }
+    emitted = []
+    worker = PatrolAreaPathSaveWorker(
+        payload=payload,
+        service_factory=FakeCoordinateService,
+    )
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["patrol_area"]["revision"] == 8
+
+
+def test_coordinate_zone_settings_page_applies_patrol_area_path_save_success():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+        page._handle_patrol_area_path_save_finished(
+            True,
+            {
+                "result_code": "UPDATED",
+                "patrol_area": {
+                    "patrol_area_id": "patrol_ward_night_01",
+                    "patrol_area_name": "야간 병동 순찰",
+                    "revision": 8,
+                    "waypoint_count": 3,
+                    "path_frame_id": "map",
+                    "path_json": {
+                        "header": {"frame_id": "map"},
+                        "poses": [
+                            {"x": 0.0, "y": 0.2, "yaw": 0.0},
+                            {"x": 1.0, "y": 1.0, "yaw": 1.57},
+                            {"x": 0.5, "y": 0.5, "yaw": 0.0},
+                        ],
+                    },
+                    "is_enabled": True,
+                },
+            },
+        )
+
+        patrol_table = page.findChild(QTableWidget, "patrolAreaTable")
+        waypoint_table = page.findChild(QTableWidget, "patrolWaypointTable")
+        assert patrol_table.item(0, 1).text() == "8"
+        assert patrol_table.item(0, 2).text() == "3"
+        assert waypoint_table.rowCount() == 3
+        assert page.selected_patrol_area["revision"] == 8
+        assert page.patrol_area_dirty is False
+        assert page.validation_message_label.text() == "순찰 경로를 저장했습니다."
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_keeps_patrol_area_dirty_on_failure():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+        page.handle_map_click_for_patrol_area({"x": 0.5, "y": 0.5})
+
+        page._handle_patrol_area_path_save_finished(
+            False,
+            "PATROL_AREA_REVISION_CONFLICT: 다른 사용자가 먼저 경로를 수정했습니다.",
+        )
+
+        assert page.findChild(QTableWidget, "patrolWaypointTable").rowCount() == 3
+        assert page.patrol_area_dirty is True
+        assert page.save_button.isEnabled() is True
+        assert "PATROL_AREA_REVISION_CONFLICT" in page.validation_message_label.text()
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_blocks_patrol_path_with_less_than_two_waypoints():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+        page.select_patrol_waypoint(1)
+        page.delete_selected_patrol_waypoint()
+
+        page.save_current_edit()
+
+        assert page.patrol_area_dirty is True
+        assert page.patrol_area_save_thread is None
+        assert "최소 2개" in page.validation_message_label.text()
     finally:
         page.close()
 
