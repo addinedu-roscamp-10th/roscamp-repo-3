@@ -4,6 +4,7 @@ SELECT
     zone_name,
     zone_type,
     revision,
+    boundary_json,
     is_enabled,
     created_at,
     updated_at

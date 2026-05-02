@@ -36,9 +36,11 @@ class CoordinateConfigService:
         self,
         *,
         include_disabled=True,
+        include_zone_boundaries=True,
         include_patrol_paths=True,
     ):
         include_disabled = self._bool(include_disabled)
+        include_zone_boundaries = self._bool(include_zone_boundaries)
         include_patrol_paths = self._bool(include_patrol_paths)
 
         active_map = self.repository.get_active_map_profile()
@@ -65,6 +67,7 @@ class CoordinateConfigService:
             operation_zones=operation_zones,
             goal_poses=goal_poses,
             patrol_areas=patrol_areas,
+            include_zone_boundaries=include_zone_boundaries,
             include_patrol_paths=include_patrol_paths,
         )
 
@@ -319,6 +322,76 @@ class CoordinateConfigService:
 
         return self._format_operation_zone_update_result(result)
 
+    def update_operation_zone_boundary(
+        self,
+        *,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        map_profile, error = self._resolve_active_map()
+        if error:
+            return error
+
+        normalized, error = self._normalize_operation_zone_boundary_input(
+            zone_id=zone_id,
+            expected_revision=expected_revision,
+            boundary_json=boundary_json,
+            active_frame_id=map_profile["frame_id"],
+        )
+        if error:
+            return error
+
+        try:
+            result = self.repository.update_operation_zone_boundary(
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return self._operation_zone_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="구역 boundary 수정 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return self._format_operation_zone_update_result(result)
+
+    async def async_update_operation_zone_boundary(
+        self,
+        *,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        map_profile, error = await self._async_resolve_active_map()
+        if error:
+            return error
+
+        normalized, error = self._normalize_operation_zone_boundary_input(
+            zone_id=zone_id,
+            expected_revision=expected_revision,
+            boundary_json=boundary_json,
+            active_frame_id=map_profile["frame_id"],
+        )
+        if error:
+            return error
+
+        try:
+            result = await self._call_async_or_thread(
+                "async_update_operation_zone_boundary",
+                "update_operation_zone_boundary",
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return self._operation_zone_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="구역 boundary 수정 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return self._format_operation_zone_update_result(result)
+
     def update_goal_pose(
         self,
         *,
@@ -509,9 +582,11 @@ class CoordinateConfigService:
         self,
         *,
         include_disabled=True,
+        include_zone_boundaries=True,
         include_patrol_paths=True,
     ):
         include_disabled = self._bool(include_disabled)
+        include_zone_boundaries = self._bool(include_zone_boundaries)
         include_patrol_paths = self._bool(include_patrol_paths)
 
         active_map = await self._call_async_or_thread(
@@ -550,6 +625,7 @@ class CoordinateConfigService:
             operation_zones=operation_zones,
             goal_poses=goal_poses,
             patrol_areas=patrol_areas,
+            include_zone_boundaries=include_zone_boundaries,
             include_patrol_paths=include_patrol_paths,
         )
 
@@ -607,6 +683,7 @@ class CoordinateConfigService:
         operation_zones,
         goal_poses,
         patrol_areas,
+        include_zone_boundaries,
         include_patrol_paths,
     ):
         return {
@@ -616,7 +693,11 @@ class CoordinateConfigService:
             "generated_at": self._generated_at(),
             "map_profile": map_profile,
             "operation_zones": [
-                self._format_operation_zone(row) for row in operation_zones or []
+                self._format_operation_zone(
+                    row,
+                    include_boundary=include_zone_boundaries,
+                )
+                for row in operation_zones or []
             ],
             "goal_poses": [self._format_goal_pose(row) for row in goal_poses or []],
             "patrol_areas": [
@@ -861,6 +942,124 @@ class CoordinateConfigService:
         }, None
 
     @classmethod
+    def _normalize_operation_zone_boundary_input(
+        cls,
+        *,
+        zone_id,
+        expected_revision,
+        boundary_json,
+        active_frame_id,
+    ):
+        normalized_zone_id = cls._normalize_optional_text(zone_id)
+        if (
+            not normalized_zone_id
+            or len(normalized_zone_id) > 100
+            or not ZONE_ID_PATTERN.match(normalized_zone_id)
+        ):
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_ID_INVALID",
+                result_message="zone_id가 유효하지 않습니다.",
+            )
+
+        revision = cls._optional_int(expected_revision)
+        if revision is None or revision < 1:
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_REVISION_CONFLICT",
+                result_message="expected_revision이 유효하지 않습니다.",
+            )
+
+        if boundary_json is None:
+            return {
+                "zone_id": normalized_zone_id,
+                "expected_revision": revision,
+                "boundary_json": None,
+            }, None
+
+        boundary = cls._json_object(boundary_json)
+        if not boundary:
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_BOUNDARY_INVALID",
+                result_message="boundary_json shape이 유효하지 않습니다.",
+            )
+
+        boundary_type = cls._normalize_optional_text(boundary.get("type"))
+        if boundary_type:
+            boundary_type = boundary_type.upper()
+        if boundary_type != "POLYGON":
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_BOUNDARY_INVALID",
+                result_message="boundary_json.type은 POLYGON이어야 합니다.",
+            )
+
+        header = boundary.get("header")
+        if not isinstance(header, dict):
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_BOUNDARY_INVALID",
+                result_message="boundary_json.header가 유효하지 않습니다.",
+            )
+
+        frame_id = cls._normalize_optional_text(header.get("frame_id"))
+        if not frame_id:
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_BOUNDARY_INVALID",
+                result_message="boundary_json.header.frame_id가 유효하지 않습니다.",
+            )
+        if frame_id != active_frame_id:
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="FRAME_ID_MISMATCH",
+                result_message="구역 boundary frame_id가 active map frame과 일치하지 않습니다.",
+            )
+
+        raw_vertices = boundary.get("vertices")
+        if not isinstance(raw_vertices, list):
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_BOUNDARY_INVALID",
+                result_message="boundary_json.vertices가 유효하지 않습니다.",
+            )
+        if len(raw_vertices) < 3:
+            return None, cls._operation_zone_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ZONE_BOUNDARY_TOO_SHORT",
+                result_message="구역 boundary는 최소 세 개 이상의 꼭짓점이 필요합니다.",
+            )
+
+        vertices = []
+        for vertex in raw_vertices:
+            if not isinstance(vertex, dict):
+                return None, cls._operation_zone_error(
+                    result_code="INVALID_REQUEST",
+                    reason_code="ZONE_BOUNDARY_INVALID",
+                    result_message="구역 boundary 꼭짓점 shape이 유효하지 않습니다.",
+                )
+            x = cls._optional_float(vertex.get("x"))
+            y = cls._optional_float(vertex.get("y"))
+            if x is None or y is None:
+                return None, cls._operation_zone_error(
+                    result_code="INVALID_REQUEST",
+                    reason_code="ZONE_BOUNDARY_INVALID",
+                    result_message="구역 boundary 좌표가 유효하지 않습니다.",
+                )
+            vertices.append({"x": x, "y": y})
+
+        return {
+            "zone_id": normalized_zone_id,
+            "expected_revision": revision,
+            "boundary_json": {
+                "type": "POLYGON",
+                "header": {"frame_id": frame_id},
+                "vertices": vertices,
+            },
+        }, None
+
+    @classmethod
     def _normalize_goal_pose_input(
         cls,
         *,
@@ -1079,13 +1278,30 @@ class CoordinateConfigService:
         }
 
     @classmethod
-    def _format_operation_zone(cls, row):
+    def _format_operation_zone(cls, row, *, include_boundary=True):
+        boundary_json = cls._json_object(row.get("boundary_json"))
+        if not boundary_json:
+            boundary_json = None
+
+        vertices = []
+        boundary_frame_id = None
+        if boundary_json is not None:
+            raw_vertices = boundary_json.get("vertices")
+            if isinstance(raw_vertices, list):
+                vertices = raw_vertices
+            header = boundary_json.get("header")
+            if isinstance(header, dict):
+                boundary_frame_id = cls._normalize_optional_text(header.get("frame_id"))
+
         return {
             "zone_id": row.get("zone_id"),
             "map_id": row.get("map_id"),
             "zone_name": row.get("zone_name"),
             "zone_type": row.get("zone_type"),
             "revision": cls._optional_int(row.get("revision")) or 0,
+            "boundary_json": boundary_json if include_boundary else None,
+            "boundary_vertex_count": len(vertices),
+            "boundary_frame_id": boundary_frame_id,
             "is_enabled": cls._bool(row.get("is_enabled")),
             "created_at": cls._isoformat(row.get("created_at")),
             "updated_at": cls._isoformat(row.get("updated_at")),

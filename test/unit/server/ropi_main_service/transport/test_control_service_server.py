@@ -59,6 +59,27 @@ class FakeCoordinateConfigRepository:
     def get_patrol_areas(self, *, map_id, include_disabled=True):
         return []
 
+    def update_operation_zone_boundary(
+        self,
+        *,
+        map_id,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        return {
+            "status": "UPDATED",
+            "operation_zone": {
+                "zone_id": zone_id,
+                "map_id": map_id,
+                "zone_name": "301호",
+                "zone_type": "ROOM",
+                "revision": expected_revision + 1,
+                "boundary_json": boundary_json,
+                "is_enabled": True,
+            },
+        }
+
 
 @pytest.fixture
 def control_service_server(monkeypatch):
@@ -207,6 +228,49 @@ def test_coordinate_config_map_asset_rpc_smoke_routes_through_internal_rpc(
     assert response.payload["asset_type"] == "YAML"
     assert response.payload["encoding"] == "TEXT"
     assert response.payload["content_text"] == "image: map.pgm\n"
+
+
+def test_coordinate_config_boundary_update_rpc_smoke_routes_through_internal_rpc(
+    control_service_server,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=44,
+        payload={
+            "service": "coordinate_config",
+            "method": "update_operation_zone_boundary",
+            "kwargs": {
+                "zone_id": "room_301",
+                "expected_revision": 1,
+                "boundary_json": {
+                    "type": "POLYGON",
+                    "header": {"frame_id": "map"},
+                    "vertices": [
+                        {"x": 0.0, "y": 0.0},
+                        {"x": 1.0, "y": 0.0},
+                        {"x": 1.0, "y": 1.0},
+                    ],
+                },
+            },
+        },
+    )
+
+    with patch.dict(
+        tcp_server.SERVICE_REGISTRY,
+        {
+            "coordinate_config": lambda: CoordinateConfigService(
+                repository=FakeCoordinateConfigRepository(),
+            )
+        },
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
+    assert response.sequence_no == 44
+    assert response.payload["result_code"] == "UPDATED"
+    assert response.payload["operation_zone"]["revision"] == 2
+    assert response.payload["operation_zone"]["boundary_vertex_count"] == 3
 
 
 def test_task_monitor_snapshot_rpc_uses_stream_watermark_for_handoff(

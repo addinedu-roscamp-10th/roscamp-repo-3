@@ -41,6 +41,7 @@ def test_coordinate_config_repository_fetches_active_map_and_child_rows(monkeypa
     assert calls[0][2] is None
     assert calls[1][0] == "all"
     assert "FROM operation_zone" in calls[1][1]
+    assert "boundary_json" in calls[1][1]
     assert calls[1][2] == ("map_test11_0423", False)
     assert calls[2][0] == "all"
     assert "FROM goal_pose" in calls[2][1]
@@ -326,6 +327,116 @@ def test_coordinate_config_repository_reports_operation_zone_revision_conflict(
     assert len(cursor.calls) == 1
 
 
+def test_coordinate_config_repository_updates_operation_zone_boundary_with_revision_lock(
+    monkeypatch,
+):
+    locked_row = {"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 2}
+    updated_row = {
+        "zone_id": "room_301",
+        "map_id": "map_test11_0423",
+        "revision": 3,
+        "boundary_json": '{"type":"POLYGON"}',
+    }
+    cursor = FakeCursor(rows=[locked_row, updated_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+    boundary_json = {
+        "type": "POLYGON",
+        "header": {"frame_id": "map"},
+        "vertices": [
+            {"x": 0.0, "y": 0.0},
+            {"x": 1.0, "y": 0.0},
+            {"x": 1.0, "y": 1.0},
+        ],
+    }
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_operation_zone_boundary(
+        map_id="map_test11_0423",
+        zone_id="room_301",
+        expected_revision=2,
+        boundary_json=boundary_json,
+    )
+
+    assert result == {"status": "UPDATED", "operation_zone": updated_row}
+    assert connection.began is True
+    assert connection.committed is True
+    lock_query, lock_params = cursor.calls[0]
+    update_query, update_params = cursor.calls[1]
+    select_query, select_params = cursor.calls[2]
+    assert lock_query == coordinate_config_repository.LOCK_OPERATION_ZONE_SQL
+    assert lock_params == ("room_301", "map_test11_0423")
+    assert update_query == coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL
+    assert update_params == (
+        '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.0,"y":0.0},'
+        '{"x":1.0,"y":0.0},{"x":1.0,"y":1.0}]}',
+        "room_301",
+        "map_test11_0423",
+    )
+    assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
+    assert select_params == ("room_301",)
+
+
+def test_coordinate_config_repository_clears_operation_zone_boundary(
+    monkeypatch,
+):
+    locked_row = {"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 2}
+    updated_row = {
+        "zone_id": "room_301",
+        "map_id": "map_test11_0423",
+        "revision": 3,
+        "boundary_json": None,
+    }
+    cursor = FakeCursor(rows=[locked_row, updated_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_operation_zone_boundary(
+        map_id="map_test11_0423",
+        zone_id="room_301",
+        expected_revision=2,
+        boundary_json=None,
+    )
+
+    assert result == {"status": "UPDATED", "operation_zone": updated_row}
+    assert cursor.calls[1] == (
+        coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL,
+        (None, "room_301", "map_test11_0423"),
+    )
+
+
+def test_coordinate_config_repository_reports_boundary_revision_conflict(
+    monkeypatch,
+):
+    cursor = FakeCursor(
+        rows=[{"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 3}]
+    )
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_operation_zone_boundary(
+        map_id="map_test11_0423",
+        zone_id="room_301",
+        expected_revision=2,
+        boundary_json=None,
+    )
+
+    assert result["status"] == "REVISION_CONFLICT"
+    assert connection.committed is True
+    assert len(cursor.calls) == 1
+
+
 def test_coordinate_config_repository_exposes_async_operation_zone_mutations(
     monkeypatch,
 ):
@@ -406,6 +517,76 @@ def test_coordinate_config_repository_exposes_async_operation_zone_mutations(
         (
             coordinate_config_repository.UPDATE_OPERATION_ZONE_SQL,
             ("301호", "ROOM", False, "room_301", "map_test11_0423"),
+        ),
+        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("room_301",)),
+    ]
+
+
+def test_coordinate_config_repository_exposes_async_operation_zone_boundary_update(
+    monkeypatch,
+):
+    calls = []
+    rows = [
+        {"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 2},
+        {"zone_id": "room_301", "map_id": "map_test11_0423", "revision": 3},
+    ]
+
+    class AsyncCursor:
+        async def execute(self, query, params=None):
+            calls.append((query, params))
+
+        async def fetchone(self):
+            return rows.pop(0)
+
+    @asynccontextmanager
+    async def fake_async_transaction():
+        yield AsyncCursor()
+
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "async_transaction",
+        fake_async_transaction,
+    )
+
+    async def scenario():
+        return await coordinate_config_repository.CoordinateConfigRepository().async_update_operation_zone_boundary(
+            map_id="map_test11_0423",
+            zone_id="room_301",
+            expected_revision=2,
+            boundary_json={
+                "type": "POLYGON",
+                "header": {"frame_id": "map"},
+                "vertices": [
+                    {"x": 0.0, "y": 0.0},
+                    {"x": 1.0, "y": 0.0},
+                    {"x": 1.0, "y": 1.0},
+                ],
+            },
+        )
+
+    result = asyncio.run(scenario())
+
+    assert result == {
+        "status": "UPDATED",
+        "operation_zone": {
+            "zone_id": "room_301",
+            "map_id": "map_test11_0423",
+            "revision": 3,
+        },
+    }
+    assert calls == [
+        (
+            coordinate_config_repository.LOCK_OPERATION_ZONE_SQL,
+            ("room_301", "map_test11_0423"),
+        ),
+        (
+            coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL,
+            (
+                '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.0,"y":0.0},'
+                '{"x":1.0,"y":0.0},{"x":1.0,"y":1.0}]}',
+                "room_301",
+                "map_test11_0423",
+            ),
         ),
         (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("room_301",)),
     ]

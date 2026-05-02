@@ -27,6 +27,9 @@ LOCK_OPERATION_ZONE_SQL = load_sql("coordinate_config/lock_operation_zone.sql")
 LOCK_PATROL_AREA_SQL = load_sql("coordinate_config/lock_patrol_area.sql")
 UPDATE_GOAL_POSE_SQL = load_sql("coordinate_config/update_goal_pose.sql")
 UPDATE_OPERATION_ZONE_SQL = load_sql("coordinate_config/update_operation_zone.sql")
+UPDATE_OPERATION_ZONE_BOUNDARY_SQL = load_sql(
+    "coordinate_config/update_operation_zone_boundary.sql"
+)
 UPDATE_PATROL_AREA_PATH_SQL = load_sql(
     "coordinate_config/update_patrol_area_path.sql"
 )
@@ -361,6 +364,67 @@ class CoordinateConfigRepository:
                 "operation_zone": await cur.fetchone(),
             }
 
+    def update_operation_zone_boundary(
+        self,
+        *,
+        map_id,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        conn = get_connection()
+        try:
+            conn.begin()
+            with conn.cursor() as cur:
+                result = self._update_operation_zone_boundary_with_cursor(
+                    cur,
+                    map_id=map_id,
+                    zone_id=zone_id,
+                    expected_revision=expected_revision,
+                    boundary_json=boundary_json,
+                )
+            conn.commit()
+            return result
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    async def async_update_operation_zone_boundary(
+        self,
+        *,
+        map_id,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        async with async_transaction() as cur:
+            await cur.execute(
+                LOCK_OPERATION_ZONE_SQL,
+                (str(zone_id), str(map_id)),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return {"status": "NOT_FOUND", "operation_zone": None}
+
+            if int(row.get("revision") or 0) != int(expected_revision):
+                return {"status": "REVISION_CONFLICT", "operation_zone": row}
+
+            await cur.execute(
+                UPDATE_OPERATION_ZONE_BOUNDARY_SQL,
+                self._build_update_operation_zone_boundary_params(
+                    map_id=map_id,
+                    zone_id=zone_id,
+                    boundary_json=boundary_json,
+                ),
+            )
+            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+            return {
+                "status": "UPDATED",
+                "operation_zone": await cur.fetchone(),
+            }
+
     @staticmethod
     def _update_operation_zone_with_cursor(
         cur,
@@ -388,6 +452,38 @@ class CoordinateConfigRepository:
                 bool(is_enabled),
                 str(zone_id),
                 str(map_id),
+            ),
+        )
+        cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+        return {
+            "status": "UPDATED",
+            "operation_zone": cur.fetchone(),
+        }
+
+    @classmethod
+    def _update_operation_zone_boundary_with_cursor(
+        cls,
+        cur,
+        *,
+        map_id,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(zone_id), str(map_id)))
+        row = cur.fetchone()
+        if not row:
+            return {"status": "NOT_FOUND", "operation_zone": None}
+
+        if int(row.get("revision") or 0) != int(expected_revision):
+            return {"status": "REVISION_CONFLICT", "operation_zone": row}
+
+        cur.execute(
+            UPDATE_OPERATION_ZONE_BOUNDARY_SQL,
+            cls._build_update_operation_zone_boundary_params(
+                map_id=map_id,
+                zone_id=zone_id,
+                boundary_json=boundary_json,
             ),
         )
         cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
@@ -511,6 +607,20 @@ class CoordinateConfigRepository:
             str(map_id),
         )
 
+    @classmethod
+    def _build_update_operation_zone_boundary_params(
+        cls,
+        *,
+        map_id,
+        zone_id,
+        boundary_json,
+    ):
+        return (
+            cls._json_dumps(boundary_json) if boundary_json is not None else None,
+            str(zone_id),
+            str(map_id),
+        )
+
     @staticmethod
     def _json_dumps(value):
         return json.dumps(
@@ -558,6 +668,7 @@ __all__ = [
     "LOCK_OPERATION_ZONE_SQL",
     "LOCK_PATROL_AREA_SQL",
     "UPDATE_GOAL_POSE_SQL",
+    "UPDATE_OPERATION_ZONE_BOUNDARY_SQL",
     "UPDATE_OPERATION_ZONE_SQL",
     "UPDATE_PATROL_AREA_PATH_SQL",
     "CoordinateConfigRepository",

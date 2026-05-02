@@ -12,6 +12,16 @@ from server.ropi_main_service.application.coordinate_config import (
 class FakeCoordinateConfigRepository:
     def __init__(self):
         self.calls = []
+        self.boundary_json = {
+            "type": "POLYGON",
+            "header": {"frame_id": "map"},
+            "vertices": [
+                {"x": 1.2, "y": -0.4},
+                {"x": 2.2, "y": -0.4},
+                {"x": 2.2, "y": 0.5},
+                {"x": 1.2, "y": 0.5},
+            ],
+        }
         self.map_profile = {
             "map_id": "map_test11_0423",
             "map_name": "map_test11_0423",
@@ -32,6 +42,7 @@ class FakeCoordinateConfigRepository:
                 "zone_name": "301호",
                 "zone_type": "ROOM",
                 "revision": "2",
+                "boundary_json": json.dumps(self.boundary_json),
                 "is_enabled": 1,
                 "created_at": datetime(2026, 5, 2, 12, 0, 0),
                 "updated_at": datetime(2026, 5, 2, 12, 1, 0),
@@ -78,6 +89,7 @@ class FakeCoordinateConfigRepository:
         self.existing_zone = None
         self.create_result = None
         self.update_result = None
+        self.boundary_update_result = None
         self.goal_pose_update_result = None
         self.patrol_area_update_result = None
 
@@ -152,11 +164,12 @@ class FakeCoordinateConfigRepository:
             "zone_id": zone_id,
             "map_id": map_id,
             "zone_name": zone_name,
-            "zone_type": zone_type,
-            "revision": 1,
-            "is_enabled": is_enabled,
-            "created_at": datetime(2026, 5, 2, 12, 2, 0),
-            "updated_at": datetime(2026, 5, 2, 12, 2, 0),
+                "zone_type": zone_type,
+                "revision": 1,
+                "boundary_json": None,
+                "is_enabled": is_enabled,
+                "created_at": datetime(2026, 5, 2, 12, 2, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 2, 0),
         }
 
     async def async_create_operation_zone(self, **kwargs):
@@ -174,11 +187,12 @@ class FakeCoordinateConfigRepository:
             "zone_id": kwargs["zone_id"],
             "map_id": kwargs["map_id"],
             "zone_name": kwargs["zone_name"],
-            "zone_type": kwargs["zone_type"],
-            "revision": 1,
-            "is_enabled": kwargs["is_enabled"],
-            "created_at": datetime(2026, 5, 2, 12, 2, 0),
-            "updated_at": datetime(2026, 5, 2, 12, 2, 0),
+                "zone_type": kwargs["zone_type"],
+                "revision": 1,
+                "boundary_json": None,
+                "is_enabled": kwargs["is_enabled"],
+                "created_at": datetime(2026, 5, 2, 12, 2, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 2, 0),
         }
 
     def update_operation_zone(
@@ -210,6 +224,7 @@ class FakeCoordinateConfigRepository:
                 "zone_name": zone_name,
                 "zone_type": zone_type,
                 "revision": expected_revision + 1,
+                "boundary_json": None,
                 "is_enabled": is_enabled,
                 "created_at": datetime(2026, 5, 2, 12, 0, 0),
                 "updated_at": datetime(2026, 5, 2, 12, 3, 0),
@@ -236,9 +251,73 @@ class FakeCoordinateConfigRepository:
                 "zone_name": kwargs["zone_name"],
                 "zone_type": kwargs["zone_type"],
                 "revision": kwargs["expected_revision"] + 1,
+                "boundary_json": None,
                 "is_enabled": kwargs["is_enabled"],
                 "created_at": datetime(2026, 5, 2, 12, 0, 0),
                 "updated_at": datetime(2026, 5, 2, 12, 3, 0),
+            },
+        }
+
+    def update_operation_zone_boundary(
+        self,
+        *,
+        map_id,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        self.calls.append(
+            (
+                "update_operation_zone_boundary",
+                map_id,
+                zone_id,
+                expected_revision,
+                boundary_json,
+            )
+        )
+        stored_boundary = json.dumps(boundary_json) if boundary_json is not None else None
+        return self.boundary_update_result or {
+            "status": "UPDATED",
+            "operation_zone": {
+                "zone_id": zone_id,
+                "map_id": map_id,
+                "zone_name": "301호",
+                "zone_type": "ROOM",
+                "revision": expected_revision + 1,
+                "boundary_json": stored_boundary,
+                "is_enabled": True,
+                "created_at": datetime(2026, 5, 2, 12, 0, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 6, 0),
+            },
+        }
+
+    async def async_update_operation_zone_boundary(self, **kwargs):
+        self.calls.append(
+            (
+                "async_update_operation_zone_boundary",
+                kwargs["map_id"],
+                kwargs["zone_id"],
+                kwargs["expected_revision"],
+                kwargs["boundary_json"],
+            )
+        )
+        stored_boundary = (
+            json.dumps(kwargs["boundary_json"])
+            if kwargs["boundary_json"] is not None
+            else None
+        )
+        return self.boundary_update_result or {
+            "status": "UPDATED",
+            "operation_zone": {
+                "zone_id": kwargs["zone_id"],
+                "map_id": kwargs["map_id"],
+                "zone_name": "301호",
+                "zone_type": "ROOM",
+                "revision": kwargs["expected_revision"] + 1,
+                "boundary_json": stored_boundary,
+                "is_enabled": True,
+                "created_at": datetime(2026, 5, 2, 12, 0, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 6, 0),
             },
         }
 
@@ -416,6 +495,9 @@ def test_active_map_bundle_formats_active_map_coordinate_data():
             "zone_name": "301호",
             "zone_type": "ROOM",
             "revision": 2,
+            "boundary_json": repository.boundary_json,
+            "boundary_vertex_count": 4,
+            "boundary_frame_id": "map",
             "is_enabled": True,
             "created_at": "2026-05-02T12:00:00",
             "updated_at": "2026-05-02T12:01:00",
@@ -500,6 +582,19 @@ def test_active_map_bundle_async_uses_async_repository_methods():
     ]
 
 
+def test_active_map_bundle_can_omit_boundary_payloads():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).get_active_map_bundle(
+        include_zone_boundaries=False,
+    )
+
+    assert response["result_code"] == "OK"
+    assert response["operation_zones"][0]["boundary_json"] is None
+    assert response["operation_zones"][0]["boundary_vertex_count"] == 4
+    assert response["operation_zones"][0]["boundary_frame_id"] == "map"
+
+
 def test_create_operation_zone_creates_zone_on_active_map():
     repository = FakeCoordinateConfigRepository()
 
@@ -518,6 +613,9 @@ def test_create_operation_zone_creates_zone_on_active_map():
         "zone_name": "보호사실",
         "zone_type": "STAFF_STATION",
         "revision": 1,
+        "boundary_json": None,
+        "boundary_vertex_count": 0,
+        "boundary_frame_id": None,
         "is_enabled": True,
         "created_at": "2026-05-02T12:02:00",
         "updated_at": "2026-05-02T12:02:00",
@@ -605,6 +703,9 @@ def test_update_operation_zone_updates_zone_with_revision_check():
         "zone_name": "301호",
         "zone_type": "ROOM",
         "revision": 2,
+        "boundary_json": None,
+        "boundary_vertex_count": 0,
+        "boundary_frame_id": None,
         "is_enabled": False,
         "created_at": "2026-05-02T12:00:00",
         "updated_at": "2026-05-02T12:03:00",
@@ -669,6 +770,193 @@ def test_update_operation_zone_async_uses_async_repository_method():
             "301호",
             "ROOM",
             False,
+        ),
+    ]
+
+
+def test_update_operation_zone_boundary_replaces_polygon_with_revision_check():
+    repository = FakeCoordinateConfigRepository()
+    boundary_json = {
+        "type": "polygon",
+        "header": {"frame_id": "map"},
+        "vertices": [
+            {"x": "1.0", "y": "0.0"},
+            {"x": "2.0", "y": "0.0"},
+            {"x": "2.0", "y": "1.0"},
+        ],
+    }
+
+    response = _service(repository).update_operation_zone_boundary(
+        zone_id="room_301",
+        expected_revision="2",
+        boundary_json=boundary_json,
+    )
+
+    normalized_boundary = {
+        "type": "POLYGON",
+        "header": {"frame_id": "map"},
+        "vertices": [
+            {"x": 1.0, "y": 0.0},
+            {"x": 2.0, "y": 0.0},
+            {"x": 2.0, "y": 1.0},
+        ],
+    }
+    assert response["result_code"] == "UPDATED"
+    assert response["reason_code"] is None
+    assert response["operation_zone"] == {
+        "zone_id": "room_301",
+        "map_id": "map_test11_0423",
+        "zone_name": "301호",
+        "zone_type": "ROOM",
+        "revision": 3,
+        "boundary_json": normalized_boundary,
+        "boundary_vertex_count": 3,
+        "boundary_frame_id": "map",
+        "is_enabled": True,
+        "created_at": "2026-05-02T12:00:00",
+        "updated_at": "2026-05-02T12:06:00",
+    }
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        (
+            "update_operation_zone_boundary",
+            "map_test11_0423",
+            "room_301",
+            2,
+            normalized_boundary,
+        ),
+    ]
+
+
+def test_update_operation_zone_boundary_clears_boundary():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).update_operation_zone_boundary(
+        zone_id="room_301",
+        expected_revision=2,
+        boundary_json=None,
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert response["operation_zone"]["boundary_json"] is None
+    assert response["operation_zone"]["boundary_vertex_count"] == 0
+    assert repository.calls[-1] == (
+        "update_operation_zone_boundary",
+        "map_test11_0423",
+        "room_301",
+        2,
+        None,
+    )
+
+
+def test_update_operation_zone_boundary_rejects_too_few_vertices():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).update_operation_zone_boundary(
+        zone_id="room_301",
+        expected_revision=2,
+        boundary_json={
+            "type": "POLYGON",
+            "header": {"frame_id": "map"},
+            "vertices": [
+                {"x": 0.0, "y": 0.0},
+                {"x": 1.0, "y": 0.0},
+            ],
+        },
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "ZONE_BOUNDARY_TOO_SHORT"
+    assert response["operation_zone"] is None
+    assert repository.calls == [("get_active_map_profile",)]
+
+
+def test_update_operation_zone_boundary_rejects_frame_mismatch():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).update_operation_zone_boundary(
+        zone_id="room_301",
+        expected_revision=2,
+        boundary_json={
+            "type": "POLYGON",
+            "header": {"frame_id": "odom"},
+            "vertices": [
+                {"x": 0.0, "y": 0.0},
+                {"x": 1.0, "y": 0.0},
+                {"x": 1.0, "y": 1.0},
+            ],
+        },
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "FRAME_ID_MISMATCH"
+    assert response["operation_zone"] is None
+    assert repository.calls == [("get_active_map_profile",)]
+
+
+def test_update_operation_zone_boundary_reports_revision_conflict():
+    repository = FakeCoordinateConfigRepository()
+    repository.boundary_update_result = {
+        "status": "REVISION_CONFLICT",
+        "operation_zone": repository.operation_zones[0],
+    }
+
+    response = _service(repository).update_operation_zone_boundary(
+        zone_id="room_301",
+        expected_revision=1,
+        boundary_json={
+            "type": "POLYGON",
+            "header": {"frame_id": "map"},
+            "vertices": [
+                {"x": 0.0, "y": 0.0},
+                {"x": 1.0, "y": 0.0},
+                {"x": 1.0, "y": 1.0},
+            ],
+        },
+    )
+
+    assert response["result_code"] == "CONFLICT"
+    assert response["reason_code"] == "ZONE_REVISION_CONFLICT"
+    assert response["operation_zone"] is None
+
+
+def test_update_operation_zone_boundary_async_uses_async_repository_method():
+    repository = FakeCoordinateConfigRepository()
+
+    response = asyncio.run(
+        _service(repository).async_update_operation_zone_boundary(
+            zone_id="room_301",
+            expected_revision="2",
+            boundary_json={
+                "type": "POLYGON",
+                "header": {"frame_id": "map"},
+                "vertices": [
+                    {"x": "0.0", "y": "0.0"},
+                    {"x": "1.0", "y": "0.0"},
+                    {"x": "1.0", "y": "1.0"},
+                ],
+            },
+        )
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert response["operation_zone"]["revision"] == 3
+    assert repository.calls == [
+        ("async_get_active_map_profile",),
+        (
+            "async_update_operation_zone_boundary",
+            "map_test11_0423",
+            "room_301",
+            2,
+            {
+                "type": "POLYGON",
+                "header": {"frame_id": "map"},
+                "vertices": [
+                    {"x": 0.0, "y": 0.0},
+                    {"x": 1.0, "y": 0.0},
+                    {"x": 1.0, "y": 1.0},
+                ],
+            },
         ),
     ]
 
