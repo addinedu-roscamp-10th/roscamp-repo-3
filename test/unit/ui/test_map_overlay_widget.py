@@ -62,5 +62,11 @@ def test_patrol_map_overlay_loads_pgm_yaml_and_converts_world_coordinates():
         assert overlay.current_waypoint_index == 1
         assert overlay.robot_pixel_point is not None
         assert overlay.fall_alert_pixel_point == (56, 15)
+
+        overlay.render({"task_type": "DELIVERY"})
+
+        assert overlay.map_loaded is False
+        assert overlay.status_text == "순찰 맵 미수신"
+        assert overlay.fall_alert_pixel_point is None
     finally:
         overlay.close()

@@ -82,7 +82,11 @@ class PatrolMapOverlay(QFrame):
         task_type = str(task.get("task_type") or "").strip().upper()
 
         if task_type and task_type != "PATROL":
-            self._clear("순찰 작업이 아닙니다.")
+            self._clear("순찰 맵 미수신")
+            return
+
+        if not task:
+            self._clear("순찰 맵 미수신")
             return
 
         self._load_map(task.get("patrol_map") or {})

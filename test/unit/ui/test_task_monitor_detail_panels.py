@@ -86,6 +86,7 @@ def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
             evidence_available=True,
         )
 
+        assert panel.isHidden() is False
         assert panel.alert_panel.isHidden() is False
         assert panel.fall_alert_task_label.text() == "2001"
         assert panel.evidence_image_id_label.text() == "fall-2001-44"
@@ -95,8 +96,20 @@ def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
         assert "x=0.93" in panel.fall_marker_label.text()
         assert panel.patrol_map_overlay.fall_alert_pixel_point is not None
 
+        panel.render(
+            {"task_id": "1001", "task_type": "DELIVERY"},
+            can_resume=False,
+            evidence_available=False,
+        )
+
+        assert panel.isHidden() is True
+        assert panel.alert_panel.isHidden() is True
+        assert panel.evidence_image_btn.isEnabled() is False
+        assert panel.resume_patrol_btn.isEnabled() is False
+
         panel.render({}, can_resume=False, evidence_available=False)
 
+        assert panel.isHidden() is True
         assert panel.alert_panel.isHidden() is True
         assert panel.evidence_image_btn.isEnabled() is False
         assert panel.resume_patrol_btn.isEnabled() is False

@@ -248,6 +248,7 @@ def test_task_monitor_page_shows_result_reason_and_message_prominently():
         assert page.detail_reason_code_label.text() == "ROS_ACTION_TIMEOUT"
         assert page.detail_result_message_label.text() == "목적지 이동 중 action timeout"
         assert page.result_info_panel.objectName() == "taskResultPanelWarning"
+        assert page.patrol_runtime_section.isHidden() is True
 
         page.apply_stream_event(
             {
@@ -268,6 +269,7 @@ def test_task_monitor_page_shows_result_reason_and_message_prominently():
         assert page.detail_reason_code_label.text() == "FALL_DETECTED"
         assert page.detail_result_message_label.text() == "-"
         assert page.result_info_panel.objectName() == "taskResultPanel"
+        assert page.patrol_runtime_section.isHidden() is False
     finally:
         page.shutdown()
         page.close()

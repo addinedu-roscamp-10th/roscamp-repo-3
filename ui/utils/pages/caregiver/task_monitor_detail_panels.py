@@ -199,7 +199,15 @@ class PatrolRuntimePanel(QWidget):
         root.addWidget(self.alert_panel)
 
     def render(self, task, *, can_resume, evidence_available):
-        task = task or {}
+        task = task if isinstance(task, dict) else {}
+        task_type = str(task.get("task_type") or "").strip().upper()
+        if task_type != "PATROL":
+            self.setHidden(True)
+            self._reset_inactive_state()
+            self.patrol_map_overlay.render({})
+            return
+
+        self.setHidden(False)
         alert = task.get("fall_alert") or {}
         has_alert = bool(alert)
         should_show = has_alert or bool(can_resume)
@@ -230,6 +238,16 @@ class PatrolRuntimePanel(QWidget):
         self.fall_marker_label.setText(f"{zone_text}\n{pose_text}")
         self.evidence_image_btn.setEnabled(bool(evidence_available))
         self.resume_patrol_btn.setEnabled(bool(can_resume))
+        self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
+
+    def _reset_inactive_state(self):
+        self.alert_panel.setHidden(True)
+        self.evidence_status_label.setHidden(True)
+        self.resume_status_label.setHidden(True)
+        self.fall_marker_label.setText("낙상 지점 미수신")
+        self.evidence_image_btn.setEnabled(False)
+        self.evidence_image_btn.setText("증거사진 조회")
+        self.resume_patrol_btn.setEnabled(False)
         self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
 
 
