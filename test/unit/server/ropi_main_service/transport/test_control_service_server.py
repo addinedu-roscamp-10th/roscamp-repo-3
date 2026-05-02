@@ -6,6 +6,9 @@ from unittest.mock import patch
 import pytest
 
 from server.ropi_main_service.transport import tcp_server
+from server.ropi_main_service.application.coordinate_config import (
+    CoordinateConfigService,
+)
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
@@ -21,6 +24,40 @@ from server.ropi_main_service.transport.tcp_protocol import (
 class FakeTaskRequestService:
     def get_product_names(self):
         return ["기저귀", "물티슈"]
+
+
+class FakeCoordinateConfigRepository:
+    def __init__(self, *, yaml_path=None):
+        self.map_profile = {
+            "map_id": "map_test11_0423",
+            "map_name": "map_test11_0423",
+            "map_revision": 1,
+            "yaml_path": yaml_path or "missing.yaml",
+            "pgm_path": "missing.pgm",
+            "frame_id": "map",
+            "is_active": True,
+        }
+
+    def get_active_map_profile(self):
+        return self.map_profile
+
+    def get_operation_zones(self, *, map_id, include_disabled=True):
+        return [
+            {
+                "zone_id": "room_301",
+                "map_id": map_id,
+                "zone_name": "301호",
+                "zone_type": "ROOM",
+                "revision": 1,
+                "is_enabled": True,
+            }
+        ]
+
+    def get_goal_poses(self, *, map_id, include_disabled=True):
+        return []
+
+    def get_patrol_areas(self, *, map_id, include_disabled=True):
+        return []
 
 
 @pytest.fixture
@@ -104,6 +141,72 @@ def test_coordinate_config_rpc_service_is_registered():
     assert tcp_server.SERVICE_REGISTRY["coordinate_config"].__name__ == (
         "CoordinateConfigService"
     )
+
+
+def test_coordinate_config_bundle_rpc_smoke_routes_through_internal_rpc(
+    control_service_server,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=42,
+        payload={
+            "service": "coordinate_config",
+            "method": "get_active_map_bundle",
+            "kwargs": {"include_disabled": False},
+        },
+    )
+
+    with patch.dict(
+        tcp_server.SERVICE_REGISTRY,
+        {
+            "coordinate_config": lambda: CoordinateConfigService(
+                repository=FakeCoordinateConfigRepository(),
+            )
+        },
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
+    assert response.sequence_no == 42
+    assert response.payload["result_code"] == "OK"
+    assert response.payload["map_profile"]["map_id"] == "map_test11_0423"
+    assert response.payload["operation_zones"][0]["zone_id"] == "room_301"
+
+
+def test_coordinate_config_map_asset_rpc_smoke_routes_through_internal_rpc(
+    control_service_server,
+    tmp_path,
+):
+    yaml_path = tmp_path / "map.yaml"
+    yaml_path.write_text("image: map.pgm\n", encoding="utf-8")
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=43,
+        payload={
+            "service": "coordinate_config",
+            "method": "get_map_asset",
+            "kwargs": {"asset_type": "YAML"},
+        },
+    )
+
+    with patch.dict(
+        tcp_server.SERVICE_REGISTRY,
+        {
+            "coordinate_config": lambda: CoordinateConfigService(
+                repository=FakeCoordinateConfigRepository(yaml_path=str(yaml_path)),
+            )
+        },
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
+    assert response.sequence_no == 43
+    assert response.payload["result_code"] == "OK"
+    assert response.payload["asset_type"] == "YAML"
+    assert response.payload["encoding"] == "TEXT"
+    assert response.payload["content_text"] == "image: map.pgm\n"
 
 
 def test_task_monitor_snapshot_rpc_uses_stream_watermark_for_handoff(
