@@ -25,8 +25,15 @@ class PinkyStatusView:
     battery_voltage: float
     fail_code: str
     frame_id: str
+    pose_stamp_sec: int
+    pose_stamp_nanosec: int
     x: float
     y: float
+    z: float
+    qx: float
+    qy: float
+    qz: float
+    qw: float
     theta_deg: float
     measured_at_sec: int
     measured_at_nanosec: int
@@ -73,8 +80,15 @@ class PinkyStatusSubscriber(Node):
             battery_voltage=float(msg.battery_voltage),
             fail_code=str(msg.fail_code),
             frame_id=str(msg.pose.header.frame_id),
+            pose_stamp_sec=int(msg.pose.header.stamp.sec),
+            pose_stamp_nanosec=int(msg.pose.header.stamp.nanosec),
             x=float(msg.pose.pose.position.x),
             y=float(msg.pose.pose.position.y),
+            z=float(msg.pose.pose.position.z),
+            qx=float(msg.pose.pose.orientation.x),
+            qy=float(msg.pose.pose.orientation.y),
+            qz=float(msg.pose.pose.orientation.z),
+            qw=float(msg.pose.pose.orientation.w),
             theta_deg=self._yaw_deg(
                 float(msg.pose.pose.orientation.z),
                 float(msg.pose.pose.orientation.w),
