@@ -187,7 +187,9 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
         assert page.register_button.isEnabled() is False
         assert page.selected_visit_purpose is None
         assert len(page.purpose_cards) == 4
-        assert all(card.minimumHeight() >= 84 for card in page.purpose_cards.values())
+        assert page.status_label.text() == ""
+        assert all(card.minimumHeight() >= 96 for card in page.purpose_cards.values())
+        assert all(card.maximumHeight() == 96 for card in page.purpose_cards.values())
         assert all(
             input_widget.minimumHeight() >= 64
             for input_widget in [
@@ -197,6 +199,16 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
                 page.resident_search_input,
             ]
         )
+        assert all(
+            input_widget.maximumHeight() >= 72
+            for input_widget in [
+                page.visitor_name_input,
+                page.phone_input,
+                page.relationship_input,
+                page.resident_search_input,
+            ]
+        )
+        assert "방문자 정보와 개인정보 동의" not in " ".join(_visible_texts(page))
 
         page.visitor_name_input.setText(" 김민수 ")
         page.phone_input.setText(" 010-1111-2222 ")

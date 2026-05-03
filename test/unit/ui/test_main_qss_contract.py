@@ -127,7 +127,8 @@ def test_main_qss_defines_kiosk_ui_components():
     assert "QFrame#kioskRegistrationTopBar" in qss
     assert "QPushButton#kioskSearchFooterButton {\n    min-height: 72px" in qss
     assert "QLineEdit#kioskRegistrationInput" in qss
-    assert "min-height: 64px" in qss
+    assert "min-height: 72px" in qss
+    assert "max-height: 72px" in qss
     assert "padding: 0 18px" in qss
     assert "check.svg" in qss
 

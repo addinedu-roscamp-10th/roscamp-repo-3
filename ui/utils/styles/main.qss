@@ -1379,7 +1379,8 @@ QLineEdit#kioskRegistrationInput {
     border-radius: 16px;
     font-size: 22px;
     font-weight: 800;
-    min-height: 64px;
+    min-height: 72px;
+    max-height: 72px;
     padding: 0 18px;
 }
 

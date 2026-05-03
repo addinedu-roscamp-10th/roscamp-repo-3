@@ -335,7 +335,7 @@ class KioskPurposeOptionCard(QFrame):
         self.setObjectName("kioskPurposeOptionCard")
         self.setProperty("selected", False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(88)
+        self.setFixedHeight(96)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
@@ -446,7 +446,7 @@ class KioskVisitorRegistrationPage(QWidget):
         form_card.setObjectName("kioskRegistrationFormCard")
         form_layout = QVBoxLayout(form_card)
         form_layout.setContentsMargins(28, 26, 28, 26)
-        form_layout.setSpacing(14)
+        form_layout.setSpacing(16)
 
         form_title = QLabel("방문자 정보")
         form_title.setObjectName("kioskRegistrationSectionTitle")
@@ -464,23 +464,6 @@ class KioskVisitorRegistrationPage(QWidget):
             "예: 아들, 보호자",
         )
 
-        purpose_title = QLabel("방문 목적")
-        purpose_title.setObjectName("kioskRegistrationFieldLabel")
-
-        purpose_grid = QGridLayout()
-        purpose_grid.setHorizontalSpacing(10)
-        purpose_grid.setVerticalSpacing(10)
-        self.purpose_cards = {}
-        for index, option in enumerate(self.PURPOSE_OPTIONS):
-            card = KioskPurposeOptionCard(
-                key=option["key"],
-                label=option["label"],
-                icon_name=option["icon"],
-            )
-            card.clicked.connect(self.select_visit_purpose)
-            self.purpose_cards[option["key"]] = card
-            purpose_grid.addWidget(card, index // 2, index % 2)
-
         self.privacy_checkbox = QCheckBox("개인정보 수집 및 방문 기록 저장에 동의합니다.")
         self.privacy_checkbox.setObjectName("kioskPrivacyCheckbox")
         self.privacy_checkbox.stateChanged.connect(self._sync_action_state)
@@ -489,8 +472,6 @@ class KioskVisitorRegistrationPage(QWidget):
         form_layout.addWidget(name_field)
         form_layout.addWidget(phone_field)
         form_layout.addWidget(relation_field)
-        form_layout.addWidget(purpose_title)
-        form_layout.addLayout(purpose_grid)
         form_layout.addWidget(self.privacy_checkbox)
         form_layout.addStretch()
 
@@ -502,6 +483,22 @@ class KioskVisitorRegistrationPage(QWidget):
 
         resident_title = QLabel("만나실 어르신")
         resident_title.setObjectName("kioskRegistrationSectionTitle")
+
+        purpose_title = QLabel("방문 목적")
+        purpose_title.setObjectName("kioskRegistrationSectionTitle")
+
+        purpose_row = QHBoxLayout()
+        purpose_row.setSpacing(10)
+        self.purpose_cards = {}
+        for option in self.PURPOSE_OPTIONS:
+            card = KioskPurposeOptionCard(
+                key=option["key"],
+                label=option["label"],
+                icon_name=option["icon"],
+            )
+            card.clicked.connect(self.select_visit_purpose)
+            self.purpose_cards[option["key"]] = card
+            purpose_row.addWidget(card, 1)
 
         resident_hint = QLabel("방문자 정보를 먼저 입력하면 어르신 검색을 사용할 수 있습니다.")
         resident_hint.setObjectName("kioskRegistrationHint")
@@ -518,7 +515,7 @@ class KioskVisitorRegistrationPage(QWidget):
         self.resident_search_input = QLineEdit()
         self.resident_search_input.setObjectName("kioskSearchInput")
         self.resident_search_input.setPlaceholderText("성함 또는 방 번호 입력")
-        self.resident_search_input.setMinimumHeight(64)
+        self.resident_search_input.setFixedHeight(72)
         self.resident_search_input.textChanged.connect(self._sync_action_state)
         self.resident_search_input.returnPressed.connect(self.search_resident)
 
@@ -563,6 +560,8 @@ class KioskVisitorRegistrationPage(QWidget):
         summary_layout.addWidget(avatar)
         summary_layout.addLayout(resident_text, 1)
 
+        resident_layout.addWidget(purpose_title)
+        resident_layout.addLayout(purpose_row)
         resident_layout.addWidget(resident_title)
         resident_layout.addWidget(resident_hint)
         resident_layout.addWidget(search_card)
@@ -572,15 +571,15 @@ class KioskVisitorRegistrationPage(QWidget):
         content_row.addWidget(form_card, 1)
         content_row.addWidget(resident_card, 1)
 
-        self.status_label = QLabel("방문자 정보와 개인정보 동의를 완료하면 어르신을 검색할 수 있습니다.")
+        self.status_label = QLabel("")
         self.status_label.setObjectName("kioskSearchStatusText")
         self.status_label.setWordWrap(True)
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setVisible(False)
 
         page_shell.addWidget(title)
         page_shell.addWidget(subtitle)
         page_shell.addLayout(content_row, 1)
-        page_shell.addWidget(self.status_label)
 
         bottom_bar = QFrame()
         bottom_bar.setObjectName("kioskSearchBottomBar")
@@ -634,7 +633,7 @@ class KioskVisitorRegistrationPage(QWidget):
         input_widget = QLineEdit()
         input_widget.setObjectName("kioskRegistrationInput")
         input_widget.setPlaceholderText(placeholder_text)
-        input_widget.setMinimumHeight(64)
+        input_widget.setFixedHeight(72)
 
         layout.addWidget(label)
         layout.addWidget(input_widget)
@@ -642,13 +641,13 @@ class KioskVisitorRegistrationPage(QWidget):
 
     def search_resident(self):
         if not self._visitor_context_ready():
-            self.status_label.setText("방문자 정보와 개인정보 동의를 먼저 완료해 주세요.")
+            self._set_status("방문자 정보와 개인정보 동의를 먼저 완료해 주세요.")
             self._sync_action_state()
             return
 
         keyword = self.resident_search_input.text().strip()
         if not keyword:
-            self.status_label.setText("만나실 어르신의 성함 또는 방 번호를 입력해 주세요.")
+            self._set_status("만나실 어르신의 성함 또는 방 번호를 입력해 주세요.")
             self._sync_action_state()
             return
 
@@ -657,7 +656,7 @@ class KioskVisitorRegistrationPage(QWidget):
         except Exception as exc:
             self.selected_resident = None
             self._clear_resident_result()
-            self.status_label.setText(f"검색 중 오류가 발생했습니다: {exc}")
+            self._set_status(f"검색 중 오류가 발생했습니다: {exc}")
             self._sync_action_state()
             return
 
@@ -666,7 +665,7 @@ class KioskVisitorRegistrationPage(QWidget):
         if result_code != "FOUND" or not matches:
             self.selected_resident = None
             self._clear_resident_result()
-            self.status_label.setText(
+            self._set_status(
                 response.get("result_message") or "일치하는 어르신 정보가 없습니다."
             )
             self._sync_action_state()
@@ -674,16 +673,16 @@ class KioskVisitorRegistrationPage(QWidget):
 
         self.selected_resident = self._resident_from_lookup_match(matches[0])
         self._show_resident_result(self.selected_resident)
-        self.status_label.setText("어르신 정보를 확인했습니다. 방문 등록을 완료해 주세요.")
+        self._set_status("어르신 정보를 확인했습니다. 방문 등록을 완료해 주세요.")
         self._sync_action_state()
 
     def register_visit(self):
         if not self._visitor_context_ready():
-            self.status_label.setText("방문자 정보와 개인정보 동의를 먼저 완료해 주세요.")
+            self._set_status("방문자 정보와 개인정보 동의를 먼저 완료해 주세요.")
             self._sync_action_state()
             return
         if not self.selected_resident:
-            self.status_label.setText("만나실 어르신을 먼저 검색해 주세요.")
+            self._set_status("만나실 어르신을 먼저 검색해 주세요.")
             self._sync_action_state()
             return
 
@@ -691,12 +690,12 @@ class KioskVisitorRegistrationPage(QWidget):
         try:
             response = self.service.register_visit(**payload)
         except Exception as exc:
-            self.status_label.setText(f"방문 등록 중 오류가 발생했습니다: {exc}")
+            self._set_status(f"방문 등록 중 오류가 발생했습니다: {exc}")
             return
 
         if response.get("result_code") != "REGISTERED":
             self.visitor_session = None
-            self.status_label.setText(
+            self._set_status(
                 response.get("result_message") or "방문 등록을 완료하지 못했습니다."
             )
             return
@@ -711,7 +710,7 @@ class KioskVisitorRegistrationPage(QWidget):
             "visit_status": response.get("visit_status") or "면회 가능",
         }
         patient = self._patient_from_registration_response(response)
-        self.status_label.setText("방문 등록이 완료되었습니다. 안내 확인 화면으로 이동합니다.")
+        self._set_status("방문 등록이 완료되었습니다. 안내 확인 화면으로 이동합니다.")
 
         if self.go_confirmation_page:
             self.go_confirmation_page(patient)
@@ -729,7 +728,7 @@ class KioskVisitorRegistrationPage(QWidget):
         self.selected_resident = None
         self.visitor_session = None
         self._clear_resident_result()
-        self.status_label.setText("방문자 정보와 개인정보 동의를 완료하면 어르신을 검색할 수 있습니다.")
+        self._set_status("", visible=False)
         self._sync_action_state()
         self._refresh_purpose_card_styles()
 
@@ -780,8 +779,12 @@ class KioskVisitorRegistrationPage(QWidget):
         if self.selected_resident:
             self.selected_resident = None
             self._clear_resident_result()
-            self.status_label.setText("방문자 정보가 변경되어 어르신 검색을 다시 확인해 주세요.")
+            self._set_status("방문자 정보가 변경되어 어르신 검색을 다시 확인해 주세요.")
         self._sync_action_state()
+
+    def _set_status(self, text, *, visible=True):
+        self.status_label.setText(text)
+        self.status_label.setVisible(bool(visible and text))
 
     def select_visit_purpose(self, purpose_key):
         option = next(
