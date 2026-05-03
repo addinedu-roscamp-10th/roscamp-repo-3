@@ -25,6 +25,7 @@ from server.ropi_main_service.application.workflow_task_manager import (
 )
 from server.ropi_main_service.application.patrol_runtime import build_patrol_request_service
 from server.ropi_main_service.application.inventory import InventoryService
+from server.ropi_main_service.application.kiosk_visitor import KioskVisitorService
 from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.staff_call import StaffCallService
@@ -251,6 +252,7 @@ SERVICE_REGISTRY = {
     "coordinate_config": CoordinateConfigService,
     "patient": PatientService,
     "inventory": InventoryService,
+    "kiosk_visitor": KioskVisitorService,
     "fall_evidence_image": FallEvidenceImageService,
     "task_monitor": TaskMonitorService,
     "task_request": TaskRequestService,

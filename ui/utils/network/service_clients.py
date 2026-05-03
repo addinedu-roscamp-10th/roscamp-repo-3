@@ -452,6 +452,46 @@ class VisitorRegisterRemoteService:
         return _rpc("visitor_register", "submit_registration", **payload)
 
 
+class KioskVisitorRemoteService:
+    def lookup_residents(self, *, keyword: str, limit: int = 10):
+        return _rpc(
+            "kiosk_visitor",
+            "lookup_residents",
+            keyword=keyword,
+            limit=limit,
+        )
+
+    def register_visit(
+        self,
+        *,
+        visitor_name: str,
+        phone_no: str,
+        relationship: str,
+        visit_purpose: str,
+        target_member_id,
+        privacy_agreed: bool,
+        kiosk_id=None,
+    ):
+        return _rpc(
+            "kiosk_visitor",
+            "register_visit",
+            visitor_name=visitor_name,
+            phone_no=phone_no,
+            relationship=relationship,
+            visit_purpose=visit_purpose,
+            target_member_id=target_member_id,
+            privacy_agreed=privacy_agreed,
+            kiosk_id=kiosk_id,
+        )
+
+    def get_care_history(self, *, visitor_id):
+        return _rpc(
+            "kiosk_visitor",
+            "get_care_history",
+            visitor_id=visitor_id,
+        )
+
+
 class StaffCallRemoteService:
     def submit_staff_call(self, **payload):
         return _rpc("staff_call", "submit_staff_call", **payload)

@@ -17,6 +17,7 @@ _EXPORTS = {
     "GuideRuntimeService": ("guide_runtime", "GuideRuntimeService"),
     "GoalPoseNavigationService": ("goal_pose_navigation", "GoalPoseNavigationService"),
     "InventoryService": ("inventory", "InventoryService"),
+    "KioskVisitorService": ("kiosk_visitor", "KioskVisitorService"),
     "MappedGoalPoseResolver": ("goal_pose_resolvers", "MappedGoalPoseResolver"),
     "ManipulationCommandService": ("manipulation_command", "ManipulationCommandService"),
     "PatientService": ("patient", "PatientService"),

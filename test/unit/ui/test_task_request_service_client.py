@@ -8,6 +8,7 @@ from ui.utils.network.service_clients import (
     CoordinateConfigRemoteService,
     DeliveryRequestRemoteService,
     InventoryRemoteService,
+    KioskVisitorRemoteService,
     TaskMonitorRemoteService,
 )
 
@@ -103,6 +104,59 @@ def test_inventory_remote_service_exposes_bundle_and_item_id_mutation_rpcs(monke
         ("inventory", "get_inventory_bundle", {}),
         ("inventory", "add_item_quantity", {"item_id": "2", "quantity_delta": 4}),
         ("inventory", "set_item_quantity", {"item_id": "2", "quantity": 12}),
+    ]
+
+
+def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "OK"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    service = KioskVisitorRemoteService()
+
+    assert service.lookup_residents(keyword="301", limit=5) == {"result_code": "OK"}
+    assert service.register_visit(
+        visitor_name="김민수",
+        phone_no="010-1111-2222",
+        relationship="아들",
+        visit_purpose="정기 면회",
+        target_member_id=1,
+        privacy_agreed=True,
+        kiosk_id="lobby_kiosk_01",
+    ) == {"result_code": "OK"}
+    assert service.get_care_history(visitor_id=42) == {"result_code": "OK"}
+    assert calls == [
+        (
+            "kiosk_visitor",
+            "lookup_residents",
+            {
+                "keyword": "301",
+                "limit": 5,
+            },
+        ),
+        (
+            "kiosk_visitor",
+            "register_visit",
+            {
+                "visitor_name": "김민수",
+                "phone_no": "010-1111-2222",
+                "relationship": "아들",
+                "visit_purpose": "정기 면회",
+                "target_member_id": 1,
+                "privacy_agreed": True,
+                "kiosk_id": "lobby_kiosk_01",
+            },
+        ),
+        (
+            "kiosk_visitor",
+            "get_care_history",
+            {
+                "visitor_id": 42,
+            },
+        ),
     ]
 
 

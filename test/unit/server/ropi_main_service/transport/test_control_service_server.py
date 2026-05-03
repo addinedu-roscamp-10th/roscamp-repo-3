@@ -138,6 +138,42 @@ def test_heartbeat_with_ros_check_puts_ros_status_under_payload(control_service_
     }
 
 
+def test_internal_rpc_dispatches_kiosk_visitor_lookup_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=41,
+        payload={
+            "service": "kiosk_visitor",
+            "method": "lookup_residents",
+            "kwargs": {"keyword": ""},
+        },
+    )
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "KEYWORD_EMPTY"
+
+
+def test_internal_rpc_dispatches_kiosk_visitor_care_history_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=42,
+        payload={
+            "service": "kiosk_visitor",
+            "method": "get_care_history",
+            "kwargs": {"visitor_id": ""},
+        },
+    )
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "VISITOR_ID_INVALID"
+
+
 def test_heartbeat_with_ai_check_reports_disabled_when_ai_endpoint_is_not_configured(
     control_service_server,
     monkeypatch,

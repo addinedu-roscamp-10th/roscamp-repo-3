@@ -2,6 +2,7 @@ from .caregiver_repository import CaregiverRepository
 from .coordinate_config_repository import CoordinateConfigRepository
 from .delivery_request_event_repository import DeliveryRequestEventRepository
 from .inventory_repository import InventoryRepository
+from .kiosk_visitor_repository import KioskVisitorRepository
 from .patient_repository import PatientRepository
 from .patrol_task_create_repository import (
     PatrolPathSnapshotBuilder,
@@ -29,6 +30,7 @@ __all__ = [
     "DeliveryRequestRepository",
     "DeliveryRequestEventRepository",
     "InventoryRepository",
+    "KioskVisitorRepository",
     "PatientRepository",
     "PatrolPathSnapshotBuilder",
     "PatrolTaskCreateRepository",
