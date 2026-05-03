@@ -8,7 +8,7 @@
     battery_percent_topic: "/battery/present"
     battery_voltage_topic: "/battery/voltage"
     state_topic: "/transport/amr_status"
-    task_topic: ""
+    task_topic: "/ropi/robots/{pinky_id}/active_task_id"
     charging_topic: ""
     docked_topic: ""
     fail_topic: ""

@@ -4,4 +4,5 @@ pinky_amr_node:
     action_name: "/ropi/control/pinky2/navigate_to_goal"
     status_topic: "/transport/amr_status"
     current_goal_topic: "/transport/current_goal"
+    active_task_topic: "/ropi/robots/pinky2/active_task_id"
     state_publish_period_sec: 0.5

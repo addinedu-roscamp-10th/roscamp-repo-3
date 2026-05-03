@@ -27,6 +27,7 @@ class PinkyAMRNode(Node):
         self.declare_parameter("action_name", "")
         self.declare_parameter("status_topic", "/transport/amr_status")
         self.declare_parameter("current_goal_topic", "/transport/current_goal")
+        self.declare_parameter("active_task_topic", "/ropi/robots/{robot_id}/active_task_id")
         self.declare_parameter("state_publish_period_sec", 0.5)
 
         self.robot_id = str(self.get_parameter("robot_id").value).strip() or "pinky2"
@@ -37,6 +38,7 @@ class PinkyAMRNode(Node):
             str(self.get_parameter("current_goal_topic").value).strip()
             or "/transport/current_goal"
         )
+        self.active_task_topic = self._resolve_robot_topic("active_task_topic")
         self.state_publish_period_sec = float(self.get_parameter("state_publish_period_sec").value)
 
         self.cb_group = ReentrantCallbackGroup()
@@ -56,6 +58,11 @@ class PinkyAMRNode(Node):
         self.goal_pub = self.create_publisher(
             PoseStamped,
             self.current_goal_topic,
+            10
+        )
+        self.active_task_pub = self.create_publisher(
+            String,
+            self.active_task_topic,
             10
         )
 
@@ -83,7 +90,8 @@ class PinkyAMRNode(Node):
         )
 
         self.get_logger().info(
-            f"READY robot_id={self.robot_id} action={self.action_name}"
+            f"READY robot_id={self.robot_id} action={self.action_name} "
+            f"active_task_topic={self.active_task_topic}"
         )
 
     # -----------------------------------
@@ -97,6 +105,17 @@ class PinkyAMRNode(Node):
     def set_state(self, state):
         self.current_state = state
         self.get_logger().info(f"[STATE] {state}")
+
+    def publish_active_task_id(self, task_id):
+        msg = String()
+        msg.data = str(task_id or "").strip()
+        self.active_task_pub.publish(msg)
+
+    def _resolve_robot_topic(self, parameter_name):
+        value = str(self.get_parameter(parameter_name).value).strip()
+        if "{robot_id}" in value:
+            return value.format(robot_id=self.robot_id)
+        return value
 
     # -----------------------------------
     # Goal 수락 여부
@@ -114,6 +133,7 @@ class PinkyAMRNode(Node):
             f"task_id={goal_request.task_id}, "
             f"nav_phase={goal_request.nav_phase}"
         )
+        self.publish_active_task_id(goal_request.task_id)
 
         return GoalResponse.ACCEPT
 
@@ -214,6 +234,7 @@ class PinkyAMRNode(Node):
         finally:
             with self.lock:
                 self.is_busy = False
+            self.publish_active_task_id("")
 
     # -----------------------------------
     # 종료
