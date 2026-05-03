@@ -654,6 +654,31 @@ def test_caregiver_facade_exposes_robot_status_bundle():
     }
 
 
+def test_caregiver_facade_exposes_alert_log_bundle():
+    class FakeCaregiverService:
+        def get_alert_log_bundle(self, **filters):
+            return {
+                "summary": {"total_event_count": 1},
+                "events": [{"event_id": 11}],
+                "filters": filters,
+            }
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        FakeCaregiverService,
+    ):
+        bundle = tcp_server.CaregiverFacade().get_alert_log_bundle(
+            period="LAST_24_HOURS",
+            severity="ERROR",
+        )
+
+    assert bundle == {
+        "summary": {"total_event_count": 1},
+        "events": [{"event_id": 11}],
+        "filters": {"period": "LAST_24_HOURS", "severity": "ERROR"},
+    }
+
+
 def test_async_rpc_dispatch_offloads_sync_service_method(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,

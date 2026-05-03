@@ -1,3 +1,6 @@
+import json
+from datetime import datetime, time, timedelta
+
 from server.ropi_main_service.persistence.repositories.caregiver_repository import CaregiverRepository
 
 
@@ -50,6 +53,50 @@ class CaregiverService:
 
     async def async_get_robot_status_bundle(self):
         return self._format_robot_status_bundle(await self.async_get_robot_board_data())
+
+    def get_alert_log_bundle(
+        self,
+        *,
+        period="LAST_24_HOURS",
+        severity=None,
+        source_component=None,
+        task_id=None,
+        robot_id=None,
+        event_type=None,
+        limit=100,
+    ):
+        rows = self.repo.get_alert_logs(
+            period_start=self._alert_log_period_start(period),
+            severity=self._clean_filter(severity),
+            source_component=self._clean_filter(source_component),
+            task_id=self._clean_filter(task_id),
+            robot_id=self._clean_filter(robot_id),
+            event_type=self._clean_filter(event_type),
+            limit=self._alert_log_limit(limit),
+        )
+        return self._format_alert_log_bundle(rows)
+
+    async def async_get_alert_log_bundle(
+        self,
+        *,
+        period="LAST_24_HOURS",
+        severity=None,
+        source_component=None,
+        task_id=None,
+        robot_id=None,
+        event_type=None,
+        limit=100,
+    ):
+        rows = await self.repo.async_get_alert_logs(
+            period_start=self._alert_log_period_start(period),
+            severity=self._clean_filter(severity),
+            source_component=self._clean_filter(source_component),
+            task_id=self._clean_filter(task_id),
+            robot_id=self._clean_filter(robot_id),
+            event_type=self._clean_filter(event_type),
+            limit=self._alert_log_limit(limit),
+        )
+        return self._format_alert_log_bundle(rows)
 
     @staticmethod
     def _format_robot_board_data(rows):
@@ -112,6 +159,88 @@ class CaregiverService:
             "robots": robots,
             "delivery_composition": list(cls.DELIVERY_COMPOSITION),
         }
+
+    @classmethod
+    def _format_alert_log_bundle(cls, rows):
+        events = [cls._format_alert_log_event(row) for row in rows or []]
+        summary = {
+            "total_event_count": len(events),
+            "info_count": sum(1 for event in events if event["severity"] == "INFO"),
+            "warning_count": sum(
+                1 for event in events if event["severity"] == "WARNING"
+            ),
+            "error_count": sum(1 for event in events if event["severity"] == "ERROR"),
+            "critical_count": sum(
+                1 for event in events if event["severity"] == "CRITICAL"
+            ),
+        }
+        return {
+            "summary": summary,
+            "events": events,
+        }
+
+    @classmethod
+    def _format_alert_log_event(cls, row):
+        return {
+            "event_id": row.get("event_id"),
+            "occurred_at": cls._isoformat(row.get("occurred_at")),
+            "severity": row.get("severity") or "INFO",
+            "source_component": row.get("source_component") or "-",
+            "task_id": row.get("task_id"),
+            "robot_id": row.get("robot_id"),
+            "event_type": row.get("event_type") or "-",
+            "result_code": row.get("result_code"),
+            "reason_code": row.get("reason_code"),
+            "message": row.get("message") or "",
+            "payload": cls._json_object(row.get("payload_json")),
+        }
+
+    @staticmethod
+    def _alert_log_period_start(period):
+        normalized = str(period or "LAST_24_HOURS").strip().upper()
+        now = datetime.now()
+        if normalized == "ALL":
+            return None
+        if normalized == "LAST_1_HOUR":
+            return now - timedelta(hours=1)
+        if normalized == "TODAY":
+            return datetime.combine(now.date(), time.min)
+        return now - timedelta(hours=24)
+
+    @staticmethod
+    def _alert_log_limit(limit):
+        try:
+            value = int(limit)
+        except (TypeError, ValueError):
+            value = 100
+        return max(1, min(value, 200))
+
+    @staticmethod
+    def _clean_filter(value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @staticmethod
+    def _json_object(value):
+        if isinstance(value, dict):
+            return value
+        if not value:
+            return {}
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _isoformat(value):
+        if value is None:
+            return ""
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
 
     @staticmethod
     def _connection_status(row, runtime_state):

@@ -109,6 +109,7 @@ def test_caregiver_repository_uses_task_and_runtime_status_tables():
             "caregiver/robot_board.sql",
             "caregiver/timeline.sql",
             "caregiver/flow_board_events.sql",
+            "caregiver/alert_logs.sql",
         )
     )
 
@@ -118,3 +119,5 @@ def test_caregiver_repository_uses_task_and_runtime_status_tables():
     assert "robot_manager_name" in source
     assert "fault_code" in source
     assert "last_seen_at" in source
+    assert "source_component" in source
+    assert "event_type" in source

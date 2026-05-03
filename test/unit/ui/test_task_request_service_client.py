@@ -46,6 +46,41 @@ def test_caregiver_remote_service_exposes_robot_status_bundle_rpc(monkeypatch):
     assert calls == [("caregiver", "get_robot_status_bundle", {})]
 
 
+def test_caregiver_remote_service_exposes_alert_log_bundle_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"summary": {}, "events": []}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    assert CaregiverRemoteService().get_alert_log_bundle(
+        period="LAST_24_HOURS",
+        severity="ERROR",
+        source_component="Control Service",
+        task_id="1001",
+        robot_id="pinky2",
+        event_type="TASK_FAILED",
+        limit=50,
+    ) == {"summary": {}, "events": []}
+    assert calls == [
+        (
+            "caregiver",
+            "get_alert_log_bundle",
+            {
+                "period": "LAST_24_HOURS",
+                "severity": "ERROR",
+                "source_component": "Control Service",
+                "task_id": "1001",
+                "robot_id": "pinky2",
+                "event_type": "TASK_FAILED",
+                "limit": 50,
+            },
+        )
+    ]
+
+
 def test_delivery_request_remote_service_exposes_cancel_rpc(monkeypatch):
     calls = []
 

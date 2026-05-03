@@ -53,6 +53,29 @@ class CaregiverRemoteService:
     def get_robot_status_bundle(self):
         return _rpc("caregiver", "get_robot_status_bundle")
 
+    def get_alert_log_bundle(
+        self,
+        *,
+        period="LAST_24_HOURS",
+        severity=None,
+        source_component=None,
+        task_id=None,
+        robot_id=None,
+        event_type=None,
+        limit=100,
+    ):
+        return _rpc(
+            "caregiver",
+            "get_alert_log_bundle",
+            period=period,
+            severity=severity,
+            source_component=source_component,
+            task_id=task_id,
+            robot_id=robot_id,
+            event_type=event_type,
+            limit=limit,
+        )
+
 
 class PatientRemoteService:
     def search_patient_info(self, name: str, room_no: str):

@@ -108,6 +108,12 @@ class CaregiverFacade:
     async def async_get_robot_status_bundle(self):
         return await self.service.async_get_robot_status_bundle()
 
+    def get_alert_log_bundle(self, **filters):
+        return self.service.get_alert_log_bundle(**filters)
+
+    async def async_get_alert_log_bundle(self, **filters):
+        return await self.service.async_get_alert_log_bundle(**filters)
+
     def _attach_action_feedback(self, flow_data):
         for task in self._iter_feedback_target_tasks(flow_data):
             task_id = task.get("task_id")

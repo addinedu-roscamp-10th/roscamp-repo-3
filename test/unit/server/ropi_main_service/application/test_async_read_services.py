@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.caregiver import CaregiverService
@@ -256,6 +257,67 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
         {"label": "Destination Arm Robot", "value": "jetcobot2"},
         {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
     ]
+
+
+def test_caregiver_service_alert_log_bundle_formats_operator_events():
+    rows = [
+        {
+            "event_id": 11,
+            "occurred_at": datetime(2026, 5, 3, 12, 0, 0),
+            "severity": "ERROR",
+            "source_component": "Control Service",
+            "task_id": 1001,
+            "robot_id": "pinky2",
+            "event_type": "TASK_FAILED",
+            "result_code": "FAILED",
+            "reason_code": "ROS_ACTION_FAILED",
+            "message": "navigation failed",
+            "payload_json": '{"phase":"DELIVERY_DESTINATION"}',
+        },
+        {
+            "event_id": 12,
+            "occurred_at": "2026-05-03T12:01:00",
+            "severity": "WARNING",
+            "source_component": "AI Server",
+            "task_id": 1002,
+            "robot_id": "pinky3",
+            "event_type": "FALL_ALERT_CREATED",
+            "result_code": "ACCEPTED",
+            "reason_code": None,
+            "message": "fall alert candidate accepted",
+            "payload_json": '{"evidence_image_available":true}',
+        },
+    ]
+
+    bundle = CaregiverService._format_alert_log_bundle(rows)
+
+    assert bundle["summary"] == {
+        "total_event_count": 2,
+        "info_count": 0,
+        "warning_count": 1,
+        "error_count": 1,
+        "critical_count": 0,
+    }
+    assert bundle["events"][0] == {
+        "event_id": 11,
+        "occurred_at": "2026-05-03T12:00:00",
+        "severity": "ERROR",
+        "source_component": "Control Service",
+        "task_id": 1001,
+        "robot_id": "pinky2",
+        "event_type": "TASK_FAILED",
+        "result_code": "FAILED",
+        "reason_code": "ROS_ACTION_FAILED",
+        "message": "navigation failed",
+        "payload": {"phase": "DELIVERY_DESTINATION"},
+    }
+
+
+def test_caregiver_service_alert_log_period_and_limit_normalization():
+    assert CaregiverService._alert_log_period_start("ALL") is None
+    assert CaregiverService._alert_log_limit(0) == 1
+    assert CaregiverService._alert_log_limit(500) == 200
+    assert CaregiverService._alert_log_limit("50") == 50
 
 
 def test_caregiver_flow_board_keeps_cancel_requested_in_running_lane():
