@@ -1,9 +1,10 @@
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QLineEdit, QPushButton, QTextEdit
 )
 
+from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import PatientRemoteService
 from ui.utils.widgets.admin_shell import PageHeader
 from ui.utils.widgets.common import InlineStatusMixin
@@ -30,6 +31,7 @@ class PatientLookupWorker(QObject):
 class PatientInfoPage(QWidget, InlineStatusMixin):
     def __init__(self):
         super().__init__()
+        self._worker_stop_wait_ms = 1000
         self.lookup_thread = None
         self.lookup_worker = None
         self.lookup_request_id = 0
@@ -152,23 +154,18 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         self._set_loading_state(True)
         self.show_inline_status("어르신 정보를 조회하고 있습니다.", "info")
 
-        self.lookup_thread = QThread(self)
-        self.lookup_worker = PatientLookupWorker(self.lookup_request_id, name, room_no)
-        self.lookup_worker.moveToThread(self.lookup_thread)
-        self.lookup_thread.started.connect(self.lookup_worker.run)
-        self.lookup_worker.finished.connect(self._handle_lookup_result)
-        self.lookup_worker.finished.connect(self.lookup_thread.quit)
-        self.lookup_worker.finished.connect(self.lookup_worker.deleteLater)
-        self.lookup_thread.finished.connect(self.lookup_thread.deleteLater)
-        self.lookup_thread.start()
+        self.lookup_thread, self.lookup_worker = start_worker_thread(
+            self,
+            worker=PatientLookupWorker(self.lookup_request_id, name, room_no),
+            finished_handler=self._handle_lookup_result,
+            clear_handler=self._clear_lookup_thread,
+        )
 
     def _handle_lookup_result(self, request_id, ok, payload):
         if request_id != self.lookup_request_id:
             return
 
         self._set_loading_state(False)
-        self.lookup_thread = None
-        self.lookup_worker = None
 
         if not ok:
             self._clear_result()
@@ -229,6 +226,10 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         self.result_box.setPlainText("어르신 조회 후 이벤트 시간이 표시됩니다.")
         self.prescription_box.setPlainText("조회 후 처방전 이미지 경로가 표시됩니다.")
 
+    def _clear_lookup_thread(self):
+        self.lookup_thread = None
+        self.lookup_worker = None
+
     def reset_page(self):
         self.lookup_request_id += 1
         self.name_input.clear()
@@ -236,3 +237,10 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         self._set_loading_state(False)
         self._clear_result()
         self.hide_inline_status()
+
+    def shutdown(self):
+        stop_worker_thread(
+            self.lookup_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_lookup_thread,
+        )
