@@ -25,6 +25,7 @@ def test_main_qss_defines_shared_admin_shell_components():
 
     assert "QFrame#adminSidebar" in qss
     assert "QFrame#pageHeader" in qss
+    assert "QLabel#pageHeaderEyebrow" in qss
     assert "QFrame#systemStatusStrip" in qss
     assert "QLabel#systemStatusOnline" in qss
     assert "QLabel#systemStatusWarning" in qss
@@ -48,6 +49,9 @@ def test_main_qss_defines_task_request_page_components():
     assert "QFrame#sideMetricRow" in qss
     assert "QLabel#sideMetricLabel" in qss
     assert "QLabel#sideMetricValue" in qss
+    assert "QFrame#keyValueRow" in qss
+    assert "QLabel#keyValueKey" in qss
+    assert "QLabel#keyValueValue" in qss
     assert "QLabel#priorityChip" in qss
     assert "QLabel#robotStateChip" in qss
     assert "QFrame#resultPanel" in qss
@@ -60,7 +64,6 @@ def test_main_qss_defines_task_request_page_components():
 def test_main_qss_defines_home_dashboard_components():
     qss = _stylesheet()
 
-    assert "QFrame#homeHeroPanel" in qss
     assert "QFrame#homeTimeCard" in qss
     assert "QFrame#homeKpiCard" in qss
     assert "QFrame#homeKpiAccent" in qss

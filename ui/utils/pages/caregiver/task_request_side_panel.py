@@ -1,12 +1,7 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
+
+from ui.utils.widgets.admin_common import make_key_value_row
 
 
 PRIORITY_CODE_TO_LABEL = {
@@ -51,23 +46,13 @@ def _priority_label(priority_code):
 
 
 def _metric_row(label_text, value_text="-", value_object_name="sideMetricValue"):
-    row = QFrame()
-    row.setObjectName("sideMetricRow")
-    row_layout = QHBoxLayout(row)
-    row_layout.setContentsMargins(12, 10, 12, 10)
-    row_layout.setSpacing(10)
-
-    label = QLabel(label_text)
-    label.setObjectName("sideMetricLabel")
-    value = QLabel(value_text)
-    value.setObjectName(value_object_name)
-    value.setWordWrap(True)
-    value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-    row_layout.addWidget(label)
-    row_layout.addStretch(1)
-    row_layout.addWidget(value)
-    return row, label, value
+    return make_key_value_row(
+        label_text,
+        value_text,
+        row_object_name="sideMetricRow",
+        key_object_name="sideMetricLabel",
+        value_object_name=value_object_name,
+    )
 
 
 def _has_task_id(value):

@@ -3,7 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame
 
 
 _APP = None
@@ -122,10 +122,15 @@ def test_inventory_management_page_applies_bundle_to_summary_table_detail_and_wa
         page._handle_table_selection()
 
         labels = _label_texts(page)
-        assert any("선택 물품: 물티슈" in text for text in labels)
-        assert any("현재 수량: 8개" in text for text in labels)
-        assert any("기저귀: 0개" in text for text in labels)
-        assert any("물티슈: 8개" in text for text in labels)
+        assert "선택 물품" in labels
+        assert "물티슈" in labels
+        assert "현재 수량" in labels
+        assert "8개" in labels
+        assert "기저귀" in labels
+        assert "0개" in labels
+        assert page.findChildren(QFrame, "keyValueRow")
+        assert not any("선택 물품: 물티슈" in text for text in labels)
+        assert not any("기저귀: 0개" in text for text in labels)
     finally:
         page.close()
 

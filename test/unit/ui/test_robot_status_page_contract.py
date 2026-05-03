@@ -3,7 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame
 
 
 _APP = None
@@ -111,8 +111,12 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert "1대" in labels
         assert "pinky2" in labels
         assert "운반 로봇" in labels
-        assert "Delivery Mobile Robot: pinky2" in labels
-        assert "ROS adapter arm_id: arm1 / arm2" in labels
+        assert "Delivery Mobile Robot" in labels
+        assert "pinky2" in labels
+        assert "ROS adapter arm_id" in labels
+        assert "arm1 / arm2" in labels
+        assert not any("Delivery Mobile Robot: pinky2" in text for text in labels)
+        assert page.findChildren(QFrame, "keyValueRow")
         assert page.table.rowCount() == 2
         assert page.table.item(0, 0).text() == "pinky2"
         assert page.table.item(0, 3).text() == "ONLINE"
@@ -121,8 +125,11 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         page._handle_table_selection()
 
         labels = _label_texts(page)
-        assert any("선택 로봇: jetcobot1" in text for text in labels)
-        assert any("상태: DEGRADED / ERROR" in text for text in labels)
+        assert "선택 로봇" in labels
+        assert "jetcobot1" in labels
+        assert "상태" in labels
+        assert "DEGRADED / ERROR" in labels
+        assert not any("선택 로봇: jetcobot1" in text for text in labels)
     finally:
         page.close()
 

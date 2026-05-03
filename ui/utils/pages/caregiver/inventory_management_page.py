@@ -17,6 +17,8 @@ from PyQt6.QtWidgets import (
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import InventoryRemoteService
 from ui.utils.widgets.admin_common import (
+    KeyValueList,
+    KeyValueRow,
     SummaryCard,
     display_text as _display,
     int_value as _int_value,
@@ -88,7 +90,7 @@ class InventoryManagementPage(QWidget):
         self.adjust_worker = None
         self.items = []
         self.summary_cards = {}
-        self.low_stock_labels = []
+        self.low_stock_rows = []
 
         self._build_ui()
         if autoload:
@@ -168,11 +170,9 @@ class InventoryManagementPage(QWidget):
         detail_layout.setSpacing(10)
         detail_title = QLabel("재고 상세")
         detail_title.setObjectName("sectionTitle")
-        self.detail_label = QLabel("표에서 물품을 선택하세요.")
-        self.detail_label.setObjectName("mutedText")
-        self.detail_label.setWordWrap(True)
+        self.detail_list = KeyValueList("표에서 물품을 선택하세요.")
         detail_layout.addWidget(detail_title)
-        detail_layout.addWidget(self.detail_label)
+        detail_layout.addWidget(self.detail_list)
 
         form_card = QFrame()
         form_card.setObjectName("formCard")
@@ -273,7 +273,7 @@ class InventoryManagementPage(QWidget):
         if self.items:
             self._render_detail(self.items[0])
         else:
-            self.detail_label.setText("표시할 재고 데이터가 없습니다.")
+            self.detail_list.set_rows([], empty_text="표시할 재고 데이터가 없습니다.")
 
     def _apply_summary(self, summary):
         for key, _title, unit in SUMMARY_ITEMS:
@@ -305,25 +305,27 @@ class InventoryManagementPage(QWidget):
             self.item_combo.setCurrentIndex(0)
 
     def _apply_low_stock_items(self, low_stock_items):
-        for label in self.low_stock_labels:
-            label.setParent(None)
-            label.deleteLater()
-        self.low_stock_labels = []
+        for row in self.low_stock_rows:
+            row.setParent(None)
+            row.deleteLater()
+        self.low_stock_rows = []
 
         rows = [row for row in low_stock_items if isinstance(row, dict)]
         if not rows:
             label = QLabel("부족 재고가 없습니다.")
             label.setObjectName("mutedText")
             self.low_stock_layout.addWidget(label)
-            self.low_stock_labels.append(label)
+            self.low_stock_rows.append(label)
             return
 
         for row in rows:
             quantity = row.get("quantity")
-            label = QLabel(f"{_display(row.get('item_name'))}: {_int_value(quantity)}개")
-            label.setObjectName("mutedText")
-            self.low_stock_layout.addWidget(label)
-            self.low_stock_labels.append(label)
+            key_value_row = KeyValueRow(
+                _display(row.get("item_name")),
+                f"{_int_value(quantity)}개",
+            )
+            self.low_stock_layout.addWidget(key_value_row)
+            self.low_stock_rows.append(key_value_row)
 
     def _handle_table_selection(self):
         selected = self.table.selectedItems()
@@ -342,14 +344,14 @@ class InventoryManagementPage(QWidget):
             self._render_detail(item)
 
     def _render_detail(self, item):
-        detail_lines = [
-            f"선택 물품: {_display(item.get('item_name'))}",
-            f"item_id: {_display(item.get('item_id'))}",
-            f"item_type: {_display(item.get('item_type'))}",
-            f"현재 수량: {_int_value(item.get('quantity'))}개",
-            f"updated_at: {_display(item.get('updated_at'))}",
+        detail_rows = [
+            ("선택 물품", _display(item.get("item_name"))),
+            ("item_id", _display(item.get("item_id"))),
+            ("item_type", _display(item.get("item_type"))),
+            ("현재 수량", f"{_int_value(item.get('quantity'))}개"),
+            ("updated_at", _display(item.get("updated_at"))),
         ]
-        self.detail_label.setText("\n".join(detail_lines))
+        self.detail_list.set_rows(detail_rows)
 
     def _collect_adjust_payload(self):
         item_id = self.item_combo.currentData()

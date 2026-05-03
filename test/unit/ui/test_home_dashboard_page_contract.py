@@ -40,9 +40,9 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         ]
 
         assert page.findChild(QFrame, "systemStatusStrip") is not None
-        hero_panel = page.findChild(QFrame, "homeHeroPanel")
+        header = page.findChild(QFrame, "pageHeader")
         time_card = page.findChild(QFrame, "homeTimeCard")
-        assert hero_panel is not None
+        assert header is not None
         assert time_card is not None
         assert "실시간 운영 요약" in labels
         assert page.status_banner.parentWidget() is page

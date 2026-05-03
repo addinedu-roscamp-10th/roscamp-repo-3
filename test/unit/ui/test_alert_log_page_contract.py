@@ -3,7 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame
 
 
 _APP = None
@@ -113,10 +113,17 @@ def test_alert_log_page_applies_server_bundle_to_summary_table_and_detail():
         page._handle_table_selection()
 
         labels = _label_texts(page)
-        assert any("event_id: 11" in text for text in labels)
-        assert any("reason_code: ROS_ACTION_FAILED" in text for text in labels)
-        assert any("task_id=1001" in text for text in labels)
-        assert any("robot_id=pinky2" in text for text in labels)
+        assert "event_id" in labels
+        assert "11" in labels
+        assert "reason_code" in labels
+        assert "ROS_ACTION_FAILED" in labels
+        assert "task_id" in labels
+        assert "1001" in labels
+        assert "robot_id" in labels
+        assert "pinky2" in labels
+        assert page.findChildren(QFrame, "keyValueRow")
+        assert not any("event_id: 11" in text for text in labels)
+        assert not any("task_id=1001" in text for text in labels)
         assert page.related_task_button.property("task_id") == 1001
         assert page.related_task_button.isEnabled() is True
         assert page.related_robot_button.property("robot_id") == "pinky2"

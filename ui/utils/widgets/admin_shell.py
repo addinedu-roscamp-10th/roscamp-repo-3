@@ -87,23 +87,27 @@ class PageHeader(QFrame):
         subtitle: str = "",
         statuses: Mapping[str, str] | None = None,
         show_status: bool = False,
+        eyebrow: str = "관리자 콘솔",
     ):
         super().__init__()
         self.setObjectName("pageHeader")
 
         root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(20, 18, 20, 18)
         root.setSpacing(16)
 
         title_box = QVBoxLayout()
         title_box.setContentsMargins(0, 0, 0, 0)
         title_box.setSpacing(4)
 
+        self.eyebrow_label = QLabel(eyebrow)
+        self.eyebrow_label.setObjectName("pageHeaderEyebrow")
         self.title_label = QLabel(title)
         self.title_label.setObjectName("pageTitle")
         self.subtitle_label = QLabel(subtitle)
         self.subtitle_label.setObjectName("pageSubtitle")
 
+        title_box.addWidget(self.eyebrow_label)
         title_box.addWidget(self.title_label)
         title_box.addWidget(self.subtitle_label)
 

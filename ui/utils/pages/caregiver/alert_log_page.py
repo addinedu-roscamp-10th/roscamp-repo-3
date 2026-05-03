@@ -17,7 +17,11 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import CaregiverRemoteService
-from ui.utils.widgets.admin_common import SummaryCard, display_text as _display
+from ui.utils.widgets.admin_common import (
+    KeyValueList,
+    SummaryCard,
+    display_text as _display,
+)
 from ui.utils.widgets.admin_shell import PageHeader
 
 
@@ -200,11 +204,9 @@ class AlertLogPage(QWidget):
         detail_layout.setSpacing(10)
         detail_title = QLabel("이벤트 상세")
         detail_title.setObjectName("sectionTitle")
-        self.detail_label = QLabel("이벤트를 선택하세요.")
-        self.detail_label.setObjectName("mutedText")
-        self.detail_label.setWordWrap(True)
+        self.detail_list = KeyValueList("이벤트를 선택하세요.")
         detail_layout.addWidget(detail_title)
-        detail_layout.addWidget(self.detail_label)
+        detail_layout.addWidget(self.detail_list)
 
         related_card = QFrame()
         related_card.setObjectName("noticeCard")
@@ -213,9 +215,7 @@ class AlertLogPage(QWidget):
         related_layout.setSpacing(10)
         related_title = QLabel("관련 작업/로봇")
         related_title.setObjectName("sectionTitle")
-        self.related_label = QLabel("선택된 이벤트의 task_id와 robot_id를 표시합니다.")
-        self.related_label.setObjectName("mutedText")
-        self.related_label.setWordWrap(True)
+        self.related_list = KeyValueList("선택된 이벤트의 task_id와 robot_id를 표시합니다.")
         self.related_task_button = QPushButton("작업 모니터에서 보기")
         self.related_task_button.setObjectName("secondaryButton")
         self.related_task_button.setEnabled(False)
@@ -225,7 +225,7 @@ class AlertLogPage(QWidget):
         self.related_robot_button.setEnabled(False)
         self.related_robot_button.clicked.connect(self._emit_related_robot)
         related_layout.addWidget(related_title)
-        related_layout.addWidget(self.related_label)
+        related_layout.addWidget(self.related_list)
         related_layout.addWidget(self.related_task_button)
         related_layout.addWidget(self.related_robot_button)
 
@@ -292,8 +292,8 @@ class AlertLogPage(QWidget):
         if self.events:
             self._render_detail(self.events[0])
         else:
-            self.detail_label.setText("표시할 운영 이벤트가 없습니다.")
-            self.related_label.setText("선택된 이벤트가 없습니다.")
+            self.detail_list.set_rows([], empty_text="표시할 운영 이벤트가 없습니다.")
+            self.related_list.set_rows([], empty_text="선택된 이벤트가 없습니다.")
             self._sync_related_actions({})
 
     def _apply_summary(self, summary):
@@ -327,21 +327,23 @@ class AlertLogPage(QWidget):
         self._render_detail(self.events[row])
 
     def _render_detail(self, event):
-        detail_lines = [
-            f"event_id: {_display(event.get('event_id'))}",
-            f"occurred_at: {_display(event.get('occurred_at'))}",
-            f"severity: {_display(event.get('severity'))}",
-            f"source_component: {_display(event.get('source_component'))}",
-            f"event_type: {_display(event.get('event_type'))}",
-            f"result_code: {_display(event.get('result_code'))}",
-            f"reason_code: {_display(event.get('reason_code'))}",
-            f"message: {_display(event.get('message'), '')}",
-            f"payload: {_display(event.get('payload'))}",
+        detail_rows = [
+            ("event_id", _display(event.get("event_id"))),
+            ("occurred_at", _display(event.get("occurred_at"))),
+            ("severity", _display(event.get("severity"))),
+            ("source_component", _display(event.get("source_component"))),
+            ("event_type", _display(event.get("event_type"))),
+            ("result_code", _display(event.get("result_code"))),
+            ("reason_code", _display(event.get("reason_code"))),
+            ("message", _display(event.get("message"), "")),
+            ("payload", _display(event.get("payload"))),
         ]
-        self.detail_label.setText("\n".join(detail_lines))
-        self.related_label.setText(
-            f"task_id={_display(event.get('task_id'))}\n"
-            f"robot_id={_display(event.get('robot_id'))}"
+        self.detail_list.set_rows(detail_rows)
+        self.related_list.set_rows(
+            [
+                ("task_id", _display(event.get("task_id"))),
+                ("robot_id", _display(event.get("robot_id"))),
+            ]
         )
         self._sync_related_actions(event)
 

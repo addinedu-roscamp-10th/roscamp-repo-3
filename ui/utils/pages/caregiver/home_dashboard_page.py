@@ -609,24 +609,14 @@ class CaregiverHomePage(QWidget):
         tb.addWidget(self.load_status_label)
         tb.addWidget(self.refresh_button)
 
-        hero_panel = QFrame()
-        hero_panel.setObjectName("homeHeroPanel")
-        hero_layout = QVBoxLayout(hero_panel)
-        hero_layout.setContentsMargins(20, 18, 20, 18)
-        hero_layout.setSpacing(10)
-
-        hero_eyebrow = QLabel("실시간 운영 요약")
-        hero_eyebrow.setObjectName("homeHeroEyebrow")
-
         self.header = PageHeader(
             "운영 대시보드",
             "현재 로봇 상태와 작업 흐름을 한눈에 확인합니다.",
             show_status=True,
+            eyebrow="실시간 운영 요약",
         )
-        hero_layout.addWidget(hero_eyebrow)
-        hero_layout.addWidget(self.header)
 
-        top.addWidget(hero_panel, 1)
+        top.addWidget(self.header, 1)
         top.addWidget(time_box)
 
         self.timer = QTimer(self)

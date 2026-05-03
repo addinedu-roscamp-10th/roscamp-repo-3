@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import CaregiverRemoteService
 from ui.utils.widgets.admin_common import (
+    KeyValueList,
+    KeyValueRow,
     StatusChip,
     SummaryCard,
     battery_text as _battery_text,
@@ -90,20 +92,21 @@ class RobotStatusCard(QFrame):
         display_name.setObjectName("mutedText")
 
         details = [
-            f"유형/역할: {_display(robot.get('robot_type'))} / {_display(robot.get('scenario_role'))}",
-            f"현재 작업: {_display(robot.get('current_task_id'))}",
-            f"단계: {_display(robot.get('current_phase'))}",
-            f"배터리: {_battery_text(robot.get('battery_percent'))}",
-            f"마지막 수신: {_display(robot.get('last_seen_at'))}",
+            (
+                "유형/역할",
+                f"{_display(robot.get('robot_type'))} / "
+                f"{_display(robot.get('scenario_role'))}",
+            ),
+            ("현재 작업", _display(robot.get("current_task_id"))),
+            ("단계", _display(robot.get("current_phase"))),
+            ("배터리", _battery_text(robot.get("battery_percent"))),
+            ("마지막 수신", _display(robot.get("last_seen_at"))),
         ]
 
         layout.addLayout(title_row)
         layout.addWidget(display_name)
-        for text in details:
-            label = QLabel(text)
-            label.setObjectName("mutedText")
-            label.setWordWrap(True)
-            layout.addWidget(label)
+        for key, value in details:
+            layout.addWidget(KeyValueRow(key, value))
 
 
 class RobotStatusPage(QWidget):
@@ -207,11 +210,9 @@ class RobotStatusPage(QWidget):
         detail_layout.setSpacing(10)
         detail_title = QLabel("로봇 상세")
         detail_title.setObjectName("sectionTitle")
-        self.detail_label = QLabel("테이블에서 로봇을 선택하세요.")
-        self.detail_label.setObjectName("mutedText")
-        self.detail_label.setWordWrap(True)
+        self.detail_list = KeyValueList("테이블에서 로봇을 선택하세요.")
         detail_layout.addWidget(detail_title)
-        detail_layout.addWidget(self.detail_label)
+        detail_layout.addWidget(self.detail_list)
 
         map_card = QFrame()
         map_card.setObjectName("noticeCard")
@@ -236,7 +237,7 @@ class RobotStatusPage(QWidget):
         composition_layout.setSpacing(8)
         composition_title = QLabel("운반 복합 로봇 구성")
         composition_title.setObjectName("sectionTitle")
-        self.composition_labels = []
+        self.composition_rows = []
         composition_layout.addWidget(composition_title)
 
         side_column.addWidget(detail_card)
@@ -296,7 +297,7 @@ class RobotStatusPage(QWidget):
         if self.robots:
             self._render_detail(self.robots[0])
         else:
-            self.detail_label.setText("표시할 로봇 상태가 없습니다.")
+            self.detail_list.set_rows([], empty_text="표시할 로봇 상태가 없습니다.")
 
     def _apply_summary(self, summary):
         for key, _title in SUMMARY_ITEMS:
@@ -331,18 +332,17 @@ class RobotStatusPage(QWidget):
                 self.table.setItem(row_index, column_index, QTableWidgetItem(value))
 
     def _apply_delivery_composition(self, composition):
-        for label in self.composition_labels:
-            label.setParent(None)
-            label.deleteLater()
-        self.composition_labels = []
+        for row in self.composition_rows:
+            row.setParent(None)
+            row.deleteLater()
+        self.composition_rows = []
 
         for item in composition:
             if not isinstance(item, dict):
                 continue
-            label = QLabel(f"{_display(item.get('label'))}: {_display(item.get('value'))}")
-            label.setObjectName("mutedText")
-            self.composition_layout.addWidget(label)
-            self.composition_labels.append(label)
+            row = KeyValueRow(_display(item.get("label")), _display(item.get("value")))
+            self.composition_layout.addWidget(row)
+            self.composition_rows.append(row)
 
     def _handle_table_selection(self):
         selected = self.table.selectedItems()
@@ -354,19 +354,27 @@ class RobotStatusPage(QWidget):
         self._render_detail(self.robots[row])
 
     def _render_detail(self, robot):
-        detail_lines = [
-            f"선택 로봇: {_display(robot.get('robot_id'))}",
-            f"표시명: {_display(robot.get('display_name'))}",
-            f"유형/역할: {_display(robot.get('robot_type'))} / {_display(robot.get('scenario_role'))}",
-            f"상태: {_display(robot.get('connection_status'))} / {_display(robot.get('runtime_state'))}",
-            f"현재 작업: {_display(robot.get('current_task_id'))}",
-            f"현재 단계: {_display(robot.get('current_phase'))}",
-            f"현재 위치: {_display(robot.get('current_location'))}",
-            f"배터리: {_battery_text(robot.get('battery_percent'))}",
-            f"마지막 수신: {_display(robot.get('last_seen_at'))}",
-            f"Fault: {_display(robot.get('fault_code'))}",
+        detail_rows = [
+            ("선택 로봇", _display(robot.get("robot_id"))),
+            ("표시명", _display(robot.get("display_name"))),
+            (
+                "유형/역할",
+                f"{_display(robot.get('robot_type'))} / "
+                f"{_display(robot.get('scenario_role'))}",
+            ),
+            (
+                "상태",
+                f"{_display(robot.get('connection_status'))} / "
+                f"{_display(robot.get('runtime_state'))}",
+            ),
+            ("현재 작업", _display(robot.get("current_task_id"))),
+            ("현재 단계", _display(robot.get("current_phase"))),
+            ("현재 위치", _display(robot.get("current_location"))),
+            ("배터리", _battery_text(robot.get("battery_percent"))),
+            ("마지막 수신", _display(robot.get("last_seen_at"))),
+            ("Fault", _display(robot.get("fault_code"))),
         ]
-        self.detail_label.setText("\n".join(detail_lines))
+        self.detail_list.set_rows(detail_rows)
 
     def _show_status(self, message: str):
         self.status_label.setText(message)

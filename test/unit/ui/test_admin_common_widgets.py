@@ -21,6 +21,8 @@ def test_admin_common_display_helpers_and_widgets():
     _app()
 
     from ui.utils.widgets.admin_common import (
+        KeyValueList,
+        KeyValueRow,
         StatusChip,
         SummaryCard,
         battery_text,
@@ -39,13 +41,28 @@ def test_admin_common_display_helpers_and_widgets():
     summary = SummaryCard("전체 로봇", initial_value="0대")
     summary.set_value(3, "대")
     chip = StatusChip("ONLINE", "green")
+    key_value = KeyValueRow("로봇", "pinky2")
+    key_value_list = KeyValueList("표시할 정보가 없습니다.")
+    key_value_list.set_rows([("상태", "ONLINE"), ("배터리", "88%")])
 
     try:
         assert summary.value_label.text() == "3대"
         assert chip.objectName() == "chipGreen"
+        assert key_value.objectName() == "keyValueRow"
+        assert key_value.key_label.objectName() == "keyValueKey"
+        assert key_value.key_label.text() == "로봇"
+        assert key_value.value_label.objectName() == "keyValueValue"
+        assert key_value.value_label.text() == "pinky2"
+        assert key_value_list.objectName() == "keyValueList"
+        assert [row.key_label.text() for row in key_value_list._rows] == [
+            "상태",
+            "배터리",
+        ]
     finally:
         summary.close()
         chip.close()
+        key_value.close()
+        key_value_list.close()
 
 
 def test_recent_admin_pages_use_common_display_widgets():

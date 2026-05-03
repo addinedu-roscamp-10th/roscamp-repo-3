@@ -185,9 +185,9 @@ class CoordinateZoneSettingsPage(QWidget):
 
         for index, (key, label_text) in enumerate(ACTIVE_MAP_FIELDS):
             label = QLabel(label_text)
-            label.setObjectName("mutedText")
+            label.setObjectName("keyValueKey")
             value = QLabel("-")
-            value.setObjectName("sideMetricValue")
+            value.setObjectName("keyValueValue")
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             value.setWordWrap(True)
             self.active_map_labels[key] = value
