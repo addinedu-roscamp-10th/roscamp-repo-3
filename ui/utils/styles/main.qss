@@ -1027,6 +1027,11 @@ QWidget#kioskRoot {
     color: #1E293B;
 }
 
+QWidget#kioskResidentSearchPage {
+    background: #F9F9FF;
+    color: #111C2D;
+}
+
 QWidget#kioskRoot QLabel {
     color: #1E293B;
 }
@@ -1161,7 +1166,9 @@ QPushButton#kioskRoundIconButton {
 
 QPushButton#kioskSearchFooterButton {
     min-height: 72px;
-    min-width: 210px;
+    min-width: 250px;
+    font-size: 30px;
+    padding: 12px 38px;
 }
 
 QPushButton#kioskGhostButton[accent="blue"] {
@@ -1257,6 +1264,18 @@ QLabel#kioskProgressSubtitle {
     font-weight: 700;
 }
 
+QLabel#kioskSearchPageTitle {
+    color: #111C2D;
+    font-size: 48px;
+    font-weight: 900;
+}
+
+QLabel#kioskSearchPageSubtitle {
+    color: #3F4942;
+    font-size: 22px;
+    font-weight: 500;
+}
+
 QFrame#kioskSearchInputCard {
     background: #FFFFFF;
     border: 2px solid #BEC9BF;
@@ -1306,7 +1325,7 @@ QPushButton#kioskResidentActionButton {
     border-color: #1960A3;
     font-size: 28px;
     min-width: 230px;
-    padding: 12px 32px;
+    padding: 12px 34px 12px 70px;
 }
 
 QPushButton#kioskProgressSecondaryButton {
@@ -1335,6 +1354,11 @@ QLabel#kioskResidentAvatarIcon {
     color: #2B6CB0;
     font-size: 52px;
     font-weight: 900;
+}
+
+QWidget#kioskResidentPersonIcon {
+    background: transparent;
+    border: none;
 }
 
 QLabel#kioskResidentName {

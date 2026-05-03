@@ -95,11 +95,14 @@ def test_main_qss_defines_kiosk_ui_components():
         "QPushButton#kioskGhostButton",
         "QFrame#kioskFooterBar",
         "QFrame#kioskFooterStat",
+        "QWidget#kioskResidentSearchPage",
         "QFrame#kioskSearchInputCard",
         "QLineEdit#kioskSearchInput",
         "QPushButton#kioskSearchSubmitButton",
         "QFrame#kioskResidentResultCard",
+        "QWidget#kioskResidentPersonIcon",
         "QPushButton#kioskResidentActionButton",
+        "QFrame#kioskSearchBottomBar",
         "QFrame#kioskConfirmationSummaryCard",
         "QLabel#kioskReadyChip",
         "QFrame#kioskGuideNoticeCard",
@@ -115,6 +118,9 @@ def test_main_qss_defines_kiosk_ui_components():
         assert selector in qss
     assert "border-top: 12px solid" not in qss
     assert "QFrame#kioskCardAccent" not in qss
+    assert "QWidget#kioskResidentSearchPage {\n    background: #F9F9FF" in qss
+    assert "QFrame#kioskSearchTopBar" in qss
+    assert "QPushButton#kioskSearchFooterButton {\n    min-height: 72px" in qss
 
 
 def test_main_qss_overrides_native_input_subcontrols():

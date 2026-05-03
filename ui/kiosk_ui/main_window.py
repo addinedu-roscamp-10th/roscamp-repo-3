@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -166,6 +166,95 @@ class KioskSearchIconButton(QPushButton):
         painter.drawLine(int(cx + 11), int(cy + 11), int(cx + 28), int(cy + 28))
 
 
+class KioskResidentPersonIcon(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("kioskResidentPersonIcon")
+        self.setFixedSize(56, 56)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        pen = QPen(QColor("#2F855A"), 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        painter.drawEllipse(QRectF(22, 10, 12, 12))
+
+        shoulders = QPainterPath()
+        shoulders.moveTo(14, 42)
+        shoulders.cubicTo(14, 32, 21, 27, 28, 27)
+        shoulders.cubicTo(35, 27, 42, 32, 42, 42)
+        shoulders.lineTo(14, 42)
+        painter.drawPath(shoulders)
+
+
+class KioskNavigationActionButton(QPushButton):
+    def __init__(self, text):
+        super().__init__(text)
+        self.setProperty("iconName", "navigation")
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor("#FFFFFF")))
+
+        center_y = self.height() / 2
+        path = QPainterPath()
+        path.moveTo(36, center_y - 15)
+        path.lineTo(56, center_y)
+        path.lineTo(36, center_y + 15)
+        path.lineTo(42, center_y)
+        path.closeSubpath()
+        painter.drawPath(path)
+
+
+class KioskFooterNavigationButton(QPushButton):
+    def __init__(self, text, icon_name):
+        super().__init__(text)
+        self.icon_name = icon_name
+        self.setProperty("iconName", icon_name)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#111C2D"), 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        text_width = self.fontMetrics().horizontalAdvance(self.text())
+        icon_center_x = int(self.width() / 2 - text_width / 2 - 34)
+        icon_center_y = int(self.height() / 2)
+
+        if self.icon_name == "arrow_back":
+            self._draw_back_icon(painter, icon_center_x, icon_center_y)
+        else:
+            self._draw_home_icon(painter, icon_center_x, icon_center_y)
+
+    def _draw_back_icon(self, painter, x, y):
+        painter.drawLine(x + 14, y, x - 14, y)
+        painter.drawLine(x - 14, y, x - 3, y - 11)
+        painter.drawLine(x - 14, y, x - 3, y + 11)
+
+    def _draw_home_icon(self, painter, x, y):
+        painter.drawLine(x - 15, y - 3, x, y - 17)
+        painter.drawLine(x, y - 17, x + 15, y - 3)
+        painter.drawRoundedRect(QRectF(x - 11, y - 3, 22, 20), 3, 3)
+        painter.drawLine(x - 3, y + 17, x - 3, y + 6)
+        painter.drawLine(x + 3, y + 6, x + 3, y + 17)
+
+
 class KioskFooterStat(QFrame):
     def __init__(self, *, icon_text, title_text, value_text):
         super().__init__()
@@ -206,6 +295,7 @@ class KioskResidentSearchPage(QWidget):
         service=None,
     ):
         super().__init__()
+        self.setObjectName("kioskResidentSearchPage")
         self.go_home_page = go_home_page
         self.go_confirmation_page = go_confirmation_page
         self.go_back_page = go_back_page
@@ -237,7 +327,7 @@ class KioskResidentSearchPage(QWidget):
         header_layout.addLayout(brand_wrap)
         header_layout.addStretch()
 
-        self.call_staff_button = QPushButton("?  직원 호출")
+        self.call_staff_button = QPushButton("직원 호출")
         self.call_staff_button.setObjectName("kioskSearchCallButton")
         self.call_staff_button.setMinimumHeight(72)
 
@@ -297,9 +387,7 @@ class KioskResidentSearchPage(QWidget):
         avatar_layout.setContentsMargins(0, 0, 0, 0)
         avatar_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        avatar_icon = QLabel("♙")
-        avatar_icon.setObjectName("kioskResidentAvatarIcon")
-        avatar_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        avatar_icon = KioskResidentPersonIcon()
         avatar_layout.addWidget(avatar_icon)
 
         info_wrap = QVBoxLayout()
@@ -322,7 +410,7 @@ class KioskResidentSearchPage(QWidget):
         info_wrap.addWidget(self.location_label)
         info_wrap.addWidget(self.visit_label)
 
-        self.start_button = QPushButton("⌁  안내 시작")
+        self.start_button = KioskNavigationActionButton("안내 시작")
         self.start_button.setObjectName("kioskResidentActionButton")
         self.start_button.setMinimumHeight(72)
         self.start_button.clicked.connect(self.start_guidance)
@@ -343,12 +431,12 @@ class KioskResidentSearchPage(QWidget):
         action_row.setContentsMargins(56, 20, 56, 20)
         action_row.setSpacing(24)
 
-        self.back_button = QPushButton("←  이전")
+        self.back_button = KioskFooterNavigationButton("이전", "arrow_back")
         self.back_button.setObjectName("kioskSearchFooterButton")
         self.back_button.setMinimumHeight(72)
         self.back_button.clicked.connect(self._go_back)
 
-        self.home_button = QPushButton("⌂  처음으로")
+        self.home_button = KioskFooterNavigationButton("처음으로", "home")
         self.home_button.setObjectName("kioskSearchFooterButton")
         self.home_button.setMinimumHeight(72)
         self.home_button.clicked.connect(self._go_home)

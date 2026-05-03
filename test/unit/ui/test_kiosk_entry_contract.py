@@ -182,8 +182,12 @@ def test_kiosk_resident_search_ports_wireframe_header_buttons_and_icons():
     page = KioskResidentSearchPage()
 
     try:
+        assert page.objectName() == "kioskResidentSearchPage"
+
         root_layout = page.layout()
         assert root_layout.itemAt(0).widget().objectName() == "kioskSearchTopBar"
+
+        assert page.call_staff_button.text() == "직원 호출"
 
         assert page.search_button.text() == ""
         assert page.search_button.property("iconName") == "search"
@@ -194,13 +198,17 @@ def test_kiosk_resident_search_ports_wireframe_header_buttons_and_icons():
         assert search_card is not None
         assert search_card.minimumHeight() >= 88
 
-        assert page.back_button.text().startswith("← ")
-        assert page.home_button.text().startswith("⌂ ")
+        assert page.back_button.text() == "이전"
+        assert page.back_button.property("iconName") == "arrow_back"
+        assert page.home_button.text() == "처음으로"
+        assert page.home_button.property("iconName") == "home"
         assert page.back_button.minimumHeight() >= 72
         assert page.home_button.minimumHeight() >= 72
 
-        avatar_icon = page.findChild(QLabel, "kioskResidentAvatarIcon")
+        avatar_icon = page.findChild(QWidget, "kioskResidentPersonIcon")
         assert avatar_icon is not None
-        assert avatar_icon.text() == "♙"
+
+        assert page.start_button.text() == "안내 시작"
+        assert page.start_button.property("iconName") == "navigation"
     finally:
         page.close()
