@@ -25,7 +25,7 @@ def test_main_qss_defines_shared_admin_shell_components():
 
     assert "QFrame#adminSidebar" in qss
     assert "QFrame#pageHeader" in qss
-    assert "QLabel#pageHeaderEyebrow" in qss
+    assert "QLabel#pageHeaderEyebrow" not in qss
     assert "QFrame#systemStatusStrip" in qss
     assert "QLabel#systemStatusOnline" in qss
     assert "QLabel#systemStatusWarning" in qss

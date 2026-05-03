@@ -44,7 +44,7 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         time_card = page.findChild(QFrame, "homeTimeCard")
         assert header is not None
         assert time_card is not None
-        assert "실시간 운영 요약" in labels
+        assert "실시간 운영 요약" not in labels
         assert page.status_banner.parentWidget() is page
         assert page.status_banner.maximumHeight() <= 128
         assert "운영 대시보드" in labels

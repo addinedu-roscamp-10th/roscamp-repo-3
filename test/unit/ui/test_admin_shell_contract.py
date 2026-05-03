@@ -63,7 +63,7 @@ def test_shared_admin_shell_components_expose_ropi_contract():
         assert side_buttons == [label for _, label in NAV_ITEMS]
 
         assert header.objectName() == "pageHeader"
-        assert header.findChild(QLabel, "pageHeaderEyebrow").text() == "관리자 콘솔"
+        assert header.findChild(QLabel, "pageHeaderEyebrow") is None
         assert header.findChild(QLabel, "pageTitle").text() == "작업 현황"
         assert header.findChild(QLabel, "pageSubtitle").text() == "전체 시나리오 상태"
         assert header.findChild(QFrame, "systemStatusStrip") is None

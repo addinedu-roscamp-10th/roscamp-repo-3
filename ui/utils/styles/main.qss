@@ -210,13 +210,6 @@ QFrame#pageHeader {
     padding: 0;
 }
 
-QLabel#pageHeaderEyebrow {
-    color: #005C55;
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: 0.5px;
-}
-
 QLabel#pageTitle {
     color: #16202A;
     font-size: 28px;

@@ -613,7 +613,6 @@ class CaregiverHomePage(QWidget):
             "운영 대시보드",
             "현재 로봇 상태와 작업 흐름을 한눈에 확인합니다.",
             show_status=True,
-            eyebrow="실시간 운영 요약",
         )
 
         top.addWidget(self.header, 1)
