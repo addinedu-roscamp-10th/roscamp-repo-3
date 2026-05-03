@@ -23,6 +23,12 @@ class CaregiverService:
         "PICKUP": "픽업 로봇팔",
         "DESTINATION": "목적지 로봇팔",
     }
+    MOBILE_ROBOT_CAPABILITIES = ["GUIDE", "DELIVERY", "PATROL"]
+    ARM_ROBOT_CAPABILITIES = ["MANIPULATION"]
+    FIXED_STATION_ROLES = {
+        "jetcobot1": [{"task_type": "DELIVERY", "station_role": "PICKUP"}],
+        "jetcobot2": [{"task_type": "DELIVERY", "station_role": "DESTINATION"}],
+    }
 
     def __init__(self, repository=None):
         self.repo = repository or CaregiverRepository()
@@ -138,12 +144,8 @@ class CaregiverService:
                     "display_name": CaregiverService._display_name(row),
                     "robot_type": CaregiverService._robot_type(row),
                     "manager_group": row.get("robot_manager_name") or "-",
-                    "capabilities": CaregiverService._csv_values(
-                        row.get("capability_codes")
-                    ),
-                    "station_roles": CaregiverService._station_roles(
-                        row.get("station_assignments")
-                    ),
+                    "capabilities": CaregiverService._capabilities(row),
+                    "station_roles": CaregiverService._station_roles(row),
                     "connection_status": connection_status,
                     "runtime_state": status,
                     "battery_percent": battery_percent,
@@ -294,28 +296,16 @@ class CaregiverService:
             return "ARM"
         return "MOBILE"
 
-    @staticmethod
-    def _csv_values(value):
-        return [
-            item.strip()
-            for item in str(value or "").split(",")
-            if item and item.strip()
-        ]
+    @classmethod
+    def _capabilities(cls, row):
+        if cls._robot_type(row) == "ARM":
+            return list(cls.ARM_ROBOT_CAPABILITIES)
+        return list(cls.MOBILE_ROBOT_CAPABILITIES)
 
-    @staticmethod
-    def _station_roles(value):
-        station_roles = []
-        for item in CaregiverService._csv_values(value):
-            if ":" not in item:
-                continue
-            task_type, station_role = item.split(":", 1)
-            task_type = task_type.strip().upper()
-            station_role = station_role.strip().upper()
-            if task_type and station_role:
-                station_roles.append(
-                    {"task_type": task_type, "station_role": station_role}
-                )
-        return station_roles
+    @classmethod
+    def _station_roles(cls, row):
+        robot_id = str(row.get("robot_id") or "").strip()
+        return [dict(role) for role in cls.FIXED_STATION_ROLES.get(robot_id, [])]
 
     @classmethod
     def _delivery_composition(cls, robots):

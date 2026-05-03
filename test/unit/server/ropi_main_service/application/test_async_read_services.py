@@ -239,8 +239,6 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
             "robot_id": "pinky2",
             "robot_type_name": "Pinky Pro",
             "robot_manager_name": "모바일팀",
-            "capability_codes": "DELIVERY,PATROL",
-            "station_assignments": None,
             "robot_status": "RUNNING",
             "current_location": "x=1.0, y=2.0",
             "battery_percent": 87.5,
@@ -255,8 +253,6 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
             "robot_id": "jetcobot1",
             "robot_type_name": "JetCobot",
             "robot_manager_name": "운반팀",
-            "capability_codes": "MANIPULATION",
-            "station_assignments": "DELIVERY:PICKUP",
             "robot_status": "ERROR",
             "current_location": None,
             "battery_percent": None,
@@ -271,8 +267,6 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
             "robot_id": "pinky3",
             "robot_type_name": "Pinky Pro",
             "robot_manager_name": "모바일팀",
-            "capability_codes": "DELIVERY,PATROL",
-            "station_assignments": None,
             "robot_status": "IDLE",
             "current_location": None,
             "battery_percent": 55,
@@ -298,7 +292,7 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
     assert bundle["robots"][0]["robot_type"] == "MOBILE"
     assert "scenario_role" not in bundle["robots"][0]
     assert bundle["robots"][0]["manager_group"] == "모바일팀"
-    assert bundle["robots"][0]["capabilities"] == ["DELIVERY", "PATROL"]
+    assert bundle["robots"][0]["capabilities"] == ["GUIDE", "DELIVERY", "PATROL"]
     assert bundle["robots"][0]["connection_status"] == "ONLINE"
     assert bundle["robots"][0]["current_phase"] == "DELIVERY_DESTINATION"
     assert bundle["robots"][1]["station_roles"] == [
@@ -331,7 +325,7 @@ def test_caregiver_service_marks_stale_runtime_offline_and_hides_ip_location():
         {
             "robot_id": "pinky3",
             "robot_type_name": "Pinky Pro",
-            "robot_manager_name": "순찰팀",
+            "robot_manager_name": "모바일팀",
             "robot_status": "IDLE",
             "current_location": "192.168.0.13",
             "battery_percent": 80,

@@ -58,8 +58,6 @@ def test_schema_contains_control_task_and_log_tables():
         "task_state_history",
         "task_event_log",
         "command_execution",
-        "robot_capability",
-        "robot_station_assignment",
         "robot_runtime_status",
         "robot_data_log",
         "ai_inference_log",
@@ -192,28 +190,25 @@ def test_schema_contains_expected_indexes():
         assert index_name in ddl
 
 
-def test_robot_schema_separates_capabilities_and_station_assignments():
+def test_robot_schema_does_not_add_capability_or_station_assignment_tables():
     ddl = _ddl()
     seed_sql = _seed_sql()
 
-    assert "CREATE TABLE `robot_capability`" in ddl
-    assert "`capability_code` VARCHAR(50) NOT NULL" in ddl
-    assert "`is_enabled` TINYINT(1) NOT NULL DEFAULT 1" in ddl
-    assert "CONSTRAINT `fk_robot_capability_robot`" in ddl
-    assert "idx_robot_capability_code" in ddl
+    assert "CREATE TABLE `robot_capability`" not in ddl
+    assert "CREATE TABLE `robot_station_assignment`" not in ddl
+    assert "INSERT INTO `robot_capability`" not in seed_sql
+    assert "INSERT INTO `robot_station_assignment`" not in seed_sql
 
-    assert "CREATE TABLE `robot_station_assignment`" in ddl
-    assert "`task_type` VARCHAR(30) NOT NULL" in ddl
-    assert "`station_role` VARCHAR(30) NOT NULL" in ddl
-    assert "CONSTRAINT `fk_robot_station_assignment_robot`" in ddl
-    assert "idx_robot_station_assignment_task_role" in ddl
 
-    assert "INSERT INTO `robot_capability`" in seed_sql
-    assert "INSERT INTO `robot_station_assignment`" in seed_sql
-    assert "('pinky2', 'DELIVERY'" in seed_sql
-    assert "('pinky3', 'PATROL'" in seed_sql
-    assert "('jetcobot1', 'DELIVERY', 'PICKUP'" in seed_sql
-    assert "('jetcobot2', 'DELIVERY', 'DESTINATION'" in seed_sql
+def test_dummy_robot_seed_does_not_encode_fixed_pinky_scenario_roles():
+    seed_sql = _seed_sql()
+
+    assert "('pinky1', 'Pinky Pro', '192.168.0.101',\n 'IDLE', '모바일팀'" in seed_sql
+    assert "('pinky2', 'Pinky Pro', '192.168.0.102',\n 'IDLE', '모바일팀'" in seed_sql
+    assert "('pinky3', 'Pinky Pro', '192.168.0.103',\n 'IDLE', '모바일팀'" in seed_sql
+    assert "('pinky1', 'Pinky Pro', '192.168.0.101',\n 'IDLE', '안내팀'" not in seed_sql
+    assert "('pinky2', 'Pinky Pro', '192.168.0.102',\n 'IDLE', '운반팀'" not in seed_sql
+    assert "('pinky3', 'Pinky Pro', '192.168.0.103',\n 'IDLE', '순찰팀'" not in seed_sql
 
 
 def test_dummy_data_targets_current_schema_tables():
@@ -227,8 +222,6 @@ def test_dummy_data_targets_current_schema_tables():
         "prescription",
         "member_event",
         "robot",
-        "robot_capability",
-        "robot_station_assignment",
         "item",
         "map_profile",
         "operation_zone",

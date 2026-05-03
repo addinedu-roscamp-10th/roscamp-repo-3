@@ -18,8 +18,6 @@ DELETE FROM `operation_zone`;
 DELETE FROM `patrol_area`;
 DELETE FROM `map_profile`;
 DELETE FROM `item`;
-DELETE FROM `robot_station_assignment`;
-DELETE FROM `robot_capability`;
 DELETE FROM `member_event`;
 DELETE FROM `prescription`;
 DELETE FROM `preference`;
@@ -123,36 +121,19 @@ INSERT INTO `robot`
  `created_at`, `updated_at`)
 VALUES
 ('pinky1', 'Pinky Pro', '192.168.0.101',
- 'IDLE', '안내팀', NOW(), NOW()),
+ 'IDLE', '모바일팀', NOW(), NOW()),
 
 ('pinky2', 'Pinky Pro', '192.168.0.102',
- 'IDLE', '운반팀', NOW(), NOW()),
+ 'IDLE', '모바일팀', NOW(), NOW()),
 
 ('pinky3', 'Pinky Pro', '192.168.0.103',
- 'IDLE', '순찰팀', NOW(), NOW()),
+ 'IDLE', '모바일팀', NOW(), NOW()),
 
 ('jetcobot1', 'JetCobot', '192.168.0.111',
  'IDLE', '운반팀', NOW(), NOW()),
 
 ('jetcobot2', 'JetCobot', '192.168.0.112',
  'IDLE', '운반팀', NOW(), NOW());
-
-INSERT INTO `robot_capability`
-(`robot_id`, `capability_code`, `is_enabled`, `created_at`, `updated_at`)
-VALUES
-('pinky1', 'GUIDE', 1, NOW(), NOW()),
-('pinky2', 'DELIVERY', 1, NOW(), NOW()),
-('pinky2', 'PATROL', 1, NOW(), NOW()),
-('pinky3', 'DELIVERY', 1, NOW(), NOW()),
-('pinky3', 'PATROL', 1, NOW(), NOW()),
-('jetcobot1', 'MANIPULATION', 1, NOW(), NOW()),
-('jetcobot2', 'MANIPULATION', 1, NOW(), NOW());
-
-INSERT INTO `robot_station_assignment`
-(`robot_id`, `task_type`, `station_role`, `is_enabled`, `created_at`, `updated_at`)
-VALUES
-('jetcobot1', 'DELIVERY', 'PICKUP', 1, NOW(), NOW()),
-('jetcobot2', 'DELIVERY', 'DESTINATION', 1, NOW(), NOW());
 
 -- =========================
 -- item

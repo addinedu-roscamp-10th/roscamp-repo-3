@@ -37,7 +37,7 @@ def _bundle():
                 "display_name": "Pinky Pro",
                 "robot_type": "MOBILE",
                 "manager_group": "모바일팀",
-                "capabilities": ["DELIVERY", "PATROL"],
+                "capabilities": ["GUIDE", "DELIVERY", "PATROL"],
                 "station_roles": [],
                 "connection_status": "ONLINE",
                 "runtime_state": "RUNNING",
@@ -116,7 +116,7 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert "pinky2" in labels
         assert "Pinky Pro" in labels
         assert "모바일팀" in labels
-        assert "DELIVERY, PATROL" in labels
+        assert "GUIDE, DELIVERY, PATROL" in labels
         assert "픽업 로봇팔" in labels
         assert "pinky2" in labels
         assert "ROS adapter arm_id" in labels
@@ -128,7 +128,7 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert page.table.rowCount() == 2
         assert page.table.item(0, 0).text() == "pinky2"
         assert page.table.item(0, 2).text() == "MOBILE"
-        assert page.table.item(0, 4).text() == "DELIVERY, PATROL"
+        assert page.table.item(0, 4).text() == "GUIDE, DELIVERY, PATROL"
         assert page.table.item(0, 5).text() == "ONLINE"
 
         page.table.selectRow(1)
