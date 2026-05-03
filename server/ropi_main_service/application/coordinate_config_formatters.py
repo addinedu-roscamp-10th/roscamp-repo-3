@@ -1,12 +1,12 @@
-import json
-from datetime import date, datetime
-
-
-def generated_at(clock):
-    value = clock()
-    if isinstance(value, datetime):
-        return value.isoformat()
-    return str(value)
+from server.ropi_main_service.application.formatting import (
+    bool_value,
+    generated_at,
+    isoformat,
+    json_object,
+    normalize_optional_text,
+    optional_float,
+    optional_int,
+)
 
 
 def format_map_profile(row):
@@ -95,66 +95,6 @@ def format_patrol_area(row, *, include_patrol_path):
         "created_at": isoformat(row.get("created_at")),
         "updated_at": isoformat(row.get("updated_at")),
     }
-
-
-def json_object(value):
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, bytes):
-        value = value.decode("utf-8")
-    if isinstance(value, str):
-        try:
-            loaded = json.loads(value)
-        except json.JSONDecodeError:
-            return {}
-        return loaded if isinstance(loaded, dict) else {}
-    return {}
-
-
-def bool_value(value):
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return value != 0
-    text = str(value or "").strip().lower()
-    if text in {"1", "true", "yes", "y"}:
-        return True
-    if text in {"0", "false", "no", "n", ""}:
-        return False
-    return bool(value)
-
-
-def optional_int(value):
-    if value in (None, ""):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def optional_float(value):
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def normalize_optional_text(value):
-    text = str(value or "").strip()
-    return text or None
-
-
-def isoformat(value):
-    if value in (None, ""):
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    return str(value)
 
 
 __all__ = [

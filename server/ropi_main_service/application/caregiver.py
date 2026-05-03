@@ -1,6 +1,11 @@
-import json
 from datetime import datetime, time, timedelta
 
+from server.ropi_main_service.application.formatting import (
+    bounded_int,
+    isoformat,
+    json_object,
+    normalize_optional_text,
+)
 from server.ropi_main_service.persistence.repositories.caregiver_repository import CaregiverRepository
 
 
@@ -67,12 +72,12 @@ class CaregiverService:
     ):
         rows = self.repo.get_alert_logs(
             period_start=self._alert_log_period_start(period),
-            severity=self._clean_filter(severity),
-            source_component=self._clean_filter(source_component),
-            task_id=self._clean_filter(task_id),
-            robot_id=self._clean_filter(robot_id),
-            event_type=self._clean_filter(event_type),
-            limit=self._alert_log_limit(limit),
+            severity=normalize_optional_text(severity),
+            source_component=normalize_optional_text(source_component),
+            task_id=normalize_optional_text(task_id),
+            robot_id=normalize_optional_text(robot_id),
+            event_type=normalize_optional_text(event_type),
+            limit=bounded_int(limit, default=100, minimum=1, maximum=200),
         )
         return self._format_alert_log_bundle(rows)
 
@@ -89,12 +94,12 @@ class CaregiverService:
     ):
         rows = await self.repo.async_get_alert_logs(
             period_start=self._alert_log_period_start(period),
-            severity=self._clean_filter(severity),
-            source_component=self._clean_filter(source_component),
-            task_id=self._clean_filter(task_id),
-            robot_id=self._clean_filter(robot_id),
-            event_type=self._clean_filter(event_type),
-            limit=self._alert_log_limit(limit),
+            severity=normalize_optional_text(severity),
+            source_component=normalize_optional_text(source_component),
+            task_id=normalize_optional_text(task_id),
+            robot_id=normalize_optional_text(robot_id),
+            event_type=normalize_optional_text(event_type),
+            limit=bounded_int(limit, default=100, minimum=1, maximum=200),
         )
         return self._format_alert_log_bundle(rows)
 
@@ -183,7 +188,7 @@ class CaregiverService:
     def _format_alert_log_event(cls, row):
         return {
             "event_id": row.get("event_id"),
-            "occurred_at": cls._isoformat(row.get("occurred_at")),
+            "occurred_at": isoformat(row.get("occurred_at"), none_value=""),
             "severity": row.get("severity") or "INFO",
             "source_component": row.get("source_component") or "-",
             "task_id": row.get("task_id"),
@@ -192,7 +197,7 @@ class CaregiverService:
             "result_code": row.get("result_code"),
             "reason_code": row.get("reason_code"),
             "message": row.get("message") or "",
-            "payload": cls._json_object(row.get("payload_json")),
+            "payload": json_object(row.get("payload_json")),
         }
 
     @staticmethod
@@ -206,41 +211,6 @@ class CaregiverService:
         if normalized == "TODAY":
             return datetime.combine(now.date(), time.min)
         return now - timedelta(hours=24)
-
-    @staticmethod
-    def _alert_log_limit(limit):
-        try:
-            value = int(limit)
-        except (TypeError, ValueError):
-            value = 100
-        return max(1, min(value, 200))
-
-    @staticmethod
-    def _clean_filter(value):
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
-
-    @staticmethod
-    def _json_object(value):
-        if isinstance(value, dict):
-            return value
-        if not value:
-            return {}
-        try:
-            parsed = json.loads(value)
-        except (TypeError, ValueError):
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-
-    @staticmethod
-    def _isoformat(value):
-        if value is None:
-            return ""
-        if hasattr(value, "isoformat"):
-            return value.isoformat()
-        return str(value)
 
     @staticmethod
     def _connection_status(row, runtime_state):

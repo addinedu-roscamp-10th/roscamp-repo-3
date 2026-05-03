@@ -354,10 +354,12 @@ def test_caregiver_service_alert_log_bundle_formats_operator_events():
 
 
 def test_caregiver_service_alert_log_period_and_limit_normalization():
+    from server.ropi_main_service.application.formatting import bounded_int
+
     assert CaregiverService._alert_log_period_start("ALL") is None
-    assert CaregiverService._alert_log_limit(0) == 1
-    assert CaregiverService._alert_log_limit(500) == 200
-    assert CaregiverService._alert_log_limit("50") == 50
+    assert bounded_int(0, default=100, minimum=1, maximum=200) == 1
+    assert bounded_int(500, default=100, minimum=1, maximum=200) == 200
+    assert bounded_int("50", default=100, minimum=1, maximum=200) == 50
 
 
 def test_caregiver_flow_board_keeps_cancel_requested_in_running_lane():

@@ -1,3 +1,8 @@
+from server.ropi_main_service.application.formatting import (
+    isoformat,
+    normalize_optional_text,
+    optional_int,
+)
 from server.ropi_main_service.persistence.repositories.inventory_repository import InventoryRepository
 
 
@@ -23,7 +28,7 @@ class InventoryService:
 
     def add_item_quantity(self, item_id, quantity_delta):
         item_id = self._normalize_item_id(item_id)
-        quantity_delta = self._to_int(quantity_delta)
+        quantity_delta = optional_int(quantity_delta)
 
         if not item_id:
             return self._mutation_error("ITEM_ID_INVALID", "item_id가 필요합니다.")
@@ -51,7 +56,7 @@ class InventoryService:
 
     async def async_add_item_quantity(self, item_id, quantity_delta):
         item_id = self._normalize_item_id(item_id)
-        quantity_delta = self._to_int(quantity_delta)
+        quantity_delta = optional_int(quantity_delta)
 
         if not item_id:
             return self._mutation_error("ITEM_ID_INVALID", "item_id가 필요합니다.")
@@ -79,7 +84,7 @@ class InventoryService:
 
     def set_item_quantity(self, item_id, quantity):
         item_id = self._normalize_item_id(item_id)
-        quantity = self._to_int(quantity)
+        quantity = optional_int(quantity)
 
         if not item_id:
             return self._mutation_error("ITEM_ID_INVALID", "item_id가 필요합니다.")
@@ -107,7 +112,7 @@ class InventoryService:
 
     async def async_set_item_quantity(self, item_id, quantity):
         item_id = self._normalize_item_id(item_id)
-        quantity = self._to_int(quantity)
+        quantity = optional_int(quantity)
 
         if not item_id:
             return self._mutation_error("ITEM_ID_INVALID", "item_id가 필요합니다.")
@@ -201,8 +206,8 @@ class InventoryService:
             "item_id": cls._normalize_item_id(row.get("item_id")),
             "item_type": str(item_type).strip(),
             "item_name": str(row.get("item_name") or "").strip(),
-            "quantity": cls._to_int(row.get("quantity")) or 0,
-            "updated_at": cls._isoformat(row.get("updated_at")),
+            "quantity": optional_int(row.get("quantity")) or 0,
+            "updated_at": isoformat(row.get("updated_at")),
         }
 
     @staticmethod
@@ -219,22 +224,7 @@ class InventoryService:
 
     @staticmethod
     def _normalize_item_id(item_id):
-        return str(item_id or "").strip()
-
-    @staticmethod
-    def _to_int(value):
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _isoformat(value):
-        if value is None:
-            return None
-        if hasattr(value, "isoformat"):
-            return value.isoformat()
-        return str(value)
+        return normalize_optional_text(item_id) or ""
 
 
 __all__ = ["InventoryService", "LOW_STOCK_THRESHOLD"]
