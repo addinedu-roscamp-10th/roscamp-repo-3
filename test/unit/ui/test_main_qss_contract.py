@@ -108,6 +108,7 @@ def test_main_qss_defines_kiosk_ui_components():
         "QLineEdit#kioskSearchInput",
         "QPushButton#kioskSearchSubmitButton",
         "QWidget#kioskResidentPersonIcon",
+        "QLabel#kioskResidentRoom",
         "QFrame#kioskSearchBottomBar",
         "QFrame#kioskConfirmationSummaryCard",
         "QLabel#kioskReadyChip",

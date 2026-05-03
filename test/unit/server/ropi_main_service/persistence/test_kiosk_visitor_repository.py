@@ -32,6 +32,7 @@ def test_kiosk_visitor_repository_async_lookup_formats_safe_candidates(monkeypat
             "member_id": 1,
             "display_name": "김*수",
             "birth_date": "1942-03-14",
+            "room_no": "301",
             "visit_available": True,
             "guide_available": True,
         }

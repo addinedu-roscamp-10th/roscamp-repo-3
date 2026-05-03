@@ -183,6 +183,7 @@ class KioskVisitorRepository:
             "member_id": int(row["member_id"]),
             "display_name": cls._mask_display_name(row.get("member_name") or "-"),
             "birth_date": cls._format_date(row.get("birth_date")),
+            "room_no": row.get("room_no"),
             "visit_available": True,
             "guide_available": True,
         }

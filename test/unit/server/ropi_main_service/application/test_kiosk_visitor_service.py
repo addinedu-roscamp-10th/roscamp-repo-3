@@ -39,6 +39,7 @@ class FakeKioskVisitorRepository:
                 "member_id": 1,
                 "display_name": "김*수",
                 "birth_date": "1942-03-14",
+                "room_no": "301",
                 "visit_available": True,
                 "guide_available": True,
             }
@@ -90,6 +91,7 @@ def test_lookup_residents_returns_if_gui_007_shape():
                 "member_id": 1,
                 "display_name": "김*수",
                 "birth_date": "1942-03-14",
+                "room_no": "301",
                 "visit_available": True,
                 "guide_available": True,
             }

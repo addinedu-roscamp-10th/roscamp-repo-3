@@ -304,8 +304,9 @@ def test_kiosk_visitor_registration_lookup_and_register_hits_real_server_and_db(
         assert page.selected_resident is not None
         assert page.selected_resident["member_id"] == int(member_row["member_id"])
         assert page.selected_resident["birth_date"] == str(member_row["birth_date"])
+        assert page.selected_resident["room_no"] == str(member_row["room_no"])
         assert "어르신" in page.resident_name_label.text()
-        assert str(member_row["room_no"]) not in " ".join(_visible_texts(page))
+        assert f"{member_row['room_no']}호" in " ".join(_visible_texts(page))
 
         page.register_visit()
 

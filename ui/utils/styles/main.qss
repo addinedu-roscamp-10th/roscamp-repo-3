@@ -1472,8 +1472,13 @@ QLabel#kioskResidentName {
     font-weight: 900;
 }
 
+QLabel#kioskResidentRoom {
+    color: #2B6CB0;
+    font-size: 20px;
+    font-weight: 900;
+}
+
 QLabel#kioskResidentMeta,
-QLabel#kioskSearchStatusText,
 QLabel#kioskStatusText {
     color: #64748B;
     font-size: 18px;

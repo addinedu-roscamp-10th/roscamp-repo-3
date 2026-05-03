@@ -556,11 +556,15 @@ class KioskVisitorRegistrationPage(QWidget):
         self.resident_birth_label = QLabel("생년월일 -")
         self.resident_birth_label.setObjectName("kioskResidentMeta")
 
+        self.resident_room_label = QLabel("호실 -")
+        self.resident_room_label.setObjectName("kioskResidentRoom")
+
         self.resident_visit_label = QLabel("방문 상태 -")
         self.resident_visit_label.setObjectName("kioskResidentMeta")
 
         resident_text.addWidget(self.resident_name_label)
         resident_text.addWidget(self.resident_birth_label)
+        resident_text.addWidget(self.resident_room_label)
         resident_text.addWidget(self.resident_visit_label)
 
         summary_layout.addWidget(avatar)
@@ -576,12 +580,6 @@ class KioskVisitorRegistrationPage(QWidget):
 
         content_row.addWidget(form_card, 1)
         content_row.addWidget(resident_card, 1)
-
-        self.status_label = QLabel("")
-        self.status_label.setObjectName("kioskSearchStatusText")
-        self.status_label.setWordWrap(True)
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setVisible(False)
 
         page_shell.addWidget(title)
         page_shell.addWidget(subtitle)
@@ -760,12 +758,13 @@ class KioskVisitorRegistrationPage(QWidget):
             "guide_available": bool(self.selected_resident.get("guide_available")),
         }
 
-    @staticmethod
-    def _resident_from_lookup_match(match):
+    @classmethod
+    def _resident_from_lookup_match(cls, match):
         return {
             "member_id": int(match["member_id"]),
             "display_name": str(match.get("display_name") or "-").strip() or "-",
             "birth_date": str(match.get("birth_date") or "-").strip() or "-",
+            "room_no": cls._normalize_room(match.get("room_no")),
             "visit_available": bool(match.get("visit_available", True)),
             "guide_available": bool(match.get("guide_available", True)),
         }
@@ -773,6 +772,7 @@ class KioskVisitorRegistrationPage(QWidget):
     def _show_resident_result(self, resident):
         self.resident_name_label.setText(f"{resident['display_name']} 어르신")
         self.resident_birth_label.setText(f"생년월일 {resident['birth_date']}")
+        self.resident_room_label.setText(self._format_room_label(resident.get("room_no")))
         self.resident_visit_label.setText(
             "방문 등록 가능" if resident.get("visit_available") else "방문 제한"
         )
@@ -780,6 +780,7 @@ class KioskVisitorRegistrationPage(QWidget):
     def _clear_resident_result(self):
         self.resident_name_label.setText("선택된 어르신이 없습니다")
         self.resident_birth_label.setText("생년월일 -")
+        self.resident_room_label.setText("호실 -")
         self.resident_visit_label.setText("방문 상태 -")
 
     def _on_visitor_context_changed(self):
@@ -790,8 +791,35 @@ class KioskVisitorRegistrationPage(QWidget):
         self._sync_action_state()
 
     def _set_status(self, text, *, visible=True):
-        self.status_label.setText(text)
-        self.status_label.setVisible(bool(visible and text))
+        if not visible or not text:
+            return
+
+        if "방문자 정보와 개인정보" in text:
+            self._show_resident_message(
+                "방문자 정보 입력 필요",
+                "방문자 정보와 개인정보 동의를 먼저 완료해 주세요.",
+            )
+            return
+        if "만나실 어르신" in text:
+            self._show_resident_message("어르신 검색 필요", text)
+            return
+        if "일치하는" in text:
+            self._show_resident_message(
+                "검색 결과가 없습니다",
+                "이름 또는 호실을 다시 확인해 주세요.",
+            )
+            return
+        if "오류" in text or "실패" in text:
+            self._show_resident_message("처리 실패", text)
+            return
+
+        self._show_resident_message("안내", text)
+
+    def _show_resident_message(self, title, detail):
+        self.resident_name_label.setText(title)
+        self.resident_birth_label.setText(detail)
+        self.resident_room_label.setText("호실 -")
+        self.resident_visit_label.setText("방문 상태 -")
 
     def select_visit_purpose(self, purpose_key):
         option = next(
@@ -849,6 +877,13 @@ class KioskVisitorRegistrationPage(QWidget):
         if room.endswith("호"):
             room = room[:-1].strip()
         return room or "-"
+
+    @classmethod
+    def _format_room_label(cls, room_no):
+        room = cls._normalize_room(room_no)
+        if room == "-":
+            return "호실 -"
+        return f"호실 {room}호"
 
     def _go_home(self):
         if self.go_home_page:

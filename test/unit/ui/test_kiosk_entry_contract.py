@@ -132,6 +132,7 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
                         "member_id": 1,
                         "display_name": "김*수",
                         "birth_date": "1942-03-14",
+                        "room_no": "301",
                         "visit_available": True,
                         "guide_available": True,
                     }
@@ -185,7 +186,7 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
         assert page.register_button.isEnabled() is False
         assert page.selected_visit_purpose is None
         assert len(page.purpose_cards) == 4
-        assert page.status_label.text() == ""
+        assert page.findChild(QLabel, "kioskSearchStatusText") is None
         assert all(card.minimumHeight() >= 96 for card in page.purpose_cards.values())
         assert all(card.maximumHeight() == 96 for card in page.purpose_cards.values())
         assert all(
@@ -226,13 +227,14 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
             "member_id": 1,
             "display_name": "김*수",
             "birth_date": "1942-03-14",
+            "room_no": "301",
             "visit_available": True,
             "guide_available": True,
         }
         assert page.resident_name_label.text() == "김*수 어르신"
         assert page.resident_birth_label.text() == "생년월일 1942-03-14"
-        assert "301" not in " ".join(_visible_texts(page))
-        assert "어르신 정보를 확인했습니다" not in page.status_label.text()
+        assert page.resident_room_label.text() == "호실 301호"
+        assert "301호" in " ".join(_visible_texts(page))
         assert "어르신 정보를 확인했습니다" not in " ".join(_visible_texts(page))
         assert page.register_button.isEnabled() is True
 
@@ -287,6 +289,41 @@ def test_kiosk_visitor_registration_blocks_resident_lookup_until_visitor_context
 
         assert page.search_button.isEnabled() is False
         assert page.selected_resident is None
-        assert "방문자 정보와 개인정보 동의" in page.status_label.text()
+        assert page.resident_name_label.text() == "방문자 정보 입력 필요"
+        assert "방문자 정보와 개인정보 동의" in page.resident_birth_label.text()
+    finally:
+        page.close()
+
+
+def test_kiosk_visitor_registration_shows_no_match_inline_without_status_popup():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskVisitorRegistrationPage
+
+    class FakeKioskVisitorService:
+        def lookup_residents(self, *, keyword, limit=10):
+            return {
+                "result_code": "NO_MATCH",
+                "result_message": "일치하는 어르신 정보가 없습니다.",
+                "reason_code": "RESIDENT_NOT_FOUND",
+                "matches": [],
+            }
+
+    page = KioskVisitorRegistrationPage(service=FakeKioskVisitorService())
+
+    try:
+        page.visitor_name_input.setText("김민수")
+        page.phone_input.setText("010-1111-2222")
+        page.relationship_input.setText("아들")
+        page.select_visit_purpose("family")
+        page.privacy_checkbox.setChecked(True)
+        page.resident_search_input.setText("999")
+        page.search_resident()
+
+        texts = " ".join(_visible_texts(page))
+        assert page.findChild(QLabel, "kioskSearchStatusText") is None
+        assert page.resident_name_label.text() == "검색 결과가 없습니다"
+        assert page.resident_birth_label.text() == "이름 또는 호실을 다시 확인해 주세요."
+        assert "일치하는 어르신 정보가 없습니다." not in texts
     finally:
         page.close()
