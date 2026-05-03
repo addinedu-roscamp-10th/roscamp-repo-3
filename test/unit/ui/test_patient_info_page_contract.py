@@ -1,9 +1,10 @@
 import os
+from datetime import datetime
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel
+from PyQt6.QtWidgets import QApplication, QLabel, QFrame
 
 
 _APP = None
@@ -80,6 +81,69 @@ def test_patient_info_page_resets_and_shutdowns_lookup_worker():
         assert page.name_input.text() == ""
         assert page.room_input.text() == ""
         assert page.member_value.text() == "-"
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_patient_info_page_updates_search_preview_from_inputs():
+    _app()
+
+    from ui.utils.pages.caregiver.patient_info_page import PatientInfoPage
+
+    page = PatientInfoPage()
+
+    try:
+        preview_card = page.findChild(QFrame, "patientSearchPreviewCard")
+        assert preview_card is not None
+        assert "조회 미리보기" in _label_texts(page)
+
+        page.name_input.setText("김환자")
+        page.room_input.setText("301")
+
+        assert page.preview_name_value.text() == "김환자"
+        assert page.preview_room_value.text() == "301"
+        assert page.preview_status_value.text() == "조회 가능"
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_patient_info_page_handles_numeric_payload_without_crashing():
+    _app()
+
+    from ui.utils.pages.caregiver.patient_info_page import PatientInfoPage
+
+    page = PatientInfoPage()
+
+    try:
+        page.lookup_request_id = 3
+        page._handle_lookup_result(
+            3,
+            True,
+            {
+                "member_id": 301,
+                "name": "김환자",
+                "room_no": "301",
+                "admission_date": datetime(2026, 5, 3, 9, 30),
+                "preference": "따뜻한 차",
+                "dislike": "소음",
+                "comment": "낙상 주의",
+                "events": [
+                    {
+                        "event_at": datetime(2026, 5, 3, 10, 0),
+                        "description": "아침 식사 완료",
+                    }
+                ],
+                "prescription_paths": [Path("/tmp/prescription.png")],
+            },
+        )
+
+        assert page.member_value.text() == "301"
+        assert page.dislike_value.text() == "소음"
+        assert page.preference_value.text() == "따뜻한 차"
+        assert "2026-05-03 10:00" in page.result_box.toPlainText()
+        assert "/tmp/prescription.png" in page.prescription_box.toPlainText()
     finally:
         page.shutdown()
         page.close()

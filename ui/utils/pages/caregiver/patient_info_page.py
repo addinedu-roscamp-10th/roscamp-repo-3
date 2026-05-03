@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import PatientRemoteService
+from ui.utils.widgets.admin_common import KeyValueRow, display_text as _display
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 from ui.utils.widgets.common import InlineStatusMixin
 
@@ -50,9 +51,11 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("어르신 이름 입력")
+        self.name_input.textChanged.connect(self._update_search_preview)
 
         self.room_input = QLineEdit()
         self.room_input.setPlaceholderText("호실 입력")
+        self.room_input.textChanged.connect(self._update_search_preview)
 
         self.search_btn = QPushButton("조회")
         self.search_btn.setObjectName("primaryButton")
@@ -65,6 +68,7 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         sc.addWidget(QLabel("호실"))
         sc.addWidget(self.room_input)
         sc.addWidget(self.search_btn)
+        sc.addWidget(self._build_search_preview_card())
         sc.addWidget(self.status_label)
 
         info_row = QHBoxLayout()
@@ -132,6 +136,30 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         root.addWidget(search_card)
         root.addLayout(info_row)
         root.addLayout(content_row, 1)
+        self._update_search_preview()
+
+    def _build_search_preview_card(self):
+        preview_card = QFrame()
+        preview_card.setObjectName("patientSearchPreviewCard")
+        layout = QVBoxLayout(preview_card)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
+
+        title = QLabel("조회 미리보기")
+        title.setObjectName("sectionTitle")
+        layout.addWidget(title)
+
+        name_row = KeyValueRow("어르신 이름", "미입력")
+        room_row = KeyValueRow("호실", "미입력")
+        status_row = KeyValueRow("조회 상태", "입력 대기")
+        self.preview_name_value = name_row.value_label
+        self.preview_room_value = room_row.value_label
+        self.preview_status_value = status_row.value_label
+
+        layout.addWidget(name_row)
+        layout.addWidget(room_row)
+        layout.addWidget(status_row)
+        return preview_card
 
     def _make_info_box(self, title_text, value_text):
         box = QFrame()
@@ -153,11 +181,33 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         self.search_btn.setDisabled(loading)
         self.search_btn.setText("조회 중..." if loading else "조회")
 
+    def _update_search_preview(self):
+        if not hasattr(self, "preview_name_value"):
+            return
+
+        name = self.name_input.text().strip()
+        room_no = self.room_input.text().strip()
+
+        self.preview_name_value.setText(_display(name, "미입력"))
+        self.preview_room_value.setText(_display(room_no, "미입력"))
+        if name and room_no:
+            status = "조회 가능"
+        elif name or room_no:
+            status = "이름과 호실 모두 필요"
+        else:
+            status = "입력 대기"
+        self.preview_status_value.setText(status)
+
     def load_patient_info(self):
         name = self.name_input.text().strip()
         room_no = self.room_input.text().strip()
 
         self.lookup_request_id += 1
+        if not name or not room_no:
+            self._clear_result()
+            self.show_inline_status("어르신 이름과 호실을 모두 입력해 주세요.", "warning")
+            return
+
         self._set_loading_state(True)
         self.show_inline_status("어르신 정보를 조회하고 있습니다.", "info")
 
@@ -184,9 +234,9 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
             self.show_inline_status("일치하는 어르신 정보를 찾지 못했습니다.", "warning")
             return
 
-        self.member_value.setText(payload.get("member_id") or "-")
-        self.dislike_value.setText(payload.get("dislike") or "-")
-        self.preference_value.setText(payload.get("preference") or "-")
+        self.member_value.setText(_display(payload.get("member_id")))
+        self.dislike_value.setText(_display(payload.get("dislike")))
+        self.preference_value.setText(_display(payload.get("preference")))
 
         self.result_box.setPlainText(self._build_event_text(payload))
         self.prescription_box.setPlainText(self._build_prescription_text(payload))
@@ -195,11 +245,11 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
 
     def _build_event_text(self, payload):
         lines = [
-            f"어르신명: {payload.get('name') or '-'}",
-            f"호실: {payload.get('room_no') or '-'}",
-            f"어르신 ID: {payload.get('member_id') or '-'}",
-            f"입소일: {payload.get('admission_date') or '-'}",
-            f"선호 메모: {payload.get('comment') or '-'}",
+            f"어르신명: {_display(payload.get('name'))}",
+            f"호실: {_display(payload.get('room_no'))}",
+            f"어르신 ID: {_display(payload.get('member_id'))}",
+            f"입소일: {_display(payload.get('admission_date'))}",
+            f"선호 메모: {_display(payload.get('comment'))}",
             "",
             "[최근 이벤트]",
         ]
@@ -215,7 +265,7 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
                 event_time = event_at.strftime("%Y-%m-%d %H:%M")
             else:
                 event_time = str(event_at or "-")
-            description = row.get("description") or "-"
+            description = _display(row.get("description"))
             lines.append(f"{event_time} | {description}")
 
         return "\n".join(lines)
@@ -224,7 +274,7 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         paths = payload.get("prescription_paths") or []
         if not paths:
             return "등록된 처방전 이미지 경로가 없습니다."
-        return "\n".join(paths)
+        return "\n".join(_display(path) for path in paths)
 
     def _clear_result(self):
         self.member_value.setText("-")
@@ -241,6 +291,7 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         self.lookup_request_id += 1
         self.name_input.clear()
         self.room_input.clear()
+        self._update_search_preview()
         self._set_loading_state(False)
         self._clear_result()
         self.hide_inline_status()
