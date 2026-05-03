@@ -383,11 +383,23 @@ class FlowColumn(QFrame):
         header.addWidget(status_chip)
         tc.addLayout(header)
 
-        for line in self._format_task_rows(task):
-            label = QLabel(line)
-            label.setObjectName("mutedText")
-            label.setWordWrap(True)
-            tc.addWidget(label)
+        for key, value, kind in self._format_task_rows(task):
+            row = QHBoxLayout()
+            row.setSpacing(8)
+
+            key_label = QLabel(key)
+            key_label.setObjectName("homeTaskFieldKey")
+            key_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            value_label = QLabel(value)
+            value_label.setObjectName(
+                "homeTaskFieldDetail" if kind == "detail" else "homeTaskFieldValue"
+            )
+            value_label.setWordWrap(True)
+
+            row.addWidget(key_label, 0, Qt.AlignmentFlag.AlignTop)
+            row.addWidget(value_label, 1)
+            tc.addLayout(row)
 
         cancel_button = self._build_cancel_button(task, canceling_task_id=canceling_task_id)
         if cancel_button is not None:
@@ -437,7 +449,7 @@ class FlowColumn(QFrame):
     @staticmethod
     def _format_task_rows(task):
         if not isinstance(task, dict):
-            return [str(task)]
+            return [("작업", str(task), "value")]
 
         robot_id = _display(
             task.get("assigned_robot_id") or task.get("robot_id"),
@@ -451,20 +463,20 @@ class FlowColumn(QFrame):
         )
         description, detail = _summary_and_detail(task.get("description"))
 
-        lines = [f"로봇: {robot_id}"]
+        rows = [("로봇", robot_id, "value")]
         if phase != "-":
-            lines.append(f"단계: {phase}")
+            rows.append(("단계", phase, "value"))
         if destination:
-            lines.append(f"목적지: {destination}")
+            rows.append(("목적지", destination, "value"))
         if feedback_summary:
-            lines.append(f"피드백: {feedback_summary}")
+            rows.append(("피드백", feedback_summary, "value"))
         if reason_code:
-            lines.append(f"사유: {reason_code}")
+            rows.append(("사유", reason_code, "value"))
         if description:
-            lines.append(f"최근 이벤트: {description}")
+            rows.append(("최근", description, "value"))
         if detail:
-            lines.append(f"상세: {detail}")
-        return lines
+            rows.append(("상세", detail, "detail"))
+        return rows
 
 
 class CaregiverHomePage(QWidget):

@@ -288,14 +288,46 @@ def test_home_dashboard_task_cards_use_operator_labels_instead_of_raw_codes():
         labels = _label_texts(page)
         assert "작업 #6 · 운반" in labels
         assert "배차 대기" in labels
-        assert "로봇: 미배정" in labels
-        assert "단계: 픽업 지점 이동" in labels
-        assert "목적지: 301호" in labels
-        assert "최근 이벤트: ROS 브릿지에 연결할 수 없습니다." in labels
+        assert "로봇" in labels
+        assert "미배정" in labels
+        assert "단계" in labels
+        assert "픽업 지점 이동" in labels
+        assert "목적지" in labels
+        assert "301호" in labels
+        assert "최근" in labels
+        assert "ROS 브릿지에 연결할 수 없습니다." in labels
         assert any(
-            text.startswith("상세: ROS service command failed")
+            text.startswith("ROS service command failed")
             for text in labels
         )
+        key_labels = [
+            label
+            for label in page.findChildren(QLabel)
+            if label.objectName() == "homeTaskFieldKey"
+        ]
+        value_labels = [
+            label
+            for label in page.findChildren(QLabel)
+            if label.objectName() == "homeTaskFieldValue"
+        ]
+        detail_labels = [
+            label
+            for label in page.findChildren(QLabel)
+            if label.objectName() == "homeTaskFieldDetail"
+        ]
+        assert [label.text() for label in key_labels] == [
+            "로봇",
+            "단계",
+            "목적지",
+            "최근",
+            "상세",
+        ]
+        assert any(label.text() == "미배정" for label in value_labels)
+        assert any(
+            label.text().startswith("ROS service command failed")
+            for label in detail_labels
+        )
+        assert not any("로봇: 미배정" in text for text in labels)
         assert not any("#6 DELIVERY / WAITING_DISPATCH" in text for text in labels)
     finally:
         page.close()
