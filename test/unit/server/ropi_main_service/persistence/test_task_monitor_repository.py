@@ -125,3 +125,28 @@ def test_task_monitor_repository_fetches_fall_evidence_alert_candidates(monkeypa
     assert "LEFT JOIN task_event_log tel" in query
     assert "FALL_ALERT_CREATED" in query
     assert params == (2001, 20)
+
+
+def test_task_monitor_repository_fetches_single_task_status(monkeypatch):
+    calls = []
+
+    def fake_fetch_all(query, params=None):
+        calls.append((query, params))
+        return [
+            {
+                "task_id": 3001,
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+            }
+        ]
+
+    monkeypatch.setattr(task_monitor_repository, "fetch_all", fake_fetch_all)
+
+    row = task_monitor_repository.TaskMonitorRepository().get_task_status(task_id=3001)
+
+    assert row["task_id"] == 3001
+    query, params = calls[0]
+    assert "FROM task t" in query
+    assert "WHERE t.task_id = %s" in query
+    assert "LIMIT %s" in query
+    assert params == (3001, 1)

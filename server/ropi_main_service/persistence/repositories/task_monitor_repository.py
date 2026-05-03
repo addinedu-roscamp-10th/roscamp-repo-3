@@ -167,6 +167,16 @@ class TaskMonitorRepository:
             "tasks": list(rows),
         }
 
+    def get_task_status(self, *, task_id):
+        query, params = self._build_task_status_query(task_id=task_id)
+        rows = fetch_all(query, params) or []
+        return rows[0] if rows else None
+
+    async def async_get_task_status(self, *, task_id):
+        query, params = self._build_task_status_query(task_id=task_id)
+        rows = await async_fetch_all(query, params) or []
+        return rows[0] if rows else None
+
     def get_fall_evidence_alert_candidates(self, *, task_id, limit=20):
         return fetch_all(FALL_EVIDENCE_ALERT_SELECT, (int(task_id), int(limit)))
 
@@ -205,6 +215,13 @@ class TaskMonitorRepository:
         query += "\n" + TASK_MONITOR_ORDER
         params.append(int(limit))
         return query, tuple(params)
+
+    @classmethod
+    def _build_task_status_query(cls, *, task_id):
+        return (
+            TASK_MONITOR_SELECT + "\nWHERE t.task_id = %s\nLIMIT %s",
+            (int(task_id), 1),
+        )
 
     @staticmethod
     def _normalize_text_tuple(values):

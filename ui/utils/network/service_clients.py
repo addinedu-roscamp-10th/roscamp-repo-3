@@ -6,6 +6,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
+    MESSAGE_CODE_TASK_STATUS_QUERY,
 )
 from ui.utils.network.tcp_client import send_request
 
@@ -342,6 +343,19 @@ class TaskMonitorRemoteService:
             reason=reason,
         )
 
+    def get_task_status(self, *, task_id):
+        payload = {
+            "task_id": str(task_id).strip(),
+        }
+        response = send_request(MESSAGE_CODE_TASK_STATUS_QUERY, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+
+        return response.get("payload")
+
     def get_fall_evidence_image(
         self,
         *,
@@ -480,6 +494,19 @@ class VisitGuideRemoteService:
         if pinky_id is not None:
             kwargs["pinky_id"] = pinky_id
         return _rpc("visit_guide", "get_tracking_status", **kwargs)
+
+    def get_task_status(self, *, task_id):
+        payload = {
+            "task_id": str(task_id).strip(),
+        }
+        response = send_request(MESSAGE_CODE_TASK_STATUS_QUERY, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+
+        return response.get("payload")
 
 
 class VisitorInfoRemoteService:

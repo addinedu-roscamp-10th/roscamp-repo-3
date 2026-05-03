@@ -1,6 +1,7 @@
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
+    MESSAGE_CODE_TASK_STATUS_QUERY,
 )
 from ui.utils.network import service_clients
 from ui.utils.network.service_clients import (
@@ -317,6 +318,60 @@ def test_task_monitor_remote_service_exposes_common_cancel_rpc(monkeypatch):
                 "caregiver_id": 7,
                 "reason": "operator_cancel",
             },
+        )
+    ]
+
+
+def test_task_monitor_remote_service_exposes_task_status_query(monkeypatch):
+    calls = []
+
+    def fake_send_request(message_code, payload):
+        calls.append((message_code, payload))
+        return {
+            "ok": True,
+            "payload": {
+                "result_code": "ACCEPTED",
+                "task_id": 3001,
+                "task_status": "RUNNING",
+            },
+        }
+
+    monkeypatch.setattr(service_clients, "send_request", fake_send_request)
+
+    response = TaskMonitorRemoteService().get_task_status(task_id="3001")
+
+    assert response["result_code"] == "ACCEPTED"
+    assert calls == [
+        (
+            MESSAGE_CODE_TASK_STATUS_QUERY,
+            {"task_id": "3001"},
+        )
+    ]
+
+
+def test_visit_guide_remote_service_exposes_task_status_query(monkeypatch):
+    calls = []
+
+    def fake_send_request(message_code, payload):
+        calls.append((message_code, payload))
+        return {
+            "ok": True,
+            "payload": {
+                "result_code": "ACCEPTED",
+                "task_id": 3001,
+                "task_status": "RUNNING",
+            },
+        }
+
+    monkeypatch.setattr(service_clients, "send_request", fake_send_request)
+
+    response = VisitGuideRemoteService().get_task_status(task_id=3001)
+
+    assert response["task_status"] == "RUNNING"
+    assert calls == [
+        (
+            MESSAGE_CODE_TASK_STATUS_QUERY,
+            {"task_id": "3001"},
         )
     ]
 

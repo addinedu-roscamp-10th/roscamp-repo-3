@@ -18,6 +18,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
+    MESSAGE_CODE_TASK_STATUS_QUERY,
     TCPFrame,
 )
 
@@ -1159,6 +1160,40 @@ def test_async_guide_command_rpc_publishes_task_update(control_service_server):
     assert published_events[0][1]["task_type"] == "GUIDE"
     assert published_events[0][1]["task_status"] == "RUNNING"
     assert published_events[0][1]["phase"] == "WAIT_TARGET_TRACKING"
+
+
+def test_async_task_status_query_dispatches_if_com_001(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_TASK_STATUS_QUERY,
+        sequence_no=41,
+        payload={"task_id": "3001"},
+    )
+
+    class FakeAsyncTaskMonitorService:
+        async def async_get_task_status(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": int(payload["task_id"]),
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "GUIDANCE_RUNNING",
+                "assigned_robot_id": "pinky1",
+            }
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"task_monitor": FakeAsyncTaskMonitorService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.is_error is False
+    assert response.payload["result_code"] == "ACCEPTED"
+    assert response.payload["task_id"] == 3001
+    assert response.payload["task_status"] == "RUNNING"
 
 
 def test_async_guide_start_driving_rpc_publishes_task_update(control_service_server):

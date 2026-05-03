@@ -7,6 +7,7 @@ from server.ropi_main_service.application.task_monitor import TaskMonitorService
 class FakeTaskMonitorRepository:
     def __init__(self):
         self.calls = []
+        self.status_row = None
         self.snapshot = {
             "last_event_seq": 91,
             "tasks": [
@@ -81,6 +82,14 @@ class FakeTaskMonitorRepository:
     async def async_get_task_monitor_snapshot(self, **kwargs):
         self.calls.append(kwargs)
         return self.snapshot
+
+    def get_task_status(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.status_row
+
+    async def async_get_task_status(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.status_row
 
 def test_task_monitor_snapshot_formats_nested_feedback_robot_and_alert():
     repository = FakeTaskMonitorRepository()
@@ -191,3 +200,58 @@ def test_task_monitor_snapshot_async_uses_async_repository_method():
 
     assert response["result_code"] == "ACCEPTED"
     assert repository.calls[0]["task_types"] == ("PATROL",)
+
+
+def test_task_monitor_get_task_status_formats_single_task():
+    repository = FakeTaskMonitorRepository()
+    repository.status_row = {
+        "task_id": 3001,
+        "task_type": "GUIDE",
+        "task_status": "RUNNING",
+        "phase": "GUIDANCE_RUNNING",
+        "assigned_robot_id": "pinky1",
+        "updated_at": datetime(2026, 5, 4, 15, 10, 0),
+    }
+    service = TaskMonitorService(repository=repository)
+
+    response = service.get_task_status(task_id="3001")
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_id"] == 3001
+    assert response["task_type"] == "GUIDE"
+    assert response["task_status"] == "RUNNING"
+    assert response["phase"] == "GUIDANCE_RUNNING"
+    assert response["assigned_robot_id"] == "pinky1"
+    assert response["updated_at"] == "2026-05-04T15:10:00"
+    assert repository.calls[-1] == {"task_id": 3001}
+
+
+def test_task_monitor_get_task_status_returns_not_found_for_missing_task():
+    repository = FakeTaskMonitorRepository()
+    service = TaskMonitorService(repository=repository)
+
+    response = service.get_task_status(task_id=9999)
+
+    assert response == {
+        "result_code": "NOT_FOUND",
+        "result_message": "태스크를 찾을 수 없습니다.",
+        "reason_code": "TASK_NOT_FOUND",
+        "task_id": 9999,
+    }
+
+
+def test_task_monitor_async_get_task_status_uses_async_repository_method():
+    repository = FakeTaskMonitorRepository()
+    repository.status_row = {
+        "task_id": 3001,
+        "task_type": "GUIDE",
+        "task_status": "COMPLETED",
+        "phase": "GUIDANCE_FINISHED",
+    }
+    service = TaskMonitorService(repository=repository)
+
+    response = asyncio.run(service.async_get_task_status(task_id="3001"))
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_status"] == "COMPLETED"
+    assert repository.calls[-1] == {"task_id": 3001}

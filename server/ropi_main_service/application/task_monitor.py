@@ -111,6 +111,29 @@ class TaskMonitorService:
             cap_terminal_tasks=query["cap_terminal_tasks"],
         )
 
+    def get_task_status(self, *, task_id):
+        normalized_task_id = self._normalize_positive_id(task_id)
+        if normalized_task_id is None:
+            return self._invalid_task_id_response(task_id)
+
+        row = self.repository.get_task_status(task_id=normalized_task_id)
+        return self._format_task_status(row, task_id=normalized_task_id)
+
+    async def async_get_task_status(self, *, task_id):
+        normalized_task_id = self._normalize_positive_id(task_id)
+        if normalized_task_id is None:
+            return self._invalid_task_id_response(task_id)
+
+        async_get_status = getattr(self.repository, "async_get_task_status", None)
+        if async_get_status is not None:
+            row = await async_get_status(task_id=normalized_task_id)
+        else:
+            row = await asyncio.to_thread(
+                self.repository.get_task_status,
+                task_id=normalized_task_id,
+            )
+        return self._format_task_status(row, task_id=normalized_task_id)
+
     @classmethod
     def _build_query(
         cls,
@@ -147,6 +170,20 @@ class TaskMonitorService:
             "recent_terminal_limit": normalized_terminal_limit,
             "cap_terminal_tasks": not explicit_statuses,
         }
+
+    @classmethod
+    def _format_task_status(cls, row, *, task_id):
+        if not row:
+            return {
+                "result_code": "NOT_FOUND",
+                "result_message": "태스크를 찾을 수 없습니다.",
+                "reason_code": "TASK_NOT_FOUND",
+                "task_id": task_id,
+            }
+
+        task = cls._format_task(row if isinstance(row, dict) else {})
+        task["result_code"] = "ACCEPTED"
+        return task
 
     @classmethod
     def _format_snapshot(
@@ -438,6 +475,23 @@ class TaskMonitorService:
         except (TypeError, ValueError):
             numeric_value = default
         return max(minimum, min(maximum, numeric_value))
+
+    @staticmethod
+    def _normalize_positive_id(value):
+        try:
+            number = int(str(value or "").strip())
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    @classmethod
+    def _invalid_task_id_response(cls, task_id):
+        return {
+            "result_code": "INVALID_REQUEST",
+            "result_message": "유효한 task_id가 필요합니다.",
+            "reason_code": "TASK_ID_REQUIRED",
+            "task_id": cls._normalize_positive_id(task_id),
+        }
 
     @staticmethod
     def _optional_int(value):

@@ -618,8 +618,20 @@ def test_kiosk_progress_page_uses_control_tracking_status_before_ros_runtime():
 
     class ControlTrackingService:
         def __init__(self):
+            self.task_status_calls = []
             self.status_calls = []
             self.runtime_called = False
+
+        def get_task_status(self, *, task_id):
+            self.task_status_calls.append(task_id)
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": int(task_id),
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "WAIT_TARGET_TRACKING",
+                "assigned_robot_id": "pinky1",
+            }
 
         def get_tracking_status(self, **kwargs):
             self.status_calls.append(kwargs)
@@ -656,11 +668,70 @@ def test_kiosk_progress_page_uses_control_tracking_status_before_ros_runtime():
             },
         )
 
+        assert service.task_status_calls == ["3001"]
         assert service.status_calls == [{"task_id": "3001", "pinky_id": "pinky1"}]
         assert service.runtime_called is False
         assert page.detected_target_track_id == "track_17"
         assert page.start_driving_button.isEnabled() is True
         assert page.robot_state_chip.text() == "대상 확인 완료"
+    finally:
+        page.close()
+
+
+def test_kiosk_progress_page_applies_task_status_query_to_guide_progress():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
+
+    class GuideProgressService:
+        def __init__(self):
+            self.task_status_calls = []
+
+        def get_task_status(self, *, task_id):
+            self.task_status_calls.append(task_id)
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": int(task_id),
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "GUIDANCE_RUNNING",
+                "assigned_robot_id": "pinky1",
+            }
+
+        def get_tracking_status(self, **_kwargs):
+            return False, "대기 중", {"tracking_status": "NOT_TRACKING"}
+
+        def get_guide_runtime_status(self):
+            return False, "대기 중", {"guide_runtime": {"connected": False}}
+
+    service = GuideProgressService()
+    page = KioskRobotGuidanceProgressPage()
+    page.service = service
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            },
+            session={
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "task_status": "RUNNING",
+                "phase": "WAIT_TARGET_TRACKING",
+            },
+        )
+
+        assert service.task_status_calls == ["3001"]
+        assert page.robot_state_chip.text() == "안내 중"
+        assert page.distance_label.text() == "로봇을 따라 이동해주세요."
+        assert page.start_driving_button.isEnabled() is False
+        assert page.progress_stages[3].property("state") == "active"
+        assert page.progress_stages[4].property("state") == "pending"
     finally:
         page.close()
 

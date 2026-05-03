@@ -267,6 +267,24 @@ def test_control_server_exposes_acquired_guide_track_status_to_kiosk_rpc(
     assert payload["target_track_id"] == "track_17"
 
 
+def test_kiosk_client_queries_single_guide_task_status(
+    patched_ui_endpoint,
+    waiting_guide_tracking_task_seed,
+):
+    del patched_ui_endpoint
+
+    payload = VisitGuideRemoteService().get_task_status(
+        task_id=waiting_guide_tracking_task_seed["task_id"],
+    )
+
+    assert payload["result_code"] == "ACCEPTED"
+    assert payload["task_id"] == waiting_guide_tracking_task_seed["task_id"]
+    assert payload["task_type"] == "GUIDE"
+    assert payload["task_status"] == "RUNNING"
+    assert payload["phase"] == "WAIT_TARGET_TRACKING"
+    assert payload["assigned_robot_id"] == "pinky1"
+
+
 def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(
     patched_ui_endpoint,
     fall_evidence_seed,

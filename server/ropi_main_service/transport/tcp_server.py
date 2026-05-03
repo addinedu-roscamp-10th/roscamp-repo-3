@@ -54,6 +54,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
+    MESSAGE_CODE_TASK_STATUS_QUERY,
     TCPFrame,
     TCPFrameError,
     build_frame,
@@ -349,6 +350,9 @@ class ControlServiceServer:
         if frame.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK:
             return self._dispatch_guide_create_task(frame, payload)
 
+        if frame.message_code == MESSAGE_CODE_TASK_STATUS_QUERY:
+            return self._dispatch_task_status_query(frame, payload)
+
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return self._dispatch_rpc(frame, payload)
 
@@ -389,6 +393,9 @@ class ControlServiceServer:
 
         if frame.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK:
             return await self._dispatch_guide_create_task_async(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_TASK_STATUS_QUERY:
+            return await self._dispatch_task_status_query_async(frame, payload)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return await self._dispatch_rpc_async(frame, payload)
@@ -580,6 +587,35 @@ class ControlServiceServer:
                 )
         except Exception as exc:
             return self._error_response(frame, "FALL_EVIDENCE_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    def _dispatch_task_status_query(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["task_monitor"]()
+            result = service.get_task_status(task_id=payload.get("task_id"))
+        except Exception as exc:
+            return self._error_response(frame, "TASK_STATUS_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def _dispatch_task_status_query_async(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+    ) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["task_monitor"]()
+            async_method = getattr(service, "async_get_task_status", None)
+            if async_method is not None:
+                result = await async_method(task_id=payload.get("task_id"))
+            else:
+                result = await asyncio.to_thread(
+                    service.get_task_status,
+                    task_id=payload.get("task_id"),
+                )
+        except Exception as exc:
+            return self._error_response(frame, "TASK_STATUS_QUERY_ERROR", str(exc))
 
         return self._success_response(frame, result)
 
