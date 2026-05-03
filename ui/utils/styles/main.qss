@@ -1021,13 +1021,491 @@ QLabel#noticeText {
     font-size: 14px;
 }
 
-QWidget#kioskRoot QLabel#pageTitle {
+/* Kiosk UI */
+QWidget#kioskRoot {
+    background: #FFF8EE;
+    color: #1E293B;
+}
+
+QWidget#kioskRoot QLabel {
+    color: #1E293B;
+}
+
+QFrame#kioskTopBar,
+QFrame#kioskSearchTopBar,
+QFrame#kioskConfirmationTopBar,
+QFrame#kioskProgressTopBar {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E8DED2;
+}
+
+QFrame#kioskHomePage {
+    background: #FFF8EE;
+    border: none;
+}
+
+QLabel#kioskBrandIcon {
+    background: #EAF5F2;
+    color: #2F855A;
+    border: 1px solid #BFE5D2;
+    border-radius: 18px;
+    font-size: 28px;
+    font-weight: 900;
+    min-width: 46px;
+    min-height: 46px;
+    padding: 4px;
+}
+
+QLabel#kioskBrandTitle,
+QLabel#kioskSearchBrand,
+QLabel#kioskConfirmationBrand,
+QLabel#kioskProgressBrand {
+    color: #1E293B;
+    font-size: 24px;
+    font-weight: 900;
+}
+
+QLabel#kioskBrandSubtitle {
+    color: #64748B;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+QLabel#kioskEyebrow {
+    background: #EAF5F2;
+    color: #2F855A;
+    border: 1px solid #BFE5D2;
+    border-radius: 15px;
+    font-size: 16px;
+    font-weight: 900;
+    padding: 8px 16px;
+}
+
+QLabel#kioskHeroTitle {
+    color: #102A27;
+    font-size: 52px;
+    font-weight: 900;
+}
+
+QLabel#kioskHeroDesc {
+    color: #64748B;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+QFrame#kioskActionCard {
+    background: #FFFFFF;
+    border: 1px solid #E8DED2;
+    border-radius: 28px;
+}
+
+QFrame#kioskActionCard[accent="blue"] {
+    border-color: #BBD4F2;
+}
+
+QFrame#kioskActionCard[accent="green"] {
+    border-color: #BFE5D2;
+}
+
+QFrame#kioskActionCard[accent="coral"] {
+    border-color: #F5C6B8;
+}
+
+QFrame#kioskCardAccent {
+    border: none;
+    border-radius: 4px;
+}
+
+QFrame#kioskCardAccent[accent="blue"] {
+    background: #2B6CB0;
+}
+
+QFrame#kioskCardAccent[accent="green"] {
+    background: #2F855A;
+}
+
+QFrame#kioskCardAccent[accent="coral"] {
+    background: #E76F51;
+}
+
+QFrame#kioskIconBubble {
+    border-radius: 58px;
+}
+
+QFrame#kioskIconBubble[accent="blue"] {
+    background: #E9F2FF;
+    border: 1px solid #BBD4F2;
+}
+
+QFrame#kioskIconBubble[accent="green"] {
+    background: #EAF5F2;
+    border: 1px solid #BFE5D2;
+}
+
+QFrame#kioskIconBubble[accent="coral"] {
+    background: #FFF0EA;
+    border: 1px solid #F5C6B8;
+}
+
+QLabel#kioskActionIcon {
     color: #1E293B;
     font-size: 42px;
     font-weight: 900;
 }
 
+QLabel#kioskActionTitle {
+    color: #102A27;
+    font-size: 30px;
+    font-weight: 900;
+}
+
+QLabel#kioskActionDesc {
+    color: #64748B;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+QPushButton#kioskGhostButton,
+QPushButton#kioskSecondaryButton,
+QPushButton#kioskSearchFooterButton,
+QPushButton#kioskRoundIconButton {
+    background: #FFFFFF;
+    color: #1E293B;
+    border: 1px solid #E8DED2;
+    border-radius: 18px;
+    font-size: 20px;
+    font-weight: 900;
+    padding: 12px 22px;
+}
+
+QPushButton#kioskGhostButton[accent="blue"] {
+    color: #2B6CB0;
+    border-color: #BBD4F2;
+    background: #F5FAFF;
+}
+
+QPushButton#kioskGhostButton[accent="green"] {
+    color: #2F855A;
+    border-color: #BFE5D2;
+    background: #F4FBF8;
+}
+
+QPushButton#kioskGhostButton[accent="coral"] {
+    color: #E76F51;
+    border-color: #F5C6B8;
+    background: #FFF7F3;
+}
+
+QPushButton#kioskSecondaryButton {
+    color: #2B6CB0;
+    border-color: #BBD4F2;
+    background: #F5FAFF;
+}
+
+QPushButton#kioskSearchCallButton,
+QPushButton#kioskConfirmationSecondaryButton,
+QPushButton#kioskProgressPrimaryButton {
+    background: #FFF0EA;
+    color: #B9472B;
+    border: 1px solid #F5C6B8;
+    border-radius: 18px;
+    font-size: 21px;
+    font-weight: 900;
+    padding: 14px 24px;
+}
+
+QFrame#kioskFooterBar,
+QFrame#kioskSearchBottomBar,
+QFrame#kioskConfirmationBottomBar {
+    background: #FFFFFF;
+    border-top: 1px solid #E8DED2;
+}
+
+QFrame#kioskFooterStat {
+    background: #FFF8EE;
+    border: 1px solid #E8DED2;
+    border-radius: 18px;
+}
+
+QLabel#kioskFooterIcon {
+    color: #2F855A;
+    font-size: 24px;
+    font-weight: 900;
+}
+
+QLabel#kioskFooterLabel {
+    color: #64748B;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+QLabel#kioskFooterValue {
+    color: #1E293B;
+    font-size: 18px;
+    font-weight: 900;
+}
+
+QLabel#kioskSearchPageTitle,
+QLabel#kioskConfirmationTitle,
+QLabel#kioskProgressTitle,
+QWidget#kioskRoot QLabel#pageTitle {
+    color: #102A27;
+    font-size: 42px;
+    font-weight: 900;
+}
+
+QLabel#kioskSearchPageSubtitle,
+QLabel#kioskConfirmationSubtitle,
+QLabel#kioskProgressSubtitle {
+    color: #64748B;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+QFrame#kioskSearchInputCard {
+    background: #FFFFFF;
+    border: 2px solid #E8DED2;
+    border-radius: 24px;
+}
+
+QLineEdit#kioskSearchInput {
+    background: transparent;
+    border: none;
+    color: #1E293B;
+    font-size: 26px;
+    font-weight: 800;
+    padding: 0 24px;
+}
+
+QLineEdit#kioskSearchInput:focus {
+    color: #102A27;
+}
+
+QPushButton#kioskSearchSubmitButton,
+QPushButton#kioskResidentActionButton,
+QPushButton#kioskConfirmationPrimaryButton,
+QPushButton#kioskProgressSecondaryButton,
 QWidget#kioskRoot QPushButton#primaryButton {
     background: #2F855A;
+    color: #FFFFFF;
+    border: 1px solid #2F855A;
+    border-radius: 20px;
+    font-size: 24px;
+    font-weight: 900;
     min-height: 72px;
+    padding: 12px 28px;
+}
+
+QPushButton#kioskProgressSecondaryButton {
+    background: #FFFFFF;
+    color: #2B6CB0;
+    border-color: #BBD4F2;
+}
+
+QFrame#kioskResidentResultCard,
+QFrame#kioskConfirmationSummaryCard,
+QFrame#kioskConfirmationStatusCard,
+QFrame#kioskProgressCard,
+QFrame#kioskRobotInfoCard {
+    background: #FFFFFF;
+    border: 1px solid #E8DED2;
+    border-radius: 26px;
+}
+
+QFrame#kioskResidentAvatar {
+    background: #E9F2FF;
+    border: 1px solid #BBD4F2;
+    border-radius: 42px;
+}
+
+QLabel#kioskResidentAvatarIcon {
+    color: #2B6CB0;
+    font-size: 34px;
+    font-weight: 900;
+}
+
+QLabel#kioskResidentName {
+    color: #102A27;
+    font-size: 28px;
+    font-weight: 900;
+}
+
+QLabel#kioskResidentRoom {
+    color: #2B6CB0;
+    font-size: 22px;
+    font-weight: 900;
+}
+
+QLabel#kioskResidentMeta,
+QLabel#kioskSearchStatusText,
+QLabel#kioskStatusText {
+    color: #64748B;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+QLabel#kioskConfirmationSummaryIcon {
+    color: #2B6CB0;
+    font-size: 50px;
+    font-weight: 900;
+}
+
+QLabel#kioskReadyChip,
+QLabel#kioskRobotStateChip {
+    background: #EAF5F2;
+    color: #2F855A;
+    border: 1px solid #BFE5D2;
+    border-radius: 16px;
+    font-size: 18px;
+    font-weight: 900;
+    padding: 8px 14px;
+}
+
+QLabel#kioskRobotStatusText {
+    color: #1E293B;
+    font-size: 21px;
+    font-weight: 800;
+}
+
+QFrame#kioskGuideNoticeCard {
+    background: #FFFFFF;
+    border: 1px solid #E8DED2;
+    border-radius: 24px;
+}
+
+QFrame#kioskGuideNoticeHeader {
+    background: #E9F2FF;
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+}
+
+QFrame#kioskGuideNoticeBody {
+    background: #FFFFFF;
+    border-bottom-left-radius: 24px;
+    border-bottom-right-radius: 24px;
+}
+
+QLabel#kioskGuideNoticeHeaderIcon {
+    background: #2B6CB0;
+    color: #FFFFFF;
+    border-radius: 13px;
+    font-size: 18px;
+    font-weight: 900;
+    min-width: 26px;
+    min-height: 26px;
+}
+
+QLabel#kioskGuideNoticeHeaderTitle {
+    color: #1E3A5F;
+    font-size: 22px;
+    font-weight: 900;
+}
+
+QLabel#kioskGuideNoticeLine {
+    color: #344054;
+    font-size: 19px;
+    font-weight: 700;
+}
+
+QFrame#kioskProgressLineWrap {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 22px;
+}
+
+QFrame#kioskProgressStage {
+    background: transparent;
+    border: none;
+}
+
+QLabel#kioskProgressStageBadge {
+    background: #F1F5F9;
+    color: #94A3B8;
+    border: 1px solid #E2E8F0;
+    border-radius: 36px;
+    font-size: 28px;
+    font-weight: 900;
+}
+
+QLabel#kioskProgressStageBadge[state="done"] {
+    background: #EAF5F2;
+    color: #2F855A;
+    border-color: #BFE5D2;
+}
+
+QLabel#kioskProgressStageBadge[state="active"] {
+    background: #E9F2FF;
+    color: #2B6CB0;
+    border-color: #BBD4F2;
+}
+
+QLabel#kioskProgressStageTitle {
+    color: #94A3B8;
+    font-size: 17px;
+    font-weight: 800;
+}
+
+QLabel#kioskProgressStageTitle[state="done"] {
+    color: #2F855A;
+}
+
+QLabel#kioskProgressStageTitle[state="active"] {
+    color: #2B6CB0;
+}
+
+QLabel#kioskRobotInfoIcon {
+    background: #EAF5F2;
+    color: #2F855A;
+    border: 1px solid #BFE5D2;
+    border-radius: 62px;
+    font-size: 46px;
+    font-weight: 900;
+}
+
+QLabel#kioskRobotInfoTitle {
+    color: #102A27;
+    font-size: 30px;
+    font-weight: 900;
+}
+
+QFrame#kioskRobotProgressTrack {
+    background: #EEF2F6;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+}
+
+QFrame#kioskRobotProgressFill {
+    background: #2F855A;
+    border: none;
+    border-radius: 7px;
+}
+
+QLabel#kioskRobotDistanceText {
+    color: #475569;
+    font-size: 20px;
+    font-weight: 800;
+}
+
+QFrame#kioskSafetyNotice {
+    background: #FFF7ED;
+    border: 1px solid #FDBA74;
+    border-radius: 22px;
+}
+
+QLabel#kioskSafetyNoticeIcon {
+    color: #C2410C;
+    font-size: 32px;
+    font-weight: 900;
+}
+
+QLabel#kioskSafetyNoticeText {
+    color: #9A3412;
+    font-size: 22px;
+    font-weight: 900;
+}
+
+QLabel#kioskProgressRequestId {
+    color: #64748B;
+    font-size: 15px;
+    font-weight: 800;
 }

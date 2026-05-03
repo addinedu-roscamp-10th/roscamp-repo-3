@@ -78,6 +78,41 @@ def test_main_qss_defines_home_dashboard_components():
     assert "QLabel#homeTaskFieldKey" in qss
 
 
+def test_main_qss_defines_kiosk_ui_components():
+    qss = _stylesheet()
+
+    required_selectors = [
+        "QWidget#kioskRoot",
+        "QFrame#kioskTopBar",
+        "QLabel#kioskBrandTitle",
+        "QLabel#kioskHeroTitle",
+        "QFrame#kioskActionCard",
+        "QFrame#kioskActionCard[accent=\"blue\"]",
+        "QFrame#kioskCardAccent",
+        "QFrame#kioskIconBubble",
+        "QPushButton#kioskGhostButton",
+        "QFrame#kioskFooterBar",
+        "QFrame#kioskFooterStat",
+        "QFrame#kioskSearchInputCard",
+        "QLineEdit#kioskSearchInput",
+        "QPushButton#kioskSearchSubmitButton",
+        "QFrame#kioskResidentResultCard",
+        "QPushButton#kioskResidentActionButton",
+        "QFrame#kioskConfirmationSummaryCard",
+        "QLabel#kioskReadyChip",
+        "QFrame#kioskGuideNoticeCard",
+        "QPushButton#kioskConfirmationPrimaryButton",
+        "QFrame#kioskProgressCard",
+        "QFrame#kioskRobotInfoCard",
+        "QLabel#kioskRobotStateChip",
+        "QFrame#kioskRobotProgressFill",
+        "QFrame#kioskSafetyNotice",
+    ]
+
+    for selector in required_selectors:
+        assert selector in qss
+
+
 def test_main_qss_overrides_native_input_subcontrols():
     qss = _stylesheet()
 
