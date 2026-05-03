@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QComboBox, QTextEdit, QPushButton
@@ -88,21 +90,26 @@ class StaffCallPage(QWidget):
         root.addWidget(form)
         root.addStretch()
 
-    def _current_member_id(self):
+    def _current_visitor_id(self):
         if SessionManager is None:
             return None
         try:
             current_user = SessionManager.current_user()
-            return None if current_user is None else getattr(current_user, "user_id", None)
+            if current_user is None or getattr(current_user, "role", None) != "VISITOR":
+                return None
+            return getattr(current_user, "user_id", None)
         except Exception:
             return None
 
     def submit(self):
-        success, message = self.service.submit_staff_call(
+        result = self.service.submit_staff_call(
             call_type=self.type_combo.currentText(),
-            detail=self.detail_input.toPlainText(),
-            member_id=self._current_member_id(),
+            description=self.detail_input.toPlainText(),
+            idempotency_key=f"visitor_staff_call_{uuid4().hex}",
+            visitor_id=self._current_visitor_id(),
         )
+        success = result.get("result_code") == "ACCEPTED"
+        message = result.get("result_message") or "직원 호출 처리 결과를 확인할 수 없습니다."
 
         self.status_label.setText(message)
         self.status_label.setObjectName("chipGreen" if success else "chipRed")

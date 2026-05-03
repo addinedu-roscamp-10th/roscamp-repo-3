@@ -245,14 +245,40 @@ def test_inventory_repository_async_set_quantity_uses_async_execute(monkeypatch)
     assert calls[0][1] == (12, "1")
 
 
-def test_staff_call_repository_async_create_uses_async_execute(monkeypatch):
-    calls = []
+def test_staff_call_repository_async_create_uses_staff_call_transaction(monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self.calls = []
+            self.lastrowid = 9102
+            self._last_query = ""
 
-    async def fake_async_execute(query, params=None):
-        calls.append((query, params))
-        return 1
+        async def execute(self, query, params=None):
+            self.calls.append((query, params))
+            self._last_query = query
 
-    monkeypatch.setattr(staff_call_repository, "async_execute", fake_async_execute)
+        async def fetchone(self):
+            if "FROM idempotency_record" in self._last_query:
+                return None
+            if "FROM member" in self._last_query:
+                return {"member_id": 7, "member_name": "김영수", "room_no": "301"}
+            return None
+
+    class FakeTransaction:
+        def __init__(self):
+            self.cursor = FakeCursor()
+
+        async def __aenter__(self):
+            return self.cursor
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    fake_transaction = FakeTransaction()
+    monkeypatch.setattr(
+        staff_call_repository,
+        "async_transaction",
+        lambda: fake_transaction,
+    )
 
     result = asyncio.run(
         staff_call_repository.StaffCallRepository().async_create_staff_call(
@@ -262,10 +288,15 @@ def test_staff_call_repository_async_create_uses_async_execute(monkeypatch):
         )
     )
 
-    assert result == (True, "직원 호출 요청이 접수되었습니다.")
-    assert "INSERT INTO member_event" in calls[0][0]
-    assert calls[0][1][0] == 7
-    assert calls[0][1][1] == "STAFF_CALL"
+    assert result["result_code"] == "ACCEPTED"
+    assert result["call_id"] == "member_event_9102"
+    event_params = next(
+        params
+        for query, params in fake_transaction.cursor.calls
+        if "INSERT INTO member_event" in query
+    )
+    assert event_params[0] == 7
+    assert event_params[1] == "STAFF_CALL"
 
 
 def test_task_request_repository_async_create_delivery_request_uses_member_event(monkeypatch):

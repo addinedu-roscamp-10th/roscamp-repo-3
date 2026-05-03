@@ -493,5 +493,26 @@ class KioskVisitorRemoteService:
 
 
 class StaffCallRemoteService:
-    def submit_staff_call(self, **payload):
-        return _rpc("staff_call", "submit_staff_call", **payload)
+    def submit_staff_call(
+        self,
+        *,
+        call_type,
+        idempotency_key,
+        description=None,
+        detail=None,
+        visitor_id=None,
+        member_id=None,
+        kiosk_id=None,
+    ):
+        kwargs = {
+            "call_type": call_type,
+            "idempotency_key": idempotency_key,
+            "visitor_id": visitor_id,
+            "member_id": member_id,
+            "kiosk_id": kiosk_id,
+        }
+        if description is not None:
+            kwargs["description"] = description
+        if detail is not None:
+            kwargs["detail"] = detail
+        return _rpc("staff_call", "submit_staff_call", **kwargs)

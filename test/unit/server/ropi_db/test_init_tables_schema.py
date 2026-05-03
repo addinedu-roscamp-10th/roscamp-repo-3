@@ -63,6 +63,7 @@ def test_schema_contains_control_task_and_log_tables():
         "ai_inference_log",
         "stream_metrics_log",
         "idempotency_record",
+        "kiosk_staff_call_log",
     ):
         assert f"CREATE TABLE `{table_name}`" in ddl
 
@@ -183,11 +184,28 @@ def test_schema_contains_expected_indexes():
         "idx_robot_data_log_task_received_at",
         "idx_stream_metrics_robot_window",
         "idx_ai_inference_task_inferred_at",
+        "idx_kiosk_staff_call_created_at",
         "uq_idempotency",
+        "uq_kiosk_staff_call_idempotency",
     )
 
     for index_name in expected_indexes:
         assert index_name in ddl
+
+
+def test_kiosk_staff_call_log_supports_unlinked_lobby_calls():
+    ddl = _ddl()
+
+    section = ddl.split("CREATE TABLE `kiosk_staff_call_log`", 1)[1].split(
+        "CREATE TABLE `idempotency_record`",
+        1,
+    )[0]
+
+    assert "`visitor_id` BIGINT UNSIGNED NULL" in section
+    assert "`member_id` BIGINT UNSIGNED NULL" in section
+    assert "`kiosk_id` VARCHAR(100) NULL" in section
+    assert "CONSTRAINT `fk_kiosk_staff_call_visitor`" in section
+    assert "CONSTRAINT `fk_kiosk_staff_call_member`" in section
 
 
 def test_robot_schema_does_not_add_capability_or_station_assignment_tables():

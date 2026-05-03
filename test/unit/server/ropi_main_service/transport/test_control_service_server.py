@@ -174,6 +174,28 @@ def test_internal_rpc_dispatches_kiosk_visitor_care_history_service(control_serv
     assert response.payload["reason_code"] == "VISITOR_ID_INVALID"
 
 
+def test_internal_rpc_dispatches_staff_call_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=43,
+        payload={
+            "service": "staff_call",
+            "method": "submit_staff_call",
+            "kwargs": {
+                "call_type": "",
+                "description": "도움 필요",
+                "idempotency_key": "idem_staff_001",
+            },
+        },
+    )
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "CALL_TYPE_EMPTY"
+
+
 def test_heartbeat_with_ai_check_reports_disabled_when_ai_endpoint_is_not_configured(
     control_service_server,
     monkeypatch,

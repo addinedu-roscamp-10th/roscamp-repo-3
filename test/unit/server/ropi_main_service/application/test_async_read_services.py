@@ -173,8 +173,16 @@ class FakeAsyncDeliveryRequestRepository:
 
 
 class FakeAsyncStaffCallRepository:
-    async def async_create_staff_call(self, call_type, detail, member_id=None):
-        return True, "직원 호출 요청이 접수되었습니다."
+    async def async_submit_staff_call(self, **kwargs):
+        self.submitted = kwargs
+        return {
+            "result_code": "ACCEPTED",
+            "result_message": "직원이 곧 도착합니다.",
+            "reason_code": None,
+            "call_id": "member_event_9102",
+            "linked_visitor_id": None,
+            "linked_member_id": kwargs.get("member_id"),
+        }
 
 
 class FakeAsyncVisitGuideRepository:
@@ -606,11 +614,22 @@ def test_delivery_request_service_async_product_list_and_submit_request():
 
 
 def test_staff_call_service_async_submit_staff_call():
-    service = StaffCallService(repository=FakeAsyncStaffCallRepository())
+    repository = FakeAsyncStaffCallRepository()
+    service = StaffCallService(repository=repository)
 
-    result = asyncio.run(service.async_submit_staff_call("긴급", "도움 필요", member_id="1"))
+    result = asyncio.run(
+        service.async_submit_staff_call(
+            "긴급",
+            "도움 필요",
+            member_id="1",
+            idempotency_key="idem_staff_001",
+        )
+    )
 
-    assert result == (True, "직원 호출 요청이 접수되었습니다.")
+    assert result["result_code"] == "ACCEPTED"
+    assert result["call_id"] == "member_event_9102"
+    assert repository.submitted["description"] == "도움 필요"
+    assert repository.submitted["member_id"] == 1
 
 
 def test_visit_guide_service_async_search_and_start():

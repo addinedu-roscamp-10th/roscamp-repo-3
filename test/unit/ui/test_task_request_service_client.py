@@ -9,6 +9,7 @@ from ui.utils.network.service_clients import (
     DeliveryRequestRemoteService,
     InventoryRemoteService,
     KioskVisitorRemoteService,
+    StaffCallRemoteService,
     TaskMonitorRemoteService,
 )
 
@@ -157,6 +158,41 @@ def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch)
                 "visitor_id": 42,
             },
         ),
+    ]
+
+
+def test_staff_call_remote_service_exposes_if_gui_010_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "ACCEPTED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    result = StaffCallRemoteService().submit_staff_call(
+        call_type="방문 등록 도움",
+        description="대상 어르신을 찾는 데 도움이 필요합니다.",
+        idempotency_key="idem_staff_001",
+        visitor_id=42,
+        member_id=None,
+        kiosk_id="lobby_kiosk_01",
+    )
+
+    assert result == {"result_code": "ACCEPTED"}
+    assert calls == [
+        (
+            "staff_call",
+            "submit_staff_call",
+            {
+                "call_type": "방문 등록 도움",
+                "description": "대상 어르신을 찾는 데 도움이 필요합니다.",
+                "idempotency_key": "idem_staff_001",
+                "visitor_id": 42,
+                "member_id": None,
+                "kiosk_id": "lobby_kiosk_01",
+            },
+        )
     ]
 
 

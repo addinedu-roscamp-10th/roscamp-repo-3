@@ -1,6 +1,7 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS `idempotency_record`;
+DROP TABLE IF EXISTS `kiosk_staff_call_log`;
 DROP TABLE IF EXISTS `stream_metrics_log`;
 DROP TABLE IF EXISTS `ai_inference_log`;
 DROP TABLE IF EXISTS `robot_data_log`;
@@ -512,6 +513,29 @@ CREATE TABLE `stream_metrics_log` (
         FOREIGN KEY (`robot_id`)
         REFERENCES `robot` (`robot_id`),
     KEY `idx_stream_metrics_robot_window` (`robot_id`, `stream_name`, `window_started_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `kiosk_staff_call_log` (
+    `kiosk_staff_call_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `idempotency_key` VARCHAR(100) NOT NULL,
+    `request_hash` CHAR(64) NOT NULL,
+    `call_type` VARCHAR(100) NOT NULL,
+    `description` TEXT NULL,
+    `visitor_id` BIGINT UNSIGNED NULL,
+    `member_id` BIGINT UNSIGNED NULL,
+    `kiosk_id` VARCHAR(100) NULL,
+    `created_at` DATETIME(3) NOT NULL,
+    CONSTRAINT `pk_kiosk_staff_call_log` PRIMARY KEY (`kiosk_staff_call_id`),
+    CONSTRAINT `fk_kiosk_staff_call_visitor`
+        FOREIGN KEY (`visitor_id`)
+        REFERENCES `visitor` (`visitor_id`)
+        ON DELETE SET NULL,
+    CONSTRAINT `fk_kiosk_staff_call_member`
+        FOREIGN KEY (`member_id`)
+        REFERENCES `member` (`member_id`)
+        ON DELETE SET NULL,
+    UNIQUE KEY `uq_kiosk_staff_call_idempotency` (`idempotency_key`),
+    KEY `idx_kiosk_staff_call_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `idempotency_record` (
