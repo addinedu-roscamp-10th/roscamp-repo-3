@@ -101,15 +101,6 @@ ROS_ERROR_MARKERS = (
     "ROPI_ROS_SERVICE_SOCKET",
 )
 
-ROBOT_DISPLAY_NAMES = {
-    "pinky1": "안내 로봇",
-    "pinky2": "운반 로봇",
-    "pinky3": "순찰 로봇",
-    "jetcobot1": "픽업 로봇팔",
-    "jetcobot2": "목적지 로봇팔",
-}
-
-
 def _status_of(task: dict) -> str:
     return _display(task.get("task_status"), "UNKNOWN").upper()
 
@@ -137,6 +128,13 @@ def _operator_datetime(value):
             break
     time_text = time_text.split(".", 1)[0]
     return f"{date_text} {time_text}"
+
+
+def _capabilities_text(capabilities) -> str:
+    if isinstance(capabilities, (list, tuple)):
+        values = [str(item).strip() for item in capabilities if str(item).strip()]
+        return ", ".join(values) if values else "-"
+    return _display(capabilities)
 
 
 def _label_from(mapping, value, default="-"):
@@ -323,11 +321,9 @@ class RobotBoardCard(QFrame):
         self.setObjectName("homeRobotCard")
 
         robot_id = _display(robot.get("robot_id") or robot.get("robot_name"))
-        display_name = _display(
-            robot.get("display_name") or ROBOT_DISPLAY_NAMES.get(robot_id),
-            robot_id,
-        )
-        role = _display(robot.get("robot_role") or robot.get("robot_type_name"))
+        display_name = _display(robot.get("display_name"), robot_id)
+        robot_type = _display(robot.get("robot_type") or robot.get("robot_type_name"))
+        capabilities = _capabilities_text(robot.get("capabilities"))
         status = _display(robot.get("connection_status") or robot.get("status"))
         status_key = status.lower()
         self.setProperty("connection_status", status_key)
@@ -356,7 +352,8 @@ class RobotBoardCard(QFrame):
         top.addWidget(chip)
 
         rows = (
-            ("역할", role),
+            ("구분", robot_type),
+            ("지원 기능", capabilities),
             ("현재 작업", current_task),
             ("위치", location),
             ("배터리", _display(battery, "배터리 미수신")),

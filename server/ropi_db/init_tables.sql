@@ -135,6 +135,37 @@ CREATE TABLE `robot` (
     CONSTRAINT `pk_robot` PRIMARY KEY (`robot_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `robot_capability` (
+    `robot_id` VARCHAR(50) NOT NULL,
+    `capability_code` VARCHAR(50) NOT NULL,
+    `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_robot_capability` PRIMARY KEY (`robot_id`, `capability_code`),
+    CONSTRAINT `fk_robot_capability_robot`
+        FOREIGN KEY (`robot_id`)
+        REFERENCES `robot` (`robot_id`)
+        ON DELETE CASCADE,
+    KEY `idx_robot_capability_code` (`capability_code`, `is_enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `robot_station_assignment` (
+    `robot_id` VARCHAR(50) NOT NULL,
+    `task_type` VARCHAR(30) NOT NULL,
+    `station_role` VARCHAR(30) NOT NULL,
+    `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_robot_station_assignment`
+        PRIMARY KEY (`robot_id`, `task_type`, `station_role`),
+    CONSTRAINT `fk_robot_station_assignment_robot`
+        FOREIGN KEY (`robot_id`)
+        REFERENCES `robot` (`robot_id`)
+        ON DELETE CASCADE,
+    KEY `idx_robot_station_assignment_task_role`
+        (`task_type`, `station_role`, `is_enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `item` (
     `item_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `item_type` VARCHAR(100) NOT NULL,

@@ -19,12 +19,10 @@ class CaregiverService:
         "ASSIGNED",
         "RUNNING",
     }
-    DELIVERY_COMPOSITION = [
-        {"label": "Delivery Mobile Robot", "value": "pinky2"},
-        {"label": "Pickup Arm Robot", "value": "jetcobot1"},
-        {"label": "Destination Arm Robot", "value": "jetcobot2"},
-        {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
-    ]
+    DELIVERY_STATION_LABELS = {
+        "PICKUP": "픽업 로봇팔",
+        "DESTINATION": "목적지 로봇팔",
+    }
 
     def __init__(self, repository=None):
         self.repo = repository or CaregiverRepository()
@@ -134,27 +132,34 @@ class CaregiverService:
 
             current_phase = row.get("current_task_phase") or row.get("current_task_status")
 
-            result.append({
-                "robot_id": row["robot_id"],
-                "display_name": CaregiverService._display_name(row),
-                "robot_type": CaregiverService._robot_type(row),
-                "scenario_role": CaregiverService._scenario_role(row),
-                "robot_role": row.get("robot_type_name") or "-",
-                "connection_status": connection_status,
-                "runtime_state": status,
-                "battery_percent": battery_percent,
-                "current_location": current_location,
-                "current_task_id": row.get("current_task_id"),
-                "current_phase": current_phase,
-                "last_seen_at": last_seen_at,
-                "fault_code": row.get("fault_code"),
-                "robot_name": row["robot_id"],
-                "status": connection_status,
-                "zone": current_location,
-                "battery": battery_percent if battery_percent is not None else "-",
-                "current_task": current_phase or "-",
-                "chip_type": chip_type,
-            })
+            result.append(
+                {
+                    "robot_id": row["robot_id"],
+                    "display_name": CaregiverService._display_name(row),
+                    "robot_type": CaregiverService._robot_type(row),
+                    "manager_group": row.get("robot_manager_name") or "-",
+                    "capabilities": CaregiverService._csv_values(
+                        row.get("capability_codes")
+                    ),
+                    "station_roles": CaregiverService._station_roles(
+                        row.get("station_assignments")
+                    ),
+                    "connection_status": connection_status,
+                    "runtime_state": status,
+                    "battery_percent": battery_percent,
+                    "current_location": current_location,
+                    "current_task_id": row.get("current_task_id"),
+                    "current_phase": current_phase,
+                    "last_seen_at": last_seen_at,
+                    "fault_code": row.get("fault_code"),
+                    "robot_name": row["robot_id"],
+                    "status": connection_status,
+                    "zone": current_location,
+                    "battery": battery_percent if battery_percent is not None else "-",
+                    "current_task": current_phase or "-",
+                    "chip_type": chip_type,
+                }
+            )
 
         return result
 
@@ -176,7 +181,7 @@ class CaregiverService:
         return {
             "summary": summary,
             "robots": robots,
-            "delivery_composition": list(cls.DELIVERY_COMPOSITION),
+            "delivery_composition": cls._delivery_composition(robots),
         }
 
     @classmethod
@@ -274,18 +279,12 @@ class CaregiverService:
 
     @staticmethod
     def _display_name(row):
-        robot_id = row.get("robot_id")
-        if robot_id == "pinky1":
-            return "안내 로봇"
-        if robot_id == "pinky2":
-            return "운반 로봇"
-        if robot_id == "pinky3":
-            return "순찰 로봇"
-        if robot_id == "jetcobot1":
-            return "픽업 로봇팔"
-        if robot_id == "jetcobot2":
-            return "목적지 로봇팔"
-        return row.get("robot_manager_name") or robot_id or "-"
+        return (
+            row.get("robot_type_name")
+            or row.get("robot_manager_name")
+            or row.get("robot_id")
+            or "-"
+        )
 
     @staticmethod
     def _robot_type(row):
@@ -296,19 +295,46 @@ class CaregiverService:
         return "MOBILE"
 
     @staticmethod
-    def _scenario_role(row):
-        robot_id = row.get("robot_id")
-        if robot_id == "pinky1":
-            return "GUIDE"
-        if robot_id == "pinky2":
-            return "DELIVERY"
-        if robot_id == "pinky3":
-            return "PATROL"
-        if robot_id == "jetcobot1":
-            return "PICKUP_ARM"
-        if robot_id == "jetcobot2":
-            return "DESTINATION_ARM"
-        return "-"
+    def _csv_values(value):
+        return [
+            item.strip()
+            for item in str(value or "").split(",")
+            if item and item.strip()
+        ]
+
+    @staticmethod
+    def _station_roles(value):
+        station_roles = []
+        for item in CaregiverService._csv_values(value):
+            if ":" not in item:
+                continue
+            task_type, station_role = item.split(":", 1)
+            task_type = task_type.strip().upper()
+            station_role = station_role.strip().upper()
+            if task_type and station_role:
+                station_roles.append(
+                    {"task_type": task_type, "station_role": station_role}
+                )
+        return station_roles
+
+    @classmethod
+    def _delivery_composition(cls, robots):
+        composition = []
+        added_station_roles = set()
+        for robot in robots:
+            for assignment in robot.get("station_roles") or []:
+                if assignment.get("task_type") != "DELIVERY":
+                    continue
+                station_role = assignment.get("station_role")
+                label = cls.DELIVERY_STATION_LABELS.get(station_role)
+                if not label or station_role in added_station_roles:
+                    continue
+                composition.append({"label": label, "value": robot.get("robot_id")})
+                added_station_roles.add(station_role)
+
+        if composition:
+            composition.append({"label": "ROS adapter arm_id", "value": "arm1 / arm2"})
+        return composition
 
     def get_timeline_data(self):
         rows = self.repo.get_timeline(limit=30)

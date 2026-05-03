@@ -144,8 +144,9 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
             [
                 {
                     "robot_id": "pinky2",
-                    "display_name": "운반 로봇",
-                    "robot_role": "Pinky Pro",
+                    "display_name": "Pinky Pro",
+                    "robot_type": "MOBILE",
+                    "capabilities": ["DELIVERY", "PATROL"],
                     "connection_status": "OFFLINE",
                     "current_location": "좌표 x=1.2, y=0.8",
                     "battery_percent": 87.5,
@@ -163,9 +164,11 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
         ]
         assert len(cards) == 1
         assert cards[0].property("connection_status") == "offline"
-        assert "운반 로봇 · pinky2" in labels
-        assert "역할" in labels
-        assert "Pinky Pro" in labels
+        assert "Pinky Pro · pinky2" in labels
+        assert "구분" in labels
+        assert "MOBILE" in labels
+        assert "지원 기능" in labels
+        assert "DELIVERY, PATROL" in labels
         assert "현재 작업" in labels
         assert "위치" in labels
         assert "좌표 x=1.2, y=0.8" in labels

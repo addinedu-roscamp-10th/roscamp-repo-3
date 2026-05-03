@@ -210,7 +210,8 @@ def test_caregiver_service_async_methods_keep_response_shape():
     }
     assert result["robots"][0]["robot_name"] == "pinky2"
     assert result["robots"][0]["robot_id"] == "pinky2"
-    assert result["robots"][0]["robot_role"] == "MOBILE"
+    assert result["robots"][0]["robot_type"] == "MOBILE"
+    assert "robot_role" not in result["robots"][0]
     assert result["robots"][0]["connection_status"] == "ONLINE"
     assert result["robots"][0]["runtime_state"] == "IDLE"
     assert result["robots"][0]["current_task_id"] == 101
@@ -237,7 +238,9 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
         {
             "robot_id": "pinky2",
             "robot_type_name": "Pinky Pro",
-            "robot_manager_name": "운반팀",
+            "robot_manager_name": "모바일팀",
+            "capability_codes": "DELIVERY,PATROL",
+            "station_assignments": None,
             "robot_status": "RUNNING",
             "current_location": "x=1.0, y=2.0",
             "battery_percent": 87.5,
@@ -252,6 +255,8 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
             "robot_id": "jetcobot1",
             "robot_type_name": "JetCobot",
             "robot_manager_name": "운반팀",
+            "capability_codes": "MANIPULATION",
+            "station_assignments": "DELIVERY:PICKUP",
             "robot_status": "ERROR",
             "current_location": None,
             "battery_percent": None,
@@ -265,7 +270,9 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
         {
             "robot_id": "pinky3",
             "robot_type_name": "Pinky Pro",
-            "robot_manager_name": "순찰팀",
+            "robot_manager_name": "모바일팀",
+            "capability_codes": "DELIVERY,PATROL",
+            "station_assignments": None,
             "robot_status": "IDLE",
             "current_location": None,
             "battery_percent": 55,
@@ -287,17 +294,20 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
         "caution_robot_count": 1,
     }
     assert bundle["robots"][0]["robot_id"] == "pinky2"
-    assert bundle["robots"][0]["display_name"] == "운반 로봇"
+    assert bundle["robots"][0]["display_name"] == "Pinky Pro"
     assert bundle["robots"][0]["robot_type"] == "MOBILE"
-    assert bundle["robots"][0]["scenario_role"] == "DELIVERY"
+    assert "scenario_role" not in bundle["robots"][0]
+    assert bundle["robots"][0]["manager_group"] == "모바일팀"
+    assert bundle["robots"][0]["capabilities"] == ["DELIVERY", "PATROL"]
     assert bundle["robots"][0]["connection_status"] == "ONLINE"
     assert bundle["robots"][0]["current_phase"] == "DELIVERY_DESTINATION"
+    assert bundle["robots"][1]["station_roles"] == [
+        {"task_type": "DELIVERY", "station_role": "PICKUP"}
+    ]
     assert bundle["robots"][1]["connection_status"] == "DEGRADED"
     assert bundle["robots"][2]["connection_status"] == "OFFLINE"
     assert bundle["delivery_composition"] == [
-        {"label": "Delivery Mobile Robot", "value": "pinky2"},
-        {"label": "Pickup Arm Robot", "value": "jetcobot1"},
-        {"label": "Destination Arm Robot", "value": "jetcobot2"},
+        {"label": "픽업 로봇팔", "value": "jetcobot1"},
         {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
     ]
 

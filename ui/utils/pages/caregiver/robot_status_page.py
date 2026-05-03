@@ -35,7 +35,9 @@ SUMMARY_ITEMS = (
 TABLE_HEADERS = [
     "로봇 ID",
     "표시명",
-    "역할",
+    "구분",
+    "관리 그룹",
+    "지원 기능",
     "연결",
     "상태",
     "배터리",
@@ -53,6 +55,13 @@ def _chip_type(connection_status: str) -> str:
     if normalized == "OFFLINE":
         return "red"
     return "blue"
+
+
+def _capabilities_text(capabilities) -> str:
+    if isinstance(capabilities, (list, tuple)):
+        values = [str(item).strip() for item in capabilities if str(item).strip()]
+        return ", ".join(values) if values else "-"
+    return _display(capabilities)
 
 
 class RobotStatusLoadWorker(QObject):
@@ -91,11 +100,9 @@ class RobotStatusCard(QFrame):
         display_name.setObjectName("mutedText")
 
         details = [
-            (
-                "유형/역할",
-                f"{_display(robot.get('robot_type'))} / "
-                f"{_display(robot.get('scenario_role'))}",
-            ),
+            ("구분", _display(robot.get("robot_type"))),
+            ("관리 그룹", _display(robot.get("manager_group"))),
+            ("지원 기능", _capabilities_text(robot.get("capabilities"))),
             ("현재 작업", _display(robot.get("current_task_id"))),
             ("단계", _display(robot.get("current_phase"))),
             ("배터리", _battery_text(robot.get("battery_percent"))),
@@ -306,7 +313,9 @@ class RobotStatusPage(QWidget):
             values = [
                 _display(robot.get("robot_id")),
                 _display(robot.get("display_name")),
-                _display(robot.get("scenario_role")),
+                _display(robot.get("robot_type")),
+                _display(robot.get("manager_group")),
+                _capabilities_text(robot.get("capabilities")),
                 _display(robot.get("connection_status")),
                 _display(robot.get("runtime_state")),
                 _battery_text(robot.get("battery_percent")),
@@ -342,11 +351,9 @@ class RobotStatusPage(QWidget):
         detail_rows = [
             ("선택 로봇", _display(robot.get("robot_id"))),
             ("표시명", _display(robot.get("display_name"))),
-            (
-                "유형/역할",
-                f"{_display(robot.get('robot_type'))} / "
-                f"{_display(robot.get('scenario_role'))}",
-            ),
+            ("구분", _display(robot.get("robot_type"))),
+            ("관리 그룹", _display(robot.get("manager_group"))),
+            ("지원 기능", _capabilities_text(robot.get("capabilities"))),
             (
                 "상태",
                 f"{_display(robot.get('connection_status'))} / "

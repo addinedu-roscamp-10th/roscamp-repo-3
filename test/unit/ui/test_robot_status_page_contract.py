@@ -34,9 +34,11 @@ def _bundle():
         "robots": [
             {
                 "robot_id": "pinky2",
-                "display_name": "운반 로봇",
+                "display_name": "Pinky Pro",
                 "robot_type": "MOBILE",
-                "scenario_role": "DELIVERY",
+                "manager_group": "모바일팀",
+                "capabilities": ["DELIVERY", "PATROL"],
+                "station_roles": [],
                 "connection_status": "ONLINE",
                 "runtime_state": "RUNNING",
                 "battery_percent": 87.5,
@@ -47,9 +49,11 @@ def _bundle():
             },
             {
                 "robot_id": "jetcobot1",
-                "display_name": "픽업 로봇팔",
+                "display_name": "JetCobot",
                 "robot_type": "ARM",
-                "scenario_role": "PICKUP_ARM",
+                "manager_group": "운반팀",
+                "capabilities": ["MANIPULATION"],
+                "station_roles": [{"task_type": "DELIVERY", "station_role": "PICKUP"}],
                 "connection_status": "DEGRADED",
                 "runtime_state": "ERROR",
                 "battery_percent": None,
@@ -60,9 +64,8 @@ def _bundle():
             },
         ],
         "delivery_composition": [
-            {"label": "Delivery Mobile Robot", "value": "pinky2"},
-            {"label": "Pickup Arm Robot", "value": "jetcobot1"},
-            {"label": "Destination Arm Robot", "value": "jetcobot2"},
+            {"label": "픽업 로봇팔", "value": "jetcobot1"},
+            {"label": "목적지 로봇팔", "value": "jetcobot2"},
             {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
         ],
     }
@@ -111,16 +114,22 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert "2대" in labels
         assert "1대" in labels
         assert "pinky2" in labels
-        assert "운반 로봇" in labels
-        assert "Delivery Mobile Robot" in labels
+        assert "Pinky Pro" in labels
+        assert "모바일팀" in labels
+        assert "DELIVERY, PATROL" in labels
+        assert "픽업 로봇팔" in labels
         assert "pinky2" in labels
         assert "ROS adapter arm_id" in labels
         assert "arm1 / arm2" in labels
         assert not any("Delivery Mobile Robot: pinky2" in text for text in labels)
+        assert not any("유형/역할" in text for text in labels)
+        assert not any("PICKUP_ARM" in text for text in labels)
         assert page.findChildren(QFrame, "keyValueRow")
         assert page.table.rowCount() == 2
         assert page.table.item(0, 0).text() == "pinky2"
-        assert page.table.item(0, 3).text() == "ONLINE"
+        assert page.table.item(0, 2).text() == "MOBILE"
+        assert page.table.item(0, 4).text() == "DELIVERY, PATROL"
+        assert page.table.item(0, 5).text() == "ONLINE"
 
         page.table.selectRow(1)
         page._handle_table_selection()
