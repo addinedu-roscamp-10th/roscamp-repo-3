@@ -182,7 +182,7 @@ class KioskVisitorRepository:
         return {
             "member_id": int(row["member_id"]),
             "display_name": cls._mask_display_name(row.get("member_name") or "-"),
-            "room_no": row.get("room_no"),
+            "birth_date": cls._format_date(row.get("birth_date")),
             "visit_available": True,
             "guide_available": True,
         }
@@ -231,6 +231,14 @@ class KioskVisitorRepository:
 
     @staticmethod
     def _format_timestamp(value):
+        if value is None:
+            return None
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+
+    @staticmethod
+    def _format_date(value):
         if value is None:
             return None
         if hasattr(value, "isoformat"):

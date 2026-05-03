@@ -96,17 +96,36 @@ def test_kiosk_home_ports_wireframe_style_without_english_or_duplicate_cta():
         window.close()
 
 
-def test_kiosk_resident_search_uses_if_gui_007_lookup_payload():
+def test_kiosk_home_routes_resident_lookup_and_visit_registration_to_registration():
     _app()
 
-    from ui.kiosk_ui.main_window import KioskResidentSearchPage
+    from ui.kiosk_ui.main_window import KioskHomeWindow
+
+    window = KioskHomeWindow()
+
+    try:
+        window.home_page.search_card.clicked.emit()
+        assert window.stack.currentWidget() is window.registration_page
+
+        window.stack.setCurrentWidget(window.home_page)
+        window.home_page.register_card.clicked.emit()
+        assert window.stack.currentWidget() is window.registration_page
+    finally:
+        window.close()
+
+
+def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registration():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskVisitorRegistrationPage
 
     class FakeKioskVisitorService:
         def __init__(self):
-            self.calls = []
+            self.lookup_calls = []
+            self.register_calls = []
 
         def lookup_residents(self, *, keyword, limit=10):
-            self.calls.append({"keyword": keyword, "limit": limit})
+            self.lookup_calls.append({"keyword": keyword, "limit": limit})
             return {
                 "result_code": "FOUND",
                 "result_message": "어르신 정보를 확인했습니다.",
@@ -115,100 +134,133 @@ def test_kiosk_resident_search_uses_if_gui_007_lookup_payload():
                     {
                         "member_id": 1,
                         "display_name": "김*수",
-                        "room_no": "301",
+                        "birth_date": "1942-03-14",
                         "visit_available": True,
                         "guide_available": True,
                     }
                 ],
             }
 
+        def register_visit(
+            self,
+            *,
+            visitor_name,
+            phone_no,
+            relationship,
+            visit_purpose,
+            target_member_id,
+            privacy_agreed,
+            kiosk_id=None,
+        ):
+            self.register_calls.append(
+                {
+                    "visitor_name": visitor_name,
+                    "phone_no": phone_no,
+                    "relationship": relationship,
+                    "visit_purpose": visit_purpose,
+                    "target_member_id": target_member_id,
+                    "privacy_agreed": privacy_agreed,
+                    "kiosk_id": kiosk_id,
+                }
+            )
+            return {
+                "result_code": "REGISTERED",
+                "result_message": "방문 등록이 완료되었습니다.",
+                "reason_code": None,
+                "visitor_id": 42,
+                "member_id": 1,
+                "resident_name": "김영수",
+                "room_no": "301",
+                "visit_status": "면회 가능",
+            }
+
     service = FakeKioskVisitorService()
-    page = KioskResidentSearchPage(service=service)
+    routed_patients = []
+    page = KioskVisitorRegistrationPage(
+        service=service,
+        go_confirmation_page=routed_patients.append,
+    )
 
     try:
-        page.search_input.setText(" 301 ")
-        page.search_patient()
+        assert page.objectName() == "kioskVisitorRegistrationPage"
+        assert page.search_button.isEnabled() is False
+        assert page.register_button.isEnabled() is False
 
-        assert service.calls == [{"keyword": "301", "limit": 5}]
-        assert page.selected_patient == {
+        page.visitor_name_input.setText(" 김민수 ")
+        page.phone_input.setText(" 010-1111-2222 ")
+        page.relationship_input.setText(" 아들 ")
+        page.visit_purpose_input.setText(" 정기 면회 ")
+        page.privacy_checkbox.setChecked(True)
+        page.resident_search_input.setText(" 김영수 ")
+
+        assert page.search_button.isEnabled() is True
+
+        page.search_resident()
+
+        assert service.lookup_calls == [{"keyword": "김영수", "limit": 5}]
+        assert page.selected_resident == {
             "member_id": 1,
-            "name": "김*수",
-            "room": "301",
-            "location": "호실 안내 가능",
-            "status": "방문 등록 가능",
+            "display_name": "김*수",
+            "birth_date": "1942-03-14",
             "visit_available": True,
             "guide_available": True,
         }
-        assert page.name_label.text() == "김*수 어르신"
-        assert page.room_label.text() == "301호"
-        assert page.location_label.text() == "위치: 호실 안내 가능"
-        assert page.visit_label.text() == "면회 상태: 방문 등록 가능"
+        assert page.resident_name_label.text() == "김*수 어르신"
+        assert page.resident_birth_label.text() == "생년월일 1942-03-14"
+        assert "301" not in " ".join(_visible_texts(page))
+        assert page.register_button.isEnabled() is True
+
+        page.register_visit()
+
+        assert service.register_calls == [
+            {
+                "visitor_name": "김민수",
+                "phone_no": "010-1111-2222",
+                "relationship": "아들",
+                "visit_purpose": "정기 면회",
+                "target_member_id": 1,
+                "privacy_agreed": True,
+                "kiosk_id": None,
+            }
+        ]
+        assert page.visitor_session == {
+            "visitor_id": 42,
+            "member_id": 1,
+            "resident_name": "김영수",
+            "room_no": "301",
+            "visit_status": "면회 가능",
+        }
+        assert routed_patients == [
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김영수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            }
+        ]
     finally:
         page.close()
 
 
-def test_kiosk_resident_search_handles_no_match_from_if_gui_007():
+def test_kiosk_visitor_registration_blocks_resident_lookup_until_visitor_context_ready():
     _app()
 
-    from ui.kiosk_ui.main_window import KioskResidentSearchPage
+    from ui.kiosk_ui.main_window import KioskVisitorRegistrationPage
 
     class FakeKioskVisitorService:
         def lookup_residents(self, *, keyword, limit=10):
-            return {
-                "result_code": "NO_MATCH",
-                "result_message": "일치하는 어르신 정보가 없습니다.",
-                "reason_code": "RESIDENT_NOT_FOUND",
-                "matches": [],
-            }
+            raise AssertionError("resident lookup must wait for visitor fields and consent")
 
-    page = KioskResidentSearchPage(service=FakeKioskVisitorService())
+    page = KioskVisitorRegistrationPage(service=FakeKioskVisitorService())
 
     try:
-        page.search_input.setText("999")
-        page.search_patient()
+        page.resident_search_input.setText("김영수")
+        page.search_resident()
 
-        assert page.selected_patient is None
-        assert page.name_label.text() == "검색 결과가 없습니다"
-        assert page.status_label.text() == "일치하는 어르신 정보가 없습니다."
-    finally:
-        page.close()
-
-
-def test_kiosk_resident_search_ports_wireframe_header_buttons_and_icons():
-    _app()
-
-    from ui.kiosk_ui.main_window import KioskResidentSearchPage
-
-    page = KioskResidentSearchPage()
-
-    try:
-        assert page.objectName() == "kioskResidentSearchPage"
-
-        root_layout = page.layout()
-        assert root_layout.itemAt(0).widget().objectName() == "kioskSearchTopBar"
-
-        assert page.call_staff_button.text() == "직원 호출"
-
-        assert page.search_button.text() == ""
-        assert page.search_button.property("iconName") == "search"
-        assert page.search_button.minimumWidth() >= 120
-        assert page.search_button.minimumHeight() >= 84
-
-        search_card = page.findChild(QFrame, "kioskSearchInputCard")
-        assert search_card is not None
-        assert search_card.minimumHeight() >= 88
-
-        assert page.back_button.text() == "이전"
-        assert page.back_button.property("iconName") == "arrow_back"
-        assert page.home_button.text() == "처음으로"
-        assert page.home_button.property("iconName") == "home"
-        assert page.back_button.minimumHeight() >= 72
-        assert page.home_button.minimumHeight() >= 72
-
-        avatar_icon = page.findChild(QWidget, "kioskResidentPersonIcon")
-        assert avatar_icon is not None
-
-        assert page.start_button.text() == "안내 시작"
-        assert page.start_button.property("iconName") == "navigation"
+        assert page.search_button.isEnabled() is False
+        assert page.selected_resident is None
+        assert "방문자 정보와 개인정보 동의" in page.status_label.text()
     finally:
         page.close()

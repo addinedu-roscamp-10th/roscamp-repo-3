@@ -5,6 +5,7 @@ from PyQt6.QtCore import QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -285,7 +286,7 @@ class KioskFooterStat(QFrame):
         layout.addLayout(text_wrap)
 
 
-class KioskResidentSearchPage(QWidget):
+class KioskVisitorRegistrationPage(QWidget):
     def __init__(
         self,
         *,
@@ -295,19 +296,20 @@ class KioskResidentSearchPage(QWidget):
         service=None,
     ):
         super().__init__()
-        self.setObjectName("kioskResidentSearchPage")
+        self.setObjectName("kioskVisitorRegistrationPage")
         self.go_home_page = go_home_page
         self.go_confirmation_page = go_confirmation_page
         self.go_back_page = go_back_page
         self.service = service or KioskVisitorRemoteService()
-        self.selected_patient = None
+        self.selected_resident = None
+        self.visitor_session = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         header = QFrame()
-        header.setObjectName("kioskSearchTopBar")
+        header.setObjectName("kioskRegistrationTopBar")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(56, 28, 56, 28)
         header_layout.setSpacing(18)
@@ -320,7 +322,7 @@ class KioskResidentSearchPage(QWidget):
         brand_icon.setObjectName("kioskBrandIcon")
 
         brand = QLabel("ROPI 요양보호 서비스")
-        brand.setObjectName("kioskSearchBrand")
+        brand.setObjectName("kioskRegistrationBrand")
 
         brand_wrap.addWidget(brand_icon)
         brand_wrap.addWidget(brand)
@@ -330,21 +332,74 @@ class KioskResidentSearchPage(QWidget):
         self.call_staff_button = QPushButton("직원 호출")
         self.call_staff_button.setObjectName("kioskSearchCallButton")
         self.call_staff_button.setMinimumHeight(72)
-
         header_layout.addWidget(self.call_staff_button)
 
         page_shell = QVBoxLayout()
-        page_shell.setContentsMargins(56, 32, 56, 0)
-        page_shell.setSpacing(24)
+        page_shell.setContentsMargins(56, 30, 56, 0)
+        page_shell.setSpacing(22)
         page_shell.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        title = QLabel("어르신 찾기")
+        title = QLabel("방문자 등록")
         title.setObjectName("kioskSearchPageTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        subtitle = QLabel("방 번호나 성함을 입력해 주세요.")
+        subtitle = QLabel("방문자 정보를 입력한 뒤 만나실 어르신을 확인해 주세요.")
         subtitle.setObjectName("kioskSearchPageSubtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        content_row = QHBoxLayout()
+        content_row.setSpacing(24)
+
+        form_card = QFrame()
+        form_card.setObjectName("kioskRegistrationFormCard")
+        form_layout = QVBoxLayout(form_card)
+        form_layout.setContentsMargins(28, 26, 28, 26)
+        form_layout.setSpacing(14)
+
+        form_title = QLabel("방문자 정보")
+        form_title.setObjectName("kioskRegistrationSectionTitle")
+
+        name_field, self.visitor_name_input = self._create_labeled_input(
+            "성함",
+            "예: 김민수",
+        )
+        phone_field, self.phone_input = self._create_labeled_input(
+            "연락처",
+            "예: 010-1234-5678",
+        )
+        relation_field, self.relationship_input = self._create_labeled_input(
+            "관계",
+            "예: 아들, 보호자",
+        )
+        purpose_field, self.visit_purpose_input = self._create_labeled_input(
+            "방문 목적",
+            "예: 정기 면회",
+        )
+
+        self.privacy_checkbox = QCheckBox("개인정보 수집 및 방문 기록 저장에 동의합니다.")
+        self.privacy_checkbox.setObjectName("kioskPrivacyCheckbox")
+        self.privacy_checkbox.stateChanged.connect(self._sync_action_state)
+
+        form_layout.addWidget(form_title)
+        form_layout.addWidget(name_field)
+        form_layout.addWidget(phone_field)
+        form_layout.addWidget(relation_field)
+        form_layout.addWidget(purpose_field)
+        form_layout.addWidget(self.privacy_checkbox)
+        form_layout.addStretch()
+
+        resident_card = QFrame()
+        resident_card.setObjectName("kioskRegistrationResidentCard")
+        resident_layout = QVBoxLayout(resident_card)
+        resident_layout.setContentsMargins(28, 26, 28, 26)
+        resident_layout.setSpacing(16)
+
+        resident_title = QLabel("만나실 어르신")
+        resident_title.setObjectName("kioskRegistrationSectionTitle")
+
+        resident_hint = QLabel("방문자 정보를 먼저 입력하면 어르신 검색을 사용할 수 있습니다.")
+        resident_hint.setObjectName("kioskRegistrationHint")
+        resident_hint.setWordWrap(True)
 
         search_card = QFrame()
         search_card.setObjectName("kioskSearchInputCard")
@@ -354,31 +409,25 @@ class KioskResidentSearchPage(QWidget):
         search_layout.setContentsMargins(0, 0, 0, 0)
         search_layout.setSpacing(0)
 
-        self.search_input = QLineEdit()
-        self.search_input.setObjectName("kioskSearchInput")
-        self.search_input.setPlaceholderText("예: 302호 또는 김철수")
-        self.search_input.returnPressed.connect(self.search_patient)
+        self.resident_search_input = QLineEdit()
+        self.resident_search_input.setObjectName("kioskSearchInput")
+        self.resident_search_input.setPlaceholderText("성함 또는 방 번호 입력")
+        self.resident_search_input.textChanged.connect(self._sync_action_state)
+        self.resident_search_input.returnPressed.connect(self.search_resident)
 
         self.search_button = KioskSearchIconButton()
         self.search_button.setObjectName("kioskSearchSubmitButton")
         self.search_button.setMinimumSize(128, 88)
-        self.search_button.clicked.connect(self.search_patient)
+        self.search_button.clicked.connect(self.search_resident)
 
-        search_layout.addWidget(self.search_input, 1)
+        search_layout.addWidget(self.resident_search_input, 1)
         search_layout.addWidget(self.search_button)
 
-        self.status_label = QLabel("어르신을 검색하면 결과가 이곳에 표시됩니다.")
-        self.status_label.setObjectName("kioskSearchStatusText")
-        self.status_label.setWordWrap(True)
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.result_card = QFrame()
-        self.result_card.setObjectName("kioskResidentResultCard")
-        self.result_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self.result_card.setMinimumHeight(150)
-        result_layout = QHBoxLayout(self.result_card)
-        result_layout.setContentsMargins(24, 24, 24, 24)
-        result_layout.setSpacing(18)
+        self.resident_summary_card = QFrame()
+        self.resident_summary_card.setObjectName("kioskRegistrationResidentSummary")
+        summary_layout = QHBoxLayout(self.resident_summary_card)
+        summary_layout.setContentsMargins(22, 22, 22, 22)
+        summary_layout.setSpacing(18)
 
         avatar = QFrame()
         avatar.setObjectName("kioskResidentAvatar")
@@ -386,43 +435,44 @@ class KioskResidentSearchPage(QWidget):
         avatar_layout = QVBoxLayout(avatar)
         avatar_layout.setContentsMargins(0, 0, 0, 0)
         avatar_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        avatar_layout.addWidget(KioskResidentPersonIcon())
 
-        avatar_icon = KioskResidentPersonIcon()
-        avatar_layout.addWidget(avatar_icon)
+        resident_text = QVBoxLayout()
+        resident_text.setSpacing(8)
 
-        info_wrap = QVBoxLayout()
-        info_wrap.setSpacing(6)
+        self.resident_name_label = QLabel("선택된 어르신이 없습니다")
+        self.resident_name_label.setObjectName("kioskResidentName")
 
-        self.name_label = QLabel("검색 결과가 없습니다")
-        self.name_label.setObjectName("kioskResidentName")
+        self.resident_birth_label = QLabel("생년월일 -")
+        self.resident_birth_label.setObjectName("kioskResidentMeta")
 
-        self.room_label = QLabel("병실: -")
-        self.room_label.setObjectName("kioskResidentRoom")
+        self.resident_visit_label = QLabel("방문 상태 -")
+        self.resident_visit_label.setObjectName("kioskResidentMeta")
 
-        self.location_label = QLabel("위치: -")
-        self.location_label.setObjectName("kioskResidentMeta")
+        resident_text.addWidget(self.resident_name_label)
+        resident_text.addWidget(self.resident_birth_label)
+        resident_text.addWidget(self.resident_visit_label)
 
-        self.visit_label = QLabel("면회 상태: -")
-        self.visit_label.setObjectName("kioskResidentMeta")
+        summary_layout.addWidget(avatar)
+        summary_layout.addLayout(resident_text, 1)
 
-        info_wrap.addWidget(self.name_label)
-        info_wrap.addWidget(self.room_label)
-        info_wrap.addWidget(self.location_label)
-        info_wrap.addWidget(self.visit_label)
+        resident_layout.addWidget(resident_title)
+        resident_layout.addWidget(resident_hint)
+        resident_layout.addWidget(search_card)
+        resident_layout.addWidget(self.resident_summary_card)
+        resident_layout.addStretch()
 
-        self.start_button = KioskNavigationActionButton("안내 시작")
-        self.start_button.setObjectName("kioskResidentActionButton")
-        self.start_button.setMinimumHeight(72)
-        self.start_button.clicked.connect(self.start_guidance)
+        content_row.addWidget(form_card, 1)
+        content_row.addWidget(resident_card, 1)
 
-        result_layout.addWidget(avatar)
-        result_layout.addLayout(info_wrap, 1)
-        result_layout.addWidget(self.start_button)
+        self.status_label = QLabel("방문자 정보와 개인정보 동의를 완료하면 어르신을 검색할 수 있습니다.")
+        self.status_label.setObjectName("kioskSearchStatusText")
+        self.status_label.setWordWrap(True)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         page_shell.addWidget(title)
         page_shell.addWidget(subtitle)
-        page_shell.addWidget(search_card)
-        page_shell.addWidget(self.result_card)
+        page_shell.addLayout(content_row, 1)
         page_shell.addWidget(self.status_label)
 
         bottom_bar = QFrame()
@@ -441,55 +491,211 @@ class KioskResidentSearchPage(QWidget):
         self.home_button.setMinimumHeight(72)
         self.home_button.clicked.connect(self._go_home)
 
+        self.register_button = QPushButton("등록하기")
+        self.register_button.setObjectName("kioskRegistrationPrimaryButton")
+        self.register_button.setMinimumHeight(72)
+        self.register_button.clicked.connect(self.register_visit)
+
         action_row.addWidget(self.back_button)
         action_row.addStretch()
         action_row.addWidget(self.home_button)
+        action_row.addWidget(self.register_button)
 
         root.addWidget(header)
         root.addLayout(page_shell, 1)
         root.addWidget(bottom_bar)
 
-    def search_patient(self):
-        keyword = self.search_input.text().strip()
+        for input_widget in [
+            self.visitor_name_input,
+            self.phone_input,
+            self.relationship_input,
+            self.visit_purpose_input,
+        ]:
+            input_widget.textChanged.connect(self._on_visitor_context_changed)
+
+        self._sync_action_state()
+
+    def _create_labeled_input(self, label_text, placeholder_text):
+        field = QFrame()
+        field.setObjectName("kioskRegistrationField")
+        layout = QVBoxLayout(field)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        label = QLabel(label_text)
+        label.setObjectName("kioskRegistrationFieldLabel")
+
+        input_widget = QLineEdit()
+        input_widget.setObjectName("kioskRegistrationInput")
+        input_widget.setPlaceholderText(placeholder_text)
+        input_widget.setMinimumHeight(58)
+
+        layout.addWidget(label)
+        layout.addWidget(input_widget)
+        return field, input_widget
+
+    def search_resident(self):
+        if not self._visitor_context_ready():
+            self.status_label.setText("방문자 정보와 개인정보 동의를 먼저 완료해 주세요.")
+            self._sync_action_state()
+            return
+
+        keyword = self.resident_search_input.text().strip()
+        if not keyword:
+            self.status_label.setText("만나실 어르신의 성함 또는 방 번호를 입력해 주세요.")
+            self._sync_action_state()
+            return
+
         try:
             response = self.service.lookup_residents(keyword=keyword, limit=5)
         except Exception as exc:
-            self.selected_patient = None
-            self._clear_result()
+            self.selected_resident = None
+            self._clear_resident_result()
             self.status_label.setText(f"검색 중 오류가 발생했습니다: {exc}")
+            self._sync_action_state()
             return
 
         result_code = response.get("result_code")
         matches = response.get("matches") or []
         if result_code != "FOUND" or not matches:
-            self.selected_patient = None
-            self._clear_result()
+            self.selected_resident = None
+            self._clear_resident_result()
             self.status_label.setText(
                 response.get("result_message") or "일치하는 어르신 정보가 없습니다."
             )
+            self._sync_action_state()
             return
 
-        patient = self._patient_from_lookup_match(matches[0])
-        self.selected_patient = patient
-        self.name_label.setText(f"{patient.get('name', '-')} 어르신")
-        self.room_label.setText(self._format_room_label(patient.get("room")))
-        self.location_label.setText(f"위치: {patient.get('location', '-')}")
-        self.visit_label.setText(f"면회 상태: {patient.get('status', '-')}")
-        self.status_label.setText("검색 결과를 확인했습니다. 방문 등록 후 안내를 요청할 수 있습니다.")
+        self.selected_resident = self._resident_from_lookup_match(matches[0])
+        self._show_resident_result(self.selected_resident)
+        self.status_label.setText("어르신 정보를 확인했습니다. 방문 등록을 완료해 주세요.")
+        self._sync_action_state()
 
-    @classmethod
-    def _patient_from_lookup_match(cls, match):
-        room = cls._normalize_room(match.get("room_no"))
-        visit_available = bool(match.get("visit_available"))
+    def register_visit(self):
+        if not self._visitor_context_ready():
+            self.status_label.setText("방문자 정보와 개인정보 동의를 먼저 완료해 주세요.")
+            self._sync_action_state()
+            return
+        if not self.selected_resident:
+            self.status_label.setText("만나실 어르신을 먼저 검색해 주세요.")
+            self._sync_action_state()
+            return
+
+        payload = self._registration_payload()
+        try:
+            response = self.service.register_visit(**payload)
+        except Exception as exc:
+            self.status_label.setText(f"방문 등록 중 오류가 발생했습니다: {exc}")
+            return
+
+        if response.get("result_code") != "REGISTERED":
+            self.visitor_session = None
+            self.status_label.setText(
+                response.get("result_message") or "방문 등록을 완료하지 못했습니다."
+            )
+            return
+
+        self.visitor_session = {
+            "visitor_id": int(response["visitor_id"]),
+            "member_id": int(response["member_id"]),
+            "resident_name": (
+                response.get("resident_name") or self.selected_resident["display_name"]
+            ),
+            "room_no": response.get("room_no") or "-",
+            "visit_status": response.get("visit_status") or "면회 가능",
+        }
+        patient = self._patient_from_registration_response(response)
+        self.status_label.setText("방문 등록이 완료되었습니다. 안내 확인 화면으로 이동합니다.")
+
+        if self.go_confirmation_page:
+            self.go_confirmation_page(patient)
+
+    def reset_form(self):
+        for input_widget in [
+            self.visitor_name_input,
+            self.phone_input,
+            self.relationship_input,
+            self.visit_purpose_input,
+            self.resident_search_input,
+        ]:
+            input_widget.clear()
+        self.privacy_checkbox.setChecked(False)
+        self.selected_resident = None
+        self.visitor_session = None
+        self._clear_resident_result()
+        self.status_label.setText("방문자 정보와 개인정보 동의를 완료하면 어르신을 검색할 수 있습니다.")
+        self._sync_action_state()
+
+    def _registration_payload(self):
+        return {
+            "visitor_name": self.visitor_name_input.text().strip(),
+            "phone_no": self.phone_input.text().strip(),
+            "relationship": self.relationship_input.text().strip(),
+            "visit_purpose": self.visit_purpose_input.text().strip(),
+            "target_member_id": int(self.selected_resident["member_id"]),
+            "privacy_agreed": self.privacy_checkbox.isChecked(),
+            "kiosk_id": None,
+        }
+
+    def _patient_from_registration_response(self, response):
+        return {
+            "member_id": int(response.get("member_id") or self.selected_resident["member_id"]),
+            "visitor_id": int(response["visitor_id"]),
+            "name": str(response.get("resident_name") or self.selected_resident["display_name"]),
+            "room": self._normalize_room(response.get("room_no")),
+            "visit_status": response.get("visit_status") or "면회 가능",
+            "guide_available": bool(self.selected_resident.get("guide_available")),
+        }
+
+    @staticmethod
+    def _resident_from_lookup_match(match):
         return {
             "member_id": int(match["member_id"]),
-            "name": str(match.get("display_name") or "-").strip() or "-",
-            "room": room,
-            "location": "호실 안내 가능" if room != "-" else "-",
-            "status": "방문 등록 가능" if visit_available else "방문 제한",
-            "visit_available": visit_available,
-            "guide_available": bool(match.get("guide_available")),
+            "display_name": str(match.get("display_name") or "-").strip() or "-",
+            "birth_date": str(match.get("birth_date") or "-").strip() or "-",
+            "visit_available": bool(match.get("visit_available", True)),
+            "guide_available": bool(match.get("guide_available", True)),
         }
+
+    def _show_resident_result(self, resident):
+        self.resident_name_label.setText(f"{resident['display_name']} 어르신")
+        self.resident_birth_label.setText(f"생년월일 {resident['birth_date']}")
+        self.resident_visit_label.setText(
+            "방문 등록 가능" if resident.get("visit_available") else "방문 제한"
+        )
+
+    def _clear_resident_result(self):
+        self.resident_name_label.setText("선택된 어르신이 없습니다")
+        self.resident_birth_label.setText("생년월일 -")
+        self.resident_visit_label.setText("방문 상태 -")
+
+    def _on_visitor_context_changed(self):
+        if self.selected_resident:
+            self.selected_resident = None
+            self._clear_resident_result()
+            self.status_label.setText("방문자 정보가 변경되어 어르신 검색을 다시 확인해 주세요.")
+        self._sync_action_state()
+
+    def _visitor_context_ready(self):
+        return (
+            bool(self.visitor_name_input.text().strip())
+            and bool(self.phone_input.text().strip())
+            and bool(self.relationship_input.text().strip())
+            and bool(self.visit_purpose_input.text().strip())
+            and self.privacy_checkbox.isChecked()
+        )
+
+    def _sync_action_state(self):
+        can_search = self._visitor_context_ready() and bool(
+            self.resident_search_input.text().strip()
+        )
+        self.search_button.setEnabled(can_search)
+        can_register = bool(
+            self.selected_resident
+            and self.selected_resident.get("visit_available")
+            and self._visitor_context_ready()
+        )
+        self.register_button.setEnabled(can_register)
 
     @staticmethod
     def _normalize_room(room_no):
@@ -497,36 +703,6 @@ class KioskResidentSearchPage(QWidget):
         if room.endswith("호"):
             room = room[:-1].strip()
         return room or "-"
-
-    @classmethod
-    def _format_room_label(cls, room_no):
-        room = cls._normalize_room(room_no)
-        if room == "-":
-            return "병실: -"
-        return f"{room}호"
-
-    def start_guidance(self):
-        if not self.selected_patient:
-            self.status_label.setText("먼저 어르신을 검색해 주세요.")
-            return
-
-        if self.go_confirmation_page:
-            self.go_confirmation_page(self.selected_patient)
-            return
-
-        self.status_label.setText("안내 확인 화면으로 이동할 수 없습니다.")
-
-    def reset_search(self):
-        self.search_input.clear()
-        self.selected_patient = None
-        self._clear_result()
-        self.status_label.setText("어르신을 검색하면 결과가 이곳에 표시됩니다.")
-
-    def _clear_result(self):
-        self.name_label.setText("검색 결과가 없습니다")
-        self.room_label.setText("병실: -")
-        self.location_label.setText("위치: -")
-        self.visit_label.setText("면회 상태: -")
 
     def _go_home(self):
         if self.go_home_page:
@@ -1087,7 +1263,7 @@ class KioskHomePage(QWidget):
             accent="blue",
             icon_name="resident_search",
             title_text="어르신 찾기",
-            desc_text="찾으시는 어르신과 호실을 안내해 드립니다.",
+            desc_text="방문 등록 후 만나실 어르신을 확인합니다.",
         )
         self.register_card = KioskHomeActionCard(
             accent="green",
@@ -1160,14 +1336,14 @@ class KioskHomeWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         self.home_page = KioskHomePage()
-        self.search_page = KioskResidentSearchPage(
+        self.registration_page = KioskVisitorRegistrationPage(
             go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
             go_confirmation_page=self._show_confirmation_page,
             go_back_page=lambda: self.stack.setCurrentWidget(self.home_page),
         )
         self.confirmation_page = KioskGuideConfirmationPage(
             go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
-            go_back_page=lambda: self.stack.setCurrentWidget(self.search_page),
+            go_back_page=lambda: self.stack.setCurrentWidget(self.registration_page),
             go_progress_page=self._show_progress_page,
         )
         self.progress_page = KioskRobotGuidanceProgressPage(
@@ -1175,15 +1351,26 @@ class KioskHomeWindow(QMainWindow):
         )
 
         self.home_page.search_card.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.search_page)
+            lambda: self._show_registration_page(focus_resident_search=True)
+        )
+        self.home_page.register_card.clicked.connect(
+            lambda: self._show_registration_page(focus_resident_search=False)
         )
 
         self.stack.addWidget(self.home_page)
-        self.stack.addWidget(self.search_page)
+        self.stack.addWidget(self.registration_page)
         self.stack.addWidget(self.confirmation_page)
         self.stack.addWidget(self.progress_page)
         root_layout.addWidget(self.stack)
         self.setCentralWidget(root)
+
+    def _show_registration_page(self, *, focus_resident_search=False):
+        self.registration_page.reset_form()
+        self.stack.setCurrentWidget(self.registration_page)
+        if focus_resident_search:
+            self.registration_page.resident_search_input.setFocus()
+            return
+        self.registration_page.visitor_name_input.setFocus()
 
     def _show_confirmation_page(self, patient):
         self.confirmation_page.set_patient(patient)
@@ -1194,7 +1381,7 @@ class KioskHomeWindow(QMainWindow):
         self.stack.setCurrentWidget(self.progress_page)
 
 
-__all__ = ["KioskHomeWindow", "load_stylesheet"]
+__all__ = ["KioskHomeWindow", "KioskVisitorRegistrationPage", "load_stylesheet"]
 
 
 def main():

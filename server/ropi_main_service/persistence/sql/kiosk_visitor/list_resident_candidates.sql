@@ -1,7 +1,7 @@
 SELECT
     member_id,
     member_name,
-    room_no
+    birth_date
 FROM member
 WHERE member_name LIKE %s
    OR room_no LIKE %s

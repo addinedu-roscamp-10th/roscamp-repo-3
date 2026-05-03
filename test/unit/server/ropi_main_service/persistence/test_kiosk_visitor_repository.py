@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 
 from server.ropi_main_service.persistence.repositories import kiosk_visitor_repository
 
@@ -13,6 +14,7 @@ def test_kiosk_visitor_repository_async_lookup_formats_safe_candidates(monkeypat
                 "member_id": 1,
                 "member_name": "김영수",
                 "room_no": "301",
+                "birth_date": date(1942, 3, 14),
             }
         ]
 
@@ -29,7 +31,7 @@ def test_kiosk_visitor_repository_async_lookup_formats_safe_candidates(monkeypat
         {
             "member_id": 1,
             "display_name": "김*수",
-            "room_no": "301",
+            "birth_date": "1942-03-14",
             "visit_available": True,
             "guide_available": True,
         }

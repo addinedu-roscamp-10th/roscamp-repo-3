@@ -5,7 +5,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 from runtime_db_seeders import (
@@ -63,6 +63,15 @@ def build_runtime_caregiver_session() -> UserSession:
         name="runtime-caregiver",
         role="caregiver",
     )
+
+
+def _visible_texts(widget) -> list[str]:
+    texts: list[str] = []
+    for label in widget.findChildren(QLabel):
+        texts.append(label.text())
+    for button in widget.findChildren(QPushButton):
+        texts.append(button.text())
+    return texts
 
 
 @pytest.fixture(scope="session")
@@ -261,9 +270,18 @@ def test_task_request_page_loads_items_from_real_server(patched_ui_endpoint, qap
         wait_for_qt(qapp, lambda: True, timeout=0.1)
 
 
-def test_kiosk_home_resident_search_hits_real_server_and_db(patched_ui_endpoint, qapp):
+def test_kiosk_visitor_registration_lookup_and_register_hits_real_server_and_db(
+    patched_ui_endpoint,
+    qapp,
+):
     member_row = safe_fetch_one(
-        "SELECT member_id, room_no FROM member WHERE room_no IS NOT NULL ORDER BY member_id LIMIT 1"
+        """
+        SELECT member_id, member_name, room_no, birth_date
+        FROM member
+        WHERE room_no IS NOT NULL
+        ORDER BY member_id
+        LIMIT 1
+        """
     )
     assert member_row is not None, "The runtime DB has no resident rows."
 
@@ -272,16 +290,29 @@ def test_kiosk_home_resident_search_hits_real_server_and_db(patched_ui_endpoint,
 
     try:
         window.home_page.search_card.clicked.emit()
-        assert window.stack.currentWidget() is window.search_page
+        assert window.stack.currentWidget() is window.registration_page
 
-        window.search_page.search_input.setText(str(member_row["room_no"]))
-        window.search_page.search_patient()
+        page = window.registration_page
+        page.visitor_name_input.setText("통합테스트방문자")
+        page.phone_input.setText("010-9999-0001")
+        page.relationship_input.setText("보호자")
+        page.visit_purpose_input.setText("통합 테스트")
+        page.privacy_checkbox.setChecked(True)
+        page.resident_search_input.setText(str(member_row["room_no"]))
+        page.search_resident()
 
-        assert window.search_page.selected_patient is not None
-        assert window.search_page.selected_patient["member_id"] == int(member_row["member_id"])
-        assert window.search_page.selected_patient["room"] == str(member_row["room_no"])
-        assert "어르신" in window.search_page.name_label.text()
-        assert window.search_page.room_label.text() == f"{member_row['room_no']}호"
+        assert page.selected_resident is not None
+        assert page.selected_resident["member_id"] == int(member_row["member_id"])
+        assert page.selected_resident["birth_date"] == str(member_row["birth_date"])
+        assert "어르신" in page.resident_name_label.text()
+        assert str(member_row["room_no"]) not in " ".join(_visible_texts(page))
+
+        page.register_visit()
+
+        assert page.visitor_session is not None
+        assert page.visitor_session["member_id"] == int(member_row["member_id"])
+        assert isinstance(page.visitor_session["visitor_id"], int)
+        assert window.stack.currentWidget() is window.confirmation_page
     finally:
         window.close()
         wait_for_qt(qapp, lambda: True, timeout=0.1)
