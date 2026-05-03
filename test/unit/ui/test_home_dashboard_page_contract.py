@@ -39,8 +39,7 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
             if button.property("dashboard_action") == "refresh"
         ]
 
-        assert page.findChild(QFrame, "systemStatusStrip") is None
-        assert not any("확인 중" in text for text in labels)
+        assert page.findChild(QFrame, "systemStatusStrip") is not None
         assert "운영 대시보드" in labels
         assert "새로고침" in [button.text() for button in refresh_buttons]
         assert "사용가능 로봇" in labels
@@ -52,6 +51,38 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         assert flow_scroll is not None
         assert flow_scroll.widgetResizable() is True
         assert flow_scroll.maximumHeight() <= 460
+    finally:
+        page.close()
+
+
+def test_home_dashboard_updates_system_status_strip_from_load_result():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+
+    try:
+        page._handle_dashboard_loaded(
+            True,
+            {},
+            [],
+            {},
+            [],
+            {
+                "관제 서버": "online",
+                "데이터베이스": "online",
+                "ROS2": "offline",
+                "AI 서버": "disabled",
+            },
+        )
+
+        labels = _label_texts(page)
+        assert "관제 서버 정상" in labels
+        assert "데이터베이스 정상" in labels
+        assert "ROS2 오류" in labels
+        assert "AI 서버 미연동" in labels
+        assert not any("확인 중" in text for text in labels)
     finally:
         page.close()
 

@@ -32,6 +32,7 @@ class SystemStatusStrip(QFrame):
         "error": "오류",
         "offline": "오류",
         "unknown": "확인 중",
+        "disabled": "미연동",
     }
 
     _STATUS_OBJECT_NAME = {
@@ -40,6 +41,7 @@ class SystemStatusStrip(QFrame):
         "error": "systemStatusError",
         "offline": "systemStatusError",
         "unknown": "systemStatusUnknown",
+        "disabled": "systemStatusWarning",
     }
 
     def __init__(self, statuses: Mapping[str, str] | None = None):

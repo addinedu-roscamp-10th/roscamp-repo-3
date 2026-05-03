@@ -340,6 +340,8 @@ def test_caregiver_service_marks_stale_runtime_offline_and_hides_ip_location():
     assert robots[0]["chip_type"] == "red"
     assert robots[0]["current_location"] == "-"
     assert robots[0]["zone"] == "-"
+    assert robots[0]["battery"] == "-"
+    assert robots[0]["battery_percent"] is None
     assert robots[1]["connection_status"] == "ONLINE"
     assert robots[1]["current_location"] == "-"
 

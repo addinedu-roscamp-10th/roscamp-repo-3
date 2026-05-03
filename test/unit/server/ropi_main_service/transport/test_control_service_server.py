@@ -138,6 +138,29 @@ def test_heartbeat_with_ros_check_puts_ros_status_under_payload(control_service_
     }
 
 
+def test_heartbeat_with_ai_check_reports_disabled_when_ai_endpoint_is_not_configured(
+    control_service_server,
+    monkeypatch,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_HEARTBEAT,
+        sequence_no=5,
+        payload={"check_ai": True},
+    )
+    monkeypatch.delenv("AI_SERVER_HOST", raising=False)
+    monkeypatch.delenv("AI_FALL_STREAM_HOST", raising=False)
+    monkeypatch.delenv("AI_FALL_EVIDENCE_HOST", raising=False)
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["ai"] == {
+        "ok": False,
+        "disabled": True,
+        "detail": "AI server endpoint is not configured.",
+    }
+
+
 def test_rpc_dispatch_routes_to_registered_service(control_service_server):
     payload = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,

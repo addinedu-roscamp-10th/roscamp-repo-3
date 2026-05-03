@@ -123,5 +123,6 @@ def test_caregiver_repository_uses_task_and_runtime_status_tables():
     assert "last_seen_age_sec" in source
     assert "TIMESTAMPDIFF" in source
     assert "r.ip_address" not in _sql_source("caregiver/robot_board.sql")
+    assert "CASE WHEN t.task_status IN" in _sql_source("caregiver/flow_board_events.sql")
     assert "source_component" in source
     assert "event_type" in source

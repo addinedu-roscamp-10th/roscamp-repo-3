@@ -16,8 +16,10 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from server.ropi_main_service.transport.tcp_protocol import MESSAGE_CODE_HEARTBEAT
 from ui.utils.core.responses import normalize_ui_response
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
+from ui.utils.network.tcp_client import send_request
 from ui.utils.network.service_clients import (
     CaregiverRemoteService,
     TaskMonitorRemoteService,
@@ -77,18 +79,65 @@ def _operator_datetime(value):
 
 
 class DashboardLoadWorker(QObject):
-    finished = pyqtSignal(object, object, object, object, object)
+    finished = pyqtSignal(object, object, object, object, object, object)
 
     def run(self):
+        system_statuses = self._load_system_statuses()
         try:
             bundle = CaregiverRemoteService().get_dashboard_bundle() or {}
             summary = bundle.get("summary", {})
             robots = bundle.get("robots", [])
             flow_data = bundle.get("flow_data", {})
             timeline_rows = bundle.get("timeline_rows", [])
-            self.finished.emit(True, summary, robots, flow_data, timeline_rows)
+            self.finished.emit(
+                True,
+                summary,
+                robots,
+                flow_data,
+                timeline_rows,
+                system_statuses,
+            )
         except Exception as exc:
-            self.finished.emit(False, str(exc), [], {}, [])
+            self.finished.emit(False, str(exc), [], {}, [], system_statuses)
+
+    @classmethod
+    def _load_system_statuses(cls):
+        try:
+            response = send_request(
+                MESSAGE_CODE_HEARTBEAT,
+                {"check_db": True, "check_ros": True, "check_ai": True},
+            )
+        except Exception:
+            return {
+                "관제 서버": "offline",
+                "데이터베이스": "unknown",
+                "ROS2": "unknown",
+                "AI 서버": "unknown",
+            }
+
+        if not response.get("ok"):
+            return {
+                "관제 서버": "offline",
+                "데이터베이스": "unknown",
+                "ROS2": "unknown",
+                "AI 서버": "unknown",
+            }
+
+        payload = response.get("payload") or {}
+        return {
+            "관제 서버": "online",
+            "데이터베이스": cls._component_status(payload.get("db")),
+            "ROS2": cls._component_status(payload.get("ros")),
+            "AI 서버": cls._component_status(payload.get("ai")),
+        }
+
+    @staticmethod
+    def _component_status(component):
+        if not isinstance(component, dict):
+            return "unknown"
+        if component.get("disabled"):
+            return "disabled"
+        return "online" if component.get("ok") else "offline"
 
 
 class DashboardTaskCancelWorker(QObject):
@@ -357,13 +406,12 @@ class CaregiverHomePage(QWidget):
         tb.addWidget(self.load_status_label)
         tb.addWidget(self.refresh_button)
 
-        top.addWidget(
-            PageHeader(
-                "운영 대시보드",
-                "현재 로봇 상태와 작업 흐름을 한눈에 확인합니다.",
-            ),
-            1,
+        self.header = PageHeader(
+            "운영 대시보드",
+            "현재 로봇 상태와 작업 흐름을 한눈에 확인합니다.",
+            show_status=True,
         )
+        top.addWidget(self.header, 1)
         top.addWidget(time_box)
 
         self.timer = QTimer(self)
@@ -491,7 +539,16 @@ class CaregiverHomePage(QWidget):
             clear_handler=self._clear_dashboard_thread,
         )
 
-    def _handle_dashboard_loaded(self, ok, summary, robots, flow_data, timeline_rows):
+    def _handle_dashboard_loaded(
+        self,
+        ok,
+        summary,
+        robots,
+        flow_data,
+        timeline_rows,
+        system_statuses=None,
+    ):
+        self._set_system_statuses(system_statuses)
         if not ok:
             self.load_status_label.setText(f"대시보드 데이터 로드 실패: {summary}")
             self.load_status_label.setHidden(False)
@@ -503,6 +560,11 @@ class CaregiverHomePage(QWidget):
         self.apply_timeline_data(timeline_rows)
         self._mark_last_update()
         self.load_status_label.setHidden(True)
+
+    def _set_system_statuses(self, statuses):
+        status_strip = getattr(self.header, "status_strip", None)
+        if status_strip is not None and statuses:
+            status_strip.set_statuses(statuses)
 
     def _clear_dashboard_thread(self):
         self.dashboard_thread = None

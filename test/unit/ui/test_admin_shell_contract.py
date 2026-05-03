@@ -192,7 +192,7 @@ def test_caregiver_shell_status_strip_only_appears_on_status_context_pages():
     window.home_page.load_dashboard_data = lambda: None
 
     routes = [
-        ("home", None, False),
+        ("home", None, True),
         ("task_request", window.task_btn, False),
         ("task_monitor", window.task_monitor_btn, False),
         ("coordinate_settings", window.coordinate_settings_btn, False),

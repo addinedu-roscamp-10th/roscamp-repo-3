@@ -118,6 +118,11 @@ class CaregiverService:
                 )
             else:
                 current_location = "-"
+            battery_percent = (
+                row.get("battery_percent")
+                if CaregiverService._runtime_location_is_current(row)
+                else None
+            )
             last_seen_at = isoformat(row.get("last_seen_at"), none_value=None)
 
             if connection_status == "ONLINE":
@@ -137,7 +142,7 @@ class CaregiverService:
                 "robot_role": row.get("robot_type_name") or "-",
                 "connection_status": connection_status,
                 "runtime_state": status,
-                "battery_percent": row.get("battery_percent"),
+                "battery_percent": battery_percent,
                 "current_location": current_location,
                 "current_task_id": row.get("current_task_id"),
                 "current_phase": current_phase,
@@ -146,7 +151,7 @@ class CaregiverService:
                 "robot_name": row["robot_id"],
                 "status": connection_status,
                 "zone": current_location,
-                "battery": row.get("battery_percent") if row.get("battery_percent") is not None else "-",
+                "battery": battery_percent if battery_percent is not None else "-",
                 "current_task": current_phase or "-",
                 "chip_type": chip_type,
             })

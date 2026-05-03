@@ -3,6 +3,7 @@ import asyncio
 import inspect
 import logging
 import os
+import socket
 from datetime import date, datetime
 from pathlib import Path
 
@@ -62,6 +63,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 CONTROL_SERVER_HOST = os.getenv("CONTROL_SERVER_HOST", "127.0.0.1")
 CONTROL_SERVER_PORT = int(os.getenv("CONTROL_SERVER_PORT", "5050"))
+AI_HEALTH_CONNECT_TIMEOUT_SEC = float(os.getenv("AI_HEALTH_CONNECT_TIMEOUT_SEC", "0.5"))
 logger = logging.getLogger(__name__)
 
 
@@ -75,6 +77,69 @@ def _serialize(value):
     if isinstance(value, tuple):
         return [_serialize(item) for item in value]
     return value
+
+
+def _ai_server_endpoint():
+    host = (
+        os.getenv("AI_FALL_EVIDENCE_HOST")
+        or os.getenv("AI_FALL_STREAM_HOST")
+        or os.getenv("AI_SERVER_HOST")
+    )
+    host = str(host or "").strip()
+    if not host:
+        return None
+
+    port = (
+        os.getenv("AI_FALL_EVIDENCE_PORT")
+        or os.getenv("AI_FALL_STREAM_PORT")
+        or "6000"
+    )
+    return host, int(port)
+
+
+def _ai_not_configured_status():
+    return {
+        "ok": False,
+        "disabled": True,
+        "detail": "AI server endpoint is not configured.",
+    }
+
+
+def _check_ai_server_status():
+    endpoint = _ai_server_endpoint()
+    if endpoint is None:
+        return _ai_not_configured_status()
+
+    host, port = endpoint
+    try:
+        with socket.create_connection(
+            (host, port),
+            timeout=AI_HEALTH_CONNECT_TIMEOUT_SEC,
+        ):
+            return {"ok": True, "detail": {"host": host, "port": port}}
+    except OSError as exc:
+        return {"ok": False, "detail": str(exc)}
+
+
+async def _async_check_ai_server_status():
+    endpoint = _ai_server_endpoint()
+    if endpoint is None:
+        return _ai_not_configured_status()
+
+    host, port = endpoint
+    writer = None
+    try:
+        _reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=AI_HEALTH_CONNECT_TIMEOUT_SEC,
+        )
+        return {"ok": True, "detail": {"host": host, "port": port}}
+    except (OSError, asyncio.TimeoutError) as exc:
+        return {"ok": False, "detail": str(exc)}
+    finally:
+        if writer is not None:
+            writer.close()
+            await writer.wait_closed()
 
 
 class CaregiverFacade:
@@ -243,6 +308,9 @@ class ControlServiceServer:
                         "detail": str(exc),
                     }
 
+            if payload.get("check_ai"):
+                response_payload["ai"] = _check_ai_server_status()
+
             return self._success_response(frame, response_payload)
 
         if frame.message_code == MESSAGE_CODE_LOGIN:
@@ -356,6 +424,9 @@ class ControlServiceServer:
                     "ok": False,
                     "detail": str(exc),
                 }
+
+        if payload.get("check_ai"):
+            response_payload["ai"] = await _async_check_ai_server_status()
 
         return self._success_response(frame, response_payload)
 
