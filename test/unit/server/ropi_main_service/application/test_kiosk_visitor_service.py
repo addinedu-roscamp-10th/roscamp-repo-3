@@ -12,7 +12,7 @@ class FakeKioskVisitorRepository:
             "visitor_id": 42,
             "member_id": 1,
             "resident_summary": {
-                "display_name": "김OO",
+                "display_name": "김*수",
                 "room_no": "301",
                 "visit_status": "면회 가능",
             },
@@ -37,7 +37,7 @@ class FakeKioskVisitorRepository:
         return [
             {
                 "member_id": 1,
-                "display_name": "김OO",
+                "display_name": "김*수",
                 "room_no": "301",
                 "visit_available": True,
                 "guide_available": True,
@@ -88,7 +88,7 @@ def test_lookup_residents_returns_if_gui_007_shape():
         "matches": [
             {
                 "member_id": 1,
-                "display_name": "김OO",
+                "display_name": "김*수",
                 "room_no": "301",
                 "visit_available": True,
                 "guide_available": True,
@@ -171,7 +171,7 @@ def test_get_care_history_returns_if_gui_009_visitor_safe_payload():
         "visitor_id": 42,
         "member_id": 1,
         "resident_summary": {
-            "display_name": "김OO",
+            "display_name": "김*수",
             "room_no": "301",
             "visit_status": "면회 가능",
         },

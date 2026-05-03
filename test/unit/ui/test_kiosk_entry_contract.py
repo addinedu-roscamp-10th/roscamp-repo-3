@@ -114,7 +114,7 @@ def test_kiosk_resident_search_uses_if_gui_007_lookup_payload():
                 "matches": [
                     {
                         "member_id": 1,
-                        "display_name": "김OO",
+                        "display_name": "김*수",
                         "room_no": "301",
                         "visit_available": True,
                         "guide_available": True,
@@ -132,14 +132,14 @@ def test_kiosk_resident_search_uses_if_gui_007_lookup_payload():
         assert service.calls == [{"keyword": "301", "limit": 5}]
         assert page.selected_patient == {
             "member_id": 1,
-            "name": "김OO",
+            "name": "김*수",
             "room": "301",
             "location": "호실 안내 가능",
             "status": "방문 등록 가능",
             "visit_available": True,
             "guide_available": True,
         }
-        assert page.name_label.text() == "김OO 어르신"
+        assert page.name_label.text() == "김*수 어르신"
         assert page.room_label.text() == "301호"
         assert page.location_label.text() == "위치: 호실 안내 가능"
         assert page.visit_label.text() == "면회 상태: 방문 등록 가능"

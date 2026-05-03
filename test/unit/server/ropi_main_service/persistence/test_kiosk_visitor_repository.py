@@ -28,7 +28,7 @@ def test_kiosk_visitor_repository_async_lookup_formats_safe_candidates(monkeypat
     assert result == [
         {
             "member_id": 1,
-            "display_name": "김OO",
+            "display_name": "김*수",
             "room_no": "301",
             "visit_available": True,
             "guide_available": True,
@@ -145,7 +145,7 @@ def test_kiosk_visitor_repository_gets_visitor_safe_care_history(monkeypatch):
         "visitor_id": 42,
         "member_id": 1,
         "resident_summary": {
-            "display_name": "김OO",
+            "display_name": "김*수",
             "room_no": "301",
             "visit_status": "면회 가능",
         },
@@ -177,6 +177,16 @@ def test_kiosk_visitor_repository_gets_visitor_safe_care_history(monkeypatch):
     assert "MEDICATION_RECORDED" in calls[1][0]
     assert "FALL_DETECTED" in calls[1][0]
     assert calls[1][1] == (1, 5)
+
+
+def test_kiosk_visitor_repository_masks_resident_name_with_first_and_last_visible():
+    mask = kiosk_visitor_repository.KioskVisitorRepository._mask_display_name
+
+    assert mask("김영수") == "김*수"
+    assert mask("김수") == "김*수"
+    assert mask("김") == "김"
+    assert mask("  박영철수  ") == "박**수"
+    assert mask("") == "-"
 
 
 def test_kiosk_visitor_repository_returns_none_when_visitor_context_missing(monkeypatch):

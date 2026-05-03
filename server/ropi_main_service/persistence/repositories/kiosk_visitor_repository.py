@@ -190,9 +190,12 @@ class KioskVisitorRepository:
     @staticmethod
     def _mask_display_name(name: str) -> str:
         name = str(name or "").strip()
-        if len(name) <= 1:
-            return name or "-"
-        return f"{name[0]}OO"
+        if not name:
+            return "-"
+        if len(name) == 1:
+            return name
+        middle_mask = "*" * max(1, len(name) - 2)
+        return f"{name[0]}{middle_mask}{name[-1]}"
 
     @classmethod
     def _format_care_summary(cls, events):
