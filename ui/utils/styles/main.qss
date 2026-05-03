@@ -1028,8 +1028,19 @@ QWidget#kioskRoot {
 }
 
 QWidget#kioskVisitorRegistrationPage {
-    background: #F9F9FF;
+    background: #FFF8EE;
     color: #111C2D;
+}
+
+QFrame#kioskRegistrationCanvas {
+    background: qlineargradient(
+        x1: 0, y1: 0,
+        x2: 1, y2: 1,
+        stop: 0 #F9F9FF,
+        stop: 0.48 #FFFFFF,
+        stop: 1 #F0F3FF
+    );
+    border: none;
 }
 
 QWidget#kioskRoot QLabel {

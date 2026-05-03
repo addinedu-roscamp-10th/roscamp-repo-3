@@ -183,6 +183,7 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
 
     try:
         assert page.objectName() == "kioskVisitorRegistrationPage"
+        assert page.findChild(QFrame, "kioskRegistrationCanvas") is not None
         assert page.search_button.isEnabled() is False
         assert page.register_button.isEnabled() is False
         assert page.selected_visit_purpose is None
@@ -234,6 +235,8 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
         assert page.resident_name_label.text() == "김*수 어르신"
         assert page.resident_birth_label.text() == "생년월일 1942-03-14"
         assert "301" not in " ".join(_visible_texts(page))
+        assert "어르신 정보를 확인했습니다" not in page.status_label.text()
+        assert "어르신 정보를 확인했습니다" not in " ".join(_visible_texts(page))
         assert page.register_button.isEnabled() is True
 
         page.register_visit()

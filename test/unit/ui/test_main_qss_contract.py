@@ -96,6 +96,7 @@ def test_main_qss_defines_kiosk_ui_components():
         "QFrame#kioskFooterBar",
         "QFrame#kioskFooterStat",
         "QWidget#kioskVisitorRegistrationPage",
+        "QFrame#kioskRegistrationCanvas",
         "QFrame#kioskRegistrationFormCard",
         "QFrame#kioskRegistrationResidentCard",
         "QFrame#kioskPurposeOptionCard",
@@ -123,7 +124,9 @@ def test_main_qss_defines_kiosk_ui_components():
         assert selector in qss
     assert "border-top: 12px solid" not in qss
     assert "QFrame#kioskCardAccent" not in qss
-    assert "QWidget#kioskVisitorRegistrationPage {\n    background: #F9F9FF" in qss
+    assert "QWidget#kioskVisitorRegistrationPage {\n    background: #FFF8EE" in qss
+    assert "QFrame#kioskRegistrationCanvas" in qss
+    assert "qlineargradient" in qss
     assert "QFrame#kioskRegistrationTopBar" in qss
     assert "QPushButton#kioskSearchFooterButton {\n    min-height: 72px" in qss
     assert "QLineEdit#kioskRegistrationInput" in qss

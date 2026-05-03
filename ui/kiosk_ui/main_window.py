@@ -426,6 +426,12 @@ class KioskVisitorRegistrationPage(QWidget):
         self.call_staff_button.setMinimumHeight(72)
         header_layout.addWidget(self.call_staff_button)
 
+        canvas = QFrame()
+        canvas.setObjectName("kioskRegistrationCanvas")
+        canvas_layout = QVBoxLayout(canvas)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_layout.setSpacing(0)
+
         page_shell = QVBoxLayout()
         page_shell.setContentsMargins(56, 30, 56, 0)
         page_shell.setSpacing(22)
@@ -580,6 +586,7 @@ class KioskVisitorRegistrationPage(QWidget):
         page_shell.addWidget(title)
         page_shell.addWidget(subtitle)
         page_shell.addLayout(content_row, 1)
+        canvas_layout.addLayout(page_shell, 1)
 
         bottom_bar = QFrame()
         bottom_bar.setObjectName("kioskSearchBottomBar")
@@ -608,7 +615,7 @@ class KioskVisitorRegistrationPage(QWidget):
         action_row.addWidget(self.register_button)
 
         root.addWidget(header)
-        root.addLayout(page_shell, 1)
+        root.addWidget(canvas, 1)
         root.addWidget(bottom_bar)
 
         for input_widget in [
@@ -673,7 +680,7 @@ class KioskVisitorRegistrationPage(QWidget):
 
         self.selected_resident = self._resident_from_lookup_match(matches[0])
         self._show_resident_result(self.selected_resident)
-        self._set_status("어르신 정보를 확인했습니다. 방문 등록을 완료해 주세요.")
+        self._set_status("", visible=False)
         self._sync_action_state()
 
     def register_visit(self):
