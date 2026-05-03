@@ -1023,28 +1023,27 @@ QLabel#noticeText {
 
 /* Kiosk UI */
 QWidget#kioskRoot {
-    background: #FFF8EE;
+    background: #F9F9FF;
     color: #1E293B;
 }
 
 QWidget#kioskVisitorRegistrationPage {
-    background: #FFF8EE;
+    background: #F9F9FF;
     color: #111C2D;
 }
 
 QWidget#kioskGuideConfirmationPage {
-    background: #FFF8EE;
+    background: #F9F9FF;
+    color: #111C2D;
+}
+
+QWidget#kioskProgressPage {
+    background: #F9F9FF;
     color: #111C2D;
 }
 
 QFrame#kioskRegistrationCanvas {
-    background: qlineargradient(
-        x1: 0, y1: 0,
-        x2: 1, y2: 1,
-        stop: 0 #F9F9FF,
-        stop: 0.48 #FFFFFF,
-        stop: 1 #F0F3FF
-    );
+    background: #F9F9FF;
     border: none;
 }
 

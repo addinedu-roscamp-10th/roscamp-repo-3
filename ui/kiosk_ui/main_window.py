@@ -1434,6 +1434,7 @@ class KioskProgressStage(QFrame):
 class KioskRobotGuidanceProgressPage(QWidget):
     def __init__(self, *, go_home_page=None, go_call_staff_page=None):
         super().__init__()
+        self.setObjectName("kioskProgressPage")
         self.go_home_page = go_home_page
         self.go_call_staff_page = go_call_staff_page
         self.service = VisitGuideRemoteService()

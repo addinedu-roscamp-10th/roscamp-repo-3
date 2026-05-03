@@ -97,6 +97,7 @@ def test_main_qss_defines_kiosk_ui_components():
         "QFrame#kioskFooterStat",
         "QWidget#kioskVisitorRegistrationPage",
         "QWidget#kioskGuideConfirmationPage",
+        "QWidget#kioskProgressPage",
         "QFrame#kioskRegistrationCanvas",
         "QFrame#kioskRegistrationFormCard",
         "QFrame#kioskRegistrationResidentCard",
@@ -135,9 +136,12 @@ def test_main_qss_defines_kiosk_ui_components():
         assert selector in qss
     assert "border-top: 12px solid" not in qss
     assert "QFrame#kioskCardAccent" not in qss
-    assert "QWidget#kioskVisitorRegistrationPage {\n    background: #FFF8EE" in qss
-    assert "QFrame#kioskRegistrationCanvas" in qss
-    assert "qlineargradient" in qss
+    assert "QWidget#kioskRoot {\n    background: #F9F9FF" in qss
+    assert "QWidget#kioskVisitorRegistrationPage {\n    background: #F9F9FF" in qss
+    assert "QWidget#kioskGuideConfirmationPage {\n    background: #F9F9FF" in qss
+    assert "QWidget#kioskProgressPage {\n    background: #F9F9FF" in qss
+    assert "QFrame#kioskRegistrationCanvas {\n    background: #F9F9FF" in qss
+    assert "qlineargradient" not in qss.split("QFrame#kioskRegistrationCanvas", 1)[1].split("}", 1)[0]
     assert "QFrame#kioskRegistrationTopBar" in qss
     assert "QPushButton#kioskSearchFooterButton {\n    min-height: 72px" in qss
     assert "QLineEdit#kioskRegistrationInput" in qss

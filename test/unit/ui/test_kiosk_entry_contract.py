@@ -44,6 +44,9 @@ def test_kiosk_window_entrypoint_builds_home_window():
         assert window.windowTitle() == "ROPI Kiosk"
         assert window.stack.count() >= 4
         assert window.stack.currentWidget() is window.home_page
+        assert window.registration_page.objectName() == "kioskVisitorRegistrationPage"
+        assert window.confirmation_page.objectName() == "kioskGuideConfirmationPage"
+        assert window.progress_page.objectName() == "kioskProgressPage"
     finally:
         window.close()
 
