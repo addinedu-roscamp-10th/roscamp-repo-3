@@ -3,6 +3,9 @@ from datetime import datetime
 from server.ropi_main_service.persistence.repositories.guide_task_repository import (
     GuideTaskRepository,
 )
+from server.ropi_main_service.persistence.repositories.guide_task_lifecycle_repository import (
+    GuideTaskLifecycleRepository,
+)
 from server.ropi_main_service.persistence.repositories.visit_guide_repository import VisitGuideRepository
 from server.ropi_main_service.application.guide_command import GuideCommandService
 from server.ropi_main_service.application.guide_runtime import (
@@ -16,6 +19,7 @@ class VisitGuideService:
         self,
         repository=None,
         guide_task_repository=None,
+        guide_task_lifecycle_repository=None,
         guide_command_service=None,
         guide_runtime_service=None,
         default_pinky_id=DEFAULT_GUIDE_PINKY_ID,
@@ -23,6 +27,9 @@ class VisitGuideService:
         self.repository = repository or VisitGuideRepository()
         self.guide_task_repository = guide_task_repository or GuideTaskRepository(
             default_pinky_id=default_pinky_id
+        )
+        self.guide_task_lifecycle_repository = (
+            guide_task_lifecycle_repository or GuideTaskLifecycleRepository()
         )
         self.guide_command_service = guide_command_service or GuideCommandService()
         self.guide_runtime_service = guide_runtime_service or GuideRuntimeService(
@@ -272,12 +279,21 @@ class VisitGuideService:
             wait_timeout_sec=wait_timeout_sec,
             finish_reason=finish_reason,
         )
+        response = self._attach_guide_command_lifecycle(
+            response=response,
+            task_id=task_id,
+            pinky_id=pinky_id or self.default_pinky_id,
+            command_type=command_type,
+            target_track_id=target_track_id,
+            wait_timeout_sec=wait_timeout_sec,
+            finish_reason=finish_reason,
+        )
         accepted = bool((response or {}).get("accepted"))
         message = str((response or {}).get("message") or "").strip()
         reason_code = str((response or {}).get("reason_code") or "").strip()
         if accepted:
             return True, message or "안내 제어 명령이 수락되었습니다.", response
-        return False, message or "안내 제어 명령이 거부되었습니다.", response | {
+        return False, message or "안내 제어 명령이 거부되었습니다.", (response or {}) | {
             "reason_code": reason_code
         }
 
@@ -299,12 +315,21 @@ class VisitGuideService:
             wait_timeout_sec=wait_timeout_sec,
             finish_reason=finish_reason,
         )
+        response = await self._async_attach_guide_command_lifecycle(
+            response=response,
+            task_id=task_id,
+            pinky_id=pinky_id or self.default_pinky_id,
+            command_type=command_type,
+            target_track_id=target_track_id,
+            wait_timeout_sec=wait_timeout_sec,
+            finish_reason=finish_reason,
+        )
         accepted = bool((response or {}).get("accepted"))
         message = str((response or {}).get("message") or "").strip()
         reason_code = str((response or {}).get("reason_code") or "").strip()
         if accepted:
             return True, message or "안내 제어 명령이 수락되었습니다.", response
-        return False, message or "안내 제어 명령이 거부되었습니다.", response | {
+        return False, message or "안내 제어 명령이 거부되었습니다.", (response or {}) | {
             "reason_code": reason_code
         }
 
@@ -325,6 +350,79 @@ class VisitGuideService:
         if guide_runtime.get("stale"):
             return False, "안내 추적 업데이트가 오래되어 최신 상태가 아닙니다.", status
         return True, "안내 추적 상태를 확인했습니다.", status
+
+    def _attach_guide_command_lifecycle(
+        self,
+        *,
+        response,
+        task_id,
+        pinky_id,
+        command_type,
+        target_track_id,
+        wait_timeout_sec,
+        finish_reason,
+    ):
+        if self._normalize_positive_id(task_id) is None:
+            return response
+
+        lifecycle_result = self.guide_task_lifecycle_repository.record_command_result(
+            task_id=task_id,
+            pinky_id=pinky_id,
+            command_type=command_type,
+            target_track_id=target_track_id,
+            wait_timeout_sec=wait_timeout_sec,
+            finish_reason=finish_reason,
+            command_response=response,
+        )
+        return self._merge_command_lifecycle_response(response, lifecycle_result)
+
+    async def _async_attach_guide_command_lifecycle(
+        self,
+        *,
+        response,
+        task_id,
+        pinky_id,
+        command_type,
+        target_track_id,
+        wait_timeout_sec,
+        finish_reason,
+    ):
+        if self._normalize_positive_id(task_id) is None:
+            return response
+
+        lifecycle_result = (
+            await self.guide_task_lifecycle_repository.async_record_command_result(
+                task_id=task_id,
+                pinky_id=pinky_id,
+                command_type=command_type,
+                target_track_id=target_track_id,
+                wait_timeout_sec=wait_timeout_sec,
+                finish_reason=finish_reason,
+                command_response=response,
+            )
+        )
+        return self._merge_command_lifecycle_response(response, lifecycle_result)
+
+    @staticmethod
+    def _merge_command_lifecycle_response(command_response, lifecycle_result):
+        response = dict(command_response or {}) if isinstance(command_response, dict) else {}
+        if lifecycle_result:
+            response["lifecycle_result"] = lifecycle_result
+            for key in (
+                "result_code",
+                "result_message",
+                "reason_code",
+                "task_id",
+                "task_type",
+                "task_status",
+                "phase",
+                "assigned_robot_id",
+                "guide_phase",
+                "target_track_id",
+            ):
+                if lifecycle_result.get(key) is not None:
+                    response[key] = lifecycle_result[key]
+        return response
 
     def _create_task_or_member_event(
         self,

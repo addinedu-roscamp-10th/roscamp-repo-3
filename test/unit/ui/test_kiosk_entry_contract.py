@@ -500,6 +500,48 @@ def test_kiosk_guide_confirmation_creates_db_backed_guide_task_before_command():
         page.close()
 
 
+def test_kiosk_progress_page_prefers_db_backed_guide_session_status():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
+
+    class OfflineRuntimeService:
+        def get_guide_runtime_status(self):
+            raise RuntimeError("runtime unavailable")
+
+    page = KioskRobotGuidanceProgressPage()
+    page.service = OfflineRuntimeService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            },
+            session={
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "command_response": {
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_TARGET_TRACKING",
+                    "guide_phase": "WAIT_TARGET_TRACKING",
+                },
+            },
+        )
+
+        assert page.robot_state_chip.text() == "대상 확인 중"
+        assert page.distance_label.text() == "로봇이 안내 대상을 확인하고 있습니다."
+        assert "상태: 대상 확인 대기" in page.request_id_label.text()
+    finally:
+        page.close()
+
+
 def test_kiosk_staff_call_uses_in_app_modal_and_lobby_context():
     _app()
 

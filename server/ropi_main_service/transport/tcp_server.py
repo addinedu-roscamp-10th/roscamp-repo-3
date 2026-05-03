@@ -624,6 +624,17 @@ class ControlServiceServer:
                 source=source,
             )
 
+        if service_name == "visit_guide" and method_name in {
+            "begin_guide_session",
+            "send_guide_command",
+            "finish_guide_session",
+        }:
+            await self._publish_task_updated_from_response(
+                self._extract_task_update_response(result),
+                source="GUIDE_COMMAND",
+                task_type="GUIDE",
+            )
+
         result = self._attach_task_monitor_handoff_seq(result, task_monitor_handoff_seq)
 
         return self._success_response(frame, result)
@@ -678,6 +689,16 @@ class ControlServiceServer:
             **result,
             "last_event_seq": handoff_seq,
         }
+
+    @staticmethod
+    def _extract_task_update_response(result):
+        if isinstance(result, dict):
+            return result
+        if isinstance(result, (list, tuple)) and len(result) >= 3:
+            payload = result[2]
+            if isinstance(payload, dict):
+                return payload
+        return {}
 
     async def start(self):
         self.db_writer.start()

@@ -1676,6 +1676,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
         else:
             self.request_id_label.setText("안내 대상: -")
 
+        self._apply_session_status()
         self.refresh_runtime_status()
 
     def refresh_runtime_status(self):
@@ -1700,6 +1701,88 @@ class KioskRobotGuidanceProgressPage(QWidget):
             self.request_id_label.setText(
                 f"안내 대상: {self.selected_patient.get('name', '-')} / 추적 순번: {tracking_seq}"
             )
+
+    def _apply_session_status(self):
+        session = self.current_session or {}
+        command_response = session.get("command_response") or {}
+        phase = str(
+            command_response.get("phase")
+            or command_response.get("guide_phase")
+            or session.get("phase")
+            or session.get("guide_phase")
+            or ""
+        ).strip()
+        task_status = str(
+            command_response.get("task_status")
+            or session.get("task_status")
+            or ""
+        ).strip()
+        if not phase and not task_status:
+            return
+
+        self.robot_state_chip.setText(self._guide_status_label(phase, task_status))
+        self.distance_label.setText(self._guide_status_message(phase, task_status))
+
+        if self.selected_patient:
+            name = str(self.selected_patient.get("name", "-")).strip() or "-"
+            room = str(self.selected_patient.get("room", "-")).strip() or "-"
+            task_id = str(session.get("task_id", "-")).strip() or "-"
+            phase_label = self._guide_phase_label(phase, task_status)
+            self.request_id_label.setText(
+                f"안내 대상: {name} 어르신 / 목적지: {room} / task_id: {task_id} / 상태: {phase_label}"
+            )
+
+    @staticmethod
+    def _guide_status_label(phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        if normalized_phase == "WAIT_TARGET_TRACKING":
+            return "대상 확인 중"
+        if normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
+            return "안내 중"
+        if normalized_phase == "WAIT_REIDENTIFY":
+            return "재확인 중"
+        if normalized_status == "CANCELLED":
+            return "안내 취소"
+        if normalized_status == "COMPLETED":
+            return "안내 완료"
+        return "안내 준비"
+
+    @staticmethod
+    def _guide_status_message(phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        if normalized_phase == "WAIT_TARGET_TRACKING":
+            return "로봇이 안내 대상을 확인하고 있습니다."
+        if normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
+            return "로봇 안내가 진행 중입니다."
+        if normalized_phase == "WAIT_REIDENTIFY":
+            return "대상을 다시 확인하고 있습니다."
+        if normalized_status == "CANCELLED":
+            return "안내가 취소되었습니다."
+        if normalized_status == "COMPLETED":
+            return "안내가 완료되었습니다."
+        return "안내 요청 상태를 확인하고 있습니다."
+
+    @staticmethod
+    def _guide_phase_label(phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        labels = {
+            "WAIT_TARGET_TRACKING": "대상 확인 대기",
+            "GUIDANCE_RUNNING": "안내 주행 중",
+            "WAIT_REIDENTIFY": "대상 재확인",
+            "GUIDANCE_CANCELLED": "안내 취소",
+            "GUIDANCE_FINISHED": "안내 완료",
+            "WAIT_GUIDE_START_CONFIRM": "안내 시작 대기",
+        }
+        if normalized_phase in labels:
+            return labels[normalized_phase]
+        if normalized_status == "CANCELLED":
+            return "안내 취소"
+        if normalized_status == "COMPLETED":
+            return "안내 완료"
+        return normalized_phase or normalized_status or "-"
 
     def finish_guidance(self):
         task_id = str((self.current_session or {}).get("task_id", "")).strip()

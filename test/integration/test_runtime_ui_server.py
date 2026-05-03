@@ -28,6 +28,7 @@ from ui.utils.network import tcp_client
 from ui.utils.network.service_clients import (
     DeliveryRequestRemoteService,
     TaskMonitorRemoteService,
+    VisitGuideRemoteService,
 )
 from ui.kiosk_ui.main_window import KioskHomeWindow
 from ui.utils.network.tcp_client import send_request
@@ -315,6 +316,71 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(patched_ui_endpoint):
         assert guide_row["guide_phase"] == "WAIT_GUIDE_START_CONFIRM"
         assert event_row["event_name"] == "GUIDE_TASK_ACCEPTED"
         assert event_row["result_code"] == "ACCEPTED"
+
+        start_ok, start_message, start_payload = (
+            VisitGuideRemoteService().send_guide_command(
+                task_id=task_id,
+                pinky_id=payload["assigned_robot_id"],
+                command_type="WAIT_TARGET_TRACKING",
+            )
+        )
+        assert start_ok is True
+        assert start_message == "안내 제어 명령이 수락되었습니다."
+        assert start_payload["task_status"] == "RUNNING"
+        assert start_payload["phase"] == "WAIT_TARGET_TRACKING"
+        assert start_payload["guide_phase"] == "WAIT_TARGET_TRACKING"
+
+        running_task_row = safe_fetch_one(
+            "SELECT task_status, phase, started_at FROM task "
+            f"WHERE task_id = {task_id}"
+        )
+        running_guide_row = safe_fetch_one(
+            "SELECT guide_phase FROM guide_task_detail "
+            f"WHERE task_id = {task_id}"
+        )
+        running_event_row = safe_fetch_one(
+            "SELECT event_name, result_code FROM task_event_log "
+            f"WHERE task_id = {task_id} ORDER BY task_event_log_id DESC LIMIT 1"
+        )
+
+        assert running_task_row["task_status"] == "RUNNING"
+        assert running_task_row["phase"] == "WAIT_TARGET_TRACKING"
+        assert running_task_row["started_at"] is not None
+        assert running_guide_row["guide_phase"] == "WAIT_TARGET_TRACKING"
+        assert running_event_row["event_name"] == "GUIDE_COMMAND_ACCEPTED"
+        assert running_event_row["result_code"] == "ACCEPTED"
+
+        finish_ok, _finish_message, finish_payload = (
+            VisitGuideRemoteService().finish_guide_session(
+                task_id=task_id,
+                pinky_id=payload["assigned_robot_id"],
+                finish_reason="USER_CANCELLED",
+            )
+        )
+        assert finish_ok is True
+        assert finish_payload["task_status"] == "CANCELLED"
+        assert finish_payload["phase"] == "GUIDANCE_CANCELLED"
+        assert finish_payload["guide_phase"] == "CANCELLED"
+
+        finished_task_row = safe_fetch_one(
+            "SELECT task_status, phase, finished_at FROM task "
+            f"WHERE task_id = {task_id}"
+        )
+        finished_guide_row = safe_fetch_one(
+            "SELECT guide_phase FROM guide_task_detail "
+            f"WHERE task_id = {task_id}"
+        )
+        finished_event_row = safe_fetch_one(
+            "SELECT event_name, reason_code FROM task_event_log "
+            f"WHERE task_id = {task_id} ORDER BY task_event_log_id DESC LIMIT 1"
+        )
+
+        assert finished_task_row["task_status"] == "CANCELLED"
+        assert finished_task_row["phase"] == "GUIDANCE_CANCELLED"
+        assert finished_task_row["finished_at"] is not None
+        assert finished_guide_row["guide_phase"] == "CANCELLED"
+        assert finished_event_row["event_name"] == "GUIDE_COMMAND_ACCEPTED"
+        assert finished_event_row["reason_code"] == "USER_CANCELLED"
     finally:
         cleanup_conn = get_connection()
         try:

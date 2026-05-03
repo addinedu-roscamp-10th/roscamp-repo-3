@@ -1109,6 +1109,58 @@ def test_async_guide_create_task_publishes_task_update(control_service_server):
     ]
 
 
+def test_async_guide_command_rpc_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=42,
+        payload={
+            "service": "visit_guide",
+            "method": "send_guide_command",
+            "kwargs": {
+                "task_id": "3001",
+                "pinky_id": "pinky1",
+                "command_type": "WAIT_TARGET_TRACKING",
+            },
+        },
+    )
+    published_events = []
+
+    class FakeAsyncVisitGuideService:
+        async def async_send_guide_command(self, **payload):
+            return True, "안내 제어 명령이 수락되었습니다.", {
+                "accepted": True,
+                "result_code": "ACCEPTED",
+                "result_message": "안내 제어 명령이 수락되었습니다.",
+                "task_id": payload["task_id"],
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "WAIT_TARGET_TRACKING",
+                "assigned_robot_id": payload["pinky_id"],
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload[0] is True
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "GUIDE_COMMAND"
+    assert published_events[0][1]["task_type"] == "GUIDE"
+    assert published_events[0][1]["task_status"] == "RUNNING"
+    assert published_events[0][1]["phase"] == "WAIT_TARGET_TRACKING"
+
+
 def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_update(
     control_service_server,
 ):
