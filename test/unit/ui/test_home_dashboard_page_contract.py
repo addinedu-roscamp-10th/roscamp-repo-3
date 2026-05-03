@@ -3,7 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame, QScrollArea
 
 
 _APP = None
@@ -39,13 +39,19 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
             if button.property("dashboard_action") == "refresh"
         ]
 
-        assert page.findChild(QFrame, "systemStatusStrip") is not None
+        assert page.findChild(QFrame, "systemStatusStrip") is None
+        assert not any("확인 중" in text for text in labels)
         assert "운영 대시보드" in labels
         assert "새로고침" in [button.text() for button in refresh_buttons]
         assert "사용가능 로봇" in labels
         assert "대기 작업" in labels
         assert "진행 중 작업" in labels
         assert "경고/오류" in labels
+
+        flow_scroll = page.findChild(QScrollArea, "flowBoardScroll")
+        assert flow_scroll is not None
+        assert flow_scroll.widgetResizable() is True
+        assert flow_scroll.maximumHeight() <= 460
     finally:
         page.close()
 
@@ -73,6 +79,38 @@ def test_home_dashboard_applies_summary_with_total_and_warning_count():
         assert "3건" in labels
         assert "1건" in labels
         assert "4건" in labels
+    finally:
+        page.close()
+
+
+def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+
+    try:
+        page.apply_robot_board_data(
+            [
+                {
+                    "robot_id": "pinky2",
+                    "robot_role": "Pinky Pro",
+                    "connection_status": "OFFLINE",
+                    "current_location": "좌표 x=1.2, y=0.8",
+                    "battery_percent": 87.5,
+                    "last_seen_at": "2026-05-03T12:00:00",
+                    "chip_type": "red",
+                }
+            ]
+        )
+
+        labels = _label_texts(page)
+        assert "현재 위치: 좌표 x=1.2, y=0.8" in labels
+        assert "마지막 수신: 2026-05-03 12:00:00" in labels
+        assert not any("현재 구역:" in text for text in labels)
+        assert not any("T12:00:00" in text for text in labels)
+        assert not any("192.168." in text for text in labels)
     finally:
         page.close()
 

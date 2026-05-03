@@ -142,12 +142,13 @@ class CaregiverFacade:
 
     @staticmethod
     def _iter_feedback_target_tasks(flow_data):
-        for task in flow_data.get("RUNNING", []):
-            if not isinstance(task, dict):
-                continue
-            if task.get("task_status") not in ("RUNNING", "CANCEL_REQUESTED"):
-                continue
-            yield task
+        for column_key in ("IN_PROGRESS", "CANCELING", "RUNNING"):
+            for task in flow_data.get(column_key, []):
+                if not isinstance(task, dict):
+                    continue
+                if task.get("task_status") not in ("RUNNING", "CANCEL_REQUESTED"):
+                    continue
+                yield task
 
     @classmethod
     def _apply_feedback_response(cls, task, response):

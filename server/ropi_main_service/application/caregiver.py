@@ -5,11 +5,13 @@ from server.ropi_main_service.application.formatting import (
     isoformat,
     json_object,
     normalize_optional_text,
+    optional_int,
 )
 from server.ropi_main_service.persistence.repositories.caregiver_repository import CaregiverRepository
 
 
 class CaregiverService:
+    ROBOT_ONLINE_STALE_SECONDS = 60
     CANCELLABLE_TASK_STATUSES = {
         "WAITING",
         "WAITING_DISPATCH",
@@ -110,6 +112,13 @@ class CaregiverService:
         for row in rows:
             status = row["robot_status"] or "UNKNOWN"
             connection_status = CaregiverService._connection_status(row, status)
+            if CaregiverService._runtime_location_is_current(row):
+                current_location = CaregiverService._display_location(
+                    row.get("current_location")
+                )
+            else:
+                current_location = "-"
+            last_seen_at = isoformat(row.get("last_seen_at"), none_value=None)
 
             if connection_status == "ONLINE":
                 chip_type = "green"
@@ -129,14 +138,14 @@ class CaregiverService:
                 "connection_status": connection_status,
                 "runtime_state": status,
                 "battery_percent": row.get("battery_percent"),
-                "current_location": row.get("current_location") or "-",
+                "current_location": current_location,
                 "current_task_id": row.get("current_task_id"),
                 "current_phase": current_phase,
-                "last_seen_at": row.get("last_seen_at"),
+                "last_seen_at": last_seen_at,
                 "fault_code": row.get("fault_code"),
                 "robot_name": row["robot_id"],
                 "status": connection_status,
-                "zone": row.get("current_location") or "-",
+                "zone": current_location,
                 "battery": row.get("battery_percent") if row.get("battery_percent") is not None else "-",
                 "current_task": current_phase or "-",
                 "chip_type": chip_type,
@@ -216,6 +225,8 @@ class CaregiverService:
     def _connection_status(row, runtime_state):
         if not row.get("last_seen_at"):
             return "OFFLINE"
+        if CaregiverService._runtime_is_stale(row):
+            return "OFFLINE"
         if row.get("fault_code"):
             return "DEGRADED"
         normalized = str(runtime_state or "").upper()
@@ -224,6 +235,37 @@ class CaregiverService:
         if normalized in {"OFFLINE", "DISCONNECTED"}:
             return "OFFLINE"
         return "ONLINE"
+
+    @staticmethod
+    def _runtime_is_stale(row):
+        last_seen_age_sec = optional_int(row.get("last_seen_age_sec"))
+        if last_seen_age_sec is None:
+            return False
+        return last_seen_age_sec > CaregiverService.ROBOT_ONLINE_STALE_SECONDS
+
+    @staticmethod
+    def _runtime_location_is_current(row):
+        return bool(row.get("last_seen_at")) and not CaregiverService._runtime_is_stale(row)
+
+    @staticmethod
+    def _display_location(value):
+        text = str(value or "").strip()
+        if not text or CaregiverService._is_ipv4_address(text):
+            return "-"
+        return text
+
+    @staticmethod
+    def _is_ipv4_address(value):
+        parts = str(value or "").strip().split(".")
+        if len(parts) != 4:
+            return False
+        for part in parts:
+            if not part.isdigit():
+                return False
+            numeric = int(part)
+            if numeric < 0 or numeric > 255:
+                return False
+        return True
 
     @staticmethod
     def _display_name(row):
@@ -294,21 +336,25 @@ class CaregiverService:
     @staticmethod
     def _format_flow_board_data(rows):
         flow_data = {
-            "READY": [],
+            "WAITING": [],
             "ASSIGNED": [],
-            "RUNNING": [],
+            "IN_PROGRESS": [],
+            "CANCELING": [],
             "DONE": [],
         }
 
         for row in rows:
             task = CaregiverService._format_flow_task(row)
+            task_status = task["task_status"]
 
-            if task["task_status"] in ("WAITING", "WAITING_DISPATCH"):
-                flow_data["READY"].append(task)
-            elif task["task_status"] in ("READY", "ASSIGNED"):
+            if task_status in ("WAITING", "WAITING_DISPATCH", "READY"):
+                flow_data["WAITING"].append(task)
+            elif task_status == "ASSIGNED":
                 flow_data["ASSIGNED"].append(task)
-            elif task["task_status"] in ("RUNNING", "CANCEL_REQUESTED"):
-                flow_data["RUNNING"].append(task)
+            elif task_status in ("RUNNING", "IN_PROGRESS"):
+                flow_data["IN_PROGRESS"].append(task)
+            elif task_status in ("CANCEL_REQUESTED", "CANCELLING", "PREEMPTING"):
+                flow_data["CANCELING"].append(task)
             else:
                 flow_data["DONE"].append(task)
 
@@ -317,7 +363,9 @@ class CaregiverService:
     @staticmethod
     def _format_flow_task(row):
         task_id = row.get("task_id")
-        task_status = row.get("task_status") or row.get("event_type") or "UNKNOWN"
+        task_status = str(
+            row.get("task_status") or row.get("event_type") or "UNKNOWN"
+        ).upper()
         robot_id = row.get("robot_id") or "-"
         description = row.get("description") or "-"
 

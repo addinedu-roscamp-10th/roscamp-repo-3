@@ -3,6 +3,7 @@ SELECT
         SELECT COUNT(*)
         FROM robot_runtime_status
         WHERE runtime_state IN ('IDLE', 'READY')
+          AND last_seen_at >= DATE_SUB(NOW(3), INTERVAL 60 SECOND)
     ) AS available_robot_count,
     (
         SELECT COUNT(*)

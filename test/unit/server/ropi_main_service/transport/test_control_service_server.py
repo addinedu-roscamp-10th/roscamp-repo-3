@@ -586,15 +586,16 @@ def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
 
         def get_flow_board_data(self):
             return {
-                "READY": [],
+                "WAITING": [],
                 "ASSIGNED": [],
-                "RUNNING": [
+                "IN_PROGRESS": [
                     {
                         "task_id": 101,
                         "task_status": "RUNNING",
                         "description": "delivery task",
                     }
                 ],
+                "CANCELING": [],
                 "DONE": [],
             }
 
@@ -627,7 +628,7 @@ def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
     ):
         bundle = tcp_server.CaregiverFacade().get_dashboard_bundle()
 
-    task = bundle["flow_data"]["RUNNING"][0]
+    task = bundle["flow_data"]["IN_PROGRESS"][0]
     assert task["feedback"]["feedback_type"] == "NAVIGATION_FEEDBACK"
     assert task["feedback_summary"] == "MOVING / 남은 거리 1.25m"
 

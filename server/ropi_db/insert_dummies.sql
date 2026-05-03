@@ -273,4 +273,5 @@ INSERT INTO `robot_runtime_status`
 (`robot_id`, `robot_kind`, `runtime_state`, `active_task_id`, `battery_percent`,
  `pose_x`, `pose_y`, `pose_yaw`, `frame_id`, `fault_code`, `last_seen_at`, `updated_at`)
 VALUES
-('pinky2', 'PINKY', 'RUNNING', 1, 87.5, 1.2, 0.8, 0.0, 'map', NULL, NOW(3), NOW(3));
+('pinky2', 'PINKY', 'RUNNING', 1, 87.5, 1.2, 0.8, 0.0, 'map', NULL,
+ DATE_SUB(NOW(3), INTERVAL 1 DAY), DATE_SUB(NOW(3), INTERVAL 1 DAY));

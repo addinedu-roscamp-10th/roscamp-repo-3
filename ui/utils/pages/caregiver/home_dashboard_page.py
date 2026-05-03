@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -58,6 +59,21 @@ def _task_id_value(task: dict):
     if text.isdigit():
         return int(text)
     return text or None
+
+
+def _operator_datetime(value):
+    text = _display(value)
+    if text == "-" or "T" not in text:
+        return text
+
+    date_text, time_text = text.split("T", 1)
+    time_text = time_text.rstrip("Z")
+    for marker in ("+", "-"):
+        if marker in time_text:
+            time_text = time_text.split(marker, 1)[0]
+            break
+    time_text = time_text.split(".", 1)[0]
+    return f"{date_text} {time_text}"
 
 
 class DashboardLoadWorker(QObject):
@@ -139,12 +155,15 @@ class RobotBoardCard(QFrame):
         robot_id = _display(robot.get("robot_id") or robot.get("robot_name"))
         role = _display(robot.get("robot_role") or robot.get("robot_type_name"))
         status = _display(robot.get("connection_status") or robot.get("status"))
-        zone = _display(robot.get("current_location") or robot.get("zone"))
+        location = _display(
+            robot.get("current_location") or robot.get("zone"),
+            "위치 미수신",
+        )
         battery = robot.get("battery_percent", robot.get("battery"))
         current_task = _display(
             robot.get("current_task_id") or robot.get("current_task")
         )
-        last_seen = _display(robot.get("last_seen_at"))
+        last_seen = _operator_datetime(robot.get("last_seen_at"))
         chip_type = _display(robot.get("chip_type"), "blue")
 
         root = QVBoxLayout(self)
@@ -163,7 +182,7 @@ class RobotBoardCard(QFrame):
         for text in (
             f"역할: {role}",
             f"현재 작업: {current_task}",
-            f"현재 구역: {zone}",
+            f"현재 위치: {location}",
             f"배터리: {_display(battery)}",
             f"마지막 수신: {last_seen}",
         ):
@@ -342,7 +361,6 @@ class CaregiverHomePage(QWidget):
             PageHeader(
                 "운영 대시보드",
                 "현재 로봇 상태와 작업 흐름을 한눈에 확인합니다.",
-                show_status=True,
             ),
             1,
         )
@@ -408,13 +426,23 @@ class CaregiverHomePage(QWidget):
         flow_sub = QLabel("현재 요청된 작업을 상태별로 분류해 보여줍니다.")
         flow_sub.setObjectName("mutedText")
 
-        self.flow_grid = QGridLayout()
+        self.flow_scroll = QScrollArea()
+        self.flow_scroll.setObjectName("flowBoardScroll")
+        self.flow_scroll.setWidgetResizable(True)
+        self.flow_scroll.setMinimumHeight(260)
+        self.flow_scroll.setMaximumHeight(420)
+
+        flow_content = QWidget()
+        flow_content.setObjectName("flowBoardContent")
+
+        self.flow_grid = QGridLayout(flow_content)
         self.flow_grid.setHorizontalSpacing(16)
         self.flow_grid.setVerticalSpacing(16)
+        self.flow_scroll.setWidget(flow_content)
 
         fw.addWidget(flow_title)
         fw.addWidget(flow_sub)
-        fw.addLayout(self.flow_grid)
+        fw.addWidget(self.flow_scroll)
 
         timeline_wrap = QFrame()
         timeline_wrap.setObjectName("card")

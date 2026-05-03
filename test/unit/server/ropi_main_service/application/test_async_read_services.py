@@ -43,6 +43,7 @@ class FakeAsyncCaregiverRepository:
                 "current_task_phase": None,
                 "current_task_status": None,
                 "last_seen_at": "2026-05-03T12:00:00",
+                "last_seen_age_sec": 5,
             }
         ]
 
@@ -216,7 +217,7 @@ def test_caregiver_service_async_methods_keep_response_shape():
     assert result["robots"][0]["last_seen_at"] == "2026-05-03T12:00:00"
     assert result["robots"][0]["chip_type"] == "green"
     assert result["timeline"] == [["12:00:00", "1", "DELIVERY_TASK_ACCEPTED", "accepted"]]
-    assert result["flow"]["READY"] == [
+    assert result["flow"]["WAITING"] == [
         {
             "event_id": 1,
             "task_id": 101,
@@ -244,6 +245,7 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
             "current_task_phase": "DELIVERY_DESTINATION",
             "current_task_status": "RUNNING",
             "last_seen_at": "2026-05-03T12:00:00",
+            "last_seen_age_sec": 5,
             "fault_code": None,
         },
         {
@@ -257,6 +259,7 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
             "current_task_phase": None,
             "current_task_status": None,
             "last_seen_at": "2026-05-03T11:59:00",
+            "last_seen_age_sec": 5,
             "fault_code": "ARM_FAULT",
         },
         {
@@ -297,6 +300,68 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
         {"label": "Destination Arm Robot", "value": "jetcobot2"},
         {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
     ]
+
+
+def test_caregiver_service_marks_stale_runtime_offline_and_hides_ip_location():
+    rows = [
+        {
+            "robot_id": "pinky2",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "운반팀",
+            "robot_status": "IDLE",
+            "current_location": "좌표 x=1.2, y=0.8",
+            "battery_percent": 87.5,
+            "current_task_id": None,
+            "current_task_phase": None,
+            "current_task_status": None,
+            "last_seen_at": "2026-05-03T12:00:00",
+            "last_seen_age_sec": 3600,
+            "fault_code": None,
+        },
+        {
+            "robot_id": "pinky3",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "순찰팀",
+            "robot_status": "IDLE",
+            "current_location": "192.168.0.13",
+            "battery_percent": 80,
+            "current_task_id": None,
+            "current_task_phase": None,
+            "current_task_status": None,
+            "last_seen_at": "2026-05-03T12:00:00",
+            "last_seen_age_sec": 5,
+            "fault_code": None,
+        },
+    ]
+
+    robots = CaregiverService._format_robot_board_data(rows)
+
+    assert robots[0]["connection_status"] == "OFFLINE"
+    assert robots[0]["chip_type"] == "red"
+    assert robots[0]["current_location"] == "-"
+    assert robots[0]["zone"] == "-"
+    assert robots[1]["connection_status"] == "ONLINE"
+    assert robots[1]["current_location"] == "-"
+
+
+def test_caregiver_service_flow_board_uses_dashboard_status_buckets():
+    rows = [
+        {"task_id": 1, "task_status": "WAITING_DISPATCH", "description": "waiting"},
+        {"task_id": 2, "task_status": "READY", "description": "ready"},
+        {"task_id": 3, "task_status": "ASSIGNED", "description": "assigned"},
+        {"task_id": 4, "task_status": "RUNNING", "description": "running"},
+        {"task_id": 5, "task_status": "CANCEL_REQUESTED", "description": "canceling"},
+        {"task_id": 6, "task_status": "FAILED", "description": "failed"},
+    ]
+
+    flow = CaregiverService._format_flow_board_data(rows)
+
+    assert list(flow) == ["WAITING", "ASSIGNED", "IN_PROGRESS", "CANCELING", "DONE"]
+    assert [task["task_id"] for task in flow["WAITING"]] == [1, 2]
+    assert [task["task_id"] for task in flow["ASSIGNED"]] == [3]
+    assert [task["task_id"] for task in flow["IN_PROGRESS"]] == [4]
+    assert [task["task_id"] for task in flow["CANCELING"]] == [5]
+    assert [task["task_id"] for task in flow["DONE"]] == [6]
 
 
 def test_caregiver_service_alert_log_bundle_formats_operator_events():
@@ -362,7 +427,7 @@ def test_caregiver_service_alert_log_period_and_limit_normalization():
     assert bounded_int("50", default=100, minimum=1, maximum=200) == 50
 
 
-def test_caregiver_flow_board_keeps_cancel_requested_in_running_lane():
+def test_caregiver_flow_board_keeps_cancel_requested_in_canceling_lane():
     rows = [
         {
             "event_id": 2,
@@ -377,9 +442,9 @@ def test_caregiver_flow_board_keeps_cancel_requested_in_running_lane():
 
     flow = CaregiverService._format_flow_board_data(rows)
 
-    assert flow["RUNNING"][0]["task_id"] == 102
-    assert flow["RUNNING"][0]["task_status"] == "CANCEL_REQUESTED"
-    assert flow["RUNNING"][0]["cancellable"] is False
+    assert flow["CANCELING"][0]["task_id"] == 102
+    assert flow["CANCELING"][0]["task_status"] == "CANCEL_REQUESTED"
+    assert flow["CANCELING"][0]["cancellable"] is False
     assert flow["DONE"] == []
 
 
