@@ -70,6 +70,49 @@ def test_caregiver_repository_async_timeline_uses_async_fetch_all(monkeypatch):
     assert calls[0][1] == (10,)
 
 
+def test_caregiver_repository_async_alert_logs_use_partial_text_filters(monkeypatch):
+    calls = []
+
+    async def fake_async_fetch_all(query, params=None):
+        calls.append((query, params))
+        return [{"event_id": 11}]
+
+    monkeypatch.setattr(caregiver_repository, "async_fetch_all", fake_async_fetch_all)
+
+    rows = asyncio.run(
+        caregiver_repository.CaregiverRepository().async_get_alert_logs(
+            period_start=None,
+            severity=None,
+            source_component="Control",
+            task_id="1001",
+            robot_id="pinky",
+            event_type="TASK",
+            limit=25,
+        )
+    )
+
+    assert rows == [{"event_id": 11}]
+    assert "tel.component LIKE" in calls[0][0]
+    assert "tel.robot_id LIKE" in calls[0][0]
+    assert "tel.event_name LIKE" in calls[0][0]
+    assert "tel.task_id = %s" in calls[0][0]
+    assert calls[0][1] == (
+        None,
+        None,
+        None,
+        None,
+        "Control",
+        "Control",
+        "1001",
+        "1001",
+        "pinky",
+        "pinky",
+        "TASK",
+        "TASK",
+        25,
+    )
+
+
 def test_patient_repository_async_member_lookup_uses_async_fetch_one(monkeypatch):
     calls = []
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -76,6 +76,12 @@ class AlertLogPage(QWidget):
         self.load_worker = None
         self.events = []
         self.summary_cards = {}
+        self._filter_debounce_ms = 300
+        self._pending_filter_refresh = False
+        self._shutting_down = False
+        self.filter_timer = QTimer(self)
+        self.filter_timer.setSingleShot(True)
+        self.filter_timer.timeout.connect(self._run_debounced_filter_refresh)
 
         self._build_ui()
         if autoload:
@@ -140,6 +146,16 @@ class AlertLogPage(QWidget):
         self.robot_id_input.setPlaceholderText("예: pinky2")
         self.event_type_input = QLineEdit()
         self.event_type_input.setPlaceholderText("예: TASK_FAILED")
+
+        self.period_combo.currentIndexChanged.connect(self._handle_combo_filter_changed)
+        self.severity_combo.currentIndexChanged.connect(self._handle_combo_filter_changed)
+        for text_filter in (
+            self.source_input,
+            self.task_id_input,
+            self.robot_id_input,
+            self.event_type_input,
+        ):
+            text_filter.textChanged.connect(self._schedule_text_filter_refresh)
 
         filters = [
             ("기간", self.period_combo),
@@ -229,10 +245,23 @@ class AlertLogPage(QWidget):
         root.addLayout(summary_row)
         root.addLayout(content_row, 1)
 
+    def _handle_combo_filter_changed(self):
+        self.filter_timer.stop()
+        self.refresh_data()
+
+    def _schedule_text_filter_refresh(self):
+        self.filter_timer.start(self._filter_debounce_ms)
+
+    def _run_debounced_filter_refresh(self):
+        self.refresh_data()
+
     def refresh_data(self):
         if self.load_thread is not None:
+            self._pending_filter_refresh = True
             return
 
+        self._pending_filter_refresh = False
+        self.filter_timer.stop()
         self.refresh_button.setEnabled(False)
         self._show_status("알림/로그를 불러오는 중입니다.")
         self.load_thread, self.load_worker = start_worker_thread(
@@ -263,9 +292,13 @@ class AlertLogPage(QWidget):
         self.time_card.mark_updated()
 
     def _clear_load_thread(self):
+        should_refresh = self._pending_filter_refresh and not self._shutting_down
+        self._pending_filter_refresh = False
         self.load_thread = None
         self.load_worker = None
         self.refresh_button.setEnabled(True)
+        if should_refresh:
+            self.refresh_data()
 
     def apply_alert_log_bundle(self, bundle):
         bundle = bundle or {}
@@ -361,6 +394,8 @@ class AlertLogPage(QWidget):
         self.refresh_data()
 
     def shutdown(self):
+        self._shutting_down = True
+        self.filter_timer.stop()
         stop_worker_thread(
             self.load_thread,
             wait_ms=self._worker_stop_wait_ms,

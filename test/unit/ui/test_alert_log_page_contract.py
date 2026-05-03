@@ -162,12 +162,32 @@ def test_alert_log_page_collects_operator_filters():
     page = AlertLogPage(autoload=False)
 
     try:
+        for widget in (
+            page.period_combo,
+            page.severity_combo,
+            page.source_input,
+            page.task_id_input,
+            page.robot_id_input,
+            page.event_type_input,
+        ):
+            widget.blockSignals(True)
+
         page.period_combo.setCurrentIndex(page.period_combo.findData("LAST_1_HOUR"))
         page.severity_combo.setCurrentIndex(page.severity_combo.findData("ERROR"))
         page.source_input.setText("Control Service")
         page.task_id_input.setText("1001")
         page.robot_id_input.setText("pinky2")
         page.event_type_input.setText("TASK_FAILED")
+
+        for widget in (
+            page.period_combo,
+            page.severity_combo,
+            page.source_input,
+            page.task_id_input,
+            page.robot_id_input,
+            page.event_type_input,
+        ):
+            widget.blockSignals(False)
 
         assert page._collect_filters() == {
             "period": "LAST_1_HOUR",
@@ -178,6 +198,83 @@ def test_alert_log_page_collects_operator_filters():
             "event_type": "TASK_FAILED",
             "limit": 100,
         }
+    finally:
+        page.close()
+
+
+def test_alert_log_page_refreshes_when_combo_filters_change():
+    _app()
+
+    from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
+
+    page = AlertLogPage(autoload=False)
+    calls = []
+
+    try:
+        page.refresh_data = lambda: calls.append(page._collect_filters())
+
+        page.period_combo.setCurrentIndex(page.period_combo.findData("LAST_1_HOUR"))
+        page.severity_combo.setCurrentIndex(page.severity_combo.findData("ERROR"))
+
+        assert calls[0]["period"] == "LAST_1_HOUR"
+        assert calls[-1]["severity"] == "ERROR"
+    finally:
+        page.close()
+
+
+def test_alert_log_page_debounces_text_filters_and_uses_table_as_candidates():
+    _app()
+
+    from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
+
+    page = AlertLogPage(autoload=False)
+    calls = []
+
+    try:
+        page.refresh_data = lambda: calls.append(page._collect_filters())
+
+        page.source_input.setText("Control")
+
+        assert page.filter_timer.isActive() is True
+        assert calls == []
+
+        page.filter_timer.stop()
+        page._run_debounced_filter_refresh()
+
+        assert calls == [
+            {
+                "period": "LAST_24_HOURS",
+                "severity": None,
+                "source_component": "Control",
+                "task_id": None,
+                "robot_id": None,
+                "event_type": None,
+                "limit": 100,
+            }
+        ]
+    finally:
+        page.close()
+
+
+def test_alert_log_page_queues_latest_filter_refresh_while_loading():
+    _app()
+
+    from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
+
+    page = AlertLogPage(autoload=False)
+    calls = []
+
+    try:
+        page.load_thread = object()
+
+        page.refresh_data()
+
+        assert page._pending_filter_refresh is True
+
+        page.refresh_data = lambda: calls.append("refresh")
+        page._clear_load_thread()
+
+        assert calls == ["refresh"]
     finally:
         page.close()
 
