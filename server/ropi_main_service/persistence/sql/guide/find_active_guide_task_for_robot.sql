@@ -12,7 +12,5 @@ WHERE t.task_type = 'GUIDE'
   AND t.assigned_robot_id = %s
   AND t.task_status NOT IN ('COMPLETED', 'CANCELLED', 'FAILED')
   AND t.phase IN ('WAIT_TARGET_TRACKING', 'GUIDANCE_RUNNING', 'WAIT_REIDENTIFY')
-  AND gtd.target_track_id IS NOT NULL
-  AND gtd.target_track_id <> ''
 ORDER BY t.updated_at DESC, t.task_id DESC
 LIMIT 1

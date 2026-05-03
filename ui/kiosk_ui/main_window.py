@@ -1690,6 +1690,20 @@ class KioskRobotGuidanceProgressPage(QWidget):
         self.refresh_runtime_status()
 
     def refresh_runtime_status(self):
+        task_id = str((self.current_session or {}).get("task_id", "")).strip()
+        pinky_id = str((self.current_session or {}).get("pinky_id", "pinky1")).strip() or "pinky1"
+        get_tracking_status = getattr(self.service, "get_tracking_status", None)
+        if get_tracking_status is not None and task_id:
+            try:
+                ok, _message, status = get_tracking_status(
+                    task_id=task_id,
+                    pinky_id=pinky_id,
+                )
+                if self._apply_tracking_status_payload(ok, status or {}):
+                    return
+            except Exception:
+                pass
+
         try:
             ok, message, status = self.service.get_guide_runtime_status()
         except Exception:
@@ -1697,13 +1711,19 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         guide_runtime = (status or {}).get("guide_runtime") or {}
         last_update = guide_runtime.get("last_update") or {}
-        tracking_status = str(last_update.get("tracking_status") or "").strip()
+        self._apply_tracking_status_payload(ok, last_update)
+
+    def _apply_tracking_status_payload(self, ok, payload):
+        tracking_status = str((payload or {}).get("tracking_status") or "").strip()
+        if not ok and tracking_status in {"", "NOT_TRACKING"}:
+            return False
+
         target_track_id = str(
-            last_update.get("active_track_id")
-            or last_update.get("target_track_id")
+            (payload or {}).get("active_track_id")
+            or (payload or {}).get("target_track_id")
             or ""
         ).strip()
-        tracking_seq = last_update.get("tracking_result_seq")
+        tracking_seq = (payload or {}).get("tracking_result_seq")
 
         if ok and tracking_status:
             if tracking_status == "TRACKING":
@@ -1726,6 +1746,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
             self.request_id_label.setText(
                 f"안내 대상: {self.selected_patient.get('name', '-')} / 추적 순번: {tracking_seq}"
             )
+        return bool(tracking_status)
 
     def start_guidance_driving(self):
         task_id = str((self.current_session or {}).get("task_id", "")).strip()

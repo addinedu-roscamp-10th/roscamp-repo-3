@@ -16,6 +16,7 @@ _EXPORTS = {
     "GuideCommandService": ("guide_command", "GuideCommandService"),
     "GuideRuntimeService": ("guide_runtime", "GuideRuntimeService"),
     "GuideTrackingResultProcessor": ("guide_tracking_result", "GuideTrackingResultProcessor"),
+    "GuideTrackingSnapshotStore": ("guide_tracking_snapshot", "GuideTrackingSnapshotStore"),
     "GuideTrackingUpdatePublisherService": (
         "guide_tracking_update",
         "GuideTrackingUpdatePublisherService",

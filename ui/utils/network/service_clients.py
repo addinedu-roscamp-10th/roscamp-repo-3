@@ -473,6 +473,14 @@ class VisitGuideRemoteService:
             kwargs["pinky_id"] = pinky_id
         return _rpc("visit_guide", "get_guide_runtime_status", **kwargs)
 
+    def get_tracking_status(self, *, task_id=None, pinky_id=None):
+        kwargs = {}
+        if task_id is not None:
+            kwargs["task_id"] = task_id
+        if pinky_id is not None:
+            kwargs["pinky_id"] = pinky_id
+        return _rpc("visit_guide", "get_tracking_status", **kwargs)
+
 
 class VisitorInfoRemoteService:
     def get_patient_visit_info(self, keyword: str):

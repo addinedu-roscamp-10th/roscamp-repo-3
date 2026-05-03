@@ -595,3 +595,30 @@ def test_visit_guide_remote_service_exposes_start_guide_driving_rpc(monkeypatch)
             },
         )
     ]
+
+
+def test_visit_guide_remote_service_exposes_tracking_status_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return True, "안내 대상을 확인했습니다.", {"target_track_id": "track_17"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = VisitGuideRemoteService().get_tracking_status(
+        task_id="3001",
+        pinky_id="pinky1",
+    )
+
+    assert response[0] is True
+    assert calls == [
+        (
+            "visit_guide",
+            "get_tracking_status",
+            {
+                "task_id": "3001",
+                "pinky_id": "pinky1",
+            },
+        )
+    ]

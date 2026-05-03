@@ -15,6 +15,7 @@ from runtime_db_seeders import (
     active_patrol_task_seed,
     fall_evidence_seed,
     safe_fetch_one,
+    waiting_guide_tracking_task_seed,
 )
 from runtime_servers import (
     SERVER_HOST,
@@ -221,6 +222,49 @@ def test_control_server_bridges_ai_guide_tracking_stream_to_ros_uds(
         "image_width_px": 640,
         "image_height_px": 480,
     }
+
+
+def test_control_server_exposes_acquired_guide_track_status_to_kiosk_rpc(
+    control_server_with_ai_guide_tracking,
+    ai_guide_tracking_stream_server,
+    waiting_guide_tracking_task_seed,
+    monkeypatch,
+):
+    monkeypatch.setattr(tcp_client, "CONTROL_SERVER_HOST", SERVER_HOST)
+    monkeypatch.setattr(
+        tcp_client,
+        "CONTROL_SERVER_PORT",
+        control_server_with_ai_guide_tracking["port"],
+    )
+    monkeypatch.setattr(tcp_client, "CONTROL_SERVER_TIMEOUT", 5.0)
+
+    assert ai_guide_tracking_stream_server["subscribed"].wait(timeout=10)
+    ai_guide_tracking_stream_server["push_requested"].set()
+
+    service = VisitGuideRemoteService()
+    acquired = wait_for_condition(
+        lambda: service.get_tracking_status(
+            task_id=waiting_guide_tracking_task_seed["task_id"],
+            pinky_id=waiting_guide_tracking_task_seed["pinky_id"],
+        )[0]
+        is True,
+        timeout=10.0,
+    )
+    assert acquired is True
+
+    ok, message, payload = service.get_tracking_status(
+        task_id=waiting_guide_tracking_task_seed["task_id"],
+        pinky_id=waiting_guide_tracking_task_seed["pinky_id"],
+    )
+
+    assert ok is True
+    assert message == "안내 대상을 확인했습니다."
+    assert payload["result_code"] == "FOUND"
+    assert payload["task_id"] == waiting_guide_tracking_task_seed["task_id"]
+    assert payload["pinky_id"] == "pinky1"
+    assert payload["tracking_status"] == "TRACKING"
+    assert payload["active_track_id"] == "track_17"
+    assert payload["target_track_id"] == "track_17"
 
 
 def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(

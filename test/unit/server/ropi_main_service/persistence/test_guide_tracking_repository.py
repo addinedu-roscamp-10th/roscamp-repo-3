@@ -27,7 +27,8 @@ def test_get_active_guide_task_for_robot_filters_non_terminal_guide_task():
     assert response == row
     assert queries[0][1] == ("pinky1",)
     assert "guide_task_detail" in queries[0][0]
-    assert "target_track_id IS NOT NULL" in queries[0][0]
+    assert "WAIT_TARGET_TRACKING" in queries[0][0]
+    assert "target_track_id IS NOT NULL" not in queries[0][0]
 
 
 def test_async_get_active_guide_task_for_robot_uses_async_fetch_one():

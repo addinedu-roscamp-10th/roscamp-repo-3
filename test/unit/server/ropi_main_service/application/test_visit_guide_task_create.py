@@ -120,6 +120,16 @@ class FakeGuideNavigationStarter:
         return self.response
 
 
+class FakeGuideTrackingSnapshotStore:
+    def __init__(self, snapshot=None):
+        self.snapshot = snapshot
+        self.calls = []
+
+    def get(self, *, task_id=None, pinky_id=None):
+        self.calls.append({"task_id": task_id, "pinky_id": pinky_id})
+        return self.snapshot
+
+
 def test_visit_guide_service_create_guide_task_validates_required_fields():
     service = VisitGuideService(guide_task_repository=FakeGuideTaskRepository())
 
@@ -168,6 +178,47 @@ def test_visit_guide_service_async_create_guide_task_uses_async_repository():
     assert response["result_code"] == "ACCEPTED"
     assert response["task_id"] == 3001
     assert repository.created["visitor_id"] == 1
+
+
+def test_visit_guide_service_returns_tracking_status_from_control_snapshot_store():
+    snapshot_store = FakeGuideTrackingSnapshotStore(
+        snapshot={
+            "task_id": 3001,
+            "pinky_id": "pinky1",
+            "tracking_status": "TRACKING",
+            "active_track_id": "track_17",
+            "tracking_result_seq": 881,
+        }
+    )
+    service = VisitGuideService(guide_tracking_snapshot_store=snapshot_store)
+
+    ok, message, response = service.get_tracking_status(
+        task_id=3001,
+        pinky_id="pinky1",
+    )
+
+    assert ok is True
+    assert message == "안내 대상을 확인했습니다."
+    assert response["result_code"] == "FOUND"
+    assert response["target_track_id"] == "track_17"
+    assert response["active_track_id"] == "track_17"
+    assert response["tracking_status"] == "TRACKING"
+    assert snapshot_store.calls == [{"task_id": 3001, "pinky_id": "pinky1"}]
+
+
+def test_visit_guide_service_returns_pending_when_tracking_snapshot_is_missing():
+    snapshot_store = FakeGuideTrackingSnapshotStore(snapshot=None)
+    service = VisitGuideService(guide_tracking_snapshot_store=snapshot_store)
+
+    ok, message, response = service.get_tracking_status(
+        task_id=3001,
+        pinky_id="pinky1",
+    )
+
+    assert ok is False
+    assert message == "안내 대상 확인 대기 중입니다."
+    assert response["result_code"] == "PENDING"
+    assert response["target_track_id"] is None
 
 
 def test_visit_guide_service_records_guide_command_lifecycle_after_command_success():

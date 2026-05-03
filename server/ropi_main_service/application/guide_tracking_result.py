@@ -3,6 +3,9 @@ import logging
 from server.ropi_main_service.application.guide_tracking_update import (
     GuideTrackingUpdatePublisherService,
 )
+from server.ropi_main_service.application.guide_tracking_snapshot import (
+    get_default_guide_tracking_snapshot_store,
+)
 from server.ropi_main_service.persistence.repositories.guide_tracking_repository import (
     GuideTrackingRepository,
 )
@@ -20,11 +23,13 @@ class GuideTrackingResultProcessor:
         *,
         repository=None,
         update_publisher=None,
+        snapshot_store=None,
         task_event_publisher=None,
         pinky_id=DEFAULT_GUIDE_PINKY_ID,
     ):
         self.repository = repository or GuideTrackingRepository()
         self.update_publisher = update_publisher or GuideTrackingUpdatePublisherService()
+        self.snapshot_store = snapshot_store or get_default_guide_tracking_snapshot_store()
         self.task_event_publisher = task_event_publisher
         self.pinky_id = str(pinky_id or DEFAULT_GUIDE_PINKY_ID).strip() or DEFAULT_GUIDE_PINKY_ID
 
@@ -53,6 +58,10 @@ class GuideTrackingResultProcessor:
         robot_id = self._result_robot_id(result)
         tracking_status = self._normalize_tracking_status(result.get("tracking_status"))
         active_task = await self.repository.async_get_active_guide_task_for_robot(robot_id)
+        snapshot = self._build_snapshot(result, robot_id=robot_id, active_task=active_task)
+        if snapshot is not None:
+            self.snapshot_store.record(snapshot)
+
         update = self._build_update(result, robot_id=robot_id, active_task=active_task)
 
         if update is None:
@@ -87,6 +96,43 @@ class GuideTrackingResultProcessor:
 
         await self._publish_task_updated(update)
         return {"published": True}
+
+    def _build_snapshot(self, result, *, robot_id, active_task):
+        if not active_task:
+            return None
+
+        active_track_id = self._optional_text(result.get("active_track_id"))
+        bbox = self._find_bbox_for_track(
+            result,
+            target_track_id=active_track_id,
+        )
+        bbox_valid = bbox is not None
+        return {
+            "task_id": active_task.get("task_id"),
+            "pinky_id": robot_id,
+            "task_status": active_task.get("task_status"),
+            "phase": active_task.get("phase"),
+            "guide_phase": active_task.get("guide_phase"),
+            "adopted_target_track_id": self._optional_text(
+                active_task.get("target_track_id")
+            ),
+            "active_track_id": active_track_id,
+            "tracking_status": self._normalize_tracking_status(
+                result.get("tracking_status")
+            ),
+            "tracking_result_seq": self._optional_int(result.get("result_seq")) or 0,
+            "frame_ts": str(result.get("frame_ts") or "").strip(),
+            "confidence": result.get("confidence"),
+            "bbox_valid": bbox_valid,
+            "bbox_xyxy": bbox if bbox_valid else [0, 0, 0, 0],
+            "image_width_px": self._optional_int(result.get("image_width_px")) or 0,
+            "image_height_px": self._optional_int(result.get("image_height_px")) or 0,
+            "candidate_tracks": [
+                dict(candidate)
+                for candidate in (result.get("candidate_tracks") or [])
+                if isinstance(candidate, dict)
+            ],
+        }
 
     def _build_update(self, result, *, robot_id, active_task):
         if not active_task:
@@ -128,6 +174,9 @@ class GuideTrackingResultProcessor:
 
     @classmethod
     def _find_bbox_for_track(cls, result, *, target_track_id):
+        if target_track_id is None:
+            return None
+
         top_level_bbox = result.get("bbox_xyxy")
         if cls._valid_bbox(top_level_bbox):
             return [int(value) for value in top_level_bbox]
