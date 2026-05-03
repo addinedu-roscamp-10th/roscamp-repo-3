@@ -27,6 +27,7 @@ from ui.utils.network.service_clients import (
     DeliveryRequestRemoteService,
     TaskMonitorRemoteService,
 )
+from ui.kiosk_ui.main_window import KioskHomeWindow
 from ui.utils.network.tcp_client import send_request
 from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
 from ui.utils.session.session_manager import SessionManager, UserSession
@@ -257,6 +258,32 @@ def test_task_request_page_loads_items_from_real_server(patched_ui_endpoint, qap
         assert page.delivery_form.item_combo.itemText(0) != "등록된 물품 없음"
     finally:
         page.close()
+        wait_for_qt(qapp, lambda: True, timeout=0.1)
+
+
+def test_kiosk_home_resident_search_hits_real_server_and_db(patched_ui_endpoint, qapp):
+    member_row = safe_fetch_one(
+        "SELECT member_id, room_no FROM member WHERE room_no IS NOT NULL ORDER BY member_id LIMIT 1"
+    )
+    assert member_row is not None, "The runtime DB has no resident rows."
+
+    window = KioskHomeWindow()
+    window.show()
+
+    try:
+        window.home_page.search_card.clicked.emit()
+        assert window.stack.currentWidget() is window.search_page
+
+        window.search_page.search_input.setText(str(member_row["room_no"]))
+        window.search_page.search_patient()
+
+        assert window.search_page.selected_patient is not None
+        assert window.search_page.selected_patient["member_id"] == int(member_row["member_id"])
+        assert window.search_page.selected_patient["room"] == str(member_row["room_no"])
+        assert "어르신" in window.search_page.name_label.text()
+        assert window.search_page.room_label.text() == f"{member_row['room_no']}호"
+    finally:
+        window.close()
         wait_for_qt(qapp, lambda: True, timeout=0.1)
 
 

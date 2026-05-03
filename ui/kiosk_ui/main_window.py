@@ -23,7 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ui.utils.core.styles import load_stylesheet
-from ui.utils.network.service_clients import VisitGuideRemoteService
+from ui.utils.network.service_clients import KioskVisitorRemoteService, VisitGuideRemoteService
 
 
 class KioskActionIconGlyph(QWidget):
@@ -176,12 +176,19 @@ class KioskFooterStat(QFrame):
 
 
 class KioskResidentSearchPage(QWidget):
-    def __init__(self, *, go_home_page=None, go_confirmation_page=None, go_back_page=None):
+    def __init__(
+        self,
+        *,
+        go_home_page=None,
+        go_confirmation_page=None,
+        go_back_page=None,
+        service=None,
+    ):
         super().__init__()
         self.go_home_page = go_home_page
         self.go_confirmation_page = go_confirmation_page
         self.go_back_page = go_back_page
-        self.service = VisitGuideRemoteService()
+        self.service = service or KioskVisitorRemoteService()
         self.selected_patient = None
 
         root = QVBoxLayout(self)
@@ -335,25 +342,60 @@ class KioskResidentSearchPage(QWidget):
         root.addWidget(bottom_bar)
 
     def search_patient(self):
+        keyword = self.search_input.text().strip()
         try:
-            ok, message, patient = self.service.search_patient(self.search_input.text())
+            response = self.service.lookup_residents(keyword=keyword, limit=5)
         except Exception as exc:
             self.selected_patient = None
             self._clear_result()
             self.status_label.setText(f"검색 중 오류가 발생했습니다: {exc}")
             return
 
-        self.selected_patient = patient if ok else None
-        if not ok:
+        result_code = response.get("result_code")
+        matches = response.get("matches") or []
+        if result_code != "FOUND" or not matches:
+            self.selected_patient = None
             self._clear_result()
-            self.status_label.setText(message)
+            self.status_label.setText(
+                response.get("result_message") or "일치하는 어르신 정보가 없습니다."
+            )
             return
 
+        patient = self._patient_from_lookup_match(matches[0])
+        self.selected_patient = patient
         self.name_label.setText(f"{patient.get('name', '-')} 어르신")
-        self.room_label.setText(f"{patient.get('room', '-')}호")
+        self.room_label.setText(self._format_room_label(patient.get("room")))
         self.location_label.setText(f"위치: {patient.get('location', '-')}")
         self.visit_label.setText(f"면회 상태: {patient.get('status', '-')}")
-        self.status_label.setText("검색 결과를 확인했습니다. 안내가 필요하면 안내 시작을 눌러주세요.")
+        self.status_label.setText("검색 결과를 확인했습니다. 방문 등록 후 안내를 요청할 수 있습니다.")
+
+    @classmethod
+    def _patient_from_lookup_match(cls, match):
+        room = cls._normalize_room(match.get("room_no"))
+        visit_available = bool(match.get("visit_available"))
+        return {
+            "member_id": int(match["member_id"]),
+            "name": str(match.get("display_name") or "-").strip() or "-",
+            "room": room,
+            "location": "호실 안내 가능" if room != "-" else "-",
+            "status": "방문 등록 가능" if visit_available else "방문 제한",
+            "visit_available": visit_available,
+            "guide_available": bool(match.get("guide_available")),
+        }
+
+    @staticmethod
+    def _normalize_room(room_no):
+        room = str(room_no or "").strip()
+        if room.endswith("호"):
+            room = room[:-1].strip()
+        return room or "-"
+
+    @classmethod
+    def _format_room_label(cls, room_no):
+        room = cls._normalize_room(room_no)
+        if room == "-":
+            return "병실: -"
+        return f"{room}호"
 
     def start_guidance(self):
         if not self.selected_patient:

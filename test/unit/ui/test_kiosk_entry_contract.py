@@ -94,3 +94,81 @@ def test_kiosk_home_ports_wireframe_style_without_english_or_duplicate_cta():
         assert len(home.findChildren(QWidget, "kioskActionIconGlyph")) == 3
     finally:
         window.close()
+
+
+def test_kiosk_resident_search_uses_if_gui_007_lookup_payload():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskResidentSearchPage
+
+    class FakeKioskVisitorService:
+        def __init__(self):
+            self.calls = []
+
+        def lookup_residents(self, *, keyword, limit=10):
+            self.calls.append({"keyword": keyword, "limit": limit})
+            return {
+                "result_code": "FOUND",
+                "result_message": "어르신 정보를 확인했습니다.",
+                "reason_code": None,
+                "matches": [
+                    {
+                        "member_id": 1,
+                        "display_name": "김OO",
+                        "room_no": "301",
+                        "visit_available": True,
+                        "guide_available": True,
+                    }
+                ],
+            }
+
+    service = FakeKioskVisitorService()
+    page = KioskResidentSearchPage(service=service)
+
+    try:
+        page.search_input.setText(" 301 ")
+        page.search_patient()
+
+        assert service.calls == [{"keyword": "301", "limit": 5}]
+        assert page.selected_patient == {
+            "member_id": 1,
+            "name": "김OO",
+            "room": "301",
+            "location": "호실 안내 가능",
+            "status": "방문 등록 가능",
+            "visit_available": True,
+            "guide_available": True,
+        }
+        assert page.name_label.text() == "김OO 어르신"
+        assert page.room_label.text() == "301호"
+        assert page.location_label.text() == "위치: 호실 안내 가능"
+        assert page.visit_label.text() == "면회 상태: 방문 등록 가능"
+    finally:
+        page.close()
+
+
+def test_kiosk_resident_search_handles_no_match_from_if_gui_007():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskResidentSearchPage
+
+    class FakeKioskVisitorService:
+        def lookup_residents(self, *, keyword, limit=10):
+            return {
+                "result_code": "NO_MATCH",
+                "result_message": "일치하는 어르신 정보가 없습니다.",
+                "reason_code": "RESIDENT_NOT_FOUND",
+                "matches": [],
+            }
+
+    page = KioskResidentSearchPage(service=FakeKioskVisitorService())
+
+    try:
+        page.search_input.setText("999")
+        page.search_patient()
+
+        assert page.selected_patient is None
+        assert page.name_label.text() == "검색 결과가 없습니다"
+        assert page.status_label.text() == "일치하는 어르신 정보가 없습니다."
+    finally:
+        page.close()

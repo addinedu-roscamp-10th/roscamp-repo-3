@@ -52,7 +52,10 @@ def wait_for_server_ready(server_process, server_port: int, app, timeout: float 
 
 @pytest.fixture(scope="session")
 def ros_service_stub(tmp_path_factory):
-    socket_path = tmp_path_factory.mktemp("ros-runtime") / "ropi_ros_service.sock"
+    del tmp_path_factory
+    socket_dir = PROJECT_ROOT / ".pytest_tmp" / "ros-runtime"
+    socket_dir.mkdir(parents=True, exist_ok=True)
+    socket_path = socket_dir / "ropi_ros_service.sock"
     ready = threading.Event()
     stop_requested = threading.Event()
     finished = threading.Event()
