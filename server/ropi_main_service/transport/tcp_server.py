@@ -17,6 +17,9 @@ from server.ropi_main_service.application.delivery_runtime import build_delivery
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
+from server.ropi_main_service.application.guide_tracking_runtime import (
+    start_guide_tracking_stream_if_enabled,
+)
 from server.ropi_main_service.application.fall_evidence_image import (
     FallEvidenceImageService,
 )
@@ -86,6 +89,7 @@ def _serialize(value):
 def _ai_server_endpoint():
     host = (
         os.getenv("AI_FALL_EVIDENCE_HOST")
+        or os.getenv("AI_GUIDE_TRACKING_STREAM_HOST")
         or os.getenv("AI_FALL_STREAM_HOST")
         or os.getenv("AI_SERVER_HOST")
     )
@@ -95,6 +99,7 @@ def _ai_server_endpoint():
 
     port = (
         os.getenv("AI_FALL_EVIDENCE_PORT")
+        or os.getenv("AI_GUIDE_TRACKING_STREAM_PORT")
         or os.getenv("AI_FALL_STREAM_PORT")
         or "6000"
     )
@@ -275,6 +280,7 @@ class ControlServiceServer:
         self.delivery_workflow_task_manager = get_default_workflow_task_manager()
         self.task_event_stream_hub = TaskEventStreamHub()
         self.fall_inference_stream_task = None
+        self.guide_tracking_stream_task = None
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         payload = frame.payload or {}
@@ -780,6 +786,11 @@ class ControlServiceServer:
     async def start(self):
         self.db_writer.start()
         self.fall_inference_stream_task = start_fall_inference_stream_if_enabled(
+            loop=asyncio.get_running_loop(),
+            task_event_publisher=self.task_event_stream_hub,
+            workflow_task_manager=self.delivery_workflow_task_manager,
+        )
+        self.guide_tracking_stream_task = start_guide_tracking_stream_if_enabled(
             loop=asyncio.get_running_loop(),
             task_event_publisher=self.task_event_stream_hub,
             workflow_task_manager=self.delivery_workflow_task_manager,

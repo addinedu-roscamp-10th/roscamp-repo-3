@@ -42,3 +42,20 @@ def test_guide_runtime_subscriber_is_optional_when_interface_is_missing():
     assert subscriber is None
     assert node.logger.warnings
     assert "Guide runtime subscriber disabled" in node.logger.warnings[0]
+
+
+def test_guide_tracking_update_publisher_is_optional_when_interface_is_missing():
+    node = FakeNode()
+    original_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "ropi_interface.msg":
+            raise ImportError("cannot import name 'GuideTrackingUpdate'")
+        return original_import(name, globals, locals, fromlist, level)
+
+    with patch("builtins.__import__", side_effect=fake_import):
+        publisher = ros_main._build_guide_tracking_update_publisher(node)
+
+    assert publisher is None
+    assert node.logger.warnings
+    assert "Guide tracking update publisher disabled" in node.logger.warnings[0]

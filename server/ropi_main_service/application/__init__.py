@@ -15,6 +15,11 @@ _EXPORTS = {
     "FallResponseCommandService": ("fall_response_command", "FallResponseCommandService"),
     "GuideCommandService": ("guide_command", "GuideCommandService"),
     "GuideRuntimeService": ("guide_runtime", "GuideRuntimeService"),
+    "GuideTrackingResultProcessor": ("guide_tracking_result", "GuideTrackingResultProcessor"),
+    "GuideTrackingUpdatePublisherService": (
+        "guide_tracking_update",
+        "GuideTrackingUpdatePublisherService",
+    ),
     "GoalPoseNavigationService": ("goal_pose_navigation", "GoalPoseNavigationService"),
     "InventoryService": ("inventory", "InventoryService"),
     "KioskVisitorService": ("kiosk_visitor", "KioskVisitorService"),

@@ -5,6 +5,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
     MESSAGE_CODE_GUIDE_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_TRACKING_RESULT_SUBSCRIBE,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_PATROL_RESUME_TASK,
@@ -122,6 +123,27 @@ def test_fall_inference_result_subscribe_message_code_is_if_pat_005():
     assert decoded.payload["consumer_id"] == "control_service_ai_fall"
     assert decoded.payload["last_seq"] == 540
     assert decoded.payload["pinky_id"] == "pinky3"
+
+
+def test_guide_tracking_result_subscribe_message_code_is_if_gui_005():
+    frame = TCPFrame(
+        message_code=MESSAGE_CODE_GUIDE_TRACKING_RESULT_SUBSCRIBE,
+        sequence_no=51,
+        payload={
+            "consumer_id": "control_service_ai_guide",
+            "last_seq": 880,
+            "pinky_id": "pinky1",
+            "tracking_mode": "KEEP_TRACK",
+            "expected_track_id": "track_17",
+        },
+    )
+
+    decoded = decode_frame_bytes(encode_frame(frame))
+
+    assert decoded.message_code == 0x5002
+    assert decoded.payload["consumer_id"] == "control_service_ai_guide"
+    assert decoded.payload["last_seq"] == 880
+    assert decoded.payload["expected_track_id"] == "track_17"
 
 
 def test_fall_evidence_query_message_codes_are_defined():

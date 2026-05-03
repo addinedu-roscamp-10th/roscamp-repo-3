@@ -24,6 +24,7 @@ class RosServiceCommandDispatcher:
         fall_response_control_client=None,
         guide_command_client=None,
         guide_runtime_subscriber=None,
+        guide_tracking_update_publisher=None,
         runtime_config=None,
         patrol_runtime_config=None,
     ):
@@ -33,6 +34,7 @@ class RosServiceCommandDispatcher:
         self.fall_response_control_client = fall_response_control_client
         self.guide_command_client = guide_command_client
         self.guide_runtime_subscriber = guide_runtime_subscriber
+        self.guide_tracking_update_publisher = guide_tracking_update_publisher
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
         self._dispatch_executor = ThreadPoolExecutor(
@@ -48,6 +50,7 @@ class RosServiceCommandDispatcher:
             "execute_patrol_path": self._dispatch_execute_patrol_path,
             "fall_response_control": self._dispatch_fall_response_control,
             "guide_command": self._dispatch_guide_command,
+            "publish_guide_tracking_update": self._dispatch_publish_guide_tracking_update,
         }
         self._async_command_handlers = {
             "cancel_action": self._async_dispatch_cancel_action,
@@ -58,6 +61,7 @@ class RosServiceCommandDispatcher:
             "execute_patrol_path": self._async_dispatch_execute_patrol_path,
             "fall_response_control": self._async_dispatch_fall_response_control,
             "guide_command": self._async_dispatch_guide_command,
+            "publish_guide_tracking_update": self._async_dispatch_publish_guide_tracking_update,
         }
 
     def dispatch(self, command: str, payload: dict | None = None) -> dict:
@@ -166,6 +170,20 @@ class RosServiceCommandDispatcher:
         return service_client.call(
             service_name=self._build_guide_command_service_name(pinky_id),
             request=request,
+        )
+
+    def _dispatch_publish_guide_tracking_update(self, payload: dict) -> dict:
+        pinky_id, update = self._build_guide_tracking_update(payload)
+        publisher = self._require_action_client(
+            self.guide_tracking_update_publisher,
+            error_code="GUIDE_TRACKING_UPDATE_PUBLISHER_UNAVAILABLE",
+            error_message="publish_guide_tracking_update requires guide tracking update publisher.",
+        )
+        result = publisher.publish(pinky_id=pinky_id, update=update)
+        return self._build_guide_tracking_update_response(
+            pinky_id=pinky_id,
+            update=update,
+            publisher_result=result,
         )
 
     def _dispatch_cancel_action(self, payload: dict) -> dict:
@@ -342,6 +360,28 @@ class RosServiceCommandDispatcher:
             service_client,
             service_name=self._build_guide_command_service_name(pinky_id),
             request=request,
+        )
+
+    async def _async_dispatch_publish_guide_tracking_update(self, payload: dict) -> dict:
+        pinky_id, update = self._build_guide_tracking_update(payload)
+        publisher = self._require_action_client(
+            self.guide_tracking_update_publisher,
+            error_code="GUIDE_TRACKING_UPDATE_PUBLISHER_UNAVAILABLE",
+            error_message="publish_guide_tracking_update requires guide tracking update publisher.",
+        )
+        async_publish = getattr(publisher, "async_publish", None)
+        if async_publish is not None:
+            result = await async_publish(pinky_id=pinky_id, update=update)
+        else:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                self._dispatch_executor,
+                partial(publisher.publish, pinky_id=pinky_id, update=update),
+            )
+        return self._build_guide_tracking_update_response(
+            pinky_id=pinky_id,
+            update=update,
+            publisher_result=result,
         )
 
     async def _async_dispatch_cancel_action(self, payload: dict) -> dict:
@@ -901,6 +941,82 @@ class RosServiceCommandDispatcher:
             "finish_reason": finish_reason or "",
         }
 
+    @classmethod
+    def _build_guide_tracking_update(cls, payload: dict):
+        request = payload.get("request")
+        if not isinstance(request, dict):
+            request = payload
+        pinky_id = cls._get_required_identifier(
+            request,
+            field_name="pinky_id",
+            error_code="PINKY_ID_REQUIRED",
+            error_message="publish_guide_tracking_update requires pinky_id.",
+        )
+        task_id = cls._get_required_identifier(
+            request,
+            field_name="task_id",
+            error_code="TASK_ID_REQUIRED",
+            error_message="publish_guide_tracking_update requires task_id.",
+        )
+        target_track_id = cls._get_required_identifier(
+            request,
+            field_name="target_track_id",
+            error_code="TARGET_TRACK_ID_REQUIRED",
+            error_message="publish_guide_tracking_update requires target_track_id.",
+        )
+        tracking_status = cls._get_required_identifier(
+            request,
+            field_name="tracking_status",
+            error_code="TRACKING_STATUS_REQUIRED",
+            error_message="publish_guide_tracking_update requires tracking_status.",
+        ).upper()
+        if tracking_status not in {"TRACKING", "LOST"}:
+            raise RosServiceCommandDispatchError(
+                "TRACKING_STATUS_INVALID",
+                "publish_guide_tracking_update requires TRACKING or LOST tracking_status.",
+            )
+
+        update = {
+            "task_id": task_id,
+            "target_track_id": target_track_id,
+            "tracking_status": tracking_status,
+            "tracking_result_seq": cls._get_required_u32(
+                request,
+                field_name="tracking_result_seq",
+                error_code="TRACKING_RESULT_SEQ_INVALID",
+                error_message="publish_guide_tracking_update requires u32 tracking_result_seq.",
+            ),
+            "frame_ts_sec": cls._get_required_u32(
+                request,
+                field_name="frame_ts_sec",
+                error_code="FRAME_TS_INVALID",
+                error_message="publish_guide_tracking_update requires u32 frame_ts_sec.",
+            ),
+            "frame_ts_nanosec": cls._get_required_u32(
+                request,
+                field_name="frame_ts_nanosec",
+                error_code="FRAME_TS_INVALID",
+                error_message="publish_guide_tracking_update requires u32 frame_ts_nanosec.",
+            ),
+            "bbox_valid": bool(request.get("bbox_valid")),
+            "bbox_xyxy": cls._get_bbox_xyxy(request.get("bbox_xyxy")),
+            "image_width_px": cls._get_required_u32(
+                request,
+                field_name="image_width_px",
+                error_code="IMAGE_SIZE_INVALID",
+                error_message="publish_guide_tracking_update requires u32 image_width_px.",
+            ),
+            "image_height_px": cls._get_required_u32(
+                request,
+                field_name="image_height_px",
+                error_code="IMAGE_SIZE_INVALID",
+                error_message="publish_guide_tracking_update requires u32 image_height_px.",
+            ),
+        }
+        if not update["bbox_valid"]:
+            update["bbox_xyxy"] = [0, 0, 0, 0]
+        return pinky_id, update
+
     @staticmethod
     def _build_fall_response_service_name(pinky_id: str) -> str:
         return f"/ropi/control/{pinky_id}/fall_response_control"
@@ -933,6 +1049,69 @@ class RosServiceCommandDispatcher:
             "action_name": action_name,
             "feedback": feedback,
         }
+
+    @staticmethod
+    def _build_guide_tracking_update_response(*, pinky_id, update, publisher_result):
+        if isinstance(publisher_result, dict):
+            accepted = (
+                publisher_result.get("accepted") is True
+                or str(publisher_result.get("result_code") or "").upper() == "ACCEPTED"
+            )
+        else:
+            accepted = True
+
+        if not accepted:
+            raise RosServiceCommandDispatchError(
+                "GUIDE_TRACKING_UPDATE_PUBLISH_REJECTED",
+                "guide tracking update publisher rejected the request.",
+            )
+
+        return {
+            "result_code": "ACCEPTED",
+            "result_message": "guide tracking update publish accepted.",
+            "pinky_id": pinky_id,
+            "task_id": update["task_id"],
+            "target_track_id": update["target_track_id"],
+            "tracking_status": update["tracking_status"],
+            "tracking_result_seq": update["tracking_result_seq"],
+        }
+
+    @staticmethod
+    def _get_required_u32(
+        payload: dict,
+        *,
+        field_name: str,
+        error_code: str,
+        error_message: str,
+    ):
+        try:
+            value = int(payload.get(field_name))
+        except (TypeError, ValueError) as exc:
+            raise RosServiceCommandDispatchError(error_code, error_message) from exc
+        if value < 0 or value > 0xFFFFFFFF:
+            raise RosServiceCommandDispatchError(error_code, error_message)
+        return value
+
+    @staticmethod
+    def _get_bbox_xyxy(value):
+        if not isinstance(value, (list, tuple)) or len(value) != 4:
+            raise RosServiceCommandDispatchError(
+                "BBOX_INVALID",
+                "publish_guide_tracking_update requires int[4] bbox_xyxy.",
+            )
+        try:
+            bbox = [int(item) for item in value]
+        except (TypeError, ValueError) as exc:
+            raise RosServiceCommandDispatchError(
+                "BBOX_INVALID",
+                "publish_guide_tracking_update requires int[4] bbox_xyxy.",
+            ) from exc
+        if any(item < -0x80000000 or item > 0x7FFFFFFF for item in bbox):
+            raise RosServiceCommandDispatchError(
+                "BBOX_INVALID",
+                "publish_guide_tracking_update requires int[4] bbox_xyxy.",
+            )
+        return bbox
 
 
 __all__ = [
