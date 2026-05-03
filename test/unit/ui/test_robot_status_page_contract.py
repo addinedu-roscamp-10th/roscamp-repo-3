@@ -115,7 +115,6 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert "1대" in labels
         assert "pinky2" in labels
         assert "Pinky Pro" in labels
-        assert "모바일팀" in labels
         assert "GUIDE, DELIVERY, PATROL" in labels
         assert "픽업 로봇팔" in labels
         assert "pinky2" in labels
@@ -124,12 +123,15 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert not any("Delivery Mobile Robot: pinky2" in text for text in labels)
         assert not any("유형/역할" in text for text in labels)
         assert not any("PICKUP_ARM" in text for text in labels)
+        assert not any("관리 그룹" in text for text in labels)
+        assert not any("모바일팀" in text for text in labels)
+        assert not any("운반팀" in text for text in labels)
         assert page.findChildren(QFrame, "keyValueRow")
         assert page.table.rowCount() == 2
         assert page.table.item(0, 0).text() == "pinky2"
         assert page.table.item(0, 2).text() == "MOBILE"
-        assert page.table.item(0, 4).text() == "GUIDE, DELIVERY, PATROL"
-        assert page.table.item(0, 5).text() == "ONLINE"
+        assert page.table.item(0, 3).text() == "GUIDE, DELIVERY, PATROL"
+        assert page.table.item(0, 4).text() == "ONLINE"
 
         page.table.selectRow(1)
         page._handle_table_selection()

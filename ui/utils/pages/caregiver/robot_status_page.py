@@ -36,7 +36,6 @@ TABLE_HEADERS = [
     "로봇 ID",
     "표시명",
     "구분",
-    "관리 그룹",
     "지원 기능",
     "연결",
     "상태",
@@ -101,7 +100,6 @@ class RobotStatusCard(QFrame):
 
         details = [
             ("구분", _display(robot.get("robot_type"))),
-            ("관리 그룹", _display(robot.get("manager_group"))),
             ("지원 기능", _capabilities_text(robot.get("capabilities"))),
             ("현재 작업", _display(robot.get("current_task_id"))),
             ("단계", _display(robot.get("current_phase"))),
@@ -314,7 +312,6 @@ class RobotStatusPage(QWidget):
                 _display(robot.get("robot_id")),
                 _display(robot.get("display_name")),
                 _display(robot.get("robot_type")),
-                _display(robot.get("manager_group")),
                 _capabilities_text(robot.get("capabilities")),
                 _display(robot.get("connection_status")),
                 _display(robot.get("runtime_state")),
@@ -352,7 +349,6 @@ class RobotStatusPage(QWidget):
             ("선택 로봇", _display(robot.get("robot_id"))),
             ("표시명", _display(robot.get("display_name"))),
             ("구분", _display(robot.get("robot_type"))),
-            ("관리 그룹", _display(robot.get("manager_group"))),
             ("지원 기능", _capabilities_text(robot.get("capabilities"))),
             (
                 "상태",
