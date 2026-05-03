@@ -327,3 +327,33 @@ def test_kiosk_visitor_registration_shows_no_match_inline_without_status_popup()
         assert "일치하는 어르신 정보가 없습니다." not in texts
     finally:
         page.close()
+
+
+def test_kiosk_visitor_registration_resident_name_label_reserves_font_height():
+    app = _app()
+
+    from ui.kiosk_ui.main_window import KioskVisitorRegistrationPage
+    from ui.utils.core.styles import load_stylesheet
+
+    app.setStyleSheet(load_stylesheet())
+    page = KioskVisitorRegistrationPage()
+
+    try:
+        page.resize(1440, 960)
+        page.show()
+        page._show_resident_result(
+            {
+                "display_name": "김*수",
+                "birth_date": "1942-03-14",
+                "room_no": "301",
+                "visit_available": True,
+                "guide_available": True,
+            }
+        )
+        app.processEvents()
+
+        required_height = page.resident_name_label.fontMetrics().height() + 8
+        assert page.resident_name_label.minimumHeight() >= required_height
+        assert page.resident_name_label.geometry().height() >= required_height
+    finally:
+        page.close()

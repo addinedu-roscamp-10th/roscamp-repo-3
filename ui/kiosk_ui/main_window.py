@@ -552,6 +552,10 @@ class KioskVisitorRegistrationPage(QWidget):
 
         self.resident_name_label = QLabel("선택된 어르신이 없습니다")
         self.resident_name_label.setObjectName("kioskResidentName")
+        self.resident_name_label.setMinimumHeight(44)
+        self.resident_name_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
         self.resident_birth_label = QLabel("생년월일 -")
         self.resident_birth_label.setObjectName("kioskResidentMeta")
