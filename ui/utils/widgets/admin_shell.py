@@ -326,45 +326,11 @@ class AdminShell(QWidget):
         self.page_changed.emit(key)
 
 
-class PlaceholderPage(QWidget):
-    def __init__(self, title: str, subtitle: str, show_status: bool = False):
-        super().__init__()
-        root = QVBoxLayout(self)
-        root.setContentsMargins(34, 34, 34, 34)
-        root.setSpacing(18)
-
-        header_row = QHBoxLayout()
-        header_row.setSpacing(16)
-        header_row.addWidget(
-            PageHeader(title=title, subtitle=subtitle, show_status=show_status),
-            1,
-        )
-        header_row.addWidget(PageTimeCard(show_last_update=False))
-        root.addLayout(header_row)
-
-        card = QFrame()
-        card.setObjectName("card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(24, 22, 24, 22)
-        card_layout.setSpacing(8)
-
-        message = QLabel("이 화면은 공통 shell 적용 후 단계적으로 구현합니다.")
-        message.setObjectName("sectionTitle")
-        detail = QLabel("현재 단계에서는 내비게이션 구조와 페이지 진입 계약만 고정합니다.")
-        detail.setObjectName("mutedText")
-
-        card_layout.addWidget(message)
-        card_layout.addWidget(detail)
-        root.addWidget(card)
-        root.addStretch()
-
-
 __all__ = [
     "AdminShell",
     "AdminSidebar",
     "NavItem",
     "PageHeader",
     "PageTimeCard",
-    "PlaceholderPage",
     "SystemStatusStrip",
 ]

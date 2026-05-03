@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
 from ui.utils.session.session_manager import SessionManager
-from ui.utils.widgets.admin_shell import AdminShell, PlaceholderPage
+from ui.utils.widgets.admin_shell import AdminShell
 
 
 class CaregiverMainWindow(QMainWindow):
@@ -17,7 +17,6 @@ class CaregiverMainWindow(QMainWindow):
         ("inventory", "재고 관리"),
         ("patient", "어르신 정보"),
         ("alerts", "알림/로그"),
-        ("system_health", "시스템 상태"),
     ]
 
     def __init__(self):
@@ -31,7 +30,6 @@ class CaregiverMainWindow(QMainWindow):
         self.inventory_page = None
         self.patient_page = None
         self.alert_page = None
-        self.system_health_page = None
         self._build_ui()
         self._fit_to_screen()
 
@@ -73,7 +71,6 @@ class CaregiverMainWindow(QMainWindow):
         self.inventory_btn = self.admin_shell.sidebar.button("inventory")
         self.patient_btn = self.admin_shell.sidebar.button("patient")
         self.alert_btn = self.admin_shell.sidebar.button("alerts")
-        self.system_health_btn = self.admin_shell.sidebar.button("system_health")
 
         layout.addWidget(self.admin_shell)
 
@@ -114,7 +111,6 @@ class CaregiverMainWindow(QMainWindow):
             "inventory": self.show_inventory_page,
             "patient": self.show_patient_page,
             "alerts": self.show_alert_page,
-            "system_health": self.show_system_health_page,
         }
         handler = handlers.get(key)
         if handler is not None:
@@ -165,17 +161,6 @@ class CaregiverMainWindow(QMainWindow):
     def show_alert_page(self):
         from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
         self._show_or_create_page("alert_page", AlertLogPage, "alerts")
-
-    def show_system_health_page(self):
-        self._show_or_create_page(
-            "system_health_page",
-            lambda: PlaceholderPage(
-                "시스템 상태",
-                "관제 서버, 데이터베이스, ROS2, AI 서버의 연결 상태를 확인합니다.",
-                show_status=True,
-            ),
-            "system_health",
-        )
 
     def closeEvent(self, event):
         for page in [

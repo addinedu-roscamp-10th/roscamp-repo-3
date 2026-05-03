@@ -17,7 +17,6 @@ NAV_ITEMS = [
     ("inventory", "재고 관리"),
     ("patient", "어르신 정보"),
     ("alerts", "알림/로그"),
-    ("system_health", "시스템 상태"),
 ]
 
 
@@ -45,7 +44,7 @@ def test_shared_admin_shell_components_expose_ropi_contract():
     header = PageHeader(title="작업 현황", subtitle="전체 시나리오 상태")
     time_card = PageTimeCard(show_last_update=False)
     status_header = PageHeader(
-        title="시스템 상태",
+        title="서비스 상태",
         subtitle="서비스 연결 상태",
         show_status=True,
     )
@@ -105,6 +104,8 @@ def test_caregiver_main_window_uses_shared_admin_shell_contract():
         assert hasattr(window, "admin_shell")
         assert window.findChild(QFrame, "adminSidebar") is not None
         assert window.findChild(QStackedWidget, "adminPageStack") is window.stack
+        assert not hasattr(window, "system_health_btn")
+        assert not hasattr(window, "system_health_page")
 
         brand = window.findChild(QLabel, "sidebarBrand")
         assert brand is not None
@@ -143,11 +144,6 @@ def test_caregiver_common_shell_routes_placeholder_pages():
         assert window.coordinate_settings_page is not None
         assert window.stack.currentWidget() is window.coordinate_settings_page
         assert window.coordinate_settings_btn.isChecked()
-
-        window.system_health_btn.click()
-        assert window.system_health_page is not None
-        assert window.stack.currentWidget() is window.system_health_page
-        assert window.system_health_btn.isChecked()
     finally:
         window.close()
 
@@ -171,7 +167,6 @@ def test_caregiver_shell_pages_use_common_page_header():
         ("inventory", window.inventory_btn),
         ("patient", window.patient_btn),
         ("alerts", window.alert_btn),
-        ("system_health", window.system_health_btn),
     ]
 
     try:
@@ -209,7 +204,6 @@ def test_caregiver_shell_status_strip_only_appears_on_status_context_pages():
         ("inventory", window.inventory_btn, False),
         ("patient", window.patient_btn, False),
         ("alerts", window.alert_btn, False),
-        ("system_health", window.system_health_btn, True),
     ]
 
     try:
