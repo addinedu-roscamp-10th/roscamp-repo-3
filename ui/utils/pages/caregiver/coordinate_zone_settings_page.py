@@ -78,7 +78,7 @@ from ui.utils.pages.caregiver.coordinate_zone_settings_workers import (
     OperationZoneSaveWorker,
     PatrolAreaPathSaveWorker,
 )
-from ui.utils.widgets.admin_shell import PageHeader
+from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 from ui.utils.widgets.map_overlay import OperationalMapOverlay
 
 
@@ -144,16 +144,16 @@ class CoordinateZoneSettingsPage(QWidget):
             ),
             1,
         )
-        header_row.addLayout(self._build_action_buttons())
+        self.time_card = PageTimeCard(show_last_update=False)
+        for button in self._build_action_buttons():
+            self.time_card.add_action(button)
+        header_row.addWidget(self.time_card)
 
         root.addLayout(header_row)
         root.addWidget(self._build_active_map_bar())
         root.addLayout(self._build_content_row(), 1)
 
     def _build_action_buttons(self):
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
-
         self.refresh_button = QPushButton("새로고침")
         self.refresh_button.setObjectName("coordinateRefreshButton")
         self.save_button = QPushButton("저장")
@@ -166,10 +166,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.refresh_button.clicked.connect(self.load_coordinate_bundle)
         self.save_button.clicked.connect(self.save_current_edit)
         self.discard_button.clicked.connect(self.discard_current_edit)
-        action_row.addWidget(self.refresh_button)
-        action_row.addWidget(self.discard_button)
-        action_row.addWidget(self.save_button)
-        return action_row
+        return [self.refresh_button, self.discard_button, self.save_button]
 
     def _build_active_map_bar(self):
         panel = QFrame()

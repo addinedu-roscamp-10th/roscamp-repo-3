@@ -284,10 +284,23 @@ QFrame#noticeCard {
 
 QFrame#homeKpiCard,
 QFrame#homeRobotCard,
-QFrame#homeTimeCard {
+QFrame#homeTimeCard,
+QFrame#pageTimeCard {
     background: #FFFFFF;
     border: 1px solid #D8E0E8;
     border-radius: 18px;
+}
+
+QLabel#timeCardClock {
+    color: #16202A;
+    font-size: 24px;
+    font-weight: 900;
+}
+
+QLabel#timeCardDate {
+    color: #5B6775;
+    font-size: 14px;
+    font-weight: 700;
 }
 
 QFrame#homeKpiCard[tone="teal"] {
@@ -588,9 +601,21 @@ QPushButton#scenarioTabButton:checked {
 }
 
 QFrame#formFieldGroup,
-QFrame#notesFieldGroup {
+QFrame#notesFieldGroup,
+QFrame#formHost {
     background: transparent;
     border: none;
+}
+
+QScrollArea#requestFormScroll,
+QScrollArea#requestSideScroll {
+    background: transparent;
+    border: none;
+}
+
+QScrollArea#requestFormScroll > QWidget > QWidget,
+QScrollArea#requestSideScroll > QWidget > QWidget {
+    background: transparent;
 }
 
 QFrame#prioritySegment {
@@ -828,33 +853,36 @@ QFrame#noticeCard {
 }
 
 QFrame#requestPreviewCard {
-    background: #004C46;
-    border: 1px solid #005C55;
+    background: #FFFFFF;
+    border: 1px solid #D8E0E8;
     border-radius: 18px;
 }
 
-QFrame#requestPreviewCard QLabel#sectionTitle,
+QFrame#requestPreviewCard QLabel#sectionTitle {
+    color: #16202A;
+}
+
 QFrame#requestPreviewCard QLabel#previewValue {
-    color: #FFFFFF;
+    color: #344054;
 }
 
 QFrame#requestPreviewCard QLabel#mutedText {
-    color: #CCFBF1;
+    color: #5B6775;
 }
 
 QFrame#requestPreviewCard QFrame#sideMetricRow {
-    background: rgba(255, 255, 255, 0.10);
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
 }
 
 QFrame#requestPreviewCard QLabel#sideMetricLabel {
-    background: rgba(255, 255, 255, 0.12);
-    color: #CCFBF1;
-    border: 1px solid rgba(255, 255, 255, 0.20);
+    background: #EAF5F2;
+    color: #005C55;
+    border: 1px solid #B9D8D3;
 }
 
 QFrame#requestPreviewCard QLabel#sideMetricValue {
-    color: #FFFFFF;
+    color: #16202A;
 }
 
 QFrame#resultPanel {

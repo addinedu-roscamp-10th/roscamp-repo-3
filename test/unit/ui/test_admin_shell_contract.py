@@ -37,11 +37,13 @@ def test_shared_admin_shell_components_expose_ropi_contract():
     from ui.utils.widgets.admin_shell import (
         AdminSidebar,
         PageHeader,
+        PageTimeCard,
         SystemStatusStrip,
     )
 
     sidebar = AdminSidebar(nav_items=NAV_ITEMS, user_name="테스트 보호사")
     header = PageHeader(title="작업 현황", subtitle="전체 시나리오 상태")
+    time_card = PageTimeCard(show_last_update=False)
     status_header = PageHeader(
         title="시스템 상태",
         subtitle="서비스 연결 상태",
@@ -67,6 +69,10 @@ def test_shared_admin_shell_components_expose_ropi_contract():
         assert header.findChild(QLabel, "pageTitle").text() == "작업 현황"
         assert header.findChild(QLabel, "pageSubtitle").text() == "전체 시나리오 상태"
         assert header.findChild(QFrame, "systemStatusStrip") is None
+        assert time_card.objectName() == "pageTimeCard"
+        assert time_card.findChild(QLabel, "timeCardClock").text()
+        assert time_card.findChild(QLabel, "timeCardDate").text()
+        assert time_card.last_update_label.isHidden() is True
         assert status_header.findChild(QFrame, "systemStatusStrip") is not None
 
         assert status_strip.objectName() == "systemStatusStrip"
@@ -82,6 +88,7 @@ def test_shared_admin_shell_components_expose_ropi_contract():
     finally:
         sidebar.close()
         header.close()
+        time_card.close()
         status_header.close()
         default_status_strip.close()
         status_strip.close()
@@ -149,7 +156,7 @@ def test_caregiver_shell_pages_use_common_page_header():
     _app()
 
     from ui.admin_ui.main_window import CaregiverMainWindow
-    from ui.utils.widgets.admin_shell import PageHeader
+    from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
     window = CaregiverMainWindow()
 
@@ -173,6 +180,7 @@ def test_caregiver_shell_pages_use_common_page_header():
                 button.click()
             current_page = window.stack.currentWidget()
             assert current_page.findChild(PageHeader, "pageHeader") is not None
+            assert current_page.findChild(PageTimeCard) is not None
 
         labels = _label_texts(window)
         assert "Task Request" not in labels

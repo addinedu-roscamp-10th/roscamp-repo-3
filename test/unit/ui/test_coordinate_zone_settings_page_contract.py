@@ -112,14 +112,16 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
     from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
         CoordinateZoneSettingsPage,
     )
-    from ui.utils.widgets.admin_shell import PageHeader
+    from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
     from ui.utils.widgets.map_canvas import MapCanvasWidget
 
     page = CoordinateZoneSettingsPage()
 
     try:
         header = page.findChild(PageHeader, "pageHeader")
+        time_card = page.findChild(PageTimeCard)
         assert header is not None
+        assert time_card is not None
         assert header.title_label.text() == "좌표/구역 설정"
         assert "DB 기반 운영 좌표" in header.subtitle_label.text()
 

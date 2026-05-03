@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from PyQt6.QtCore import QObject, QDateTime, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -26,7 +26,7 @@ from ui.utils.network.service_clients import (
 )
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.admin_common import StatusChip, display_text as _display
-from ui.utils.widgets.admin_shell import PageHeader
+from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
 
 CANCELABLE_TASK_STATUSES = {
@@ -559,27 +559,17 @@ class CaregiverHomePage(QWidget):
         top = QHBoxLayout()
         top.setSpacing(16)
 
-        self.refresh_button = QPushButton("새로고침")
-        self.refresh_button.setObjectName("secondaryButton")
-        self.refresh_button.setProperty("dashboard_action", "refresh")
-        self.refresh_button.clicked.connect(self.load_dashboard_data)
-
-        time_box = QFrame()
-        time_box.setObjectName("homeTimeCard")
-        tb = QVBoxLayout(time_box)
-        tb.setContentsMargins(18, 16, 18, 16)
-        tb.setSpacing(8)
-
-        self.clock_label = QLabel()
-        self.clock_label.setObjectName("summaryValue")
-        self.date_label = QLabel()
-        self.date_label.setObjectName("mutedText")
-        self.last_update_label = QLabel("마지막 업데이트: -")
-        self.last_update_label.setObjectName("mutedText")
-        self.load_status_label = QLabel("")
-        self.load_status_label.setObjectName("mutedText")
-        self.load_status_label.setWordWrap(True)
-        self.load_status_label.setHidden(True)
+        self.time_card = PageTimeCard(
+            object_name="homeTimeCard",
+            refresh_text="새로고침",
+            refresh_property=("dashboard_action", "refresh"),
+            on_refresh=self.load_dashboard_data,
+        )
+        self.refresh_button = self.time_card.refresh_button
+        self.clock_label = self.time_card.clock_label
+        self.date_label = self.time_card.date_label
+        self.last_update_label = self.time_card.last_update_label
+        self.load_status_label = self.time_card.status_label
 
         self.status_banner = QFrame()
         self.status_banner.setObjectName("dashboardStatusBanner")
@@ -603,12 +593,6 @@ class CaregiverHomePage(QWidget):
         banner_layout.addWidget(self.status_banner_summary_label)
         banner_layout.addWidget(self.status_banner_detail_label)
 
-        tb.addWidget(self.clock_label, alignment=Qt.AlignmentFlag.AlignRight)
-        tb.addWidget(self.date_label, alignment=Qt.AlignmentFlag.AlignRight)
-        tb.addWidget(self.last_update_label, alignment=Qt.AlignmentFlag.AlignRight)
-        tb.addWidget(self.load_status_label)
-        tb.addWidget(self.refresh_button)
-
         self.header = PageHeader(
             "운영 대시보드",
             "현재 로봇 상태와 작업 흐름을 한눈에 확인합니다.",
@@ -616,12 +600,7 @@ class CaregiverHomePage(QWidget):
         )
 
         top.addWidget(self.header, 1)
-        top.addWidget(time_box)
-
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._update_clock)
-        self.timer.start(1000)
-        self._update_clock()
+        top.addWidget(self.time_card)
 
         summary_row = QHBoxLayout()
         summary_row.setSpacing(16)
@@ -723,11 +702,6 @@ class CaregiverHomePage(QWidget):
         card = KpiCard(title, hint)
         self.kpi_cards[key] = card
         layout.addWidget(card)
-
-    def _update_clock(self):
-        now = QDateTime.currentDateTime()
-        self.clock_label.setText(now.toString("HH:mm:ss"))
-        self.date_label.setText(now.toString("yyyy.MM.dd"))
 
     def load_dashboard_data(self):
         if self.dashboard_thread is not None:
@@ -957,10 +931,7 @@ class CaregiverHomePage(QWidget):
         return "작업 취소 실패", summary, detail
 
     def _mark_last_update(self):
-        now = QDateTime.currentDateTime()
-        self.last_update_label.setText(
-            f"마지막 업데이트: {now.toString('HH:mm:ss')}"
-        )
+        self.time_card.mark_updated()
 
     def shutdown(self):
         stop_worker_thread(

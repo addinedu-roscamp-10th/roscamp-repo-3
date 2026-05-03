@@ -90,6 +90,7 @@ def test_robot_status_page_matches_phase1_layout_contract():
         assert "주의" in labels
         assert "로봇 상세" in labels
         assert "맵/위치 시각화" in labels
+        assert page.findChild(QFrame, "pageTimeCard") is not None
         assert "새로고침" in [button.text() for button in refresh_buttons]
     finally:
         page.close()

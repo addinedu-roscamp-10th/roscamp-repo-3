@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import PatientRemoteService
-from ui.utils.widgets.admin_shell import PageHeader
+from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 from ui.utils.widgets.common import InlineStatusMixin
 
 
@@ -116,12 +116,19 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         content_row.addWidget(history_card, 2)
         content_row.addWidget(prescription_card, 1)
 
-        root.addWidget(
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
+        header_row.addWidget(
             PageHeader(
                 "어르신 정보 조회",
                 "이름과 호실로 어르신 정보를 조회하고 최근 이벤트와 선호 정보를 확인합니다.",
-            )
+            ),
+            1,
         )
+        self.time_card = PageTimeCard(show_last_update=False)
+        header_row.addWidget(self.time_card)
+
+        root.addLayout(header_row)
         root.addWidget(search_card)
         root.addLayout(info_row)
         root.addLayout(content_row, 1)

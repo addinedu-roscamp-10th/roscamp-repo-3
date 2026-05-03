@@ -149,6 +149,9 @@ def test_task_request_page_uses_content_height_form_card_and_robot_placeholder(m
         assert form.height() <= form.sizeHint().height() + 12
         assert page.form_scroll.height() <= form.sizeHint().height() + 12
         assert page.left_card.height() <= page.form_scroll.height() + 60
+        assert page.time_card.objectName() == "pageTimeCard"
+        assert page.form_scroll.objectName() == "requestFormScroll"
+        assert page.side_scroll.objectName() == "requestSideScroll"
 
         assert page.robot_status_card.objectName() == "robotStatusCard"
         assert page.robot_map_placeholder.objectName() == "robotMapPlaceholder"

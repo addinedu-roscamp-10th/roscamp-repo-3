@@ -412,6 +412,7 @@ def test_task_monitor_page_exposes_manual_refresh_reconnect_and_update_time(monk
         assert page.refresh_snapshot_btn.text() == "새로고침"
         assert page.reconnect_stream_btn.text() == "스트림 재연결"
         assert page.last_update_label.text() == "마지막 업데이트: -"
+        assert page.findChild(QFrame, "pageTimeCard") is page.time_card
 
         page.refresh_snapshot()
         assert snapshot_statuses == ["수동 새로고침 중"]

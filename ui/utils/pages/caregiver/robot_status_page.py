@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, QDateTime, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -23,7 +22,7 @@ from ui.utils.widgets.admin_common import (
     battery_text as _battery_text,
     display_text as _display,
 )
-from ui.utils.widgets.admin_shell import PageHeader
+from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
 
 SUMMARY_ITEMS = (
@@ -137,28 +136,15 @@ class RobotStatusPage(QWidget):
             1,
         )
 
-        action_card = QFrame()
-        action_card.setObjectName("card")
-        action_layout = QVBoxLayout(action_card)
-        action_layout.setContentsMargins(18, 16, 18, 16)
-        action_layout.setSpacing(8)
-
-        self.last_update_label = QLabel("마지막 업데이트: -")
-        self.last_update_label.setObjectName("mutedText")
-        self.status_label = QLabel("")
-        self.status_label.setObjectName("mutedText")
-        self.status_label.setWordWrap(True)
-        self.status_label.setHidden(True)
-
-        self.refresh_button = QPushButton("새로고침")
-        self.refresh_button.setObjectName("secondaryButton")
-        self.refresh_button.setProperty("robot_status_action", "refresh")
-        self.refresh_button.clicked.connect(self.refresh_data)
-
-        action_layout.addWidget(self.last_update_label)
-        action_layout.addWidget(self.status_label)
-        action_layout.addWidget(self.refresh_button)
-        header_row.addWidget(action_card)
+        self.time_card = PageTimeCard(
+            refresh_text="새로고침",
+            refresh_property=("robot_status_action", "refresh"),
+            on_refresh=self.refresh_data,
+        )
+        self.refresh_button = self.time_card.refresh_button
+        self.last_update_label = self.time_card.last_update_label
+        self.status_label = self.time_card.status_label
+        header_row.addWidget(self.time_card)
 
         summary_row = QHBoxLayout()
         summary_row.setSpacing(16)
@@ -274,8 +260,7 @@ class RobotStatusPage(QWidget):
 
         self.apply_robot_status_bundle(payload if isinstance(payload, dict) else {})
         self.status_label.setHidden(True)
-        now = QDateTime.currentDateTime().toString("HH:mm:ss")
-        self.last_update_label.setText(f"마지막 업데이트: {now}")
+        self.time_card.mark_updated()
 
     def _clear_load_thread(self):
         self.load_thread = None

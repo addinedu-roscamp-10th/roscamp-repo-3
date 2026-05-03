@@ -89,6 +89,7 @@ def test_inventory_management_page_matches_phase1_layout_contract():
         assert "재고 상세" in labels
         assert "재고 추가 / 직접 수정" in labels
         assert "부족 재고 경고" in labels
+        assert page.findChild(QFrame, "pageTimeCard") is not None
         assert "새로고침" in [button.text() for button in refresh_buttons]
     finally:
         page.close()

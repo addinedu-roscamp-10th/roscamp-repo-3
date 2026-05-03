@@ -23,7 +23,7 @@ from ui.utils.pages.caregiver.task_request_workers import (
 )
 from ui.utils.core.responses import normalize_ui_response
 from ui.utils.core.worker_threads import start_worker_thread
-from ui.utils.widgets.admin_shell import PageHeader
+from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ class TaskRequestPage(QWidget):
         self.form_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.form_scroll = QScrollArea()
+        self.form_scroll.setObjectName("requestFormScroll")
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setSizePolicy(
             QSizePolicy.Policy.Preferred,
@@ -96,6 +97,7 @@ class TaskRequestPage(QWidget):
 
         self.side_panel = TaskRequestSidePanel()
         self.side_scroll = QScrollArea()
+        self.side_scroll.setObjectName("requestSideScroll")
         self.side_scroll.setWidgetResizable(True)
         self.side_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.side_scroll.setHorizontalScrollBarPolicy(
@@ -136,9 +138,16 @@ class TaskRequestPage(QWidget):
         self.robot_destination_label = self.side_panel.robot_destination_label
         self.robot_map_label = self.side_panel.robot_map_label
 
-        root.addWidget(
-            PageHeader("작업 요청", "작업 종류를 선택하여 해당 요청을 등록하세요.")
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
+        header_row.addWidget(
+            PageHeader("작업 요청", "작업 종류를 선택하여 해당 요청을 등록하세요."),
+            1,
         )
+        self.time_card = PageTimeCard(show_last_update=False)
+        header_row.addWidget(self.time_card)
+
+        root.addLayout(header_row)
         root.addLayout(top_tabs)
         root.addLayout(self.content_row, 1)
 

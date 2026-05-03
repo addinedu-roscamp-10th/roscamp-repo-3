@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QDateTime, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -117,6 +117,81 @@ class PageHeader(QFrame):
     def set_text(self, title: str, subtitle: str = "") -> None:
         self.title_label.setText(title)
         self.subtitle_label.setText(subtitle)
+
+
+class PageTimeCard(QFrame):
+    def __init__(
+        self,
+        *,
+        object_name: str = "pageTimeCard",
+        show_last_update: bool = True,
+        status_text: str = "",
+        refresh_text: str | None = None,
+        refresh_property: tuple[str, object] | None = None,
+        on_refresh: Callable[[], None] | None = None,
+    ):
+        super().__init__()
+        self.setObjectName(object_name)
+
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(18, 16, 18, 16)
+        self._layout.setSpacing(8)
+
+        self.clock_label = QLabel()
+        self.clock_label.setObjectName("timeCardClock")
+        self.clock_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self.date_label = QLabel()
+        self.date_label.setObjectName("timeCardDate")
+        self.date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self.last_update_label = QLabel("마지막 업데이트: -")
+        self.last_update_label.setObjectName("mutedText")
+        self.last_update_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.last_update_label.setHidden(not show_last_update)
+
+        self.status_label = QLabel(status_text)
+        self.status_label.setObjectName("mutedText")
+        self.status_label.setWordWrap(True)
+        self.status_label.setHidden(not bool(status_text))
+
+        self._layout.addWidget(self.clock_label)
+        self._layout.addWidget(self.date_label)
+        self._layout.addWidget(self.last_update_label)
+        self._layout.addWidget(self.status_label)
+
+        self.refresh_button = None
+        if refresh_text is not None:
+            self.refresh_button = QPushButton(refresh_text)
+            self.refresh_button.setObjectName("secondaryButton")
+            if refresh_property is not None:
+                self.refresh_button.setProperty(*refresh_property)
+            if on_refresh is not None:
+                self.refresh_button.clicked.connect(on_refresh)
+            self._layout.addWidget(self.refresh_button)
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self.update_clock)
+        self._timer.start(1000)
+        self.update_clock()
+
+    def add_action(self, widget: QWidget) -> None:
+        self._layout.addWidget(widget)
+
+    def set_status(self, message: str) -> None:
+        self.status_label.setText(message)
+        self.status_label.setHidden(not bool(message))
+
+    def mark_updated(self, source: str = "") -> None:
+        current_time = QDateTime.currentDateTime().toString("HH:mm:ss")
+        suffix = f" ({source})" if source else ""
+        self.last_update_label.setText(f"마지막 업데이트: {current_time}{suffix}")
+        self.last_update_label.setHidden(False)
+
+    def update_clock(self) -> None:
+        now = QDateTime.currentDateTime()
+        self.clock_label.setText(now.toString("HH:mm:ss"))
+        self.date_label.setText(now.toString("yyyy.MM.dd"))
 
 
 class AdminSidebar(QFrame):
@@ -258,9 +333,14 @@ class PlaceholderPage(QWidget):
         root.setContentsMargins(34, 34, 34, 34)
         root.setSpacing(18)
 
-        root.addWidget(
-            PageHeader(title=title, subtitle=subtitle, show_status=show_status)
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
+        header_row.addWidget(
+            PageHeader(title=title, subtitle=subtitle, show_status=show_status),
+            1,
         )
+        header_row.addWidget(PageTimeCard(show_last_update=False))
+        root.addLayout(header_row)
 
         card = QFrame()
         card.setObjectName("card")
@@ -284,6 +364,7 @@ __all__ = [
     "AdminSidebar",
     "NavItem",
     "PageHeader",
+    "PageTimeCard",
     "PlaceholderPage",
     "SystemStatusStrip",
 ]

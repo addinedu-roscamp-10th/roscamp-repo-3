@@ -1,7 +1,6 @@
 import base64
 import binascii
 import logging
-from datetime import datetime
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
@@ -33,7 +32,7 @@ from ui.utils.core.responses import normalize_ui_response
 from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.network.service_clients import TaskMonitorRemoteService
 from ui.utils.session.session_manager import SessionManager
-from ui.utils.widgets.admin_shell import PageHeader
+from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
 
 logger = logging.getLogger(__name__)
@@ -425,12 +424,30 @@ class TaskMonitorPage(QWidget):
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(18)
 
-        root.addWidget(
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
+        header_row.addWidget(
             PageHeader(
                 "작업 모니터",
                 "운반, 순찰, 안내 작업의 진행 상태와 피드백을 확인합니다.",
-            )
+            ),
+            1,
         )
+        self.time_card = PageTimeCard(
+            status_text="이벤트 스트림 연결 대기",
+            refresh_text="새로고침",
+            on_refresh=self.refresh_snapshot,
+        )
+        self.refresh_snapshot_btn = self.time_card.refresh_button
+        self.reconnect_stream_btn = QPushButton("스트림 재연결")
+        self.reconnect_stream_btn.setObjectName("secondaryButton")
+        self.reconnect_stream_btn.clicked.connect(self.reconnect_task_event_stream)
+        self.time_card.add_action(self.reconnect_stream_btn)
+        self.stream_status_label = self.time_card.status_label
+        self.last_update_label = self.time_card.last_update_label
+        header_row.addWidget(self.time_card)
+
+        root.addLayout(header_row)
 
         content_row = QHBoxLayout()
         content_row.setSpacing(18)
@@ -445,21 +462,8 @@ class TaskMonitorPage(QWidget):
         list_title.setObjectName("sectionTitle")
         list_header = QHBoxLayout()
         list_header.setSpacing(8)
-        self.refresh_snapshot_btn = QPushButton("새로고침")
-        self.refresh_snapshot_btn.setObjectName("secondaryButton")
-        self.refresh_snapshot_btn.clicked.connect(self.refresh_snapshot)
-        self.reconnect_stream_btn = QPushButton("스트림 재연결")
-        self.reconnect_stream_btn.setObjectName("secondaryButton")
-        self.reconnect_stream_btn.clicked.connect(self.reconnect_task_event_stream)
         list_header.addWidget(list_title)
         list_header.addStretch(1)
-        list_header.addWidget(self.refresh_snapshot_btn)
-        list_header.addWidget(self.reconnect_stream_btn)
-
-        self.stream_status_label = QLabel("이벤트 스트림 연결 대기")
-        self.stream_status_label.setObjectName("mutedText")
-        self.last_update_label = QLabel("마지막 업데이트: -")
-        self.last_update_label.setObjectName("mutedText")
         self.empty_state_label = QLabel("수신된 작업 이벤트가 없습니다.")
         self.empty_state_label.setObjectName("mutedText")
 
@@ -475,8 +479,6 @@ class TaskMonitorPage(QWidget):
         self.task_table.itemSelectionChanged.connect(self._handle_table_selection_changed)
 
         list_layout.addLayout(list_header)
-        list_layout.addWidget(self.stream_status_label)
-        list_layout.addWidget(self.last_update_label)
         list_layout.addWidget(self.empty_state_label)
         list_layout.addWidget(self.task_table, 1)
 
@@ -1100,8 +1102,7 @@ class TaskMonitorPage(QWidget):
         self.task_event_worker = None
 
     def _mark_last_update(self, source):
-        current_time = datetime.now().strftime("%H:%M:%S")
-        self.last_update_label.setText(f"마지막 업데이트: {current_time} ({source})")
+        self.time_card.mark_updated(source)
 
     def _stop_task_event_stream_thread(self):
         worker = self.task_event_worker

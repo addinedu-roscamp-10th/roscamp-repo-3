@@ -25,6 +25,9 @@ def test_main_qss_defines_shared_admin_shell_components():
 
     assert "QFrame#adminSidebar" in qss
     assert "QFrame#pageHeader" in qss
+    assert "QFrame#pageTimeCard" in qss
+    assert "QLabel#timeCardClock" in qss
+    assert "QLabel#timeCardDate" in qss
     assert "QLabel#pageHeaderEyebrow" not in qss
     assert "QFrame#systemStatusStrip" in qss
     assert "QLabel#systemStatusOnline" in qss
@@ -40,10 +43,13 @@ def test_main_qss_defines_task_request_page_components():
     assert "QPushButton#scenarioTabButton" in qss
     assert "QPushButton#scenarioTabButton:checked" in qss
     assert "QFrame#formFieldGroup" in qss
+    assert "QFrame#formHost" in qss
+    assert "QScrollArea#requestFormScroll" in qss
     assert "QFrame#prioritySegment" in qss
     assert "QPushButton#prioritySegmentButton" in qss
     assert "QPushButton#prioritySegmentButton:checked" in qss
     assert "QFrame#requestPreviewCard" in qss
+    assert "QFrame#requestPreviewCard {\n    background: #004C46" not in qss
     assert "QFrame#robotStatusCard" in qss
     assert "QFrame#robotMapPlaceholder" in qss
     assert "QFrame#sideMetricRow" in qss

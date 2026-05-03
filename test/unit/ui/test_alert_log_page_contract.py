@@ -86,6 +86,7 @@ def test_alert_log_page_matches_phase1_layout_contract():
         assert "event_type" in labels
         assert "이벤트 상세" in labels
         assert "관련 작업/로봇" in labels
+        assert page.findChild(QFrame, "pageTimeCard") is not None
         assert "새로고침" in [button.text() for button in refresh_buttons]
     finally:
         page.close()
