@@ -91,6 +91,45 @@ def test_patient_repository_async_member_lookup_uses_async_fetch_one(monkeypatch
     assert calls[0][1] == ("김환자", "301")
 
 
+def test_patient_repository_async_candidates_use_partial_filters(monkeypatch):
+    calls = []
+
+    async def fake_async_fetch_all(query, params=None):
+        calls.append((query, params))
+        return [{"member_id": 1}]
+
+    monkeypatch.setattr(patient_repository, "async_fetch_all", fake_async_fetch_all)
+
+    rows = asyncio.run(
+        patient_repository.PatientRepository().async_list_member_candidates(
+            name="김",
+            room_no="",
+            limit=7,
+        )
+    )
+
+    assert rows == [{"member_id": 1}]
+    assert "LIKE" in calls[0][0]
+    assert "LIMIT %s" in calls[0][0]
+    assert calls[0][1] == ("김", "김", "", "", 7)
+
+
+def test_patient_repository_async_member_lookup_by_id_uses_async_fetch_one(monkeypatch):
+    calls = []
+
+    async def fake_async_fetch_one(query, params=None):
+        calls.append((query, params))
+        return {"member_id": 1}
+
+    monkeypatch.setattr(patient_repository, "async_fetch_one", fake_async_fetch_one)
+
+    row = asyncio.run(patient_repository.PatientRepository().async_find_member_by_id(1))
+
+    assert row == {"member_id": 1}
+    assert "WHERE member_id = %s" in calls[0][0]
+    assert calls[0][1] == (1,)
+
+
 def test_visitor_info_repository_async_visit_info_uses_async_fetch_one(monkeypatch):
     calls = []
 

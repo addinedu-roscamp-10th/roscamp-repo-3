@@ -4,7 +4,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QFrame
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QLabel, QListWidget
 
 
 _APP = None
@@ -61,6 +62,64 @@ def test_patient_lookup_worker_uses_patient_rpc(monkeypatch):
     assert emitted == [(7, True, {"member_id": "301", "name": "김환자"})]
 
 
+def test_patient_lookup_worker_uses_member_id_detail_rpc(monkeypatch):
+    _app()
+
+    import ui.utils.pages.caregiver.patient_info_page as patient_info_page
+    from ui.utils.pages.caregiver.patient_info_page import PatientLookupWorker
+
+    calls = []
+
+    class FakePatientRemoteService:
+        def get_patient_info(self, member_id):
+            calls.append(member_id)
+            return {"member_id": member_id, "name": "김환자"}
+
+    monkeypatch.setattr(
+        patient_info_page,
+        "PatientRemoteService",
+        FakePatientRemoteService,
+    )
+
+    worker = PatientLookupWorker(9, member_id=301)
+    emitted = []
+    worker.finished.connect(lambda *args: emitted.append(args))
+
+    worker.run()
+
+    assert calls == [301]
+    assert emitted == [(9, True, {"member_id": 301, "name": "김환자"})]
+
+
+def test_patient_candidate_worker_uses_patient_candidate_rpc(monkeypatch):
+    _app()
+
+    import ui.utils.pages.caregiver.patient_info_page as patient_info_page
+    from ui.utils.pages.caregiver.patient_info_page import PatientCandidateLookupWorker
+
+    calls = []
+
+    class FakePatientRemoteService:
+        def search_patient_candidates(self, name, room_no, limit=10):
+            calls.append((name, room_no, limit))
+            return [{"member_id": 1, "name": "김영수", "room_no": "301"}]
+
+    monkeypatch.setattr(
+        patient_info_page,
+        "PatientRemoteService",
+        FakePatientRemoteService,
+    )
+
+    worker = PatientCandidateLookupWorker(8, "김", "", limit=7)
+    emitted = []
+    worker.finished.connect(lambda *args: emitted.append(args))
+
+    worker.run()
+
+    assert calls == [("김", "", 7)]
+    assert emitted == [(8, True, [{"member_id": 1, "name": "김영수", "room_no": "301"}])]
+
+
 def test_patient_info_page_resets_and_shutdowns_lookup_worker():
     _app()
 
@@ -86,7 +145,7 @@ def test_patient_info_page_resets_and_shutdowns_lookup_worker():
         page.close()
 
 
-def test_patient_info_page_updates_search_preview_from_inputs():
+def test_patient_info_page_shows_candidate_list_below_search_fields():
     _app()
 
     from ui.utils.pages.caregiver.patient_info_page import PatientInfoPage
@@ -94,16 +153,51 @@ def test_patient_info_page_updates_search_preview_from_inputs():
     page = PatientInfoPage()
 
     try:
-        preview_card = page.findChild(QFrame, "patientSearchPreviewCard")
-        assert preview_card is not None
-        assert "조회 미리보기" in _label_texts(page)
+        candidate_list = page.findChild(QListWidget, "patientCandidateList")
+        assert candidate_list is not None
+        assert "조회 미리보기" not in _label_texts(page)
 
-        page.name_input.setText("김환자")
-        page.room_input.setText("301")
+        page.candidate_request_id = 4
+        page._handle_candidate_result(
+            4,
+            True,
+            [
+                {"member_id": 1, "name": "김영수", "room_no": "301"},
+                {"member_id": 2, "name": "김순자", "room_no": "302"},
+            ],
+        )
 
-        assert page.preview_name_value.text() == "김환자"
-        assert page.preview_room_value.text() == "301"
-        assert page.preview_status_value.text() == "조회 가능"
+        assert candidate_list.count() == 2
+        assert candidate_list.item(0).text() == "김영수 · 301호 · #1"
+        assert candidate_list.item(0).data(Qt.ItemDataRole.UserRole) == {
+            "member_id": 1,
+            "name": "김영수",
+            "room_no": "301",
+        }
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_patient_info_page_search_button_uses_candidates_for_partial_input():
+    _app()
+
+    from ui.utils.pages.caregiver.patient_info_page import PatientInfoPage
+
+    page = PatientInfoPage()
+    calls = []
+
+    try:
+        page.load_patient_candidates = lambda: calls.append(
+            (page.name_input.text(), page.room_input.text())
+        )
+        page.name_input.setText("김")
+        page.candidate_timer.stop()
+
+        page.load_patient_info()
+
+        assert calls == [("김", "")]
+        assert page.status_label.text() == "검색 후보를 선택해 주세요."
     finally:
         page.shutdown()
         page.close()

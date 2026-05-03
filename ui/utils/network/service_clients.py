@@ -78,6 +78,18 @@ class CaregiverRemoteService:
 
 
 class PatientRemoteService:
+    def search_patient_candidates(self, name: str = "", room_no: str = "", limit: int = 10):
+        return _rpc(
+            "patient",
+            "search_patient_candidates",
+            name=name,
+            room_no=room_no,
+            limit=limit,
+        )
+
+    def get_patient_info(self, member_id):
+        return _rpc("patient", "get_patient_info", member_id=member_id)
+
     def search_patient_info(self, name: str, room_no: str):
         return _rpc("patient", "search_patient_info", name=name, room_no=room_no)
 

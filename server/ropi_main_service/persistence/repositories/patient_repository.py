@@ -4,6 +4,32 @@ from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 class PatientRepository:
+    def list_member_candidates(self, name: str = "", room_no: str = "", limit: int = 10):
+        return fetch_all(
+            load_sql("patient/list_member_candidates.sql"),
+            (name or "", name or "", room_no or "", room_no or "", int(limit)),
+        )
+
+    async def async_list_member_candidates(
+        self,
+        name: str = "",
+        room_no: str = "",
+        limit: int = 10,
+    ):
+        return await async_fetch_all(
+            load_sql("patient/list_member_candidates.sql"),
+            (name or "", name or "", room_no or "", room_no or "", int(limit)),
+        )
+
+    def find_member_by_id(self, member_id):
+        return fetch_one(load_sql("patient/find_member_by_id.sql"), (member_id,))
+
+    async def async_find_member_by_id(self, member_id):
+        return await async_fetch_one(
+            load_sql("patient/find_member_by_id.sql"),
+            (member_id,),
+        )
+
     def find_member_by_name_and_room(self, name: str, room_no: str):
         return fetch_one(
             load_sql("patient/find_member_by_name_and_room.sql"),

@@ -1,29 +1,56 @@
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QLineEdit, QPushButton, QTextEdit
+    QLineEdit, QPushButton, QTextEdit, QListWidget, QListWidgetItem
 )
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import PatientRemoteService
-from ui.utils.widgets.admin_common import KeyValueRow, display_text as _display
+from ui.utils.widgets.admin_common import display_text as _display
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 from ui.utils.widgets.common import InlineStatusMixin
+
+
+class PatientCandidateLookupWorker(QObject):
+    finished = pyqtSignal(int, object, object)
+
+    def __init__(self, request_id: int, name: str, room_no: str, limit: int = 10):
+        super().__init__()
+        self.request_id = request_id
+        self.name = name
+        self.room_no = room_no
+        self.limit = limit
+
+    def run(self):
+        service = PatientRemoteService()
+        try:
+            result = service.search_patient_candidates(
+                self.name,
+                self.room_no,
+                limit=self.limit,
+            )
+            self.finished.emit(self.request_id, True, result)
+        except Exception as exc:
+            self.finished.emit(self.request_id, False, str(exc))
 
 
 class PatientLookupWorker(QObject):
     finished = pyqtSignal(int, object, object)
 
-    def __init__(self, request_id: int, name: str, room_no: str):
+    def __init__(self, request_id: int, name: str = "", room_no: str = "", member_id=None):
         super().__init__()
         self.request_id = request_id
         self.name = name
         self.room_no = room_no
+        self.member_id = member_id
 
     def run(self):
         service = PatientRemoteService()
         try:
-            result = service.search_patient_info(self.name, self.room_no)
+            if self.member_id is not None:
+                result = service.get_patient_info(self.member_id)
+            else:
+                result = service.search_patient_info(self.name, self.room_no)
             self.finished.emit(self.request_id, True, result)
         except Exception as exc:
             self.finished.emit(self.request_id, False, str(exc))
@@ -35,7 +62,16 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         self._worker_stop_wait_ms = 1000
         self.lookup_thread = None
         self.lookup_worker = None
+        self.candidate_thread = None
+        self.candidate_worker = None
         self.lookup_request_id = 0
+        self.candidate_request_id = 0
+        self.selected_candidate = None
+        self._candidate_debounce_ms = 250
+        self._updating_inputs_from_candidate = False
+        self.candidate_timer = QTimer(self)
+        self.candidate_timer.setSingleShot(True)
+        self.candidate_timer.timeout.connect(self.load_patient_candidates)
         self._build_ui()
 
     def _build_ui(self):
@@ -51,11 +87,11 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("어르신 이름 입력")
-        self.name_input.textChanged.connect(self._update_search_preview)
+        self.name_input.textChanged.connect(self._schedule_candidate_lookup)
 
         self.room_input = QLineEdit()
         self.room_input.setPlaceholderText("호실 입력")
-        self.room_input.textChanged.connect(self._update_search_preview)
+        self.room_input.textChanged.connect(self._schedule_candidate_lookup)
 
         self.search_btn = QPushButton("조회")
         self.search_btn.setObjectName("primaryButton")
@@ -68,7 +104,7 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         sc.addWidget(QLabel("호실"))
         sc.addWidget(self.room_input)
         sc.addWidget(self.search_btn)
-        sc.addWidget(self._build_search_preview_card())
+        sc.addWidget(self._build_candidate_list())
         sc.addWidget(self.status_label)
 
         info_row = QHBoxLayout()
@@ -125,7 +161,7 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         header_row.addWidget(
             PageHeader(
                 "어르신 정보 조회",
-                "이름과 호실로 어르신 정보를 조회하고 최근 이벤트와 선호 정보를 확인합니다.",
+                "이름이나 호실 일부로 후보를 찾고 최근 이벤트와 선호 정보를 확인합니다.",
             ),
             1,
         )
@@ -136,30 +172,25 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         root.addWidget(search_card)
         root.addLayout(info_row)
         root.addLayout(content_row, 1)
-        self._update_search_preview()
 
-    def _build_search_preview_card(self):
-        preview_card = QFrame()
-        preview_card.setObjectName("patientSearchPreviewCard")
-        layout = QVBoxLayout(preview_card)
-        layout.setContentsMargins(14, 14, 14, 14)
+    def _build_candidate_list(self):
+        self.candidate_list = QListWidget()
+        self.candidate_list.setObjectName("patientCandidateList")
+        self.candidate_list.setMaximumHeight(132)
+        self.candidate_list.itemClicked.connect(self._handle_candidate_clicked)
+        self.candidate_empty_label = QLabel("이름이나 호실 일부를 입력하면 후보가 표시됩니다.")
+        self.candidate_empty_label.setObjectName("mutedText")
+        self.candidate_empty_label.setWordWrap(True)
+
+        box = QFrame()
+        box.setObjectName("patientCandidateBox")
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-
-        title = QLabel("조회 미리보기")
-        title.setObjectName("sectionTitle")
-        layout.addWidget(title)
-
-        name_row = KeyValueRow("어르신 이름", "미입력")
-        room_row = KeyValueRow("호실", "미입력")
-        status_row = KeyValueRow("조회 상태", "입력 대기")
-        self.preview_name_value = name_row.value_label
-        self.preview_room_value = room_row.value_label
-        self.preview_status_value = status_row.value_label
-
-        layout.addWidget(name_row)
-        layout.addWidget(room_row)
-        layout.addWidget(status_row)
-        return preview_card
+        layout.addWidget(self.candidate_empty_label)
+        layout.addWidget(self.candidate_list)
+        self.candidate_list.hide()
+        return box
 
     def _make_info_box(self, title_text, value_text):
         box = QFrame()
@@ -181,39 +212,102 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         self.search_btn.setDisabled(loading)
         self.search_btn.setText("조회 중..." if loading else "조회")
 
-    def _update_search_preview(self):
-        if not hasattr(self, "preview_name_value"):
+    def _schedule_candidate_lookup(self):
+        if self._updating_inputs_from_candidate:
             return
+        self.selected_candidate = None
+        self.candidate_timer.start(self._candidate_debounce_ms)
 
+    def load_patient_candidates(self):
         name = self.name_input.text().strip()
         room_no = self.room_input.text().strip()
 
-        self.preview_name_value.setText(_display(name, "미입력"))
-        self.preview_room_value.setText(_display(room_no, "미입력"))
-        if name and room_no:
-            status = "조회 가능"
-        elif name or room_no:
-            status = "이름과 호실 모두 필요"
+        self.candidate_request_id += 1
+        if not name and not room_no:
+            self._apply_candidate_rows([])
+            self.candidate_empty_label.setText("이름이나 호실 일부를 입력하면 후보가 표시됩니다.")
+            return
+
+        self.candidate_empty_label.setText("후보를 검색하고 있습니다.")
+        self.candidate_list.hide()
+        self.candidate_thread, self.candidate_worker = start_worker_thread(
+            self,
+            worker=PatientCandidateLookupWorker(
+                self.candidate_request_id,
+                name,
+                room_no,
+            ),
+            finished_handler=self._handle_candidate_result,
+            clear_handler=self._clear_candidate_thread,
+        )
+
+    def _handle_candidate_result(self, request_id, ok, payload):
+        if request_id != self.candidate_request_id:
+            return
+        if not ok:
+            self._apply_candidate_rows([])
+            self.candidate_empty_label.setText(str(payload))
+            return
+        candidates = payload or []
+        self._apply_candidate_rows(candidates)
+        if candidates:
+            self.candidate_empty_label.setText("후보를 선택하면 상세 정보를 조회합니다.")
         else:
-            status = "입력 대기"
-        self.preview_status_value.setText(status)
+            self.candidate_empty_label.setText("검색 후보가 없습니다.")
+
+    def _apply_candidate_rows(self, candidates):
+        self.candidate_list.clear()
+        for candidate in candidates or []:
+            member_id = candidate.get("member_id")
+            name = _display(candidate.get("name"))
+            room_no = _display(candidate.get("room_no"))
+            item = QListWidgetItem(f"{name} · {room_no}호 · #{_display(member_id)}")
+            item.setData(Qt.ItemDataRole.UserRole, dict(candidate))
+            self.candidate_list.addItem(item)
+        self.candidate_list.setVisible(self.candidate_list.count() > 0)
+
+    def _handle_candidate_clicked(self, item):
+        candidate = item.data(Qt.ItemDataRole.UserRole) or {}
+        self.selected_candidate = candidate
+        self._updating_inputs_from_candidate = True
+        self.name_input.setText(_display(candidate.get("name"), ""))
+        self.room_input.setText(_display(candidate.get("room_no"), ""))
+        self._updating_inputs_from_candidate = False
+        self.load_patient_info_for_candidate(candidate)
 
     def load_patient_info(self):
         name = self.name_input.text().strip()
         room_no = self.room_input.text().strip()
 
         self.lookup_request_id += 1
-        if not name or not room_no:
-            self._clear_result()
-            self.show_inline_status("어르신 이름과 호실을 모두 입력해 주세요.", "warning")
+        if self.selected_candidate:
+            self._start_patient_lookup(member_id=self.selected_candidate.get("member_id"))
             return
 
+        if not name and not room_no:
+            self._clear_result()
+            self.show_inline_status("이름이나 호실 일부를 입력해 후보를 선택해 주세요.", "warning")
+            return
+
+        self.load_patient_candidates()
+        self.show_inline_status("검색 후보를 선택해 주세요.", "info")
+
+    def load_patient_info_for_candidate(self, candidate):
+        self.lookup_request_id += 1
+        self._start_patient_lookup(member_id=candidate.get("member_id"))
+
+    def _start_patient_lookup(self, *, member_id=None, name="", room_no=""):
         self._set_loading_state(True)
         self.show_inline_status("어르신 정보를 조회하고 있습니다.", "info")
 
         self.lookup_thread, self.lookup_worker = start_worker_thread(
             self,
-            worker=PatientLookupWorker(self.lookup_request_id, name, room_no),
+            worker=PatientLookupWorker(
+                self.lookup_request_id,
+                name,
+                room_no,
+                member_id=member_id,
+            ),
             finished_handler=self._handle_lookup_result,
             clear_handler=self._clear_lookup_thread,
         )
@@ -287,16 +381,30 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
         self.lookup_thread = None
         self.lookup_worker = None
 
+    def _clear_candidate_thread(self):
+        self.candidate_thread = None
+        self.candidate_worker = None
+
     def reset_page(self):
         self.lookup_request_id += 1
+        self.candidate_request_id += 1
+        self.candidate_timer.stop()
+        self.selected_candidate = None
         self.name_input.clear()
         self.room_input.clear()
-        self._update_search_preview()
+        self._apply_candidate_rows([])
+        self.candidate_empty_label.setText("이름이나 호실 일부를 입력하면 후보가 표시됩니다.")
         self._set_loading_state(False)
         self._clear_result()
         self.hide_inline_status()
 
     def shutdown(self):
+        self.candidate_timer.stop()
+        stop_worker_thread(
+            self.candidate_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_candidate_thread,
+        )
         stop_worker_thread(
             self.lookup_thread,
             wait_ms=self._worker_stop_wait_ms,

@@ -73,6 +73,24 @@ class FakeAsyncCaregiverRepository:
 
 
 class FakeAsyncPatientRepository:
+    async def async_list_member_candidates(self, name="", room_no="", limit=10):
+        return [
+            {
+                "member_id": 1,
+                "member_name": name or "김환자",
+                "room_no": room_no or "301",
+                "admission_date": "2026-04-01",
+            }
+        ]
+
+    async def async_find_member_by_id(self, member_id):
+        return {
+            "member_id": int(member_id),
+            "member_name": "김환자",
+            "room_no": "301",
+            "admission_date": "2026-04-01",
+        }
+
     async def async_find_member_by_name_and_room(self, name, room_no):
         return {
             "member_id": 1,
@@ -466,6 +484,31 @@ def test_patient_service_async_search_keeps_response_shape():
         {"event_at": "2026-04-28T10:00:00", "description": "식사 완료"}
     ]
     assert result["prescription_paths"] == ["/tmp/prescription.png"]
+
+
+def test_patient_service_async_candidate_search_allows_partial_input():
+    service = PatientService(repository=FakeAsyncPatientRepository())
+
+    candidates = asyncio.run(service.async_search_patient_candidates("김", ""))
+
+    assert candidates == [
+        {
+            "member_id": 1,
+            "name": "김",
+            "room_no": "301",
+            "admission_date": "2026-04-01",
+        }
+    ]
+
+
+def test_patient_service_async_get_patient_info_uses_member_id():
+    service = PatientService(repository=FakeAsyncPatientRepository())
+
+    result = asyncio.run(service.async_get_patient_info(1))
+
+    assert result["member_id"] == 1
+    assert result["name"] == "김환자"
+    assert result["room_no"] == "301"
 
 
 def test_visitor_info_service_async_get_patient_visit_info():
