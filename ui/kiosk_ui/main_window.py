@@ -1368,44 +1368,55 @@ class KioskGuideConfirmationPage(QWidget):
                 visitor_id=visitor_id,
                 idempotency_key=self._current_guide_idempotency_key(),
             )
-            if guide_task.get("result_code") != "ACCEPTED":
-                self.inline_status.setText(
-                    guide_task.get("result_message") or "안내 요청이 거부되었습니다."
-                )
-                self.inline_status.setHidden(False)
-                return
+        except Exception as exc:
+            self.inline_status.setText(f"안내 시작 중 오류가 발생했습니다: {exc}")
+            self.inline_status.setHidden(False)
+            return
 
+        if guide_task.get("result_code") != "ACCEPTED":
+            self.inline_status.setText(
+                guide_task.get("result_message") or "안내 요청이 거부되었습니다."
+            )
+            self.inline_status.setHidden(False)
+            return
+
+        try:
             command_success, message, command_response = self.service.send_guide_command(
                 task_id=guide_task.get("task_id"),
                 pinky_id=guide_task.get("assigned_robot_id"),
                 command_type="WAIT_TARGET_TRACKING",
             )
         except Exception as exc:
-            self.inline_status.setText(f"안내 시작 중 오류가 발생했습니다: {exc}")
-            self.inline_status.setHidden(False)
-            return
+            command_success = False
+            message = f"로봇 호출 명령을 보낼 수 없습니다: {exc}"
+            command_response = {
+                "accepted": False,
+                "reason_code": "GUIDE_COMMAND_ERROR",
+                "result_message": message,
+            }
 
         session = {
             **guide_task,
             "pinky_id": guide_task.get("assigned_robot_id"),
             "command_type": "WAIT_TARGET_TRACKING",
+            "command_result_code": "COMMAND_ACCEPTED" if command_success else "COMMAND_FAILED",
+            "command_message": message,
             "command_response": command_response,
         }
-        if command_success and self.selected_patient:
+        if self.selected_patient:
             self.current_session = session
             name = self.selected_patient.get("name", "-")
             room = self.selected_patient.get("room", "-")
             task_id = str(session.get("task_id", "-")).strip() or "-"
-            self.inline_status.setText(
-                f"{name} 어르신 안내 요청이 접수되었습니다. {room} 방향 대상 추적을 준비합니다. "
-                f"(task_id={task_id})"
+            status_message = (
+                f"{name} 어르신 안내 요청이 접수되었습니다. {room} 방향 대상 추적을 준비합니다."
+                if command_success
+                else f"{name} 어르신 안내 요청은 접수되었습니다. 로봇 호출 상태를 확인 중입니다."
             )
+            self.inline_status.setText(f"{status_message} (task_id={task_id})")
             if self.go_progress_page:
                 self.go_progress_page(self.selected_patient, session)
             return
-
-        self.inline_status.setText(message)
-        self.inline_status.setHidden(False)
 
     def _visitor_id(self):
         raw = (self.selected_patient or {}).get("visitor_id")
@@ -1866,6 +1877,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
             return
 
         self._update_guide_progress_display(phase, task_status)
+        self._apply_command_warning()
 
         if self.selected_patient:
             name = str(self.selected_patient.get("name", "-")).strip() or "-"
@@ -1875,6 +1887,17 @@ class KioskRobotGuidanceProgressPage(QWidget):
             self.request_id_label.setText(
                 f"안내 대상: {name} 어르신 / 목적지: {room} / task_id: {task_id} / 상태: {phase_label}"
             )
+
+    def _apply_command_warning(self):
+        session = self.current_session or {}
+        if session.get("command_result_code") != "COMMAND_FAILED":
+            return
+
+        message = str(session.get("command_message") or "").strip()
+        self.distance_label.setText(
+            message or "로봇 호출 명령을 보낼 수 없습니다. 직원에게 문의해 주세요."
+        )
+        self.start_driving_button.setEnabled(False)
 
     def _update_guide_progress_display(self, phase, task_status):
         self.robot_state_chip.setText(self._guide_status_label(phase, task_status))

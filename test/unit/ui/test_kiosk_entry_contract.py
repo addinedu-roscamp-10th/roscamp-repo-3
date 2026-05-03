@@ -500,6 +500,106 @@ def test_kiosk_guide_confirmation_creates_db_backed_guide_task_before_command():
         page.close()
 
 
+def test_kiosk_guide_confirmation_moves_to_progress_when_command_fails_after_task_created():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskGuideConfirmationPage
+
+    class FakeGuideService:
+        def __init__(self):
+            self.commands = []
+
+        def create_guide_task(self, **_kwargs):
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "안내 요청이 접수되었습니다.",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "assigned_robot_id": "pinky1",
+            }
+
+        def send_guide_command(self, **kwargs):
+            self.commands.append(kwargs)
+            return False, "ROS 연결이 필요합니다.", {
+                "accepted": False,
+                "reason_code": "ROS_UNAVAILABLE",
+            }
+
+    progress_calls = []
+    page = KioskGuideConfirmationPage(
+        go_progress_page=lambda patient, session: progress_calls.append((patient, session))
+    )
+    page.service = FakeGuideService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            }
+        )
+        page.confirm_guidance()
+
+        assert page.service.commands == [
+            {
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "command_type": "WAIT_TARGET_TRACKING",
+            }
+        ]
+        assert len(progress_calls) == 1
+        session = progress_calls[0][1]
+        assert session["task_id"] == 3001
+        assert session["command_result_code"] == "COMMAND_FAILED"
+        assert session["command_message"] == "ROS 연결이 필요합니다."
+        assert session["command_response"]["reason_code"] == "ROS_UNAVAILABLE"
+    finally:
+        page.close()
+
+
+def test_kiosk_guide_confirmation_stays_on_page_when_task_creation_raises():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskGuideConfirmationPage
+
+    class FailingGuideService:
+        def create_guide_task(self, **_kwargs):
+            raise RuntimeError("DB 연결 실패")
+
+        def send_guide_command(self, **_kwargs):
+            raise AssertionError("command must not run without a DB task")
+
+    progress_calls = []
+    page = KioskGuideConfirmationPage(
+        go_progress_page=lambda patient, session: progress_calls.append((patient, session))
+    )
+    page.service = FailingGuideService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            }
+        )
+        page.confirm_guidance()
+
+        assert progress_calls == []
+        assert "안내 시작 중 오류가 발생했습니다: DB 연결 실패" == page.inline_status.text()
+        assert page.inline_status.isHidden() is False
+    finally:
+        page.close()
+
+
 def test_kiosk_progress_page_prefers_db_backed_guide_session_status():
     _app()
 
