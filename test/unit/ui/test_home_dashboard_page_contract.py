@@ -258,6 +258,82 @@ def test_home_dashboard_task_cards_expose_home_cancel_action():
         page.close()
 
 
+def test_home_dashboard_task_cards_use_operator_labels_instead_of_raw_codes():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+
+    try:
+        page.apply_flow_board_data(
+            {
+                "WAITING": [
+                    {
+                        "task_id": 6,
+                        "task_type": "DELIVERY",
+                        "task_status": "WAITING_DISPATCH",
+                        "robot_id": None,
+                        "phase": "MOVE_TO_PICKUP",
+                        "destination_label": "301호",
+                        "description": (
+                            "ROS service command failed: execute_patrol_path: "
+                            "[Errno 2] No such file or directory"
+                        ),
+                    }
+                ]
+            }
+        )
+
+        labels = _label_texts(page)
+        assert "작업 #6 · 운반" in labels
+        assert "배차 대기" in labels
+        assert "로봇: 미배정" in labels
+        assert "단계: 픽업 지점 이동" in labels
+        assert "목적지: 301호" in labels
+        assert "최근 이벤트: ROS 브릿지에 연결할 수 없습니다." in labels
+        assert any(
+            text.startswith("상세: ROS service command failed")
+            for text in labels
+        )
+        assert not any("#6 DELIVERY / WAITING_DISPATCH" in text for text in labels)
+    finally:
+        page.close()
+
+
+def test_home_dashboard_cancel_failure_uses_structured_operator_banner():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+
+    try:
+        page._handle_task_cancel_finished(
+            False,
+            {
+                "result_code": "CLIENT_ERROR",
+                "reason_code": "ROS_SERVICE_UNAVAILABLE",
+                "result_message": (
+                    "ROS service command failed: cancel_action: "
+                    "[Errno 2] No such file or directory"
+                ),
+                "cancel_requested": False,
+            },
+        )
+
+        labels = _label_texts(page)
+        assert "작업 취소 실패" in labels
+        assert "ROS 브릿지에 연결할 수 없습니다." in labels
+        assert any(
+            text.startswith("상세: ROS service command failed")
+            for text in labels
+        )
+        assert not any("CLIENT_ERROR / ROS_SERVICE_UNAVAILABLE" in text for text in labels)
+    finally:
+        page.close()
+
+
 def test_home_dashboard_cancel_worker_uses_common_task_cancel_rpc(monkeypatch):
     _app()
 

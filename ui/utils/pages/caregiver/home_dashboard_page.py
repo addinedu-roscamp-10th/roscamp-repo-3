@@ -48,6 +48,59 @@ FLOW_COLUMNS = (
     ("DONE", "완료/실패", set()),
 )
 
+TASK_TYPE_LABELS = {
+    "DELIVERY": "운반",
+    "PATROL": "순찰",
+    "GUIDE": "안내",
+    "FOLLOW": "추종",
+}
+
+TASK_STATUS_LABELS = {
+    "WAITING": "대기",
+    "WAITING_DISPATCH": "배차 대기",
+    "READY": "준비",
+    "ASSIGNED": "배정",
+    "RUNNING": "진행 중",
+    "IN_PROGRESS": "진행 중",
+    "CANCEL_REQUESTED": "취소 요청",
+    "CANCELLING": "취소 중",
+    "PREEMPTING": "선점 처리",
+    "COMPLETED": "완료",
+    "FAILED": "실패",
+    "CANCELLED": "취소됨",
+}
+
+TASK_PHASE_LABELS = {
+    "REQUESTED": "요청 접수",
+    "WAITING_DISPATCH": "배차 대기",
+    "READY": "준비",
+    "MOVE_TO_PICKUP": "픽업 지점 이동",
+    "DELIVERY_PICKUP": "픽업 수행",
+    "MOVE_TO_DESTINATION": "목적지 이동",
+    "DELIVERY_DESTINATION": "목적지 도착",
+    "RUNNING": "진행 중",
+    "WAIT_FALL_RESPONSE": "낙상 대응 대기",
+    "COMPLETED": "완료",
+    "FAILED": "실패",
+    "CANCEL_REQUESTED": "취소 요청",
+    "CANCELLED": "취소됨",
+}
+
+REASON_LABELS = {
+    "ROS_SERVICE_UNAVAILABLE": "ROS 브릿지 미연결",
+    "CLIENT_EXCEPTION": "클라이언트 오류",
+    "CLIENT_ERROR": "클라이언트 오류",
+    "ACTION_REJECTED": "명령 거절",
+    "ROS_ACTION_FAILED": "ROS 명령 실패",
+}
+
+ROS_ERROR_MARKERS = (
+    "ROS service command failed",
+    "No such file or directory",
+    "Connection refused",
+    "ROPI_ROS_SERVICE_SOCKET",
+)
+
 
 def _status_of(task: dict) -> str:
     return _display(task.get("task_status"), "UNKNOWN").upper()
@@ -76,6 +129,42 @@ def _operator_datetime(value):
             break
     time_text = time_text.split(".", 1)[0]
     return f"{date_text} {time_text}"
+
+
+def _label_from(mapping, value, default="-"):
+    text = _display(value, default)
+    if text == default:
+        return text
+    normalized = text.upper()
+    return mapping.get(normalized, text)
+
+
+def _task_status_label(value):
+    return _label_from(TASK_STATUS_LABELS, value)
+
+
+def _task_status_chip_type(value):
+    status = str(value or "").upper()
+    if status in {"FAILED", "CANCELLED"}:
+        return "red"
+    if status in CANCELING_TASK_STATUSES:
+        return "yellow"
+    if status in {"RUNNING", "IN_PROGRESS"}:
+        return "green"
+    return "blue"
+
+
+def _summary_and_detail(message):
+    text = _display(message, "")
+    if not text:
+        return "", ""
+    if any(marker in text for marker in ROS_ERROR_MARKERS):
+        return "ROS 브릿지에 연결할 수 없습니다.", text
+    return text, ""
+
+
+def _reason_label(value):
+    return _label_from(REASON_LABELS, value, "")
 
 
 class DashboardLoadWorker(QObject):
@@ -282,9 +371,23 @@ class FlowColumn(QFrame):
         tc.setContentsMargins(12, 12, 12, 12)
         tc.setSpacing(8)
 
-        task_label = QLabel(self._format_task_label(task))
-        task_label.setWordWrap(True)
-        tc.addWidget(task_label)
+        header = QHBoxLayout()
+        title_label = QLabel(self._format_task_title(task))
+        title_label.setObjectName("homeTaskTitle")
+        status_chip = StatusChip(
+            _task_status_label(task.get("task_status")),
+            _task_status_chip_type(task.get("task_status")),
+        )
+        header.addWidget(title_label)
+        header.addStretch()
+        header.addWidget(status_chip)
+        tc.addLayout(header)
+
+        for line in self._format_task_rows(task):
+            label = QLabel(line)
+            label.setObjectName("mutedText")
+            label.setWordWrap(True)
+            tc.addWidget(label)
 
         cancel_button = self._build_cancel_button(task, canceling_task_id=canceling_task_id)
         if cancel_button is not None:
@@ -320,35 +423,48 @@ class FlowColumn(QFrame):
         return button
 
     @staticmethod
-    def _format_task_label(task):
+    def _format_task_title(task):
         if not isinstance(task, dict):
-            return str(task)
+            return "작업 -"
 
         task_id = _display(task.get("task_id"))
-        task_type = _display(task.get("task_type") or task.get("scenario"))
-        status = _display(task.get("task_status"))
-        robot_id = _display(task.get("assigned_robot_id") or task.get("robot_id"))
-        phase = _display(task.get("phase"))
+        task_type = _label_from(
+            TASK_TYPE_LABELS,
+            task.get("task_type") or task.get("scenario"),
+        )
+        return f"작업 #{task_id} · {task_type}"
+
+    @staticmethod
+    def _format_task_rows(task):
+        if not isinstance(task, dict):
+            return [str(task)]
+
+        robot_id = _display(
+            task.get("assigned_robot_id") or task.get("robot_id"),
+            "미배정",
+        )
+        phase = _label_from(TASK_PHASE_LABELS, task.get("phase"))
         destination = _display(task.get("destination_label"), "")
         feedback_summary = _display(task.get("feedback_summary"), "")
-        reason_code = _display(
+        reason_code = _reason_label(
             task.get("reason_code") or task.get("latest_reason_code"),
-            "",
         )
-        description = _display(task.get("description"), "")
+        description, detail = _summary_and_detail(task.get("description"))
 
-        lines = [f"#{task_id} {task_type} / {status}"]
-        if robot_id != "-" or phase != "-":
-            lines.append(f"로봇 {robot_id} / 단계 {phase}")
+        lines = [f"로봇: {robot_id}"]
+        if phase != "-":
+            lines.append(f"단계: {phase}")
         if destination:
-            lines.append(f"목적지 {destination}")
+            lines.append(f"목적지: {destination}")
         if feedback_summary:
-            lines.append(feedback_summary)
+            lines.append(f"피드백: {feedback_summary}")
         if reason_code:
-            lines.append(f"사유 {reason_code}")
+            lines.append(f"사유: {reason_code}")
         if description:
-            lines.append(description)
-        return "\n".join(lines)
+            lines.append(f"최근 이벤트: {description}")
+        if detail:
+            lines.append(f"상세: {detail}")
+        return lines
 
 
 class CaregiverHomePage(QWidget):
@@ -400,10 +516,32 @@ class CaregiverHomePage(QWidget):
         self.load_status_label.setWordWrap(True)
         self.load_status_label.setHidden(True)
 
+        self.status_banner = QFrame()
+        self.status_banner.setObjectName("dashboardStatusBanner")
+        self.status_banner.setHidden(True)
+        banner_layout = QVBoxLayout(self.status_banner)
+        banner_layout.setContentsMargins(12, 12, 12, 12)
+        banner_layout.setSpacing(4)
+
+        self.status_banner_title_label = QLabel("")
+        self.status_banner_title_label.setObjectName("homeStatusBannerTitle")
+        self.status_banner_summary_label = QLabel("")
+        self.status_banner_summary_label.setObjectName("mutedText")
+        self.status_banner_summary_label.setWordWrap(True)
+        self.status_banner_detail_label = QLabel("")
+        self.status_banner_detail_label.setObjectName("mutedText")
+        self.status_banner_detail_label.setWordWrap(True)
+        self.status_banner_detail_label.setHidden(True)
+
+        banner_layout.addWidget(self.status_banner_title_label)
+        banner_layout.addWidget(self.status_banner_summary_label)
+        banner_layout.addWidget(self.status_banner_detail_label)
+
         tb.addWidget(self.clock_label, alignment=Qt.AlignmentFlag.AlignRight)
         tb.addWidget(self.date_label, alignment=Qt.AlignmentFlag.AlignRight)
         tb.addWidget(self.last_update_label, alignment=Qt.AlignmentFlag.AlignRight)
         tb.addWidget(self.load_status_label)
+        tb.addWidget(self.status_banner)
         tb.addWidget(self.refresh_button)
 
         self.header = PageHeader(
@@ -667,9 +805,15 @@ class CaregiverHomePage(QWidget):
         result_code = _display(response.get("result_code"))
         reason_code = _display(response.get("reason_code"))
         message = _display(response.get("result_message"))
+        title, summary, detail = self._format_cancel_result(
+            success=success,
+            result_code=result_code,
+            reason_code=reason_code,
+            message=message,
+        )
 
         self._canceling_task_id = None
-        self._show_status(f"{result_code} / {reason_code}: {message}")
+        self._show_status_banner(title, summary, detail)
         self.apply_flow_board_data(self._last_flow_data)
 
         if success:
@@ -680,8 +824,31 @@ class CaregiverHomePage(QWidget):
         self.cancel_worker = None
 
     def _show_status(self, message: str):
+        self.status_banner.setHidden(True)
         self.load_status_label.setText(message)
         self.load_status_label.setHidden(False)
+
+    def _show_status_banner(self, title: str, summary: str, detail: str = ""):
+        self.load_status_label.setHidden(True)
+        self.status_banner_title_label.setText(title)
+        self.status_banner_summary_label.setText(summary)
+        self.status_banner_detail_label.setText(f"상세: {detail}" if detail else "")
+        self.status_banner_detail_label.setHidden(not bool(detail))
+        self.status_banner.setHidden(False)
+
+    @staticmethod
+    def _format_cancel_result(*, success, result_code, reason_code, message):
+        summary, detail = _summary_and_detail(message)
+        if success:
+            title = "취소 요청 접수"
+            if not summary:
+                summary = "작업 취소 요청이 접수되었습니다."
+            return title, summary, detail
+
+        reason = _reason_label(reason_code) or _reason_label(result_code)
+        if not summary:
+            summary = reason or "작업 취소 요청을 처리하지 못했습니다."
+        return "작업 취소 실패", summary, detail
 
     def _mark_last_update(self):
         now = QDateTime.currentDateTime()
