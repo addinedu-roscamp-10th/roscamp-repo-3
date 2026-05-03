@@ -45,6 +45,16 @@ class FakeGuideTaskLifecycleRepository:
 
     def record_command_result(self, **kwargs):
         self.recorded.append(kwargs)
+        if kwargs["command_type"] == "START_GUIDANCE":
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": int(kwargs["task_id"]),
+                "task_status": "RUNNING",
+                "phase": "GUIDANCE_RUNNING",
+                "guide_phase": "GUIDANCE_RUNNING",
+                "assigned_robot_id": kwargs["pinky_id"],
+                "target_track_id": kwargs["target_track_id"],
+            }
         return {
             "result_code": "ACCEPTED",
             "task_id": int(kwargs["task_id"]),
@@ -64,6 +74,50 @@ class FakeGuideTaskLifecycleRepository:
             "guide_phase": "CANCELLED",
             "assigned_robot_id": kwargs["pinky_id"],
         }
+
+
+class FakeGuideTaskNavigationRepository:
+    def __init__(self, response=None):
+        self.response = response or {
+            "result_code": "ACCEPTED",
+            "result_message": "안내 목적지 좌표를 확인했습니다.",
+            "task_id": 3001,
+            "task_type": "GUIDE",
+            "task_status": "RUNNING",
+            "phase": "WAIT_TARGET_TRACKING",
+            "assigned_robot_id": "pinky1",
+            "destination_id": "delivery_room_301",
+            "goal_pose": {
+                "header": {"stamp": {"sec": 0, "nanosec": 0}, "frame_id": "map"},
+                "pose": {
+                    "position": {"x": 1.5, "y": 2.5, "z": 0.0},
+                    "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                },
+            },
+        }
+        self.requested = []
+
+    def get_guide_driving_context(self, **kwargs):
+        self.requested.append(kwargs)
+        return self.response
+
+    async def async_get_guide_driving_context(self, **kwargs):
+        self.requested.append(kwargs)
+        return self.response
+
+
+class FakeGuideNavigationStarter:
+    def __init__(self, response=None):
+        self.response = response or {
+            "result_code": "ACCEPTED",
+            "navigation_started": True,
+            "nav_phase": "GUIDE_DESTINATION",
+        }
+        self.started = []
+
+    def __call__(self, **kwargs):
+        self.started.append(kwargs)
+        return self.response
 
 
 def test_visit_guide_service_create_guide_task_validates_required_fields():
@@ -169,3 +223,77 @@ def test_visit_guide_service_async_finish_records_cancelled_lifecycle():
     assert lifecycle_repository.recorded[0]["finish_reason"] == "USER_CANCELLED"
     assert response["task_status"] == "CANCELLED"
     assert response["phase"] == "GUIDANCE_CANCELLED"
+
+
+def test_visit_guide_service_start_guide_driving_sends_start_guidance_and_navigation():
+    command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
+    lifecycle_repository = FakeGuideTaskLifecycleRepository()
+    navigation_repository = FakeGuideTaskNavigationRepository()
+    navigation_starter = FakeGuideNavigationStarter()
+    service = VisitGuideService(
+        guide_command_service=command_service,
+        guide_task_lifecycle_repository=lifecycle_repository,
+        guide_task_navigation_repository=navigation_repository,
+        guide_navigation_starter=navigation_starter,
+    )
+
+    ok, message, response = service.start_guide_driving(
+        task_id=3001,
+        target_track_id="track_17",
+    )
+
+    assert ok is True
+    assert message == "안내 주행을 시작했습니다."
+    assert command_service.sent[0]["command_type"] == "START_GUIDANCE"
+    assert command_service.sent[0]["target_track_id"] == "track_17"
+    assert navigation_starter.started == [
+        {
+            "task_id": 3001,
+            "pinky_id": "pinky1",
+            "goal_pose": navigation_repository.response["goal_pose"],
+            "timeout_sec": 120.0,
+        }
+    ]
+    assert response["task_status"] == "RUNNING"
+    assert response["phase"] == "GUIDANCE_RUNNING"
+    assert response["target_track_id"] == "track_17"
+    assert response["navigation_response"]["navigation_started"] is True
+
+
+def test_visit_guide_service_start_guide_driving_requires_target_track_id():
+    service = VisitGuideService(
+        guide_task_navigation_repository=FakeGuideTaskNavigationRepository(),
+    )
+
+    ok, message, response = service.start_guide_driving(
+        task_id=3001,
+        target_track_id="",
+    )
+
+    assert ok is False
+    assert message == "target_track_id가 필요합니다."
+    assert response["reason_code"] == "TARGET_TRACK_ID_REQUIRED"
+
+
+def test_visit_guide_service_async_start_guide_driving_delegates_navigation():
+    command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
+    lifecycle_repository = FakeGuideTaskLifecycleRepository()
+    navigation_repository = FakeGuideTaskNavigationRepository()
+    navigation_starter = FakeGuideNavigationStarter()
+    service = VisitGuideService(
+        guide_command_service=command_service,
+        guide_task_lifecycle_repository=lifecycle_repository,
+        guide_task_navigation_repository=navigation_repository,
+        guide_navigation_starter=navigation_starter,
+    )
+
+    ok, _message, response = asyncio.run(
+        service.async_start_guide_driving(
+            task_id=3001,
+            target_track_id="track_17",
+        )
+    )
+
+    assert ok is True
+    assert navigation_starter.started[0]["pinky_id"] == "pinky1"
+    assert response["navigation_response"]["result_code"] == "ACCEPTED"

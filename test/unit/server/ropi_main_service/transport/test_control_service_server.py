@@ -1161,6 +1161,56 @@ def test_async_guide_command_rpc_publishes_task_update(control_service_server):
     assert published_events[0][1]["phase"] == "WAIT_TARGET_TRACKING"
 
 
+def test_async_guide_start_driving_rpc_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=43,
+        payload={
+            "service": "visit_guide",
+            "method": "start_guide_driving",
+            "kwargs": {
+                "task_id": "3001",
+                "target_track_id": "track_17",
+            },
+        },
+    )
+    published_events = []
+
+    class FakeAsyncVisitGuideService:
+        async def async_start_guide_driving(self, **payload):
+            return True, "안내 주행을 시작했습니다.", {
+                "result_code": "ACCEPTED",
+                "result_message": "안내 주행을 시작했습니다.",
+                "task_id": payload["task_id"],
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "GUIDANCE_RUNNING",
+                "assigned_robot_id": "pinky1",
+                "target_track_id": payload["target_track_id"],
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload[0] is True
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "GUIDE_COMMAND"
+    assert published_events[0][1]["task_status"] == "RUNNING"
+    assert published_events[0][1]["phase"] == "GUIDANCE_RUNNING"
+
+
 def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_update(
     control_service_server,
 ):

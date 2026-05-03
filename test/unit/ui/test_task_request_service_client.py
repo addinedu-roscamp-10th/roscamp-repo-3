@@ -11,6 +11,7 @@ from ui.utils.network.service_clients import (
     KioskVisitorRemoteService,
     StaffCallRemoteService,
     TaskMonitorRemoteService,
+    VisitGuideRemoteService,
 )
 
 
@@ -562,6 +563,35 @@ def test_task_monitor_remote_service_sends_fall_evidence_over_if_pat_007(monkeyp
                 "alert_id": "17",
                 "evidence_image_id": "fall-1",
                 "result_seq": 541,
+            },
+        )
+    ]
+
+
+def test_visit_guide_remote_service_exposes_start_guide_driving_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return True, "안내 주행을 시작했습니다.", {"result_code": "ACCEPTED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = VisitGuideRemoteService().start_guide_driving(
+        task_id="3001",
+        pinky_id="pinky1",
+        target_track_id="track_17",
+    )
+
+    assert response[0] is True
+    assert calls == [
+        (
+            "visit_guide",
+            "start_guide_driving",
+            {
+                "task_id": "3001",
+                "target_track_id": "track_17",
+                "pinky_id": "pinky1",
             },
         )
     ]

@@ -350,6 +350,34 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(patched_ui_endpoint):
         assert running_event_row["event_name"] == "GUIDE_COMMAND_ACCEPTED"
         assert running_event_row["result_code"] == "ACCEPTED"
 
+        driving_ok, driving_message, driving_payload = (
+            VisitGuideRemoteService().start_guide_driving(
+                task_id=task_id,
+                pinky_id=payload["assigned_robot_id"],
+                target_track_id="track_17",
+            )
+        )
+        assert driving_ok is True
+        assert driving_message == "안내 주행을 시작했습니다."
+        assert driving_payload["task_status"] == "RUNNING"
+        assert driving_payload["phase"] == "GUIDANCE_RUNNING"
+        assert driving_payload["target_track_id"] == "track_17"
+        assert driving_payload["navigation_response"]["navigation_started"] is True
+
+        driving_task_row = safe_fetch_one(
+            "SELECT task_status, phase FROM task "
+            f"WHERE task_id = {task_id}"
+        )
+        driving_guide_row = safe_fetch_one(
+            "SELECT guide_phase, target_track_id FROM guide_task_detail "
+            f"WHERE task_id = {task_id}"
+        )
+
+        assert driving_task_row["task_status"] == "RUNNING"
+        assert driving_task_row["phase"] == "GUIDANCE_RUNNING"
+        assert driving_guide_row["guide_phase"] == "GUIDANCE_RUNNING"
+        assert driving_guide_row["target_track_id"] == "track_17"
+
         finish_ok, _finish_message, finish_payload = (
             VisitGuideRemoteService().finish_guide_session(
                 task_id=task_id,

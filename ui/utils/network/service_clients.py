@@ -428,6 +428,24 @@ class VisitGuideRemoteService:
             kwargs["pinky_id"] = pinky_id
         return _rpc("visit_guide", "finish_guide_session", **kwargs)
 
+    def start_guide_driving(
+        self,
+        *,
+        task_id,
+        target_track_id,
+        pinky_id=None,
+        navigation_timeout_sec=None,
+    ):
+        kwargs = {
+            "task_id": task_id,
+            "target_track_id": target_track_id,
+        }
+        if pinky_id is not None:
+            kwargs["pinky_id"] = pinky_id
+        if navigation_timeout_sec is not None:
+            kwargs["navigation_timeout_sec"] = navigation_timeout_sec
+        return _rpc("visit_guide", "start_guide_driving", **kwargs)
+
     def send_guide_command(
         self,
         *,

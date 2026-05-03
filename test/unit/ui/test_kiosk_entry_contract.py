@@ -542,6 +542,75 @@ def test_kiosk_progress_page_prefers_db_backed_guide_session_status():
         page.close()
 
 
+def test_kiosk_progress_page_starts_guidance_driving_with_detected_track():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
+
+    class TrackingRuntimeService:
+        def __init__(self):
+            self.started = []
+
+        def get_guide_runtime_status(self):
+            return True, "tracking", {
+                "guide_runtime": {
+                    "last_update": {
+                        "tracking_status": "TRACKING",
+                        "active_track_id": "track_17",
+                        "tracking_result_seq": 77,
+                    }
+                }
+            }
+
+        def start_guide_driving(self, **kwargs):
+            self.started.append(kwargs)
+            return True, "안내 주행을 시작했습니다.", {
+                "result_code": "ACCEPTED",
+                "task_id": kwargs["task_id"],
+                "task_status": "RUNNING",
+                "phase": "GUIDANCE_RUNNING",
+                "target_track_id": kwargs["target_track_id"],
+                "navigation_response": {"result_code": "ACCEPTED"},
+            }
+
+    service = TrackingRuntimeService()
+    page = KioskRobotGuidanceProgressPage()
+    page.service = service
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            },
+            session={
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "task_status": "RUNNING",
+                "phase": "WAIT_TARGET_TRACKING",
+            },
+        )
+
+        assert page.start_driving_button.isEnabled() is True
+        page.start_guidance_driving()
+
+        assert service.started == [
+            {
+                "task_id": "3001",
+                "pinky_id": "pinky1",
+                "target_track_id": "track_17",
+            }
+        ]
+        assert page.robot_state_chip.text() == "안내 중"
+        assert page.distance_label.text() == "안내 주행을 시작했습니다."
+    finally:
+        page.close()
+
+
 def test_kiosk_staff_call_uses_in_app_modal_and_lobby_context():
     _app()
 

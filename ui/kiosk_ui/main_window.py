@@ -1129,6 +1129,7 @@ class KioskGuideConfirmationPage(QWidget):
         self.service = VisitGuideRemoteService()
         self.selected_patient = None
         self.current_session = None
+        self.detected_target_track_id = None
         self._guide_request_id = None
         self._guide_idempotency_key = None
 
@@ -1649,6 +1650,12 @@ class KioskRobotGuidanceProgressPage(QWidget):
         self.call_staff_button.setObjectName("kioskProgressPrimaryButton")
         self.call_staff_button.setMinimumHeight(72)
 
+        self.start_driving_button = QPushButton("안내 주행 시작")
+        self.start_driving_button.setObjectName("kioskProgressPrimaryButton")
+        self.start_driving_button.setMinimumHeight(72)
+        self.start_driving_button.setEnabled(False)
+        self.start_driving_button.clicked.connect(self.start_guidance_driving)
+
         self.cancel_button = QPushButton("안내 취소")
         self.cancel_button.setObjectName("kioskProgressSecondaryButton")
         self.cancel_button.setMinimumHeight(72)
@@ -1656,6 +1663,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.call_staff_button, 1)
+        bottom_layout.addWidget(self.start_driving_button, 1)
         bottom_layout.addWidget(self.cancel_button, 1)
         bottom_layout.addStretch()
 
@@ -1666,6 +1674,8 @@ class KioskRobotGuidanceProgressPage(QWidget):
     def set_patient(self, patient, session=None):
         self.selected_patient = patient or None
         self.current_session = session or None
+        self.detected_target_track_id = self._session_target_track_id()
+        self.start_driving_button.setEnabled(bool(self.detected_target_track_id))
         if self.selected_patient:
             name = str(self.selected_patient.get("name", "-")).strip() or "-"
             room = str(self.selected_patient.get("room", "-")).strip() or "-"
@@ -1688,19 +1698,70 @@ class KioskRobotGuidanceProgressPage(QWidget):
         guide_runtime = (status or {}).get("guide_runtime") or {}
         last_update = guide_runtime.get("last_update") or {}
         tracking_status = str(last_update.get("tracking_status") or "").strip()
+        target_track_id = str(
+            last_update.get("active_track_id")
+            or last_update.get("target_track_id")
+            or ""
+        ).strip()
         tracking_seq = last_update.get("tracking_result_seq")
 
         if ok and tracking_status:
-            self.robot_state_chip.setText(tracking_status)
             if tracking_status == "TRACKING":
-                self.distance_label.setText("안내 추적이 정상적으로 진행 중입니다.")
+                if self._current_session_phase() == "GUIDANCE_RUNNING":
+                    self.robot_state_chip.setText("안내 중")
+                    self.distance_label.setText("로봇 안내가 진행 중입니다.")
+                else:
+                    self.robot_state_chip.setText("대상 확인 완료")
+                    self.distance_label.setText("안내 대상을 확인했습니다. 주행을 시작할 수 있습니다.")
+                if target_track_id:
+                    self.detected_target_track_id = target_track_id
+                    self.start_driving_button.setEnabled(
+                        self._current_session_phase() != "GUIDANCE_RUNNING"
+                    )
             else:
+                self.robot_state_chip.setText(tracking_status)
                 self.distance_label.setText(f"현재 상태: {tracking_status}")
 
         if tracking_seq is not None and self.selected_patient:
             self.request_id_label.setText(
                 f"안내 대상: {self.selected_patient.get('name', '-')} / 추적 순번: {tracking_seq}"
             )
+
+    def start_guidance_driving(self):
+        task_id = str((self.current_session or {}).get("task_id", "")).strip()
+        if not task_id:
+            self.distance_label.setText("안내 주행 시작에 필요한 task_id가 없습니다.")
+            return
+
+        target_track_id = self.detected_target_track_id or self._session_target_track_id()
+        if not target_track_id:
+            self.distance_label.setText("안내 대상 확인 후 주행을 시작할 수 있습니다.")
+            self.start_driving_button.setEnabled(False)
+            return
+
+        pinky_id = str((self.current_session or {}).get("pinky_id", "pinky1")).strip() or "pinky1"
+        try:
+            success, message, response = self.service.start_guide_driving(
+                task_id=task_id,
+                pinky_id=pinky_id,
+                target_track_id=target_track_id,
+            )
+        except Exception as exc:
+            self.distance_label.setText(f"안내 주행 시작 중 오류가 발생했습니다: {exc}")
+            return
+
+        if not success:
+            self.distance_label.setText(message or "안내 주행 시작이 거부되었습니다.")
+            return
+
+        self.current_session = {
+            **(self.current_session or {}),
+            "target_track_id": target_track_id,
+            "command_response": response or {},
+        }
+        self.start_driving_button.setEnabled(False)
+        self._apply_session_status()
+        self.distance_label.setText(message or "안내 주행을 시작했습니다.")
 
     def _apply_session_status(self):
         session = self.current_session or {}
@@ -1783,6 +1844,26 @@ class KioskRobotGuidanceProgressPage(QWidget):
         if normalized_status == "COMPLETED":
             return "안내 완료"
         return normalized_phase or normalized_status or "-"
+
+    def _session_target_track_id(self):
+        session = self.current_session or {}
+        command_response = session.get("command_response") or {}
+        return str(
+            command_response.get("target_track_id")
+            or session.get("target_track_id")
+            or ""
+        ).strip()
+
+    def _current_session_phase(self):
+        session = self.current_session or {}
+        command_response = session.get("command_response") or {}
+        return str(
+            command_response.get("phase")
+            or command_response.get("guide_phase")
+            or session.get("phase")
+            or session.get("guide_phase")
+            or ""
+        ).strip().upper()
 
     def finish_guidance(self):
         task_id = str((self.current_session or {}).get("task_id", "")).strip()

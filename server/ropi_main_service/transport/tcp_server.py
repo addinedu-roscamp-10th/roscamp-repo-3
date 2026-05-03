@@ -20,6 +20,8 @@ from server.ropi_main_service.application.fall_inference_runtime import (
 from server.ropi_main_service.application.fall_evidence_image import (
     FallEvidenceImageService,
 )
+from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
+from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
@@ -592,7 +594,7 @@ class ControlServiceServer:
                 f"지원하지 않는 서비스입니다: {service_name}",
             )
 
-        service = factory()
+        service = self._build_runtime_service(service_name, factory)
         async_method = getattr(service, f"async_{method_name}", None)
         method = async_method or getattr(service, method_name, None)
         if method is None:
@@ -628,6 +630,7 @@ class ControlServiceServer:
             "begin_guide_session",
             "send_guide_command",
             "finish_guide_session",
+            "start_guide_driving",
         }:
             await self._publish_task_updated_from_response(
                 self._extract_task_update_response(result),
@@ -699,6 +702,80 @@ class ControlServiceServer:
             if isinstance(payload, dict):
                 return payload
         return {}
+
+    def _build_runtime_service(self, service_name, factory):
+        if service_name == "visit_guide" and factory is VisitGuideService:
+            return VisitGuideService(
+                guide_navigation_starter=self._start_guide_navigation_background,
+            )
+        return factory()
+
+    def _start_guide_navigation_background(
+        self,
+        *,
+        task_id,
+        pinky_id,
+        goal_pose,
+        timeout_sec,
+    ):
+        loop = asyncio.get_running_loop()
+        target_pinky_id = str(pinky_id or "").strip() or "pinky1"
+        navigation_service = GoalPoseNavigationService(
+            runtime_config=DeliveryRuntimeConfig(pinky_id=target_pinky_id),
+        )
+        background_task = self.delivery_workflow_task_manager.create_task(
+            navigation_service.async_navigate(
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                nav_phase="GUIDE_DESTINATION",
+                goal_pose=goal_pose,
+                timeout_sec=timeout_sec,
+            ),
+            name=f"guide_destination_navigation_{task_id}",
+            loop=loop,
+            cancel_on_shutdown=True,
+        )
+        background_task.add_done_callback(
+            lambda task: self._handle_guide_navigation_done(task, task_id=task_id)
+        )
+        return {
+            "result_code": "ACCEPTED",
+            "result_message": "안내 목적지 이동을 시작했습니다.",
+            "navigation_started": True,
+            "task_id": task_id,
+            "pinky_id": target_pinky_id,
+            "nav_phase": "GUIDE_DESTINATION",
+        }
+
+    @staticmethod
+    def _handle_guide_navigation_done(task, *, task_id):
+        try:
+            result = task.result()
+        except asyncio.CancelledError:
+            log_event(
+                logger,
+                logging.WARNING,
+                "guide_destination_navigation_cancelled",
+                task_id=task_id,
+                reason_code="GUIDE_NAVIGATION_TASK_CANCELLED",
+            )
+            return
+        except Exception as exc:
+            logger.exception(
+                "guide destination navigation failed",
+                extra={"task_id": task_id, "error": str(exc)},
+            )
+            return
+
+        log_event(
+            logger,
+            logging.INFO,
+            "guide_destination_navigation_finished",
+            task_id=task_id,
+            result_code=(result or {}).get("result_code"),
+            result_message=(result or {}).get("result_message"),
+            reason_code=(result or {}).get("reason_code"),
+        )
 
     async def start(self):
         self.db_writer.start()
