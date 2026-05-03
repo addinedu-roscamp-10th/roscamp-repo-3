@@ -7,6 +7,7 @@ from ui.utils.network.service_clients import (
     CaregiverRemoteService,
     CoordinateConfigRemoteService,
     DeliveryRequestRemoteService,
+    InventoryRemoteService,
     TaskMonitorRemoteService,
 )
 
@@ -78,6 +79,30 @@ def test_caregiver_remote_service_exposes_alert_log_bundle_rpc(monkeypatch):
                 "limit": 50,
             },
         )
+    ]
+
+
+def test_inventory_remote_service_exposes_bundle_and_item_id_mutation_rpcs(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "UPDATED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    service = InventoryRemoteService()
+
+    assert service.get_inventory_bundle() == {"result_code": "UPDATED"}
+    assert service.add_item_quantity(item_id="2", quantity_delta=4) == {
+        "result_code": "UPDATED"
+    }
+    assert service.set_item_quantity(item_id="2", quantity=12) == {
+        "result_code": "UPDATED"
+    }
+    assert calls == [
+        ("inventory", "get_inventory_bundle", {}),
+        ("inventory", "add_item_quantity", {"item_id": "2", "quantity_delta": 4}),
+        ("inventory", "set_item_quantity", {"item_id": "2", "quantity": 12}),
     ]
 
 

@@ -55,6 +55,7 @@ def test_inventory_repository_uses_item_schema():
             _source("inventory_repository.py"),
             _sql_source("inventory/list_items.sql"),
             _sql_source("inventory/add_quantity.sql"),
+            _sql_source("inventory/set_quantity.sql"),
         )
     )
 

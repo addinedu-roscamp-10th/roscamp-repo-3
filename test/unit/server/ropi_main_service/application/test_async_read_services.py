@@ -96,11 +96,51 @@ class FakeAsyncVisitorInfoRepository:
 
 
 class FakeAsyncInventoryRepository:
+    def __init__(self):
+        self.rows = [
+            {
+                "item_id": "1",
+                "item_type": "생활용품",
+                "item_name": "기저귀",
+                "quantity": 0,
+                "updated_at": "2026-05-03T10:00:00",
+            },
+            {
+                "item_id": "2",
+                "item_type": "생활용품",
+                "item_name": "물티슈",
+                "quantity": 8,
+                "updated_at": "2026-05-03T11:00:00",
+            },
+            {
+                "item_id": "3",
+                "item_type": "식료품",
+                "item_name": "두유",
+                "quantity": 25,
+                "updated_at": "2026-05-03T09:00:00",
+            },
+        ]
+
+    def get_all_products(self):
+        return list(self.rows)
+
+    def add_quantity(self, item_id, quantity):
+        self.added = (item_id, quantity)
+        return True
+
+    def set_quantity(self, item_id, quantity):
+        self.set = (item_id, quantity)
+        return True
+
     async def async_get_all_products(self):
-        return [{"item_id": "1", "item_name": "물티슈"}]
+        return list(self.rows)
 
     async def async_add_quantity(self, item_id, quantity):
         self.added = (item_id, quantity)
+        return True
+
+    async def async_set_quantity(self, item_id, quantity):
+        self.set = (item_id, quantity)
         return True
 
 
@@ -368,7 +408,54 @@ def test_inventory_service_async_get_inventory_rows():
 
     rows = asyncio.run(service.async_get_inventory_rows())
 
-    assert rows == [{"item_id": "1", "item_name": "물티슈"}]
+    assert rows[0]["item_id"] == "1"
+    assert rows[0]["item_name"] == "기저귀"
+
+
+def test_inventory_service_get_inventory_bundle_normalizes_phase1_item_summary():
+    service = InventoryService(repository=FakeAsyncInventoryRepository())
+
+    bundle = service.get_inventory_bundle()
+
+    assert bundle["summary"] == {
+        "total_item_count": 3,
+        "total_quantity": 33,
+        "low_stock_item_count": 2,
+        "empty_item_count": 1,
+        "low_stock_threshold": 10,
+        "last_updated_at": "2026-05-03T11:00:00",
+    }
+    assert bundle["items"][0] == {
+        "item_id": "1",
+        "item_type": "생활용품",
+        "item_name": "기저귀",
+        "quantity": 0,
+        "updated_at": "2026-05-03T10:00:00",
+    }
+    assert [item["item_id"] for item in bundle["low_stock_items"]] == ["1", "2"]
+
+
+def test_inventory_service_item_id_quantity_mutations_return_rpc_shape():
+    repository = FakeAsyncInventoryRepository()
+    service = InventoryService(repository=repository)
+
+    add_result = service.add_item_quantity("2", 4)
+    set_result = service.set_item_quantity("2", 12)
+
+    assert add_result == {
+        "result_code": "UPDATED",
+        "result_message": "재고가 추가되었습니다.",
+        "item_id": "2",
+        "quantity_delta": 4,
+    }
+    assert set_result == {
+        "result_code": "UPDATED",
+        "result_message": "재고 수량이 수정되었습니다.",
+        "item_id": "2",
+        "quantity": 12,
+    }
+    assert repository.added == ("2", 4)
+    assert repository.set == ("2", 12)
 
 
 def test_inventory_service_async_add_inventory():
@@ -378,7 +465,7 @@ def test_inventory_service_async_add_inventory():
     result = asyncio.run(service.async_add_inventory("물티슈", 2))
 
     assert result == (True, "재고가 추가되었습니다.")
-    assert repository.added == ("1", 2)
+    assert repository.added == ("2", 2)
 
 
 def test_delivery_request_service_async_product_list_and_submit_request():

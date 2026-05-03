@@ -144,6 +144,25 @@ def test_inventory_repository_async_add_quantity_uses_async_execute(monkeypatch)
     assert calls[0][1] == (3, "1")
 
 
+def test_inventory_repository_async_set_quantity_uses_async_execute(monkeypatch):
+    calls = []
+
+    async def fake_async_execute(query, params=None):
+        calls.append((query, params))
+        return 1
+
+    monkeypatch.setattr(inventory_repository, "async_execute", fake_async_execute)
+
+    updated = asyncio.run(
+        inventory_repository.InventoryRepository().async_set_quantity("1", 12)
+    )
+
+    assert updated is True
+    assert "UPDATE item" in calls[0][0]
+    assert "quantity = %s" in calls[0][0]
+    assert calls[0][1] == (12, "1")
+
+
 def test_staff_call_repository_async_create_uses_async_execute(monkeypatch):
     calls = []
 

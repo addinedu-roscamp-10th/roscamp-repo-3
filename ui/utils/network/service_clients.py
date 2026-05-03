@@ -86,8 +86,27 @@ class InventoryRemoteService:
     def get_inventory_rows(self):
         return _rpc("inventory", "get_inventory_rows")
 
+    def get_inventory_bundle(self):
+        return _rpc("inventory", "get_inventory_bundle")
+
     def add_inventory(self, item_name, quantity):
         return _rpc("inventory", "add_inventory", item_name=item_name, quantity=quantity)
+
+    def add_item_quantity(self, *, item_id, quantity_delta):
+        return _rpc(
+            "inventory",
+            "add_item_quantity",
+            item_id=item_id,
+            quantity_delta=quantity_delta,
+        )
+
+    def set_item_quantity(self, *, item_id, quantity):
+        return _rpc(
+            "inventory",
+            "set_item_quantity",
+            item_id=item_id,
+            quantity=quantity,
+        )
 
 
 class DeliveryRequestRemoteService:
