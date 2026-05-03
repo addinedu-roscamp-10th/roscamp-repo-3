@@ -1036,7 +1036,7 @@ QFrame#kioskSearchTopBar,
 QFrame#kioskConfirmationTopBar,
 QFrame#kioskProgressTopBar {
     background: #FFF8EE;
-    border-bottom: 4px solid #2B6CB0;
+    border-bottom: 6px solid #E8DED2;
 }
 
 QFrame#kioskHomePage {
@@ -1154,9 +1154,14 @@ QPushButton#kioskRoundIconButton {
     color: #1E293B;
     border: 1px solid #E8DED2;
     border-radius: 18px;
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 900;
-    padding: 12px 22px;
+    padding: 12px 34px;
+}
+
+QPushButton#kioskSearchFooterButton {
+    min-height: 72px;
+    min-width: 210px;
 }
 
 QPushButton#kioskGhostButton[accent="blue"] {
@@ -1183,7 +1188,16 @@ QPushButton#kioskSecondaryButton {
     background: #F5FAFF;
 }
 
-QPushButton#kioskSearchCallButton,
+QPushButton#kioskSearchCallButton {
+    background: #FFFFFF;
+    color: #2F855A;
+    border: 2px solid #E8DED2;
+    border-radius: 18px;
+    font-size: 24px;
+    font-weight: 900;
+    padding: 14px 28px;
+}
+
 QPushButton#kioskConfirmationSecondaryButton,
 QPushButton#kioskProgressPrimaryButton {
     background: #FFF0EA;
@@ -1245,7 +1259,7 @@ QLabel#kioskProgressSubtitle {
 
 QFrame#kioskSearchInputCard {
     background: #FFFFFF;
-    border: 2px solid #E8DED2;
+    border: 2px solid #BEC9BF;
     border-radius: 24px;
 }
 
@@ -1277,6 +1291,24 @@ QWidget#kioskRoot QPushButton#primaryButton {
     padding: 12px 28px;
 }
 
+QPushButton#kioskSearchSubmitButton {
+    border-radius: 0px;
+    border-top-right-radius: 20px;
+    border-bottom-right-radius: 20px;
+    font-size: 38px;
+    min-width: 128px;
+    min-height: 88px;
+    padding: 0px;
+}
+
+QPushButton#kioskResidentActionButton {
+    background: #1960A3;
+    border-color: #1960A3;
+    font-size: 28px;
+    min-width: 230px;
+    padding: 12px 32px;
+}
+
 QPushButton#kioskProgressSecondaryButton {
     background: #FFFFFF;
     color: #2B6CB0;
@@ -1301,7 +1333,7 @@ QFrame#kioskResidentAvatar {
 
 QLabel#kioskResidentAvatarIcon {
     color: #2B6CB0;
-    font-size: 34px;
+    font-size: 52px;
     font-weight: 900;
 }
 

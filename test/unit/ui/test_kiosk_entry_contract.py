@@ -172,3 +172,35 @@ def test_kiosk_resident_search_handles_no_match_from_if_gui_007():
         assert page.status_label.text() == "일치하는 어르신 정보가 없습니다."
     finally:
         page.close()
+
+
+def test_kiosk_resident_search_ports_wireframe_header_buttons_and_icons():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskResidentSearchPage
+
+    page = KioskResidentSearchPage()
+
+    try:
+        root_layout = page.layout()
+        assert root_layout.itemAt(0).widget().objectName() == "kioskSearchTopBar"
+
+        assert page.search_button.text() == ""
+        assert page.search_button.property("iconName") == "search"
+        assert page.search_button.minimumWidth() >= 120
+        assert page.search_button.minimumHeight() >= 84
+
+        search_card = page.findChild(QFrame, "kioskSearchInputCard")
+        assert search_card is not None
+        assert search_card.minimumHeight() >= 88
+
+        assert page.back_button.text().startswith("← ")
+        assert page.home_button.text().startswith("⌂ ")
+        assert page.back_button.minimumHeight() >= 72
+        assert page.home_button.minimumHeight() >= 72
+
+        avatar_icon = page.findChild(QLabel, "kioskResidentAvatarIcon")
+        assert avatar_icon is not None
+        assert avatar_icon.text() == "♙"
+    finally:
+        page.close()

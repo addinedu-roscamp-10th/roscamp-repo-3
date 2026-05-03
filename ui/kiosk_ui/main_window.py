@@ -145,6 +145,27 @@ class KioskHomeActionCard(QFrame):
         self.clicked.emit()
 
 
+class KioskSearchIconButton(QPushButton):
+    def __init__(self):
+        super().__init__("")
+        self.setProperty("iconName", "search")
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#FFFFFF"), 5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        cx = self.width() / 2 - 8
+        cy = self.height() / 2 - 5
+        painter.drawEllipse(QRectF(cx - 15, cy - 15, 30, 30))
+        painter.drawLine(int(cx + 11), int(cy + 11), int(cx + 28), int(cy + 28))
+
+
 class KioskFooterStat(QFrame):
     def __init__(self, *, icon_text, title_text, value_text):
         super().__init__()
@@ -213,13 +234,12 @@ class KioskResidentSearchPage(QWidget):
 
         brand_wrap.addWidget(brand_icon)
         brand_wrap.addWidget(brand)
-        header_layout.addStretch()
         header_layout.addLayout(brand_wrap)
         header_layout.addStretch()
 
-        self.call_staff_button = QPushButton("직원 호출")
+        self.call_staff_button = QPushButton("?  직원 호출")
         self.call_staff_button.setObjectName("kioskSearchCallButton")
-        self.call_staff_button.setMinimumHeight(64)
+        self.call_staff_button.setMinimumHeight(72)
 
         header_layout.addWidget(self.call_staff_button)
 
@@ -239,7 +259,7 @@ class KioskResidentSearchPage(QWidget):
         search_card = QFrame()
         search_card.setObjectName("kioskSearchInputCard")
         search_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        search_card.setFixedHeight(76)
+        search_card.setFixedHeight(92)
         search_layout = QHBoxLayout(search_card)
         search_layout.setContentsMargins(0, 0, 0, 0)
         search_layout.setSpacing(0)
@@ -249,9 +269,9 @@ class KioskResidentSearchPage(QWidget):
         self.search_input.setPlaceholderText("예: 302호 또는 김철수")
         self.search_input.returnPressed.connect(self.search_patient)
 
-        self.search_button = QPushButton("찾기")
+        self.search_button = KioskSearchIconButton()
         self.search_button.setObjectName("kioskSearchSubmitButton")
-        self.search_button.setMinimumHeight(72)
+        self.search_button.setMinimumSize(128, 88)
         self.search_button.clicked.connect(self.search_patient)
 
         search_layout.addWidget(self.search_input, 1)
@@ -277,7 +297,7 @@ class KioskResidentSearchPage(QWidget):
         avatar_layout.setContentsMargins(0, 0, 0, 0)
         avatar_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        avatar_icon = QLabel("◉")
+        avatar_icon = QLabel("♙")
         avatar_icon.setObjectName("kioskResidentAvatarIcon")
         avatar_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         avatar_layout.addWidget(avatar_icon)
@@ -302,7 +322,7 @@ class KioskResidentSearchPage(QWidget):
         info_wrap.addWidget(self.location_label)
         info_wrap.addWidget(self.visit_label)
 
-        self.start_button = QPushButton("안내 시작")
+        self.start_button = QPushButton("⌁  안내 시작")
         self.start_button.setObjectName("kioskResidentActionButton")
         self.start_button.setMinimumHeight(72)
         self.start_button.clicked.connect(self.start_guidance)
@@ -311,7 +331,6 @@ class KioskResidentSearchPage(QWidget):
         result_layout.addLayout(info_wrap, 1)
         result_layout.addWidget(self.start_button)
 
-        page_shell.addWidget(header)
         page_shell.addWidget(title)
         page_shell.addWidget(subtitle)
         page_shell.addWidget(search_card)
@@ -324,12 +343,12 @@ class KioskResidentSearchPage(QWidget):
         action_row.setContentsMargins(56, 20, 56, 20)
         action_row.setSpacing(24)
 
-        self.back_button = QPushButton("이전")
+        self.back_button = QPushButton("←  이전")
         self.back_button.setObjectName("kioskSearchFooterButton")
         self.back_button.setMinimumHeight(72)
         self.back_button.clicked.connect(self._go_back)
 
-        self.home_button = QPushButton("처음으로")
+        self.home_button = QPushButton("⌂  처음으로")
         self.home_button.setObjectName("kioskSearchFooterButton")
         self.home_button.setMinimumHeight(72)
         self.home_button.clicked.connect(self._go_home)
@@ -338,6 +357,7 @@ class KioskResidentSearchPage(QWidget):
         action_row.addStretch()
         action_row.addWidget(self.home_button)
 
+        root.addWidget(header)
         root.addLayout(page_shell, 1)
         root.addWidget(bottom_bar)
 
