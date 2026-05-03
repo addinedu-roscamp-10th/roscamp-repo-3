@@ -565,7 +565,7 @@ class CaregiverHomePage(QWidget):
         self.refresh_button.clicked.connect(self.load_dashboard_data)
 
         time_box = QFrame()
-        time_box.setObjectName("card")
+        time_box.setObjectName("homeTimeCard")
         tb = QVBoxLayout(time_box)
         tb.setContentsMargins(18, 16, 18, 16)
         tb.setSpacing(8)
@@ -583,6 +583,7 @@ class CaregiverHomePage(QWidget):
 
         self.status_banner = QFrame()
         self.status_banner.setObjectName("dashboardStatusBanner")
+        self.status_banner.setMaximumHeight(124)
         self.status_banner.setHidden(True)
         banner_layout = QVBoxLayout(self.status_banner)
         banner_layout.setContentsMargins(12, 12, 12, 12)
@@ -606,15 +607,26 @@ class CaregiverHomePage(QWidget):
         tb.addWidget(self.date_label, alignment=Qt.AlignmentFlag.AlignRight)
         tb.addWidget(self.last_update_label, alignment=Qt.AlignmentFlag.AlignRight)
         tb.addWidget(self.load_status_label)
-        tb.addWidget(self.status_banner)
         tb.addWidget(self.refresh_button)
+
+        hero_panel = QFrame()
+        hero_panel.setObjectName("homeHeroPanel")
+        hero_layout = QVBoxLayout(hero_panel)
+        hero_layout.setContentsMargins(20, 18, 20, 18)
+        hero_layout.setSpacing(10)
+
+        hero_eyebrow = QLabel("실시간 운영 요약")
+        hero_eyebrow.setObjectName("homeHeroEyebrow")
 
         self.header = PageHeader(
             "운영 대시보드",
             "현재 로봇 상태와 작업 흐름을 한눈에 확인합니다.",
             show_status=True,
         )
-        top.addWidget(self.header, 1)
+        hero_layout.addWidget(hero_eyebrow)
+        hero_layout.addWidget(self.header)
+
+        top.addWidget(hero_panel, 1)
         top.addWidget(time_box)
 
         self.timer = QTimer(self)
@@ -712,6 +724,7 @@ class CaregiverHomePage(QWidget):
         tw.addWidget(self.timeline_table)
 
         root.addLayout(top)
+        root.addWidget(self.status_banner)
         root.addLayout(summary_row)
         root.addWidget(robot_board_wrap)
         root.addWidget(flow_wrap)

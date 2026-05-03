@@ -60,6 +60,8 @@ def test_main_qss_defines_task_request_page_components():
 def test_main_qss_defines_home_dashboard_components():
     qss = _stylesheet()
 
+    assert "QFrame#homeHeroPanel" in qss
+    assert "QFrame#homeTimeCard" in qss
     assert "QFrame#homeKpiCard" in qss
     assert "QFrame#homeKpiAccent" in qss
     assert "QFrame#homeRobotCard" in qss

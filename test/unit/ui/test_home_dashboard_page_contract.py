@@ -40,6 +40,13 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         ]
 
         assert page.findChild(QFrame, "systemStatusStrip") is not None
+        hero_panel = page.findChild(QFrame, "homeHeroPanel")
+        time_card = page.findChild(QFrame, "homeTimeCard")
+        assert hero_panel is not None
+        assert time_card is not None
+        assert "실시간 운영 요약" in labels
+        assert page.status_banner.parentWidget() is page
+        assert page.status_banner.maximumHeight() <= 128
         assert "운영 대시보드" in labels
         assert "새로고침" in [button.text() for button in refresh_buttons]
         assert "사용가능 로봇" in labels
@@ -388,6 +395,8 @@ def test_home_dashboard_cancel_failure_uses_structured_operator_banner():
         labels = _label_texts(page)
         assert "작업 취소 실패" in labels
         assert "ROS 브릿지에 연결할 수 없습니다." in labels
+        assert page.status_banner.parentWidget() is page
+        assert page.status_banner.parentWidget().objectName() != "homeTimeCard"
         assert any(
             text.startswith("상세: ROS service command failed")
             for text in labels

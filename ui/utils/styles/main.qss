@@ -281,10 +281,25 @@ QFrame#noticeCard {
 }
 
 QFrame#homeKpiCard,
-QFrame#homeRobotCard {
+QFrame#homeRobotCard,
+QFrame#homeTimeCard {
     background: #FFFFFF;
     border: 1px solid #D8E0E8;
     border-radius: 18px;
+}
+
+QFrame#homeHeroPanel {
+    background: #F0F9F7;
+    border: 1px solid #B9D8D3;
+    border-left: 6px solid #005C55;
+    border-radius: 22px;
+}
+
+QLabel#homeHeroEyebrow {
+    color: #005C55;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.5px;
 }
 
 QFrame#homeKpiCard[tone="teal"] {
