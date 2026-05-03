@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 from server.ropi_main_service.persistence.connection import get_connection
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 from runtime_db_seeders import (
+    active_guide_tracking_task_seed,
     active_patrol_task_seed,
     fall_evidence_seed,
     safe_fetch_one,
@@ -19,8 +20,10 @@ from runtime_servers import (
     SERVER_HOST,
     ai_evidence_server,
     ai_fall_stream_server,
+    ai_guide_tracking_stream_server,
     control_server,
     control_server_with_ai_fall_stream,
+    control_server_with_ai_guide_tracking,
     ros_service_stub,
 )
 from runtime_waiting import wait_for_condition, wait_for_qt
@@ -158,6 +161,68 @@ def test_control_server_subscribes_ai_fall_stream_and_starts_fall_alert(
     assert json.loads(inference_row["result_json"])["pinky_id"] == "pinky3"
 
 
+def test_control_server_bridges_ai_guide_tracking_stream_to_ros_uds(
+    control_server_with_ai_guide_tracking,
+    ai_guide_tracking_stream_server,
+    active_guide_tracking_task_seed,
+    ros_service_stub,
+):
+    assert control_server_with_ai_guide_tracking["port"] > 0
+    assert ai_guide_tracking_stream_server["subscribed"].wait(timeout=10)
+
+    with ai_guide_tracking_stream_server["request_lock"]:
+        requests = list(ai_guide_tracking_stream_server["requests"])
+
+    assert requests
+    assert requests[0]["consumer_id"] == "control_service_ai_guide"
+    assert "pinky_id" not in requests[0]
+    assert requests[0]["last_seq"] == 0
+
+    with ros_service_stub["request_lock"]:
+        command_count_before = len(ros_service_stub["requests"])
+
+    ai_guide_tracking_stream_server["push_requested"].set()
+    published = wait_for_condition(
+        lambda: _find_guide_tracking_publish_request(
+            ros_service_stub,
+            after_index=command_count_before,
+        )
+        is not None,
+        timeout=10.0,
+    )
+    if not published:
+        process = control_server_with_ai_guide_tracking["process"]
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=5)
+        pytest.fail(
+            "Control Service did not bridge the IF-GUI-005 push to ROS UDS.\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}"
+        )
+
+    request = _find_guide_tracking_publish_request(
+        ros_service_stub,
+        after_index=command_count_before,
+    )
+    assert request is not None
+    payload = request["payload"]
+
+    assert request["command"] == "publish_guide_tracking_update"
+    assert payload == {
+        "pinky_id": "pinky1",
+        "task_id": str(active_guide_tracking_task_seed["task_id"]),
+        "target_track_id": "track_17",
+        "tracking_status": "TRACKING",
+        "tracking_result_seq": 881,
+        "frame_ts_sec": 1776602110,
+        "frame_ts_nanosec": 0,
+        "bbox_valid": True,
+        "bbox_xyxy": [120, 80, 300, 420],
+        "image_width_px": 640,
+        "image_height_px": 480,
+    }
+
+
 def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(
     patched_ui_endpoint,
     fall_evidence_seed,
@@ -196,6 +261,16 @@ def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(
             ),
         }
     ]
+
+
+def _find_guide_tracking_publish_request(ros_service_stub, *, after_index):
+    with ros_service_stub["request_lock"]:
+        requests = list(ros_service_stub["requests"])[after_index:]
+
+    for request in requests:
+        if request.get("command") == "publish_guide_tracking_update":
+            return request
+    return None
 
 
 def test_ui_client_cancel_patrol_task_hits_real_server_and_db(

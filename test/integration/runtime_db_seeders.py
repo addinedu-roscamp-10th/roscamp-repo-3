@@ -151,3 +151,86 @@ def active_patrol_task_seed():
                     cursor.execute("DELETE FROM task WHERE task_id = %s", (task_id,))
             finally:
                 cleanup_conn.close()
+
+
+@pytest.fixture
+def active_guide_tracking_task_seed():
+    robot_row = safe_fetch_one("SELECT robot_id FROM robot WHERE robot_id = 'pinky1'")
+    assert robot_row is not None, "The remote DB has no pinky1 robot row."
+
+    visitor_row = safe_fetch_one(
+        """
+        SELECT
+            v.visitor_id,
+            v.member_id,
+            gp.goal_pose_id
+        FROM visitor v
+        JOIN member m
+          ON m.member_id = v.member_id
+        JOIN goal_pose gp
+          ON gp.zone_id = CONCAT('room_', m.room_no)
+         AND gp.is_enabled = TRUE
+         AND gp.purpose IN ('GUIDE_DESTINATION', 'DESTINATION')
+        ORDER BY v.visitor_id
+        LIMIT 1
+        """
+    )
+    assert visitor_row is not None, "The runtime DB has no visitor with a guide destination."
+
+    request_id = f"runtime-gui-005-{uuid.uuid4().hex}"
+    task_id = None
+    conn = get_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO task
+                (task_type, request_id, idempotency_key, requester_type, requester_id,
+                 priority, task_status, phase, assigned_robot_id, latest_reason_code,
+                 created_at, updated_at, started_at)
+                VALUES
+                ('GUIDE', %s, %s, 'VISITOR', %s,
+                 'NORMAL', 'RUNNING', 'GUIDANCE_RUNNING', 'pinky1', 'GUIDE_COMMAND_ACCEPTED',
+                 NOW(3), NOW(3), NOW(3))
+                """,
+                (request_id, request_id, str(visitor_row["visitor_id"])),
+            )
+            task_id = cursor.lastrowid
+            cursor.execute(
+                """
+                INSERT INTO guide_task_detail
+                (task_id, visitor_id, member_id, destination_goal_pose_id,
+                 guide_phase, target_track_id, notes)
+                VALUES
+                (%s, %s, %s, %s,
+                 'GUIDANCE_RUNNING', 'track_17', 'runtime IF-GUI-005 integration test')
+                """,
+                (
+                    task_id,
+                    visitor_row["visitor_id"],
+                    visitor_row["member_id"],
+                    visitor_row["goal_pose_id"],
+                ),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    try:
+        yield {
+            "task_id": task_id,
+            "pinky_id": "pinky1",
+            "target_track_id": "track_17",
+        }
+    finally:
+        if task_id is not None:
+            cleanup_conn = get_connection()
+            try:
+                with cleanup_conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM task WHERE task_id = %s", (task_id,))
+            finally:
+                cleanup_conn.close()
