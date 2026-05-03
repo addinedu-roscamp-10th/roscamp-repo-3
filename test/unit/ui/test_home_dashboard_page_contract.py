@@ -173,7 +173,7 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
         assert "위치" in labels
         assert "좌표 x=1.2, y=0.8" in labels
         assert "마지막 수신" in labels
-        assert "2026-05-03 12:00:00" in labels
+        assert "2026.05.03 12:00" in labels
         assert any(
             label.objectName() == "homeRobotFieldKey" and label.text() == "위치"
             for label in page.findChildren(QLabel)

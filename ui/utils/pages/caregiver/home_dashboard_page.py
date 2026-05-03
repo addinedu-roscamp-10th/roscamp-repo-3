@@ -25,7 +25,11 @@ from ui.utils.network.service_clients import (
     TaskMonitorRemoteService,
 )
 from ui.utils.session.session_manager import SessionManager
-from ui.utils.widgets.admin_common import StatusChip, display_text as _display
+from ui.utils.widgets.admin_common import (
+    StatusChip,
+    display_text as _display,
+    operator_datetime_text as _datetime,
+)
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
 
@@ -113,21 +117,6 @@ def _task_id_value(task: dict):
     if text.isdigit():
         return int(text)
     return text or None
-
-
-def _operator_datetime(value):
-    text = _display(value)
-    if text == "-" or "T" not in text:
-        return text
-
-    date_text, time_text = text.split("T", 1)
-    time_text = time_text.rstrip("Z")
-    for marker in ("+", "-"):
-        if marker in time_text:
-            time_text = time_text.split(marker, 1)[0]
-            break
-    time_text = time_text.split(".", 1)[0]
-    return f"{date_text} {time_text}"
 
 
 def _capabilities_text(capabilities) -> str:
@@ -335,7 +324,7 @@ class RobotBoardCard(QFrame):
         current_task = _display(
             robot.get("current_task_id") or robot.get("current_task")
         )
-        last_seen = _operator_datetime(robot.get("last_seen_at"))
+        last_seen = _datetime(robot.get("last_seen_at"))
         chip_type = _display(robot.get("chip_type"), "blue")
 
         root = QVBoxLayout(self)
@@ -991,7 +980,7 @@ class CaregiverHomePage(QWidget):
     def _timeline_values(row):
         if isinstance(row, dict):
             return [
-                _display(row.get("occurred_at") or row.get("timeline_time")),
+                _datetime(row.get("occurred_at") or row.get("timeline_time")),
                 _display(row.get("task_id") or row.get("work_id")),
                 _display(row.get("event_type") or row.get("event_name")),
                 _display(row.get("message") or row.get("detail")),

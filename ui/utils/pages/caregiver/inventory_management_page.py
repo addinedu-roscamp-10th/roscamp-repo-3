@@ -22,6 +22,7 @@ from ui.utils.widgets.admin_common import (
     SummaryCard,
     display_text as _display,
     int_value as _int_value,
+    operator_datetime_text as _datetime,
 )
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
@@ -33,7 +34,7 @@ SUMMARY_ITEMS = (
     ("empty_item_count", "품절", "종"),
 )
 
-TABLE_HEADERS = ["item_id", "item_type", "item_name", "quantity", "updated_at"]
+TABLE_HEADERS = ["물품 ID", "분류", "물품명", "현재 수량", "마지막 수정"]
 SUCCESS_RESULT_CODES = {"OK", "UPDATED", "ACCEPTED"}
 
 
@@ -106,7 +107,7 @@ class InventoryManagementPage(QWidget):
         header_row.addWidget(
             PageHeader(
                 "재고 관리",
-                "운반 가능한 보급품 수량을 조회하고 item_id 기준으로 조정합니다.",
+                "운반 가능한 보급품 수량을 조회하고 물품 ID 기준으로 조정합니다.",
             ),
             1,
         )
@@ -274,7 +275,7 @@ class InventoryManagementPage(QWidget):
                 _display(item.get("item_type")),
                 _display(item.get("item_name")),
                 str(_int_value(item.get("quantity"))),
-                _display(item.get("updated_at")),
+                _datetime(item.get("updated_at")),
             ]
             for column_index, value in enumerate(values):
                 self.table.setItem(row_index, column_index, QTableWidgetItem(value))
@@ -332,10 +333,10 @@ class InventoryManagementPage(QWidget):
     def _render_detail(self, item):
         detail_rows = [
             ("선택 물품", _display(item.get("item_name"))),
-            ("item_id", _display(item.get("item_id"))),
-            ("item_type", _display(item.get("item_type"))),
+            ("물품 ID", _display(item.get("item_id"))),
+            ("분류", _display(item.get("item_type"))),
             ("현재 수량", f"{_int_value(item.get('quantity'))}개"),
-            ("updated_at", _display(item.get("updated_at"))),
+            ("마지막 수정", _datetime(item.get("updated_at"))),
         ]
         self.detail_list.set_rows(detail_rows)
 

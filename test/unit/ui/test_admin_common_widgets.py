@@ -28,6 +28,7 @@ def test_admin_common_display_helpers_and_widgets():
         battery_text,
         display_text,
         int_value,
+        operator_datetime_text,
     )
 
     assert display_text(None) == "-"
@@ -37,6 +38,10 @@ def test_admin_common_display_helpers_and_widgets():
     assert int_value("bad") == 0
     assert battery_text(87.5) == "88%"
     assert battery_text(None) == "-"
+    assert operator_datetime_text("2026-05-03T12:00:00") == "2026.05.03 12:00"
+    assert operator_datetime_text("2026-05-03T12:00:00.123Z") == "2026.05.03 12:00"
+    assert operator_datetime_text("2026-05-03") == "2026.05.03"
+    assert operator_datetime_text("not a date") == "not a date"
 
     summary = SummaryCard("전체 로봇", initial_value="0대")
     summary.set_value(3, "대")

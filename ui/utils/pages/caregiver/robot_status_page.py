@@ -21,6 +21,7 @@ from ui.utils.widgets.admin_common import (
     SummaryCard,
     battery_text as _battery_text,
     display_text as _display,
+    operator_datetime_text as _datetime,
 )
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
@@ -104,7 +105,7 @@ class RobotStatusCard(QFrame):
             ("현재 작업", _display(robot.get("current_task_id"))),
             ("단계", _display(robot.get("current_phase"))),
             ("배터리", _battery_text(robot.get("battery_percent"))),
-            ("마지막 수신", _display(robot.get("last_seen_at"))),
+            ("마지막 수신", _datetime(robot.get("last_seen_at"))),
         ]
 
         layout.addLayout(title_row)
@@ -317,7 +318,7 @@ class RobotStatusPage(QWidget):
                 _display(robot.get("runtime_state")),
                 _battery_text(robot.get("battery_percent")),
                 _display(robot.get("current_task_id")),
-                _display(robot.get("last_seen_at")),
+                _datetime(robot.get("last_seen_at")),
             ]
             for column_index, value in enumerate(values):
                 self.table.setItem(row_index, column_index, QTableWidgetItem(value))
@@ -359,7 +360,7 @@ class RobotStatusPage(QWidget):
             ("현재 단계", _display(robot.get("current_phase"))),
             ("현재 위치", _display(robot.get("current_location"))),
             ("배터리", _battery_text(robot.get("battery_percent"))),
-            ("마지막 수신", _display(robot.get("last_seen_at"))),
+            ("마지막 수신", _datetime(robot.get("last_seen_at"))),
             ("Fault", _display(robot.get("fault_code"))),
         ]
         self.detail_list.set_rows(detail_rows)

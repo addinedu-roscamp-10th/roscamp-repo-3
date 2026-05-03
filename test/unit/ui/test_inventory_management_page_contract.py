@@ -91,6 +91,10 @@ def test_inventory_management_page_matches_phase1_layout_contract():
         assert "부족 재고 경고" in labels
         assert page.findChild(QFrame, "pageTimeCard") is not None
         assert "새로고침" in [button.text() for button in refresh_buttons]
+        assert [
+            page.table.horizontalHeaderItem(index).text()
+            for index in range(page.table.columnCount())
+        ] == ["물품 ID", "분류", "물품명", "현재 수량", "마지막 수정"]
     finally:
         page.close()
 
@@ -117,6 +121,8 @@ def test_inventory_management_page_applies_bundle_to_summary_table_detail_and_wa
         assert page.table.item(0, 1).text() == "생활용품"
         assert page.table.item(0, 2).text() == "기저귀"
         assert page.table.item(0, 3).text() == "0"
+        assert page.table.item(0, 4).text() == "2026.05.03 10:00"
+        assert "T10:00:00" not in page.table.item(0, 4).text()
         assert page.item_combo.itemData(0) == "1"
 
         page.table.selectRow(1)
@@ -124,6 +130,13 @@ def test_inventory_management_page_applies_bundle_to_summary_table_detail_and_wa
 
         labels = _label_texts(page)
         assert "선택 물품" in labels
+        assert "물품 ID" in labels
+        assert "분류" in labels
+        assert "마지막 수정" in labels
+        assert "2026.05.03 11:00" in labels
+        assert "item_id" not in labels
+        assert "item_type" not in labels
+        assert "updated_at" not in labels
         assert "물티슈" in labels
         assert "현재 수량" in labels
         assert "8개" in labels

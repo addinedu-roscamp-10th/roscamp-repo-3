@@ -227,6 +227,10 @@ def test_patient_info_page_handles_numeric_payload_without_crashing():
                     {
                         "event_at": datetime(2026, 5, 3, 10, 0),
                         "description": "아침 식사 완료",
+                    },
+                    {
+                        "event_at": "2026-05-03T11:15:00",
+                        "description": "산책 완료",
                     }
                 ],
                 "prescription_paths": [Path("/tmp/prescription.png")],
@@ -236,7 +240,9 @@ def test_patient_info_page_handles_numeric_payload_without_crashing():
         assert page.member_value.text() == "301"
         assert page.dislike_value.text() == "소음"
         assert page.preference_value.text() == "따뜻한 차"
-        assert "2026-05-03 10:00" in page.result_box.toPlainText()
+        assert "2026.05.03 10:00" in page.result_box.toPlainText()
+        assert "2026.05.03 11:15" in page.result_box.toPlainText()
+        assert "T11:15:00" not in page.result_box.toPlainText()
         assert "/tmp/prescription.png" in page.prescription_box.toPlainText()
     finally:
         page.shutdown()

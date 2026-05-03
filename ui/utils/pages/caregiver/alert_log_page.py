@@ -21,6 +21,7 @@ from ui.utils.widgets.admin_common import (
     KeyValueList,
     SummaryCard,
     display_text as _display,
+    operator_datetime_text as _datetime,
 )
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
@@ -33,14 +34,14 @@ SUMMARY_ITEMS = (
 )
 
 TABLE_HEADERS = [
-    "event_id",
-    "occurred_at",
-    "severity",
-    "source_component",
-    "task_id",
-    "robot_id",
-    "event_type",
-    "message",
+    "이벤트 ID",
+    "발생 시각",
+    "심각도",
+    "출처",
+    "작업 ID",
+    "로봇 ID",
+    "이벤트 종류",
+    "메시지",
 ]
 
 
@@ -143,10 +144,10 @@ class AlertLogPage(QWidget):
         filters = [
             ("기간", self.period_combo),
             ("심각도", self.severity_combo),
-            ("source_component", self.source_input),
-            ("task_id", self.task_id_input),
-            ("robot_id", self.robot_id_input),
-            ("event_type", self.event_type_input),
+            ("출처", self.source_input),
+            ("작업 ID", self.task_id_input),
+            ("로봇 ID", self.robot_id_input),
+            ("이벤트 종류", self.event_type_input),
         ]
 
         for index, (label_text, widget) in enumerate(filters):
@@ -202,7 +203,7 @@ class AlertLogPage(QWidget):
         related_layout.setSpacing(10)
         related_title = QLabel("관련 작업/로봇")
         related_title.setObjectName("sectionTitle")
-        self.related_list = KeyValueList("선택된 이벤트의 task_id와 robot_id를 표시합니다.")
+        self.related_list = KeyValueList("선택된 이벤트의 작업 ID와 로봇 ID를 표시합니다.")
         self.related_task_button = QPushButton("작업 모니터에서 보기")
         self.related_task_button.setObjectName("secondaryButton")
         self.related_task_button.setEnabled(False)
@@ -292,7 +293,7 @@ class AlertLogPage(QWidget):
         for row_index, event in enumerate(events):
             values = [
                 _display(event.get("event_id")),
-                _display(event.get("occurred_at")),
+                _datetime(event.get("occurred_at")),
                 _display(event.get("severity")),
                 _display(event.get("source_component")),
                 _display(event.get("task_id")),
@@ -314,21 +315,21 @@ class AlertLogPage(QWidget):
 
     def _render_detail(self, event):
         detail_rows = [
-            ("event_id", _display(event.get("event_id"))),
-            ("occurred_at", _display(event.get("occurred_at"))),
-            ("severity", _display(event.get("severity"))),
-            ("source_component", _display(event.get("source_component"))),
-            ("event_type", _display(event.get("event_type"))),
-            ("result_code", _display(event.get("result_code"))),
-            ("reason_code", _display(event.get("reason_code"))),
-            ("message", _display(event.get("message"), "")),
-            ("payload", _display(event.get("payload"))),
+            ("이벤트 ID", _display(event.get("event_id"))),
+            ("발생 시각", _datetime(event.get("occurred_at"))),
+            ("심각도", _display(event.get("severity"))),
+            ("출처", _display(event.get("source_component"))),
+            ("이벤트 종류", _display(event.get("event_type"))),
+            ("결과 코드", _display(event.get("result_code"))),
+            ("사유 코드", _display(event.get("reason_code"))),
+            ("메시지", _display(event.get("message"), "")),
+            ("상세 payload", _display(event.get("payload"))),
         ]
         self.detail_list.set_rows(detail_rows)
         self.related_list.set_rows(
             [
-                ("task_id", _display(event.get("task_id"))),
-                ("robot_id", _display(event.get("robot_id"))),
+                ("작업 ID", _display(event.get("task_id"))),
+                ("로봇 ID", _display(event.get("robot_id"))),
             ]
         )
         self._sync_related_actions(event)

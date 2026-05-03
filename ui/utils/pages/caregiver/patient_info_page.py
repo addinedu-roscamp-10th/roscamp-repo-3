@@ -6,7 +6,10 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import PatientRemoteService
-from ui.utils.widgets.admin_common import display_text as _display
+from ui.utils.widgets.admin_common import (
+    display_text as _display,
+    operator_datetime_text as _datetime,
+)
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 from ui.utils.widgets.common import InlineStatusMixin
 
@@ -342,7 +345,7 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
             f"어르신명: {_display(payload.get('name'))}",
             f"호실: {_display(payload.get('room_no'))}",
             f"어르신 ID: {_display(payload.get('member_id'))}",
-            f"입소일: {_display(payload.get('admission_date'))}",
+            f"입소일: {_datetime(payload.get('admission_date'))}",
             f"선호 메모: {_display(payload.get('comment'))}",
             "",
             "[최근 이벤트]",
@@ -354,11 +357,7 @@ class PatientInfoPage(QWidget, InlineStatusMixin):
             return "\n".join(lines)
 
         for row in events:
-            event_at = row.get("event_at")
-            if hasattr(event_at, "strftime"):
-                event_time = event_at.strftime("%Y-%m-%d %H:%M")
-            else:
-                event_time = str(event_at or "-")
+            event_time = _datetime(row.get("event_at"))
             description = _display(row.get("description"))
             lines.append(f"{event_time} | {description}")
 

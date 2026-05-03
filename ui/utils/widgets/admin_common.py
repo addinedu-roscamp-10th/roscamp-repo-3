@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
@@ -33,6 +35,35 @@ def battery_text(value) -> str:
         return f"{float(value):.0f}%"
     except (TypeError, ValueError):
         return str(value)
+
+
+def operator_datetime_text(value, default="-") -> str:
+    if value is None:
+        return default
+
+    if isinstance(value, datetime):
+        return value.strftime("%Y.%m.%d %H:%M")
+
+    if isinstance(value, date):
+        return value.strftime("%Y.%m.%d")
+
+    text = display_text(value, default)
+    if text == default:
+        return default
+
+    normalized = text.rstrip("Z")
+    parse_value = f"{normalized}+00:00" if text.endswith("Z") else text
+
+    if "T" not in text and " " not in text:
+        try:
+            return date.fromisoformat(text).strftime("%Y.%m.%d")
+        except ValueError:
+            return text
+
+    try:
+        return datetime.fromisoformat(parse_value).strftime("%Y.%m.%d %H:%M")
+    except ValueError:
+        return text
 
 
 class StatusChip(QLabel):
@@ -169,4 +200,5 @@ __all__ = [
     "display_text",
     "int_value",
     "make_key_value_row",
+    "operator_datetime_text",
 ]

@@ -132,6 +132,8 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert page.table.item(0, 2).text() == "MOBILE"
         assert page.table.item(0, 3).text() == "GUIDE, DELIVERY, PATROL"
         assert page.table.item(0, 4).text() == "ONLINE"
+        assert page.table.item(0, 8).text() == "2026.05.03 12:00"
+        assert "T12:00:00" not in page.table.item(0, 8).text()
 
         page.table.selectRow(1)
         page._handle_table_selection()
@@ -141,6 +143,8 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert "jetcobot1" in labels
         assert "상태" in labels
         assert "DEGRADED / ERROR" in labels
+        assert "2026.05.03 11:58" in labels
+        assert "2026-05-03T11:58:00" not in labels
         assert not any("선택 로봇: jetcobot1" in text for text in labels)
     finally:
         page.close()

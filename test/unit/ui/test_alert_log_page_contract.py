@@ -80,14 +80,27 @@ def test_alert_log_page_matches_phase1_layout_contract():
         assert "알림/로그" in labels
         assert "기간" in labels
         assert "심각도" in labels
-        assert "source_component" in labels
-        assert "task_id" in labels
-        assert "robot_id" in labels
-        assert "event_type" in labels
+        assert "출처" in labels
+        assert "작업 ID" in labels
+        assert "로봇 ID" in labels
+        assert "이벤트 종류" in labels
         assert "이벤트 상세" in labels
         assert "관련 작업/로봇" in labels
         assert page.findChild(QFrame, "pageTimeCard") is not None
         assert "새로고침" in [button.text() for button in refresh_buttons]
+        assert [
+            page.table.horizontalHeaderItem(index).text()
+            for index in range(page.table.columnCount())
+        ] == [
+            "이벤트 ID",
+            "발생 시각",
+            "심각도",
+            "출처",
+            "작업 ID",
+            "로봇 ID",
+            "이벤트 종류",
+            "메시지",
+        ]
     finally:
         page.close()
 
@@ -107,22 +120,30 @@ def test_alert_log_page_applies_server_bundle_to_summary_table_and_detail():
         assert "1건" in labels
         assert page.table.rowCount() == 2
         assert page.table.item(0, 0).text() == "11"
+        assert page.table.item(0, 1).text() == "2026.05.03 12:00"
         assert page.table.item(0, 2).text() == "ERROR"
         assert page.table.item(0, 5).text() == "pinky2"
+        assert "T12:00:00" not in page.table.item(0, 1).text()
 
         page.table.selectRow(0)
         page._handle_table_selection()
 
         labels = _label_texts(page)
-        assert "event_id" in labels
+        assert "이벤트 ID" in labels
         assert "11" in labels
-        assert "reason_code" in labels
+        assert "발생 시각" in labels
+        assert "2026.05.03 12:00" in labels
+        assert "사유 코드" in labels
         assert "ROS_ACTION_FAILED" in labels
-        assert "task_id" in labels
+        assert "작업 ID" in labels
         assert "1001" in labels
-        assert "robot_id" in labels
+        assert "로봇 ID" in labels
         assert "pinky2" in labels
         assert page.findChildren(QFrame, "keyValueRow")
+        assert "event_id" not in labels
+        assert "occurred_at" not in labels
+        assert "task_id" not in labels
+        assert "robot_id" not in labels
         assert not any("event_id: 11" in text for text in labels)
         assert not any("task_id=1001" in text for text in labels)
         assert page.related_task_button.property("task_id") == 1001
