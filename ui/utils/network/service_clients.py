@@ -1,5 +1,6 @@
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_CREATE_TASK,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
@@ -368,6 +369,19 @@ class TaskMonitorRemoteService:
 
 
 class VisitGuideRemoteService:
+    def create_guide_task(self, *, request_id, visitor_id, idempotency_key):
+        payload = {
+            "request_id": request_id,
+            "visitor_id": visitor_id,
+            "idempotency_key": idempotency_key,
+        }
+        response = send_request(MESSAGE_CODE_GUIDE_CREATE_TASK, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+
+        return response.get("payload")
+
     def search_patient(self, keyword: str):
         return _rpc("visit_guide", "search_patient", keyword=keyword)
 

@@ -438,6 +438,68 @@ def test_kiosk_guide_confirmation_ports_wireframe_layout_without_overlap():
         page.close()
 
 
+def test_kiosk_guide_confirmation_creates_db_backed_guide_task_before_command():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskGuideConfirmationPage
+
+    class FakeGuideService:
+        def __init__(self):
+            self.created = []
+            self.commands = []
+
+        def create_guide_task(self, **kwargs):
+            self.created.append(kwargs)
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "안내 요청이 접수되었습니다.",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "assigned_robot_id": "pinky1",
+                "resident_name": "김*수",
+                "room_no": "301",
+                "destination_id": "delivery_room_301",
+            }
+
+        def send_guide_command(self, **kwargs):
+            self.commands.append(kwargs)
+            return True, "안내 제어 명령이 수락되었습니다.", {"accepted": True}
+
+    progress_calls = []
+    page = KioskGuideConfirmationPage(
+        go_progress_page=lambda patient, session: progress_calls.append((patient, session))
+    )
+    page.service = FakeGuideService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            }
+        )
+        page.confirm_guidance()
+
+        assert page.service.created[0]["visitor_id"] == 42
+        assert page.service.created[0]["request_id"].startswith("kiosk_guide_")
+        assert page.service.created[0]["idempotency_key"].startswith("idem_kiosk_guide_")
+        assert page.service.commands == [
+            {
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "command_type": "WAIT_TARGET_TRACKING",
+            }
+        ]
+        assert progress_calls[0][1]["task_id"] == 3001
+    finally:
+        page.close()
+
+
 def test_kiosk_staff_call_uses_in_app_modal_and_lobby_context():
     _app()
 

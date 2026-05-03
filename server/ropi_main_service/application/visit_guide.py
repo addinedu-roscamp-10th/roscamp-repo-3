@@ -1,5 +1,8 @@
 from datetime import datetime
 
+from server.ropi_main_service.persistence.repositories.guide_task_repository import (
+    GuideTaskRepository,
+)
 from server.ropi_main_service.persistence.repositories.visit_guide_repository import VisitGuideRepository
 from server.ropi_main_service.application.guide_command import GuideCommandService
 from server.ropi_main_service.application.guide_runtime import (
@@ -12,11 +15,15 @@ class VisitGuideService:
     def __init__(
         self,
         repository=None,
+        guide_task_repository=None,
         guide_command_service=None,
         guide_runtime_service=None,
         default_pinky_id=DEFAULT_GUIDE_PINKY_ID,
     ):
         self.repository = repository or VisitGuideRepository()
+        self.guide_task_repository = guide_task_repository or GuideTaskRepository(
+            default_pinky_id=default_pinky_id
+        )
         self.guide_command_service = guide_command_service or GuideCommandService()
         self.guide_runtime_service = guide_runtime_service or GuideRuntimeService(
             default_pinky_id=default_pinky_id
@@ -65,11 +72,60 @@ class VisitGuideService:
             member_id=member_id,
         )
 
+    def create_guide_task(
+        self,
+        *,
+        request_id,
+        visitor_id,
+        idempotency_key,
+        priority="NORMAL",
+    ):
+        invalid_response = self._validate_create_guide_task_request(
+            request_id=request_id,
+            visitor_id=visitor_id,
+            idempotency_key=idempotency_key,
+        )
+        if invalid_response is not None:
+            return invalid_response
+
+        return self.guide_task_repository.create_guide_task(
+            request_id=str(request_id).strip(),
+            visitor_id=self._normalize_positive_id(visitor_id),
+            priority=str(priority or "NORMAL").strip().upper() or "NORMAL",
+            idempotency_key=str(idempotency_key).strip(),
+        )
+
+    async def async_create_guide_task(
+        self,
+        *,
+        request_id,
+        visitor_id,
+        idempotency_key,
+        priority="NORMAL",
+    ):
+        invalid_response = self._validate_create_guide_task_request(
+            request_id=request_id,
+            visitor_id=visitor_id,
+            idempotency_key=idempotency_key,
+        )
+        if invalid_response is not None:
+            return invalid_response
+
+        return await self.guide_task_repository.async_create_guide_task(
+            request_id=str(request_id).strip(),
+            visitor_id=self._normalize_positive_id(visitor_id),
+            priority=str(priority or "NORMAL").strip().upper() or "NORMAL",
+            idempotency_key=str(idempotency_key).strip(),
+        )
+
     def begin_guide_session(
         self,
         *,
         patient: dict,
         member_id=None,
+        visitor_id=None,
+        request_id=None,
+        idempotency_key=None,
         pinky_id=None,
         command_type="WAIT_TARGET_TRACKING",
         target_track_id="",
@@ -79,30 +135,37 @@ class VisitGuideService:
         if not patient:
             return False, "먼저 어르신을 검색하세요.", None
 
-        guide_task_id = self._build_guide_task_id(patient, pinky_id=pinky_id)
-        registration_ok, registration_message = self.start_robot_guide(
-            patient,
+        create_response = self._create_task_or_member_event(
+            patient=patient,
             member_id=member_id,
+            visitor_id=visitor_id,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
         )
-        if not registration_ok:
-            return False, registration_message, None
+        if not create_response["ok"]:
+            return False, create_response["message"], None
+
+        guide_task_id = create_response["task_id"]
+        registration_message = create_response["message"]
+        target_pinky_id = self._resolve_session_pinky_id(pinky_id, create_response)
 
         command_ok, command_message, command_response = self.send_guide_command(
             task_id=guide_task_id,
             command_type=command_type,
-            pinky_id=pinky_id,
+            pinky_id=target_pinky_id,
             target_track_id=target_track_id,
             wait_timeout_sec=wait_timeout_sec,
             finish_reason=finish_reason,
         )
         payload = {
             "task_id": guide_task_id,
-            "pinky_id": str(pinky_id or self.default_pinky_id).strip() or self.default_pinky_id,
+            "pinky_id": target_pinky_id,
             "patient": self._build_patient_summary(patient),
             "command_type": command_type,
             "command_response": command_response,
-            "request_registered": registration_ok,
+            "request_registered": True,
         }
+        payload.update(create_response["payload"])
         if command_ok:
             return True, command_message or registration_message, payload
         return False, command_message or registration_message, payload
@@ -112,6 +175,9 @@ class VisitGuideService:
         *,
         patient: dict,
         member_id=None,
+        visitor_id=None,
+        request_id=None,
+        idempotency_key=None,
         pinky_id=None,
         command_type="WAIT_TARGET_TRACKING",
         target_track_id="",
@@ -121,30 +187,37 @@ class VisitGuideService:
         if not patient:
             return False, "먼저 어르신을 검색하세요.", None
 
-        guide_task_id = self._build_guide_task_id(patient, pinky_id=pinky_id)
-        registration_ok, registration_message = await self.async_start_robot_guide(
-            patient,
+        create_response = await self._async_create_task_or_member_event(
+            patient=patient,
             member_id=member_id,
+            visitor_id=visitor_id,
+            request_id=request_id,
+            idempotency_key=idempotency_key,
         )
-        if not registration_ok:
-            return False, registration_message, None
+        if not create_response["ok"]:
+            return False, create_response["message"], None
+
+        guide_task_id = create_response["task_id"]
+        registration_message = create_response["message"]
+        target_pinky_id = self._resolve_session_pinky_id(pinky_id, create_response)
 
         command_ok, command_message, command_response = await self.async_send_guide_command(
             task_id=guide_task_id,
             command_type=command_type,
-            pinky_id=pinky_id,
+            pinky_id=target_pinky_id,
             target_track_id=target_track_id,
             wait_timeout_sec=wait_timeout_sec,
             finish_reason=finish_reason,
         )
         payload = {
             "task_id": guide_task_id,
-            "pinky_id": str(pinky_id or self.default_pinky_id).strip() or self.default_pinky_id,
+            "pinky_id": target_pinky_id,
             "patient": self._build_patient_summary(patient),
             "command_type": command_type,
             "command_response": command_response,
-            "request_registered": registration_ok,
+            "request_registered": True,
         }
+        payload.update(create_response["payload"])
         if command_ok:
             return True, command_message or registration_message, payload
         return False, command_message or registration_message, payload
@@ -252,6 +325,140 @@ class VisitGuideService:
         if guide_runtime.get("stale"):
             return False, "안내 추적 업데이트가 오래되어 최신 상태가 아닙니다.", status
         return True, "안내 추적 상태를 확인했습니다.", status
+
+    def _create_task_or_member_event(
+        self,
+        *,
+        patient,
+        member_id,
+        visitor_id,
+        request_id,
+        idempotency_key,
+    ):
+        normalized_visitor_id = visitor_id or (patient or {}).get("visitor_id")
+        if normalized_visitor_id and request_id and idempotency_key:
+            response = self.create_guide_task(
+                request_id=request_id,
+                visitor_id=normalized_visitor_id,
+                idempotency_key=idempotency_key,
+            )
+            return self._guide_task_response_to_session_create_result(response)
+
+        guide_task_id = self._build_guide_task_id(patient)
+        ok, message = self.start_robot_guide(patient, member_id=member_id)
+        return {
+            "ok": ok,
+            "message": message,
+            "task_id": guide_task_id,
+            "payload": {},
+        }
+
+    async def _async_create_task_or_member_event(
+        self,
+        *,
+        patient,
+        member_id,
+        visitor_id,
+        request_id,
+        idempotency_key,
+    ):
+        normalized_visitor_id = visitor_id or (patient or {}).get("visitor_id")
+        if normalized_visitor_id and request_id and idempotency_key:
+            response = await self.async_create_guide_task(
+                request_id=request_id,
+                visitor_id=normalized_visitor_id,
+                idempotency_key=idempotency_key,
+            )
+            return self._guide_task_response_to_session_create_result(response)
+
+        guide_task_id = self._build_guide_task_id(patient)
+        ok, message = await self.async_start_robot_guide(patient, member_id=member_id)
+        return {
+            "ok": ok,
+            "message": message,
+            "task_id": guide_task_id,
+            "payload": {},
+        }
+
+    @staticmethod
+    def _guide_task_response_to_session_create_result(response):
+        accepted = (response or {}).get("result_code") == "ACCEPTED"
+        return {
+            "ok": accepted,
+            "message": (response or {}).get("result_message") or "안내 요청이 접수되었습니다.",
+            "task_id": (response or {}).get("task_id"),
+            "payload": dict(response or {}),
+        }
+
+    def _resolve_session_pinky_id(self, pinky_id, create_response):
+        assigned_robot_id = (create_response.get("payload") or {}).get("assigned_robot_id")
+        return (
+            str(pinky_id or assigned_robot_id or self.default_pinky_id).strip()
+            or self.default_pinky_id
+        )
+
+    @classmethod
+    def _validate_create_guide_task_request(cls, *, request_id, visitor_id, idempotency_key):
+        if cls._is_blank(request_id):
+            return cls._build_guide_task_response(
+                result_code="INVALID_REQUEST",
+                result_message="request_id가 필요합니다.",
+                reason_code="REQUEST_ID_INVALID",
+            )
+        if cls._normalize_positive_id(visitor_id) is None:
+            return cls._build_guide_task_response(
+                result_code="INVALID_REQUEST",
+                result_message="visitor_id가 올바르지 않습니다.",
+                reason_code="VISITOR_ID_INVALID",
+            )
+        if cls._is_blank(idempotency_key):
+            return cls._build_guide_task_response(
+                result_code="INVALID_REQUEST",
+                result_message="idempotency_key가 필요합니다.",
+                reason_code="IDEMPOTENCY_KEY_INVALID",
+            )
+        return None
+
+    @staticmethod
+    def _build_guide_task_response(
+        *,
+        result_code,
+        result_message=None,
+        reason_code=None,
+        task_id=None,
+        task_status=None,
+        phase=None,
+        assigned_robot_id=None,
+        resident_name=None,
+        room_no=None,
+        destination_id=None,
+    ):
+        return {
+            "result_code": result_code,
+            "result_message": result_message,
+            "reason_code": reason_code,
+            "task_id": task_id,
+            "task_status": task_status,
+            "phase": phase,
+            "assigned_robot_id": assigned_robot_id,
+            "resident_name": resident_name,
+            "room_no": room_no,
+            "destination_id": destination_id,
+        }
+
+    @staticmethod
+    def _normalize_positive_id(value):
+        try:
+            normalized = int(str(value or "").strip())
+        except (TypeError, ValueError):
+            return None
+        if normalized <= 0:
+            return None
+        return normalized
+
+    @staticmethod
+    def _is_blank(value) -> bool:
+        return not str(value or "").strip()
 
     @staticmethod
     def _build_patient_summary(patient: dict):

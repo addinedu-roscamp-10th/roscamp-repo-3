@@ -4,6 +4,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
+    MESSAGE_CODE_GUIDE_CREATE_TASK,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_PATROL_RESUME_TASK,
@@ -65,6 +66,23 @@ def test_patrol_create_task_message_code_is_if_pat_001():
 
     assert decoded.message_code == 0x3001
     assert decoded.payload["patrol_area_id"] == "patrol_ward_night_01"
+
+
+def test_guide_create_task_message_code_is_if_gui_001():
+    frame = TCPFrame(
+        message_code=MESSAGE_CODE_GUIDE_CREATE_TASK,
+        sequence_no=40,
+        payload={
+            "request_id": "req_guide_001",
+            "visitor_id": 1,
+            "idempotency_key": "idem_guide_001",
+        },
+    )
+
+    decoded = decode_frame_bytes(encode_frame(frame))
+
+    assert decoded.message_code == 0x4001
+    assert decoded.payload["visitor_id"] == 1
 
 
 def test_patrol_resume_task_message_code_is_if_pat_002():

@@ -11,6 +11,7 @@ from server.ropi_main_service.application.coordinate_config import (
 )
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
@@ -880,6 +881,49 @@ def test_async_patrol_create_task_uses_native_async_service(control_service_serv
     assert response.payload["patrol_area_revision"] == 7
 
 
+def test_async_guide_create_task_uses_native_async_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_GUIDE_CREATE_TASK,
+        sequence_no=40,
+        payload={
+            "request_id": "req_guide_001",
+            "visitor_id": 1,
+            "idempotency_key": "idem_guide_001",
+        },
+    )
+
+    class FakeAsyncVisitGuideService:
+        async def async_create_guide_task(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "assigned_robot_id": "pinky1",
+                "resident_name": "김*수",
+                "room_no": "301",
+                "destination_id": "delivery_room_301",
+            }
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("guide create should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK
+    assert response.payload["result_code"] == "ACCEPTED"
+    assert response.payload["task_id"] == 3001
+    assert response.payload["destination_id"] == "delivery_room_301"
+
+
 def test_async_delivery_create_task_publishes_task_update(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
@@ -997,6 +1041,67 @@ def test_async_patrol_create_task_publishes_task_update(control_service_server):
                 "latest_reason_code": None,
                 "result_code": "ACCEPTED",
                 "result_message": "순찰 요청이 접수되었습니다.",
+                "cancel_requested": None,
+                "cancellable": False,
+            },
+        )
+    ]
+
+
+def test_async_guide_create_task_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_GUIDE_CREATE_TASK,
+        sequence_no=41,
+        payload={
+            "request_id": "req_guide_001",
+            "visitor_id": 1,
+            "idempotency_key": "idem_guide_001",
+        },
+    )
+    published_events = []
+
+    class FakeAsyncVisitGuideService:
+        async def async_create_guide_task(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "안내 요청이 접수되었습니다.",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "assigned_robot_id": "pinky1",
+                "resident_name": "김*수",
+                "room_no": "301",
+                "destination_id": "delivery_room_301",
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert published_events == [
+        (
+            "TASK_UPDATED",
+            {
+                "source": "GUIDE_CREATE",
+                "task_id": 3001,
+                "task_type": "GUIDE",
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "assigned_robot_id": "pinky1",
+                "latest_reason_code": None,
+                "result_code": "ACCEPTED",
+                "result_message": "안내 요청이 접수되었습니다.",
                 "cancel_requested": None,
                 "cancellable": False,
             },

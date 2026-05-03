@@ -1129,6 +1129,8 @@ class KioskGuideConfirmationPage(QWidget):
         self.service = VisitGuideRemoteService()
         self.selected_patient = None
         self.current_session = None
+        self._guide_request_id = None
+        self._guide_idempotency_key = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -1331,6 +1333,8 @@ class KioskGuideConfirmationPage(QWidget):
     def set_patient(self, patient):
         self.selected_patient = patient or None
         self.current_session = None
+        self._guide_request_id = None
+        self._guide_idempotency_key = None
         if not self.selected_patient:
             self.summary_title.setText("어르신을 선택해 주세요")
             self.summary_subtitle.setText("안내를 시작하시겠습니까?")
@@ -1351,9 +1355,28 @@ class KioskGuideConfirmationPage(QWidget):
             self.inline_status.setHidden(False)
             return
 
+        visitor_id = self._visitor_id()
+        if visitor_id is None:
+            self.inline_status.setText("방문 등록 정보가 없어 안내를 시작할 수 없습니다.")
+            self.inline_status.setHidden(False)
+            return
+
         try:
-            success, message, session = self.service.begin_guide_session(
-                patient=self.selected_patient,
+            guide_task = self.service.create_guide_task(
+                request_id=self._current_guide_request_id(),
+                visitor_id=visitor_id,
+                idempotency_key=self._current_guide_idempotency_key(),
+            )
+            if guide_task.get("result_code") != "ACCEPTED":
+                self.inline_status.setText(
+                    guide_task.get("result_message") or "안내 요청이 거부되었습니다."
+                )
+                self.inline_status.setHidden(False)
+                return
+
+            command_success, message, command_response = self.service.send_guide_command(
+                task_id=guide_task.get("task_id"),
+                pinky_id=guide_task.get("assigned_robot_id"),
                 command_type="WAIT_TARGET_TRACKING",
             )
         except Exception as exc:
@@ -1361,7 +1384,13 @@ class KioskGuideConfirmationPage(QWidget):
             self.inline_status.setHidden(False)
             return
 
-        if success and self.selected_patient and session:
+        session = {
+            **guide_task,
+            "pinky_id": guide_task.get("assigned_robot_id"),
+            "command_type": "WAIT_TARGET_TRACKING",
+            "command_response": command_response,
+        }
+        if command_success and self.selected_patient:
             self.current_session = session
             name = self.selected_patient.get("name", "-")
             room = self.selected_patient.get("room", "-")
@@ -1376,6 +1405,26 @@ class KioskGuideConfirmationPage(QWidget):
 
         self.inline_status.setText(message)
         self.inline_status.setHidden(False)
+
+    def _visitor_id(self):
+        raw = (self.selected_patient or {}).get("visitor_id")
+        try:
+            visitor_id = int(raw)
+        except (TypeError, ValueError):
+            return None
+        if visitor_id <= 0:
+            return None
+        return visitor_id
+
+    def _current_guide_request_id(self):
+        if self._guide_request_id is None:
+            self._guide_request_id = f"kiosk_guide_{uuid4().hex}"
+        return self._guide_request_id
+
+    def _current_guide_idempotency_key(self):
+        if self._guide_idempotency_key is None:
+            self._guide_idempotency_key = f"idem_{self._current_guide_request_id()}"
+        return self._guide_idempotency_key
 
     @staticmethod
     def _format_room_label(room):

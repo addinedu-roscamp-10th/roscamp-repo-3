@@ -41,6 +41,7 @@ from server.ropi_main_service.persistence.background_db_writer import (
 )
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
@@ -337,6 +338,9 @@ class ControlServiceServer:
         if frame.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY:
             return self._dispatch_fall_evidence_image_query(frame, payload)
 
+        if frame.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK:
+            return self._dispatch_guide_create_task(frame, payload)
+
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return self._dispatch_rpc(frame, payload)
 
@@ -374,6 +378,9 @@ class ControlServiceServer:
 
         if frame.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY:
             return await self._dispatch_fall_evidence_image_query_async(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK:
+            return await self._dispatch_guide_create_task_async(frame, payload)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return await self._dispatch_rpc_async(frame, payload)
@@ -507,6 +514,31 @@ class ControlServiceServer:
             result,
             source="PATROL_RESUME",
             task_type="PATROL",
+        )
+        return self._success_response(frame, result)
+
+    def _dispatch_guide_create_task(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["visit_guide"]()
+            result = service.create_guide_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_CREATE_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def _dispatch_guide_create_task_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["visit_guide"]()
+            result = await service.async_create_guide_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_CREATE_ERROR", str(exc))
+
+        if isinstance(result, dict):
+            result = {**result, "cancellable": bool(result.get("cancellable", False))}
+        await self._publish_task_updated_from_response(
+            result,
+            source="GUIDE_CREATE",
+            task_type="GUIDE",
         )
         return self._success_response(frame, result)
 
@@ -779,7 +811,7 @@ class ControlServiceServer:
 
         cancellable = response.get("cancellable")
         resolved_task_type = task_type or response.get("task_type") or "DELIVERY"
-        if resolved_task_type == "PATROL" and cancellable is None:
+        if resolved_task_type in {"GUIDE", "PATROL"} and cancellable is None:
             cancellable = False
 
         await self.task_event_stream_hub.publish(

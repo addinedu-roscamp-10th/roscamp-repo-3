@@ -11,7 +11,7 @@ INSERT INTO idempotency_record (
 )
 VALUES (
     %s,
-    'CAREGIVER',
+    %s,
     %s,
     %s,
     %s,

@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 
 import pytest
 
@@ -7,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
+from server.ropi_main_service.persistence.connection import get_connection
 from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
 from runtime_db_seeders import (
     active_patrol_task_seed,
@@ -244,6 +246,82 @@ def test_ui_client_create_delivery_task_hits_real_server(patched_ui_endpoint, ru
     assert isinstance(response["task_id"], int)
     assert response["task_status"] == "WAITING_DISPATCH"
     assert response["assigned_robot_id"] == "pinky2"
+
+
+def test_kiosk_create_guide_task_hits_real_server_and_db(patched_ui_endpoint):
+    visitor_row = safe_fetch_one(
+        """
+        SELECT
+            v.visitor_id,
+            v.member_id,
+            m.member_name,
+            m.room_no,
+            gp.goal_pose_id
+        FROM visitor v
+        JOIN member m
+          ON m.member_id = v.member_id
+        JOIN goal_pose gp
+          ON gp.zone_id = CONCAT('room_', m.room_no)
+         AND gp.is_enabled = TRUE
+         AND gp.purpose IN ('GUIDE_DESTINATION', 'DESTINATION')
+        ORDER BY v.visitor_id
+        LIMIT 1
+        """
+    )
+    assert visitor_row is not None, "The runtime DB has no visitor with a guide destination."
+
+    request_id = f"runtime-if-gui-001-{uuid.uuid4().hex}"
+    response = send_request(
+        "GUIDE_CREATE_TASK",
+        {
+            "request_id": request_id,
+            "visitor_id": int(visitor_row["visitor_id"]),
+            "idempotency_key": f"{request_id}-idem",
+        },
+        timeout=5.0,
+    )
+
+    assert response["ok"] is True
+    payload = response["payload"]
+    task_id = int(payload["task_id"])
+
+    try:
+        assert payload["result_code"] == "ACCEPTED"
+        assert payload["task_status"] == "WAITING_DISPATCH"
+        assert payload["phase"] == "WAIT_GUIDE_START_CONFIRM"
+        assert payload["destination_id"] == visitor_row["goal_pose_id"]
+
+        task_row = safe_fetch_one(
+            "SELECT task_type, requester_type, requester_id, task_status, phase "
+            f"FROM task WHERE task_id = {task_id}"
+        )
+        guide_row = safe_fetch_one(
+            "SELECT visitor_id, member_id, destination_goal_pose_id, guide_phase "
+            f"FROM guide_task_detail WHERE task_id = {task_id}"
+        )
+        event_row = safe_fetch_one(
+            "SELECT event_name, result_code FROM task_event_log "
+            f"WHERE task_id = {task_id} ORDER BY task_event_log_id DESC LIMIT 1"
+        )
+
+        assert task_row["task_type"] == "GUIDE"
+        assert task_row["requester_type"] == "VISITOR"
+        assert task_row["requester_id"] == str(visitor_row["visitor_id"])
+        assert task_row["task_status"] == "WAITING_DISPATCH"
+        assert task_row["phase"] == "WAIT_GUIDE_START_CONFIRM"
+        assert int(guide_row["visitor_id"]) == int(visitor_row["visitor_id"])
+        assert int(guide_row["member_id"]) == int(visitor_row["member_id"])
+        assert guide_row["destination_goal_pose_id"] == visitor_row["goal_pose_id"]
+        assert guide_row["guide_phase"] == "WAIT_GUIDE_START_CONFIRM"
+        assert event_row["event_name"] == "GUIDE_TASK_ACCEPTED"
+        assert event_row["result_code"] == "ACCEPTED"
+    finally:
+        cleanup_conn = get_connection()
+        try:
+            with cleanup_conn.cursor() as cursor:
+                cursor.execute("DELETE FROM task WHERE task_id = %s", (task_id,))
+        finally:
+            cleanup_conn.close()
 
 
 def test_task_request_page_loads_items_from_real_server(patched_ui_endpoint, qapp, runtime_delivery_schema):
