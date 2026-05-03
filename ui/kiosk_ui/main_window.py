@@ -286,7 +286,98 @@ class KioskFooterStat(QFrame):
         layout.addLayout(text_wrap)
 
 
+class KioskPurposeIcon(QWidget):
+    def __init__(self, *, icon_name):
+        super().__init__()
+        self.icon_name = icon_name
+        self.setObjectName("kioskPurposeIcon")
+        self.setFixedSize(42, 42)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#00477F"), 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        if self.icon_name == "family":
+            painter.drawEllipse(QRectF(8, 6, 12, 12))
+            painter.drawEllipse(QRectF(23, 6, 12, 12))
+            painter.drawArc(QRectF(4, 20, 18, 18), 15 * 16, 150 * 16)
+            painter.drawArc(QRectF(21, 20, 18, 18), 15 * 16, 150 * 16)
+        elif self.icon_name == "friend":
+            painter.drawEllipse(QRectF(14, 5, 14, 14))
+            painter.drawEllipse(QRectF(4, 17, 11, 11))
+            painter.drawEllipse(QRectF(27, 17, 11, 11))
+            painter.drawArc(QRectF(9, 22, 24, 18), 20 * 16, 140 * 16)
+        elif self.icon_name == "consult":
+            painter.drawRoundedRect(QRectF(6, 8, 30, 24), 5, 5)
+            painter.drawLine(13, 17, 29, 17)
+            painter.drawLine(13, 24, 23, 24)
+            painter.drawLine(18, 32, 12, 38)
+        else:
+            painter.setBrush(QBrush(QColor("#00477F")))
+            painter.drawEllipse(QRectF(8, 18, 6, 6))
+            painter.drawEllipse(QRectF(18, 18, 6, 6))
+            painter.drawEllipse(QRectF(28, 18, 6, 6))
+
+
+class KioskPurposeOptionCard(QFrame):
+    clicked = pyqtSignal(str)
+
+    def __init__(self, *, key, label, icon_name):
+        super().__init__()
+        self.key = key
+        self.setObjectName("kioskPurposeOptionCard")
+        self.setProperty("selected", False)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(88)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon_bubble = QFrame()
+        icon_bubble.setObjectName("kioskPurposeIconBubble")
+        icon_bubble.setFixedSize(52, 52)
+        icon_layout = QVBoxLayout(icon_bubble)
+        icon_layout.setContentsMargins(0, 0, 0, 0)
+        icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_layout.addWidget(KioskPurposeIcon(icon_name=icon_name))
+
+        self.label = QLabel(label)
+        self.label.setObjectName("kioskPurposeLabel")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(icon_bubble, alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self.label)
+
+        for widget in [icon_bubble, self.label]:
+            widget.mousePressEvent = self._child_click
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.key)
+        super().mousePressEvent(event)
+
+    def _child_click(self, event):
+        self.clicked.emit(self.key)
+
+
 class KioskVisitorRegistrationPage(QWidget):
+    PURPOSE_OPTIONS = (
+        {"key": "family", "label": "가족 면회", "icon": "family"},
+        {"key": "friend", "label": "지인 방문", "icon": "friend"},
+        {"key": "consult", "label": "상담/문의", "icon": "consult"},
+        {"key": "other", "label": "기타", "icon": "other"},
+    )
+
     def __init__(
         self,
         *,
@@ -302,6 +393,7 @@ class KioskVisitorRegistrationPage(QWidget):
         self.go_back_page = go_back_page
         self.service = service or KioskVisitorRemoteService()
         self.selected_resident = None
+        self.selected_visit_purpose = None
         self.visitor_session = None
 
         root = QVBoxLayout(self)
@@ -371,10 +463,23 @@ class KioskVisitorRegistrationPage(QWidget):
             "관계",
             "예: 아들, 보호자",
         )
-        purpose_field, self.visit_purpose_input = self._create_labeled_input(
-            "방문 목적",
-            "예: 정기 면회",
-        )
+
+        purpose_title = QLabel("방문 목적")
+        purpose_title.setObjectName("kioskRegistrationFieldLabel")
+
+        purpose_grid = QGridLayout()
+        purpose_grid.setHorizontalSpacing(10)
+        purpose_grid.setVerticalSpacing(10)
+        self.purpose_cards = {}
+        for index, option in enumerate(self.PURPOSE_OPTIONS):
+            card = KioskPurposeOptionCard(
+                key=option["key"],
+                label=option["label"],
+                icon_name=option["icon"],
+            )
+            card.clicked.connect(self.select_visit_purpose)
+            self.purpose_cards[option["key"]] = card
+            purpose_grid.addWidget(card, index // 2, index % 2)
 
         self.privacy_checkbox = QCheckBox("개인정보 수집 및 방문 기록 저장에 동의합니다.")
         self.privacy_checkbox.setObjectName("kioskPrivacyCheckbox")
@@ -384,7 +489,8 @@ class KioskVisitorRegistrationPage(QWidget):
         form_layout.addWidget(name_field)
         form_layout.addWidget(phone_field)
         form_layout.addWidget(relation_field)
-        form_layout.addWidget(purpose_field)
+        form_layout.addWidget(purpose_title)
+        form_layout.addLayout(purpose_grid)
         form_layout.addWidget(self.privacy_checkbox)
         form_layout.addStretch()
 
@@ -412,6 +518,7 @@ class KioskVisitorRegistrationPage(QWidget):
         self.resident_search_input = QLineEdit()
         self.resident_search_input.setObjectName("kioskSearchInput")
         self.resident_search_input.setPlaceholderText("성함 또는 방 번호 입력")
+        self.resident_search_input.setMinimumHeight(64)
         self.resident_search_input.textChanged.connect(self._sync_action_state)
         self.resident_search_input.returnPressed.connect(self.search_resident)
 
@@ -509,7 +616,6 @@ class KioskVisitorRegistrationPage(QWidget):
             self.visitor_name_input,
             self.phone_input,
             self.relationship_input,
-            self.visit_purpose_input,
         ]:
             input_widget.textChanged.connect(self._on_visitor_context_changed)
 
@@ -528,7 +634,7 @@ class KioskVisitorRegistrationPage(QWidget):
         input_widget = QLineEdit()
         input_widget.setObjectName("kioskRegistrationInput")
         input_widget.setPlaceholderText(placeholder_text)
-        input_widget.setMinimumHeight(58)
+        input_widget.setMinimumHeight(64)
 
         layout.addWidget(label)
         layout.addWidget(input_widget)
@@ -615,23 +721,24 @@ class KioskVisitorRegistrationPage(QWidget):
             self.visitor_name_input,
             self.phone_input,
             self.relationship_input,
-            self.visit_purpose_input,
             self.resident_search_input,
         ]:
             input_widget.clear()
         self.privacy_checkbox.setChecked(False)
+        self.selected_visit_purpose = None
         self.selected_resident = None
         self.visitor_session = None
         self._clear_resident_result()
         self.status_label.setText("방문자 정보와 개인정보 동의를 완료하면 어르신을 검색할 수 있습니다.")
         self._sync_action_state()
+        self._refresh_purpose_card_styles()
 
     def _registration_payload(self):
         return {
             "visitor_name": self.visitor_name_input.text().strip(),
             "phone_no": self.phone_input.text().strip(),
             "relationship": self.relationship_input.text().strip(),
-            "visit_purpose": self.visit_purpose_input.text().strip(),
+            "visit_purpose": self.selected_visit_purpose,
             "target_member_id": int(self.selected_resident["member_id"]),
             "privacy_agreed": self.privacy_checkbox.isChecked(),
             "kiosk_id": None,
@@ -676,12 +783,41 @@ class KioskVisitorRegistrationPage(QWidget):
             self.status_label.setText("방문자 정보가 변경되어 어르신 검색을 다시 확인해 주세요.")
         self._sync_action_state()
 
+    def select_visit_purpose(self, purpose_key):
+        option = next(
+            (item for item in self.PURPOSE_OPTIONS if item["key"] == purpose_key),
+            None,
+        )
+        if option is None:
+            return
+        previous = self.selected_visit_purpose
+        self.selected_visit_purpose = option["label"]
+        self._refresh_purpose_card_styles()
+        if previous != self.selected_visit_purpose:
+            self._on_visitor_context_changed()
+            return
+        self._sync_action_state()
+
+    def _refresh_purpose_card_styles(self):
+        selected_key = next(
+            (
+                option["key"]
+                for option in self.PURPOSE_OPTIONS
+                if option["label"] == self.selected_visit_purpose
+            ),
+            None,
+        )
+        for key, card in self.purpose_cards.items():
+            card.setProperty("selected", key == selected_key)
+            card.style().unpolish(card)
+            card.style().polish(card)
+
     def _visitor_context_ready(self):
         return (
             bool(self.visitor_name_input.text().strip())
             and bool(self.phone_input.text().strip())
             and bool(self.relationship_input.text().strip())
-            and bool(self.visit_purpose_input.text().strip())
+            and bool(self.selected_visit_purpose)
             and self.privacy_checkbox.isChecked()
         )
 

@@ -98,6 +98,10 @@ def test_main_qss_defines_kiosk_ui_components():
         "QWidget#kioskVisitorRegistrationPage",
         "QFrame#kioskRegistrationFormCard",
         "QFrame#kioskRegistrationResidentCard",
+        "QFrame#kioskPurposeOptionCard",
+        "QFrame#kioskPurposeOptionCard[selected=\"true\"]",
+        "QFrame#kioskPurposeIconBubble",
+        "QLabel#kioskPurposeLabel",
         "QCheckBox#kioskPrivacyCheckbox",
         "QFrame#kioskSearchInputCard",
         "QLineEdit#kioskSearchInput",
@@ -122,6 +126,10 @@ def test_main_qss_defines_kiosk_ui_components():
     assert "QWidget#kioskVisitorRegistrationPage {\n    background: #F9F9FF" in qss
     assert "QFrame#kioskRegistrationTopBar" in qss
     assert "QPushButton#kioskSearchFooterButton {\n    min-height: 72px" in qss
+    assert "QLineEdit#kioskRegistrationInput" in qss
+    assert "min-height: 64px" in qss
+    assert "padding: 0 18px" in qss
+    assert "check.svg" in qss
 
 
 def test_main_qss_overrides_native_input_subcontrols():

@@ -185,15 +185,29 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
         assert page.objectName() == "kioskVisitorRegistrationPage"
         assert page.search_button.isEnabled() is False
         assert page.register_button.isEnabled() is False
+        assert page.selected_visit_purpose is None
+        assert len(page.purpose_cards) == 4
+        assert all(card.minimumHeight() >= 84 for card in page.purpose_cards.values())
+        assert all(
+            input_widget.minimumHeight() >= 64
+            for input_widget in [
+                page.visitor_name_input,
+                page.phone_input,
+                page.relationship_input,
+                page.resident_search_input,
+            ]
+        )
 
         page.visitor_name_input.setText(" 김민수 ")
         page.phone_input.setText(" 010-1111-2222 ")
         page.relationship_input.setText(" 아들 ")
-        page.visit_purpose_input.setText(" 정기 면회 ")
+        page.select_visit_purpose("family")
         page.privacy_checkbox.setChecked(True)
         page.resident_search_input.setText(" 김영수 ")
 
         assert page.search_button.isEnabled() is True
+        assert page.selected_visit_purpose == "가족 면회"
+        assert page.purpose_cards["family"].property("selected") is True
 
         page.search_resident()
 
@@ -217,7 +231,7 @@ def test_kiosk_visitor_registration_embeds_resident_lookup_and_visit_registratio
                 "visitor_name": "김민수",
                 "phone_no": "010-1111-2222",
                 "relationship": "아들",
-                "visit_purpose": "정기 면회",
+                "visit_purpose": "가족 면회",
                 "target_member_id": 1,
                 "privacy_agreed": True,
                 "kiosk_id": None,

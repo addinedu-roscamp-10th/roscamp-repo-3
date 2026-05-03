@@ -1347,7 +1347,7 @@ QFrame#kioskRobotInfoCard {
 
 QFrame#kioskRegistrationFormCard,
 QFrame#kioskRegistrationResidentCard {
-    min-height: 420px;
+    min-height: 440px;
 }
 
 QFrame#kioskRegistrationResidentSummary {
@@ -1379,7 +1379,8 @@ QLineEdit#kioskRegistrationInput {
     border-radius: 16px;
     font-size: 22px;
     font-weight: 800;
-    padding: 8px 18px;
+    min-height: 64px;
+    padding: 0 18px;
 }
 
 QLineEdit#kioskRegistrationInput:focus {
@@ -1388,7 +1389,7 @@ QLineEdit#kioskRegistrationInput:focus {
 
 QCheckBox#kioskPrivacyCheckbox {
     color: #334155;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 900;
     spacing: 12px;
     padding-top: 8px;
@@ -1405,12 +1406,41 @@ QCheckBox#kioskPrivacyCheckbox::indicator {
 QCheckBox#kioskPrivacyCheckbox::indicator:checked {
     background: #2F855A;
     border-color: #2F855A;
+    image: url(__STYLE_ASSET_DIR__/check.svg);
 }
 
 QLabel#kioskRegistrationHint {
     color: #64748B;
     font-size: 18px;
     font-weight: 700;
+}
+
+QFrame#kioskPurposeOptionCard {
+    background: #FFFFFF;
+    border: 2px solid #D9E2DC;
+    border-radius: 18px;
+}
+
+QFrame#kioskPurposeOptionCard[selected="true"] {
+    background: #EAF5F2;
+    border: 3px solid #2F855A;
+}
+
+QFrame#kioskPurposeIconBubble {
+    background: #E9F2FF;
+    border: 1px solid #BBD4F2;
+    border-radius: 26px;
+}
+
+QWidget#kioskPurposeIcon {
+    background: transparent;
+    border: none;
+}
+
+QLabel#kioskPurposeLabel {
+    color: #102A27;
+    font-size: 17px;
+    font-weight: 900;
 }
 
 QFrame#kioskResidentAvatar {

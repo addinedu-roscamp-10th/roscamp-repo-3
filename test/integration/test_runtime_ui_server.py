@@ -296,7 +296,7 @@ def test_kiosk_visitor_registration_lookup_and_register_hits_real_server_and_db(
         page.visitor_name_input.setText("통합테스트방문자")
         page.phone_input.setText("010-9999-0001")
         page.relationship_input.setText("보호자")
-        page.visit_purpose_input.setText("통합 테스트")
+        page.select_visit_purpose("family")
         page.privacy_checkbox.setChecked(True)
         page.resident_search_input.setText(str(member_row["room_no"]))
         page.search_resident()
