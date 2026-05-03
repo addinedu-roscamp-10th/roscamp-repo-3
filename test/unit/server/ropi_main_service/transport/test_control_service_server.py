@@ -632,6 +632,28 @@ def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
     assert task["feedback_summary"] == "MOVING / 남은 거리 1.25m"
 
 
+def test_caregiver_facade_exposes_robot_status_bundle():
+    class FakeCaregiverService:
+        def get_robot_status_bundle(self):
+            return {
+                "summary": {"total_robot_count": 1},
+                "robots": [{"robot_id": "pinky2"}],
+                "delivery_composition": [],
+            }
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        FakeCaregiverService,
+    ):
+        bundle = tcp_server.CaregiverFacade().get_robot_status_bundle()
+
+    assert bundle == {
+        "summary": {"total_robot_count": 1},
+        "robots": [{"robot_id": "pinky2"}],
+        "delivery_composition": [],
+    }
+
+
 def test_async_rpc_dispatch_offloads_sync_service_method(control_service_server):
     request = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,

@@ -102,6 +102,12 @@ class CaregiverFacade:
             "timeline_rows": await self.service.async_get_timeline_data(),
         }
 
+    def get_robot_status_bundle(self):
+        return self.service.get_robot_status_bundle()
+
+    async def async_get_robot_status_bundle(self):
+        return await self.service.async_get_robot_status_bundle()
+
     def _attach_action_feedback(self, flow_data):
         for task in self._iter_feedback_target_tasks(flow_data):
             task_id = task.get("task_id")

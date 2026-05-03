@@ -50,6 +50,9 @@ class CaregiverRemoteService:
     def get_dashboard_bundle(self):
         return _rpc("caregiver", "get_dashboard_bundle")
 
+    def get_robot_status_bundle(self):
+        return _rpc("caregiver", "get_robot_status_bundle")
+
 
 class PatientRemoteService:
     def search_patient_info(self, name: str, room_no: str):

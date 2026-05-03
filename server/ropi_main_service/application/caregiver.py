@@ -9,6 +9,12 @@ class CaregiverService:
         "ASSIGNED",
         "RUNNING",
     }
+    DELIVERY_COMPOSITION = [
+        {"label": "Delivery Mobile Robot", "value": "pinky2"},
+        {"label": "Pickup Arm Robot", "value": "jetcobot1"},
+        {"label": "Destination Arm Robot", "value": "jetcobot2"},
+        {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
+    ]
 
     def __init__(self, repository=None):
         self.repo = repository or CaregiverRepository()
@@ -39,39 +45,124 @@ class CaregiverService:
         rows = await self.repo.async_get_robot_board()
         return self._format_robot_board_data(rows)
 
+    def get_robot_status_bundle(self):
+        return self._format_robot_status_bundle(self.get_robot_board_data())
+
+    async def async_get_robot_status_bundle(self):
+        return self._format_robot_status_bundle(await self.async_get_robot_board_data())
+
     @staticmethod
     def _format_robot_board_data(rows):
         result = []
 
         for row in rows:
             status = row["robot_status"] or "UNKNOWN"
+            connection_status = CaregiverService._connection_status(row, status)
 
-            if status in ("대기", "IDLE"):
+            if connection_status == "ONLINE":
                 chip_type = "green"
-            elif status in ("충전중", "CHARGING"):
+            elif connection_status == "DEGRADED":
                 chip_type = "yellow"
-            elif status in ("오류", "ERROR"):
-                chip_type = "red"
             else:
-                chip_type = "blue"
+                chip_type = "red"
+
+            current_phase = row.get("current_task_phase") or row.get("current_task_status")
 
             result.append({
                 "robot_id": row["robot_id"],
+                "display_name": CaregiverService._display_name(row),
+                "robot_type": CaregiverService._robot_type(row),
+                "scenario_role": CaregiverService._scenario_role(row),
                 "robot_role": row.get("robot_type_name") or "-",
-                "connection_status": status,
+                "connection_status": connection_status,
+                "runtime_state": status,
                 "battery_percent": row.get("battery_percent"),
-                "current_location": row["current_location"] or "-",
+                "current_location": row.get("current_location") or "-",
                 "current_task_id": row.get("current_task_id"),
+                "current_phase": current_phase,
                 "last_seen_at": row.get("last_seen_at"),
+                "fault_code": row.get("fault_code"),
                 "robot_name": row["robot_id"],
-                "status": status,
-                "zone": row["current_location"] or "-",
+                "status": connection_status,
+                "zone": row.get("current_location") or "-",
                 "battery": row.get("battery_percent") if row.get("battery_percent") is not None else "-",
-                "current_task": row.get("current_task_phase") or row.get("current_task_status") or "-",
+                "current_task": current_phase or "-",
                 "chip_type": chip_type,
             })
 
         return result
+
+    @classmethod
+    def _format_robot_status_bundle(cls, robots):
+        robots = list(robots or [])
+        summary = {
+            "total_robot_count": len(robots),
+            "online_robot_count": sum(
+                1 for robot in robots if robot.get("connection_status") == "ONLINE"
+            ),
+            "offline_robot_count": sum(
+                1 for robot in robots if robot.get("connection_status") == "OFFLINE"
+            ),
+            "caution_robot_count": sum(
+                1 for robot in robots if robot.get("connection_status") == "DEGRADED"
+            ),
+        }
+        return {
+            "summary": summary,
+            "robots": robots,
+            "delivery_composition": list(cls.DELIVERY_COMPOSITION),
+        }
+
+    @staticmethod
+    def _connection_status(row, runtime_state):
+        if not row.get("last_seen_at"):
+            return "OFFLINE"
+        if row.get("fault_code"):
+            return "DEGRADED"
+        normalized = str(runtime_state or "").upper()
+        if normalized in {"ERROR", "FAULT", "DEGRADED"}:
+            return "DEGRADED"
+        if normalized in {"OFFLINE", "DISCONNECTED"}:
+            return "OFFLINE"
+        return "ONLINE"
+
+    @staticmethod
+    def _display_name(row):
+        robot_id = row.get("robot_id")
+        if robot_id == "pinky1":
+            return "안내 로봇"
+        if robot_id == "pinky2":
+            return "운반 로봇"
+        if robot_id == "pinky3":
+            return "순찰 로봇"
+        if robot_id == "jetcobot1":
+            return "픽업 로봇팔"
+        if robot_id == "jetcobot2":
+            return "목적지 로봇팔"
+        return row.get("robot_manager_name") or robot_id or "-"
+
+    @staticmethod
+    def _robot_type(row):
+        robot_id = str(row.get("robot_id") or "").lower()
+        robot_type_name = str(row.get("robot_type_name") or "").lower()
+        if robot_id.startswith("jetcobot") or "jetcobot" in robot_type_name:
+            return "ARM"
+        return "MOBILE"
+
+    @staticmethod
+    def _scenario_role(row):
+        robot_id = row.get("robot_id")
+        if robot_id == "pinky1":
+            return "GUIDE"
+        if robot_id == "pinky2":
+            return "DELIVERY"
+        if robot_id == "pinky3":
+            return "PATROL"
+        if robot_id == "jetcobot1":
+            return "PICKUP_ARM"
+        if robot_id == "jetcobot2":
+            return "DESTINATION_ARM"
+        return "-"
 
     def get_timeline_data(self):
         rows = self.repo.get_timeline(limit=30)

@@ -115,3 +115,6 @@ def test_caregiver_repository_uses_task_and_runtime_status_tables():
     assert "FROM task" in source
     assert "robot_runtime_status" in source
     assert "task_event_log" in source
+    assert "robot_manager_name" in source
+    assert "fault_code" in source
+    assert "last_seen_at" in source

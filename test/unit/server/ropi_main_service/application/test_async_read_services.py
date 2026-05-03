@@ -169,7 +169,8 @@ def test_caregiver_service_async_methods_keep_response_shape():
     assert result["robots"][0]["robot_name"] == "pinky2"
     assert result["robots"][0]["robot_id"] == "pinky2"
     assert result["robots"][0]["robot_role"] == "MOBILE"
-    assert result["robots"][0]["connection_status"] == "IDLE"
+    assert result["robots"][0]["connection_status"] == "ONLINE"
+    assert result["robots"][0]["runtime_state"] == "IDLE"
     assert result["robots"][0]["current_task_id"] == 101
     assert result["robots"][0]["last_seen_at"] == "2026-05-03T12:00:00"
     assert result["robots"][0]["chip_type"] == "green"
@@ -186,6 +187,74 @@ def test_caregiver_service_async_methods_keep_response_shape():
             "display_text": "#101 accepted / pinky2",
             "cancellable": True,
         }
+    ]
+
+
+def test_caregiver_service_robot_status_bundle_is_robot_centered():
+    rows = [
+        {
+            "robot_id": "pinky2",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "운반팀",
+            "robot_status": "RUNNING",
+            "current_location": "x=1.0, y=2.0",
+            "battery_percent": 87.5,
+            "current_task_id": 101,
+            "current_task_phase": "DELIVERY_DESTINATION",
+            "current_task_status": "RUNNING",
+            "last_seen_at": "2026-05-03T12:00:00",
+            "fault_code": None,
+        },
+        {
+            "robot_id": "jetcobot1",
+            "robot_type_name": "JetCobot",
+            "robot_manager_name": "운반팀",
+            "robot_status": "ERROR",
+            "current_location": None,
+            "battery_percent": None,
+            "current_task_id": None,
+            "current_task_phase": None,
+            "current_task_status": None,
+            "last_seen_at": "2026-05-03T11:59:00",
+            "fault_code": "ARM_FAULT",
+        },
+        {
+            "robot_id": "pinky3",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "순찰팀",
+            "robot_status": "IDLE",
+            "current_location": None,
+            "battery_percent": 55,
+            "current_task_id": None,
+            "current_task_phase": None,
+            "current_task_status": None,
+            "last_seen_at": None,
+            "fault_code": None,
+        },
+    ]
+
+    robots = CaregiverService._format_robot_board_data(rows)
+    bundle = CaregiverService._format_robot_status_bundle(robots)
+
+    assert bundle["summary"] == {
+        "total_robot_count": 3,
+        "online_robot_count": 1,
+        "offline_robot_count": 1,
+        "caution_robot_count": 1,
+    }
+    assert bundle["robots"][0]["robot_id"] == "pinky2"
+    assert bundle["robots"][0]["display_name"] == "운반 로봇"
+    assert bundle["robots"][0]["robot_type"] == "MOBILE"
+    assert bundle["robots"][0]["scenario_role"] == "DELIVERY"
+    assert bundle["robots"][0]["connection_status"] == "ONLINE"
+    assert bundle["robots"][0]["current_phase"] == "DELIVERY_DESTINATION"
+    assert bundle["robots"][1]["connection_status"] == "DEGRADED"
+    assert bundle["robots"][2]["connection_status"] == "OFFLINE"
+    assert bundle["delivery_composition"] == [
+        {"label": "Delivery Mobile Robot", "value": "pinky2"},
+        {"label": "Pickup Arm Robot", "value": "jetcobot1"},
+        {"label": "Destination Arm Robot", "value": "jetcobot2"},
+        {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
     ]
 
 

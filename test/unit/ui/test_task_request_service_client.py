@@ -4,6 +4,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
 )
 from ui.utils.network import service_clients
 from ui.utils.network.service_clients import (
+    CaregiverRemoteService,
     CoordinateConfigRemoteService,
     DeliveryRequestRemoteService,
     TaskMonitorRemoteService,
@@ -27,6 +28,22 @@ def test_delivery_request_remote_service_exposes_option_rpc_methods(monkeypatch)
         ("get_delivery_destinations", {}),
         ("get_patrol_areas", {}),
     ]
+
+
+def test_caregiver_remote_service_exposes_robot_status_bundle_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"summary": {}, "robots": []}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    assert CaregiverRemoteService().get_robot_status_bundle() == {
+        "summary": {},
+        "robots": [],
+    }
+    assert calls == [("caregiver", "get_robot_status_bundle", {})]
 
 
 def test_delivery_request_remote_service_exposes_cancel_rpc(monkeypatch):
