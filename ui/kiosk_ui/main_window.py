@@ -1,7 +1,8 @@
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QRectF, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -25,35 +26,94 @@ from ui.utils.core.styles import load_stylesheet
 from ui.utils.network.service_clients import VisitGuideRemoteService
 
 
+class KioskActionIconGlyph(QWidget):
+    def __init__(self, *, icon_name, accent):
+        super().__init__()
+        self.icon_name = icon_name
+        self.accent = accent
+        self.setObjectName("kioskActionIconGlyph")
+        self.setFixedSize(84, 84)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        color = QColor(
+            {
+                "blue": "#00477F",
+                "green": "#2F855A",
+                "coral": "#A23C22",
+            }.get(self.accent, "#1E293B")
+        )
+        pen = QPen(color, 5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        if self.icon_name == "resident_search":
+            self._draw_resident_search(painter)
+        elif self.icon_name == "visitor_registration":
+            self._draw_visitor_registration(painter)
+        else:
+            self._draw_staff_call(painter)
+
+    def _draw_resident_search(self, painter):
+        painter.drawEllipse(QRectF(20, 15, 40, 40))
+        painter.drawLine(53, 50, 73, 70)
+
+    def _draw_visitor_registration(self, painter):
+        painter.drawRoundedRect(QRectF(18, 10, 48, 64), 8, 8)
+        painter.drawLine(30, 27, 54, 27)
+        painter.drawLine(30, 40, 50, 40)
+        painter.drawLine(30, 53, 43, 53)
+        painter.drawLine(30, 61, 39, 70)
+        painter.drawLine(39, 70, 60, 47)
+
+    def _draw_staff_call(self, painter):
+        bell = QPainterPath()
+        bell.moveTo(22, 57)
+        bell.cubicTo(27, 50, 27, 43, 27, 36)
+        bell.cubicTo(27, 24, 33, 18, 42, 18)
+        bell.cubicTo(51, 18, 57, 24, 57, 36)
+        bell.cubicTo(57, 43, 57, 50, 62, 57)
+        bell.lineTo(22, 57)
+        painter.drawPath(bell)
+        painter.drawArc(QRectF(34, 58, 16, 14), 200 * 16, 140 * 16)
+        painter.drawLine(15, 26, 8, 18)
+        painter.drawLine(69, 26, 76, 18)
+
+
 class KioskHomeActionCard(QFrame):
     clicked = pyqtSignal()
 
-    def __init__(self, *, accent, icon_text, title_text, desc_text):
+    def __init__(self, *, accent, icon_name, title_text, desc_text):
         super().__init__()
         self.setObjectName("kioskActionCard")
         self.setProperty("accent", accent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(400)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 28, 28, 28)
-        layout.setSpacing(18)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        self.accent_bar = QFrame()
-        self.accent_bar.setObjectName("kioskCardAccent")
-        self.accent_bar.setProperty("accent", accent)
-        self.accent_bar.setFixedHeight(8)
+        body = QFrame()
+        body.setObjectName("kioskActionCardBody")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(48, 44, 48, 44)
+        body_layout.setSpacing(24)
 
         icon_wrap = QFrame()
         icon_wrap.setObjectName("kioskIconBubble")
         icon_wrap.setProperty("accent", accent)
-        icon_wrap.setFixedSize(116, 116)
+        icon_wrap.setFixedSize(128, 128)
         icon_layout = QVBoxLayout(icon_wrap)
         icon_layout.setContentsMargins(0, 0, 0, 0)
         icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.icon = QLabel(icon_text)
-        self.icon.setObjectName("kioskActionIcon")
-        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon = KioskActionIconGlyph(icon_name=icon_name, accent=accent)
         icon_layout.addWidget(self.icon)
 
         self.title = QLabel(title_text)
@@ -65,21 +125,15 @@ class KioskHomeActionCard(QFrame):
         self.desc.setWordWrap(True)
         self.desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.cta = QPushButton("선택")
-        self.cta.setObjectName("kioskGhostButton")
-        self.cta.setProperty("accent", accent)
-        self.cta.setMinimumHeight(56)
+        body_layout.addStretch()
+        body_layout.addWidget(icon_wrap, alignment=Qt.AlignmentFlag.AlignHCenter)
+        body_layout.addWidget(self.title)
+        body_layout.addWidget(self.desc)
+        body_layout.addStretch()
 
-        layout.addWidget(self.accent_bar)
-        layout.addSpacing(4)
-        layout.addWidget(icon_wrap, alignment=Qt.AlignmentFlag.AlignHCenter)
-        layout.addWidget(self.title)
-        layout.addWidget(self.desc)
-        layout.addStretch()
-        layout.addWidget(self.cta)
+        layout.addWidget(body, 1)
 
-        self.cta.clicked.connect(self.clicked.emit)
-        for widget in [self.icon, self.title, self.desc]:
+        for widget in [icon_wrap, self.icon, self.title, self.desc]:
             widget.mousePressEvent = self._child_click
 
     def mousePressEvent(self, event):
@@ -839,18 +893,16 @@ class KioskHomePage(QWidget):
         top_bar = QFrame()
         top_bar.setObjectName("kioskTopBar")
         top_layout = QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(56, 28, 56, 28)
-        top_layout.setSpacing(18)
-
-        brand_wrap = QVBoxLayout()
-        brand_wrap.setSpacing(4)
+        top_layout.setContentsMargins(64, 36, 64, 36)
+        top_layout.setSpacing(24)
 
         brand_row = QHBoxLayout()
-        brand_row.setSpacing(10)
+        brand_row.setSpacing(18)
         brand_row.setContentsMargins(0, 0, 0, 0)
 
         brand_icon = QLabel("✚")
         brand_icon.setObjectName("kioskBrandIcon")
+        brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         brand_title = QLabel("ROPI 요양보호 서비스")
         brand_title.setObjectName("kioskBrandTitle")
@@ -859,66 +911,45 @@ class KioskHomePage(QWidget):
         brand_row.addWidget(brand_title)
         brand_row.addStretch()
 
-        brand_subtitle = QLabel("방문 등록, 어르신 찾기, 직원 호출을 한 화면에서 빠르게 진행할 수 있습니다.")
-        brand_subtitle.setObjectName("kioskBrandSubtitle")
-        brand_subtitle.setWordWrap(True)
+        top_layout.addLayout(brand_row, 1)
 
-        brand_wrap.addLayout(brand_row)
-        brand_wrap.addWidget(brand_subtitle)
-
-        action_wrap = QHBoxLayout()
-        action_wrap.setSpacing(12)
-
-        self.help_button = QPushButton("도움말")
-        self.help_button.setObjectName("kioskSecondaryButton")
-        self.help_button.setMinimumHeight(60)
-
-        action_wrap.addWidget(self.help_button)
-
-        top_layout.addLayout(brand_wrap, 1)
-        top_layout.addLayout(action_wrap)
-
-        content = QVBoxLayout()
-        content.setContentsMargins(56, 32, 56, 0)
-        content.setSpacing(28)
+        canvas = QFrame()
+        canvas.setObjectName("kioskHomeCanvas")
+        content = QVBoxLayout(canvas)
+        content.setContentsMargins(64, 32, 64, 48)
+        content.setSpacing(64)
 
         hero_wrap = QVBoxLayout()
-        hero_wrap.setSpacing(10)
-
-        hero_eyebrow = QLabel("방문자 키오스크")
-        hero_eyebrow.setObjectName("kioskEyebrow")
+        hero_wrap.setSpacing(0)
+        hero_wrap.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         hero_title = QLabel("무엇을 도와드릴까요?")
         hero_title.setObjectName("kioskHeroTitle")
+        hero_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        hero_desc = QLabel("필요한 서비스를 선택하면 다음 단계로 바로 이동합니다.")
-        hero_desc.setObjectName("kioskHeroDesc")
-
-        hero_wrap.addWidget(hero_eyebrow, alignment=Qt.AlignmentFlag.AlignHCenter)
-        hero_wrap.addWidget(hero_title, alignment=Qt.AlignmentFlag.AlignHCenter)
-        hero_wrap.addWidget(hero_desc, alignment=Qt.AlignmentFlag.AlignHCenter)
+        hero_wrap.addWidget(hero_title)
 
         card_grid = QGridLayout()
-        card_grid.setHorizontalSpacing(22)
-        card_grid.setVerticalSpacing(22)
+        card_grid.setHorizontalSpacing(24)
+        card_grid.setVerticalSpacing(24)
 
         self.search_card = KioskHomeActionCard(
             accent="blue",
-            icon_text="⌕",
+            icon_name="resident_search",
             title_text="어르신 찾기",
-            desc_text="찾으시는 어르신의 병실과 위치 안내를 확인합니다.",
+            desc_text="찾으시는 어르신과 호실을 안내해 드립니다.",
         )
         self.register_card = KioskHomeActionCard(
             accent="green",
-            icon_text="✓",
+            icon_name="visitor_registration",
             title_text="방문 등록",
-            desc_text="방문 목적과 인적 사항을 입력해 접수 절차를 시작합니다.",
+            desc_text="시설 방문을 위해 인적 사항을 등록합니다.",
         )
         self.call_card = KioskHomeActionCard(
             accent="coral",
-            icon_text="!",
+            icon_name="staff_call",
             title_text="직원 호출",
-            desc_text="직접 도움이 필요할 때 직원에게 바로 요청을 보냅니다.",
+            desc_text="도움이 필요하시면 직원을 연결해 드립니다.",
         )
 
         card_grid.addWidget(self.search_card, 0, 0)
@@ -928,8 +959,8 @@ class KioskHomePage(QWidget):
         footer = QFrame()
         footer.setObjectName("kioskFooterBar")
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(24, 18, 24, 18)
-        footer_layout.setSpacing(18)
+        footer_layout.setContentsMargins(64, 20, 64, 20)
+        footer_layout.setSpacing(24)
 
         footer_layout.addWidget(
             KioskFooterStat(
@@ -953,12 +984,13 @@ class KioskHomePage(QWidget):
             )
         )
 
+        content.addStretch()
         content.addLayout(hero_wrap)
-        content.addLayout(card_grid)
+        content.addLayout(card_grid, 1)
         content.addStretch()
 
         root.addWidget(top_bar)
-        root.addLayout(content, 1)
+        root.addWidget(canvas, 1)
         root.addWidget(footer)
 
 

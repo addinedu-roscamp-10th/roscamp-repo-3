@@ -84,11 +84,13 @@ def test_main_qss_defines_kiosk_ui_components():
     required_selectors = [
         "QWidget#kioskRoot",
         "QFrame#kioskTopBar",
+        "QFrame#kioskHomeCanvas",
+        "QLabel#kioskBrandIcon",
         "QLabel#kioskBrandTitle",
         "QLabel#kioskHeroTitle",
         "QFrame#kioskActionCard",
+        "QFrame#kioskActionCardBody",
         "QFrame#kioskActionCard[accent=\"blue\"]",
-        "QFrame#kioskCardAccent",
         "QFrame#kioskIconBubble",
         "QPushButton#kioskGhostButton",
         "QFrame#kioskFooterBar",
@@ -111,6 +113,8 @@ def test_main_qss_defines_kiosk_ui_components():
 
     for selector in required_selectors:
         assert selector in qss
+    assert "border-top: 12px solid" not in qss
+    assert "QFrame#kioskCardAccent" not in qss
 
 
 def test_main_qss_overrides_native_input_subcontrols():
