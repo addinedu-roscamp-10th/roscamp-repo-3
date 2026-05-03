@@ -370,3 +370,66 @@ def test_kiosk_visitor_registration_resident_name_label_reserves_font_height():
             assert current_bottom <= next_label.geometry().y()
     finally:
         page.close()
+
+
+def test_kiosk_guide_confirmation_ports_wireframe_layout_without_overlap():
+    app = _app()
+
+    from ui.kiosk_ui.main_window import KioskGuideConfirmationPage
+    from ui.utils.core.styles import load_stylesheet
+
+    app.setStyleSheet(load_stylesheet())
+    page = KioskGuideConfirmationPage()
+
+    try:
+        page.resize(1440, 960)
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            }
+        )
+        page.show()
+        app.processEvents()
+
+        assert page.objectName() == "kioskGuideConfirmationPage"
+        assert page.back_button.text() == ""
+        assert page.home_button.text() == ""
+        assert page.top_bar.height() == 96
+        assert page.back_button.geometry().y() + page.back_button.geometry().height() < (
+            page.top_bar.geometry().height()
+        )
+        assert page.home_button.geometry().y() + page.home_button.geometry().height() < (
+            page.top_bar.geometry().height()
+        )
+
+        assert page.summary_card.width() <= 960
+        assert page.robot_status_card.width() <= 960
+        assert page.notice_card.width() <= 960
+        assert page.summary_card.width() >= 860
+        assert page.robot_status_card.width() >= 860
+        assert page.notice_card.width() >= 860
+        assert page.summary_title.text() == "김*수 어르신 (301호)"
+        assert page.inline_status.isHidden() is True
+        assert 80 <= page.confirm_button.height() <= 84
+        assert 80 <= page.call_staff_button.height() <= 84
+
+        assert page.notice_header.height() == 72
+        assert page.notice_header_icon.objectName() == "kioskGuideNoticeHeaderIcon"
+        assert page.notice_header_icon.width() == 44
+        assert page.notice_header_icon.height() == 44
+        assert len(page.notice_rows) == 3
+        assert all(row.findChildren(QWidget, "kioskGuideNoticeLineIcon") for row in page.notice_rows)
+
+        summary_bottom = page.summary_card.geometry().y() + page.summary_card.geometry().height()
+        status_top = page.robot_status_card.geometry().y()
+        status_bottom = status_top + page.robot_status_card.geometry().height()
+        notice_top = page.notice_card.geometry().y()
+        assert summary_bottom <= status_top
+        assert status_bottom <= notice_top
+    finally:
+        page.close()

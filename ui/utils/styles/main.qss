@@ -1032,6 +1032,11 @@ QWidget#kioskVisitorRegistrationPage {
     color: #111C2D;
 }
 
+QWidget#kioskGuideConfirmationPage {
+    background: #FFF8EE;
+    color: #111C2D;
+}
+
 QFrame#kioskRegistrationCanvas {
     background: qlineargradient(
         x1: 0, y1: 0,
@@ -1053,6 +1058,10 @@ QFrame#kioskConfirmationTopBar,
 QFrame#kioskProgressTopBar {
     background: #FFF8EE;
     border-bottom: 6px solid #E8DED2;
+}
+
+QFrame#kioskConfirmationTopBar {
+    border-bottom: 1px solid #E8DED2;
 }
 
 QFrame#kioskHomePage {
@@ -1165,7 +1174,8 @@ QLabel#kioskActionDesc {
 QPushButton#kioskGhostButton,
 QPushButton#kioskSecondaryButton,
 QPushButton#kioskSearchFooterButton,
-QPushButton#kioskRoundIconButton {
+QPushButton#kioskRoundIconButton,
+QPushButton#kioskTopIconButton {
     background: #FFFFFF;
     color: #1E293B;
     border: 1px solid #E8DED2;
@@ -1173,6 +1183,11 @@ QPushButton#kioskRoundIconButton {
     font-size: 24px;
     font-weight: 900;
     padding: 12px 34px;
+}
+
+QPushButton#kioskTopIconButton {
+    border-radius: 36px;
+    padding: 0px;
 }
 
 QPushButton#kioskSearchFooterButton {
@@ -1218,11 +1233,11 @@ QPushButton#kioskSearchCallButton {
 
 QPushButton#kioskConfirmationSecondaryButton,
 QPushButton#kioskProgressPrimaryButton {
-    background: #FFF0EA;
+    background: #FFFFFF;
     color: #B9472B;
-    border: 1px solid #F5C6B8;
-    border-radius: 18px;
-    font-size: 21px;
+    border: 2px solid #E76F51;
+    border-radius: 16px;
+    font-size: 28px;
     font-weight: 900;
     padding: 14px 24px;
 }
@@ -1331,8 +1346,16 @@ QPushButton#kioskSearchSubmitButton {
     padding: 0px;
 }
 
+QPushButton#kioskConfirmationPrimaryButton,
+QPushButton#kioskConfirmationSecondaryButton {
+    min-height: 80px;
+    max-height: 80px;
+    padding: 0 28px;
+}
+
 QPushButton#kioskSearchSubmitButton:disabled,
-QPushButton#kioskRegistrationPrimaryButton:disabled {
+QPushButton#kioskRegistrationPrimaryButton:disabled,
+QPushButton#kioskConfirmationPrimaryButton:disabled {
     background: #CBD5E1;
     color: #F8FAFC;
     border-color: #CBD5E1;
@@ -1364,6 +1387,20 @@ QFrame#kioskRegistrationResidentCard {
 QFrame#kioskRegistrationResidentSummary {
     background: #F8FAFC;
     border-color: #E2E8F0;
+}
+
+QFrame#kioskConfirmationSummaryCard,
+QFrame#kioskConfirmationStatusCard,
+QFrame#kioskGuideNoticeCard {
+    background: #FFFFFF;
+    border: 1px solid #E8DED2;
+    border-radius: 24px;
+}
+
+QFrame#kioskConfirmationPersonBubble {
+    background: #EAF5F2;
+    border: 1px solid #BFE5D2;
+    border-radius: 40px;
 }
 
 QLabel#kioskRegistrationSectionTitle {
@@ -1515,37 +1552,42 @@ QFrame#kioskGuideNoticeCard {
 }
 
 QFrame#kioskGuideNoticeHeader {
-    background: #E9F2FF;
+    background: #2B6CB0;
     border-top-left-radius: 24px;
     border-top-right-radius: 24px;
 }
 
 QFrame#kioskGuideNoticeBody {
-    background: #FFFFFF;
+    background: #F2F7FF;
     border-bottom-left-radius: 24px;
     border-bottom-right-radius: 24px;
 }
 
-QLabel#kioskGuideNoticeHeaderIcon {
-    background: #2B6CB0;
-    color: #FFFFFF;
-    border-radius: 13px;
-    font-size: 18px;
-    font-weight: 900;
-    min-width: 26px;
-    min-height: 26px;
+QWidget#kioskGuideNoticeHeaderIcon,
+QWidget#kioskGuideNoticeLineIcon {
+    background: transparent;
+    border: none;
+}
+
+QFrame#kioskGuideNoticeRow {
+    background: transparent;
+    border: none;
 }
 
 QLabel#kioskGuideNoticeHeaderTitle {
-    color: #1E3A5F;
-    font-size: 22px;
+    color: #FFFFFF;
+    font-size: 26px;
     font-weight: 900;
 }
 
+QFrame#kioskGuideNoticeHeader QLabel#kioskGuideNoticeHeaderTitle {
+    color: #FFFFFF;
+}
+
 QLabel#kioskGuideNoticeLine {
-    color: #344054;
-    font-size: 19px;
-    font-weight: 700;
+    color: #111C2D;
+    font-size: 20px;
+    font-weight: 800;
 }
 
 QFrame#kioskProgressLineWrap {
