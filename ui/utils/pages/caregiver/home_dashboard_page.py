@@ -101,6 +101,14 @@ ROS_ERROR_MARKERS = (
     "ROPI_ROS_SERVICE_SOCKET",
 )
 
+ROBOT_DISPLAY_NAMES = {
+    "pinky1": "안내 로봇",
+    "pinky2": "운반 로봇",
+    "pinky3": "순찰 로봇",
+    "jetcobot1": "픽업 로봇팔",
+    "jetcobot2": "목적지 로봇팔",
+}
+
 
 def _status_of(task: dict) -> str:
     return _display(task.get("task_status"), "UNKNOWN").upper()
@@ -165,6 +173,13 @@ def _summary_and_detail(message):
 
 def _reason_label(value):
     return _label_from(REASON_LABELS, value, "")
+
+
+def _set_style_property(widget, name: str, value: str):
+    widget.setProperty(name, value)
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+    widget.update()
 
 
 class DashboardLoadWorker(QObject):
@@ -264,35 +279,58 @@ class DashboardTaskCancelWorker(QObject):
 class KpiCard(QFrame):
     def __init__(self, title: str, hint: str):
         super().__init__()
-        self.setObjectName("card")
+        self.setObjectName("homeKpiCard")
+        self.setProperty("tone", "neutral")
 
-        root = QVBoxLayout(self)
+        root = QHBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
-        root.setSpacing(8)
+        root.setSpacing(12)
+
+        self.accent = QFrame()
+        self.accent.setObjectName("homeKpiAccent")
+        self.accent.setProperty("tone", "neutral")
+        self.accent.setFixedWidth(6)
+
+        content = QVBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(8)
 
         title_label = QLabel(title)
-        title_label.setObjectName("mutedText")
+        title_label.setObjectName("homeKpiTitle")
 
         self.value_label = QLabel("0")
-        self.value_label.setObjectName("summaryValue")
+        self.value_label.setObjectName("homeKpiValue")
 
         self.hint_label = QLabel(hint)
-        self.hint_label.setObjectName("mutedText")
+        self.hint_label.setObjectName("homeKpiHint")
         self.hint_label.setWordWrap(True)
 
-        root.addWidget(title_label)
-        root.addWidget(self.value_label)
-        root.addWidget(self.hint_label)
+        content.addWidget(title_label)
+        content.addWidget(self.value_label)
+        content.addWidget(self.hint_label)
+
+        root.addWidget(self.accent)
+        root.addLayout(content, 1)
+
+    def set_tone(self, tone: str):
+        _set_style_property(self, "tone", tone)
+        _set_style_property(self.accent, "tone", tone)
 
 
 class RobotBoardCard(QFrame):
     def __init__(self, robot: dict):
         super().__init__()
-        self.setObjectName("card")
+        self.setObjectName("homeRobotCard")
 
         robot_id = _display(robot.get("robot_id") or robot.get("robot_name"))
+        display_name = _display(
+            robot.get("display_name") or ROBOT_DISPLAY_NAMES.get(robot_id),
+            robot_id,
+        )
         role = _display(robot.get("robot_role") or robot.get("robot_type_name"))
         status = _display(robot.get("connection_status") or robot.get("status"))
+        status_key = status.lower()
+        self.setProperty("connection_status", status_key)
         location = _display(
             robot.get("current_location") or robot.get("zone"),
             "위치 미수신",
@@ -309,27 +347,42 @@ class RobotBoardCard(QFrame):
         root.setSpacing(10)
 
         top = QHBoxLayout()
-        name = QLabel(robot_id)
-        name.setObjectName("sectionTitle")
+        name = QLabel(f"{display_name} · {robot_id}")
+        name.setObjectName("homeRobotTitle")
         chip = StatusChip(status, chip_type)
 
         top.addWidget(name)
         top.addStretch()
         top.addWidget(chip)
 
-        for text in (
-            f"역할: {role}",
-            f"현재 작업: {current_task}",
-            f"현재 위치: {location}",
-            f"배터리: {_display(battery)}",
-            f"마지막 수신: {last_seen}",
-        ):
-            label = QLabel(text)
-            label.setObjectName("mutedText")
-            label.setWordWrap(True)
-            root.addWidget(label)
+        rows = (
+            ("역할", role),
+            ("현재 작업", current_task),
+            ("위치", location),
+            ("배터리", _display(battery, "배터리 미수신")),
+            ("마지막 수신", last_seen),
+        )
+        for row in rows:
+            self._add_field_row(root, *row)
 
         root.insertLayout(0, top)
+
+    @staticmethod
+    def _add_field_row(layout, key: str, value: str):
+        row = QHBoxLayout()
+        row.setSpacing(8)
+
+        key_label = QLabel(key)
+        key_label.setObjectName("homeRobotFieldKey")
+        key_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        value_label = QLabel(value)
+        value_label.setObjectName("homeRobotFieldValue")
+        value_label.setWordWrap(True)
+
+        row.addWidget(key_label, 0, Qt.AlignmentFlag.AlignTop)
+        row.addWidget(value_label, 1)
+        layout.addLayout(row)
 
 
 class FlowColumn(QFrame):
@@ -738,6 +791,45 @@ class CaregiverHomePage(QWidget):
 
         for key, value in values.items():
             self.kpi_cards[key].value_label.setText(value)
+
+        self._apply_kpi_states(
+            available_robot_count=available_robot_count,
+            waiting_job_count=int(summary.get("waiting_job_count") or 0),
+            running_job_count=int(summary.get("running_job_count") or 0),
+            warning_error_count=int(summary.get("warning_error_count") or 0),
+        )
+
+    def _apply_kpi_states(
+        self,
+        *,
+        available_robot_count,
+        waiting_job_count,
+        running_job_count,
+        warning_error_count,
+    ):
+        states = {
+            "available_robots": (
+                "teal" if available_robot_count > 0 else "red",
+                "운영 가능 로봇" if available_robot_count > 0 else "운영 가능 로봇 없음",
+            ),
+            "waiting_tasks": (
+                "amber" if waiting_job_count > 0 else "neutral",
+                "배차 대기 필요" if waiting_job_count > 0 else "대기 중 작업 없음",
+            ),
+            "running_tasks": (
+                "green" if running_job_count > 0 else "neutral",
+                "로봇 수행 중" if running_job_count > 0 else "진행 중 작업 없음",
+            ),
+            "warning_errors": (
+                "red" if warning_error_count > 0 else "neutral",
+                "운영 확인 필요" if warning_error_count > 0 else "최근 오류 없음",
+            ),
+        }
+
+        for key, (tone, hint) in states.items():
+            card = self.kpi_cards[key]
+            card.set_tone(tone)
+            card.hint_label.setText(hint)
 
     def apply_robot_board_data(self, robots):
         self.clear_layout(self.robot_row)

@@ -57,6 +57,16 @@ def test_main_qss_defines_task_request_page_components():
     assert "QLabel#resultMessage" in qss
 
 
+def test_main_qss_defines_home_dashboard_components():
+    qss = _stylesheet()
+
+    assert "QFrame#homeKpiCard" in qss
+    assert "QFrame#homeKpiAccent" in qss
+    assert "QFrame#homeRobotCard" in qss
+    assert "QLabel#homeRobotFieldKey" in qss
+    assert "QLabel#homeTaskFieldKey" in qss
+
+
 def test_main_qss_overrides_native_input_subcontrols():
     qss = _stylesheet()
 

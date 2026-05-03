@@ -280,6 +280,110 @@ QFrame#noticeCard {
     border-radius: 18px;
 }
 
+QFrame#homeKpiCard,
+QFrame#homeRobotCard {
+    background: #FFFFFF;
+    border: 1px solid #D8E0E8;
+    border-radius: 18px;
+}
+
+QFrame#homeKpiCard[tone="teal"] {
+    background: #F0F9F7;
+    border: 1px solid #B9D8D3;
+}
+
+QFrame#homeKpiCard[tone="amber"] {
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+}
+
+QFrame#homeKpiCard[tone="green"] {
+    background: #F0FDF4;
+    border: 1px solid #BBF7D0;
+}
+
+QFrame#homeKpiCard[tone="red"] {
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+}
+
+QFrame#homeKpiAccent {
+    background: #CBD5E1;
+    border-radius: 3px;
+}
+
+QFrame#homeKpiAccent[tone="teal"] {
+    background: #005C55;
+}
+
+QFrame#homeKpiAccent[tone="amber"] {
+    background: #D97706;
+}
+
+QFrame#homeKpiAccent[tone="green"] {
+    background: #16A34A;
+}
+
+QFrame#homeKpiAccent[tone="red"] {
+    background: #DC2626;
+}
+
+QLabel#homeKpiTitle {
+    color: #344054;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+QLabel#homeKpiValue {
+    color: #16202A;
+    font-size: 30px;
+    font-weight: 900;
+}
+
+QLabel#homeKpiHint {
+    color: #5B6775;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+QFrame#homeRobotCard[connection_status="offline"] {
+    background: #F8FAFC;
+    border: 1px solid #CBD5E1;
+}
+
+QFrame#homeRobotCard[connection_status="degraded"] {
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+}
+
+QFrame#homeRobotCard[connection_status="online"] {
+    background: #F8FFFD;
+    border: 1px solid #B9D8D3;
+}
+
+QLabel#homeRobotTitle {
+    color: #16202A;
+    font-size: 16px;
+    font-weight: 900;
+}
+
+QLabel#homeRobotFieldKey {
+    background: #EEF4F7;
+    color: #475569;
+    border: 1px solid #D8E0E8;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 900;
+    min-width: 60px;
+    padding: 5px 7px;
+}
+
+QLabel#homeRobotFieldValue {
+    color: #344054;
+    font-size: 13px;
+    font-weight: 700;
+}
+
 QFrame#dashboardStatusBanner {
     background: #FFF7ED;
     border: 1px solid #FED7AA;

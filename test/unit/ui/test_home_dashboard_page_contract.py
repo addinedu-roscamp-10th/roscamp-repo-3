@@ -110,6 +110,14 @@ def test_home_dashboard_applies_summary_with_total_and_warning_count():
         assert "3건" in labels
         assert "1건" in labels
         assert "4건" in labels
+        assert page.kpi_cards["available_robots"].objectName() == "homeKpiCard"
+        assert page.kpi_cards["available_robots"].property("tone") == "teal"
+        assert page.kpi_cards["waiting_tasks"].property("tone") == "amber"
+        assert page.kpi_cards["running_tasks"].property("tone") == "green"
+        assert page.kpi_cards["warning_errors"].property("tone") == "red"
+        assert "배차 대기 필요" in labels
+        assert "로봇 수행 중" in labels
+        assert "운영 확인 필요" in labels
     finally:
         page.close()
 
@@ -126,6 +134,7 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
             [
                 {
                     "robot_id": "pinky2",
+                    "display_name": "운반 로봇",
                     "robot_role": "Pinky Pro",
                     "connection_status": "OFFLINE",
                     "current_location": "좌표 x=1.2, y=0.8",
@@ -137,8 +146,30 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
         )
 
         labels = _label_texts(page)
-        assert "현재 위치: 좌표 x=1.2, y=0.8" in labels
-        assert "마지막 수신: 2026-05-03 12:00:00" in labels
+        cards = [
+            frame
+            for frame in page.findChildren(QFrame)
+            if frame.objectName() == "homeRobotCard"
+        ]
+        assert len(cards) == 1
+        assert cards[0].property("connection_status") == "offline"
+        assert "운반 로봇 · pinky2" in labels
+        assert "역할" in labels
+        assert "Pinky Pro" in labels
+        assert "현재 작업" in labels
+        assert "위치" in labels
+        assert "좌표 x=1.2, y=0.8" in labels
+        assert "마지막 수신" in labels
+        assert "2026-05-03 12:00:00" in labels
+        assert any(
+            label.objectName() == "homeRobotFieldKey" and label.text() == "위치"
+            for label in page.findChildren(QLabel)
+        )
+        assert any(
+            label.objectName() == "homeRobotFieldValue"
+            and label.text() == "좌표 x=1.2, y=0.8"
+            for label in page.findChildren(QLabel)
+        )
         assert not any("현재 구역:" in text for text in labels)
         assert not any("T12:00:00" in text for text in labels)
         assert not any("192.168." in text for text in labels)
