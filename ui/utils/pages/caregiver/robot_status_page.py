@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, QDateTime, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, QDateTime, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -15,6 +15,12 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import CaregiverRemoteService
+from ui.utils.widgets.admin_common import (
+    StatusChip,
+    SummaryCard,
+    battery_text as _battery_text,
+    display_text as _display,
+)
 from ui.utils.widgets.admin_shell import PageHeader
 
 
@@ -37,22 +43,6 @@ TABLE_HEADERS = [
 ]
 
 
-def _display(value, default="-") -> str:
-    if value is None:
-        return default
-    text = str(value).strip()
-    return text or default
-
-
-def _battery_text(value) -> str:
-    if value is None or value == "":
-        return "-"
-    try:
-        return f"{float(value):.0f}%"
-    except (TypeError, ValueError):
-        return str(value)
-
-
 def _chip_type(connection_status: str) -> str:
     normalized = str(connection_status or "").upper()
     if normalized == "ONLINE":
@@ -73,38 +63,6 @@ class RobotStatusLoadWorker(QObject):
             self.finished.emit(True, bundle)
         except Exception as exc:
             self.finished.emit(False, str(exc))
-
-
-class StatusChip(QLabel):
-    def __init__(self, text: str, chip_type: str = "blue"):
-        super().__init__(text)
-        mapping = {
-            "green": "chipGreen",
-            "blue": "chipBlue",
-            "red": "chipRed",
-            "yellow": "chipYellow",
-        }
-        self.setObjectName(mapping.get(chip_type, "chipBlue"))
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-
-class SummaryCard(QFrame):
-    def __init__(self, title: str):
-        super().__init__()
-        self.setObjectName("card")
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(8)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("mutedText")
-
-        self.value_label = QLabel("0대")
-        self.value_label.setObjectName("summaryValue")
-
-        layout.addWidget(title_label)
-        layout.addWidget(self.value_label)
 
 
 class RobotStatusCard(QFrame):
@@ -202,7 +160,7 @@ class RobotStatusPage(QWidget):
         summary_row = QHBoxLayout()
         summary_row.setSpacing(16)
         for key, title in SUMMARY_ITEMS:
-            card = SummaryCard(title)
+            card = SummaryCard(title, initial_value="0대")
             self.summary_cards[key] = card
             summary_row.addWidget(card)
 
@@ -343,7 +301,7 @@ class RobotStatusPage(QWidget):
     def _apply_summary(self, summary):
         for key, _title in SUMMARY_ITEMS:
             value = int(summary.get(key) or 0)
-            self.summary_cards[key].value_label.setText(f"{value}대")
+            self.summary_cards[key].set_value(value, "대")
 
     def _apply_robot_cards(self, robots):
         self._clear_layout(self.card_grid)

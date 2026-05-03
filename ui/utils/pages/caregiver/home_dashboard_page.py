@@ -22,6 +22,7 @@ from ui.utils.network.service_clients import (
     TaskMonitorRemoteService,
 )
 from ui.utils.session.session_manager import SessionManager
+from ui.utils.widgets.admin_common import StatusChip, display_text as _display
 from ui.utils.widgets.admin_shell import PageHeader
 
 
@@ -43,13 +44,6 @@ FLOW_COLUMNS = (
     ("CANCELING", "취소 중", CANCELING_TASK_STATUSES),
     ("DONE", "완료/실패", set()),
 )
-
-
-def _display(value, default="-") -> str:
-    if value is None:
-        return default
-    text = str(value).strip()
-    return text or default
 
 
 def _status_of(task: dict) -> str:
@@ -111,19 +105,6 @@ class DashboardTaskCancelWorker(QObject):
                     "cancel_requested": False,
                 },
             )
-
-
-class StatusChip(QLabel):
-    def __init__(self, text: str, chip_type: str = "green"):
-        super().__init__(text)
-        mapping = {
-            "green": "chipGreen",
-            "blue": "chipBlue",
-            "red": "chipRed",
-            "yellow": "chipYellow",
-        }
-        self.setObjectName(mapping.get(chip_type, "chipBlue"))
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
 
 class KpiCard(QFrame):

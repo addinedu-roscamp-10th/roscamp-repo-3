@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import CaregiverRemoteService
+from ui.utils.widgets.admin_common import SummaryCard, display_text as _display
 from ui.utils.widgets.admin_shell import PageHeader
 
 
@@ -39,13 +40,6 @@ TABLE_HEADERS = [
 ]
 
 
-def _display(value, default="-") -> str:
-    if value is None:
-        return default
-    text = str(value).strip()
-    return text or default
-
-
 def _filter_text(widget: QLineEdit):
     text = widget.text().strip()
     return text or None
@@ -64,25 +58,6 @@ class AlertLogLoadWorker(QObject):
             self.finished.emit(True, bundle)
         except Exception as exc:
             self.finished.emit(False, str(exc))
-
-
-class SummaryCard(QFrame):
-    def __init__(self, title: str):
-        super().__init__()
-        self.setObjectName("card")
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(8)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("mutedText")
-
-        self.value_label = QLabel("0건")
-        self.value_label.setObjectName("summaryValue")
-
-        layout.addWidget(title_label)
-        layout.addWidget(self.value_label)
 
 
 class AlertLogPage(QWidget):
@@ -192,7 +167,7 @@ class AlertLogPage(QWidget):
         summary_row = QHBoxLayout()
         summary_row.setSpacing(16)
         for key, title in SUMMARY_ITEMS:
-            card = SummaryCard(title)
+            card = SummaryCard(title, initial_value="0건")
             self.summary_cards[key] = card
             summary_row.addWidget(card)
 
@@ -324,7 +299,7 @@ class AlertLogPage(QWidget):
     def _apply_summary(self, summary):
         for key, _title in SUMMARY_ITEMS:
             value = int(summary.get(key) or 0)
-            self.summary_cards[key].value_label.setText(f"{value}건")
+            self.summary_cards[key].set_value(value, "건")
 
     def _apply_event_table(self, events):
         self.table.setRowCount(len(events))

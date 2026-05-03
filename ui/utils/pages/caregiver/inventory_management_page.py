@@ -16,6 +16,11 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import InventoryRemoteService
+from ui.utils.widgets.admin_common import (
+    SummaryCard,
+    display_text as _display,
+    int_value as _int_value,
+)
 from ui.utils.widgets.admin_shell import PageHeader
 
 
@@ -28,20 +33,6 @@ SUMMARY_ITEMS = (
 
 TABLE_HEADERS = ["item_id", "item_type", "item_name", "quantity", "updated_at"]
 SUCCESS_RESULT_CODES = {"OK", "UPDATED", "ACCEPTED"}
-
-
-def _display(value, default="-") -> str:
-    if value is None:
-        return default
-    text = str(value).strip()
-    return text or default
-
-
-def _int_value(value) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _is_success_response(payload) -> bool:
@@ -85,25 +76,6 @@ class InventoryAdjustWorker(QObject):
             self.finished.emit(True, response or {})
         except Exception as exc:
             self.finished.emit(False, str(exc))
-
-
-class SummaryCard(QFrame):
-    def __init__(self, title: str, unit: str):
-        super().__init__()
-        self.setObjectName("card")
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(8)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("mutedText")
-
-        self.value_label = QLabel(f"0{unit}")
-        self.value_label.setObjectName("summaryValue")
-
-        layout.addWidget(title_label)
-        layout.addWidget(self.value_label)
 
 
 class InventoryManagementPage(QWidget):
@@ -163,7 +135,7 @@ class InventoryManagementPage(QWidget):
         summary_row = QHBoxLayout()
         summary_row.setSpacing(16)
         for key, title, unit in SUMMARY_ITEMS:
-            card = SummaryCard(title, unit)
+            card = SummaryCard(title, initial_value=f"0{unit}")
             self.summary_cards[key] = card
             summary_row.addWidget(card)
 
@@ -306,7 +278,7 @@ class InventoryManagementPage(QWidget):
     def _apply_summary(self, summary):
         for key, _title, unit in SUMMARY_ITEMS:
             value = _int_value(summary.get(key))
-            self.summary_cards[key].value_label.setText(f"{value}{unit}")
+            self.summary_cards[key].set_value(value, unit)
 
     def _apply_table(self, items):
         self.table.setRowCount(len(items))
