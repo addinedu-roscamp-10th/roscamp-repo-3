@@ -535,8 +535,9 @@ class KioskVisitorRegistrationPage(QWidget):
 
         self.resident_summary_card = QFrame()
         self.resident_summary_card.setObjectName("kioskRegistrationResidentSummary")
+        self.resident_summary_card.setMinimumHeight(176)
         summary_layout = QHBoxLayout(self.resident_summary_card)
-        summary_layout.setContentsMargins(22, 22, 22, 22)
+        summary_layout.setContentsMargins(22, 18, 22, 18)
         summary_layout.setSpacing(18)
 
         avatar = QFrame()
@@ -548,7 +549,7 @@ class KioskVisitorRegistrationPage(QWidget):
         avatar_layout.addWidget(KioskResidentPersonIcon())
 
         resident_text = QVBoxLayout()
-        resident_text.setSpacing(8)
+        resident_text.setSpacing(4)
 
         self.resident_name_label = QLabel("선택된 어르신이 없습니다")
         self.resident_name_label.setObjectName("kioskResidentName")
@@ -559,12 +560,24 @@ class KioskVisitorRegistrationPage(QWidget):
 
         self.resident_birth_label = QLabel("생년월일 -")
         self.resident_birth_label.setObjectName("kioskResidentMeta")
+        self.resident_birth_label.setMinimumHeight(24)
+        self.resident_birth_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
         self.resident_room_label = QLabel("호실 -")
         self.resident_room_label.setObjectName("kioskResidentRoom")
+        self.resident_room_label.setMinimumHeight(28)
+        self.resident_room_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
         self.resident_visit_label = QLabel("방문 상태 -")
         self.resident_visit_label.setObjectName("kioskResidentMeta")
+        self.resident_visit_label.setMinimumHeight(24)
+        self.resident_visit_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
         resident_text.addWidget(self.resident_name_label)
         resident_text.addWidget(self.resident_birth_label)

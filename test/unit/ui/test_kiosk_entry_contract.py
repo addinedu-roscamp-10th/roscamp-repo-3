@@ -352,8 +352,21 @@ def test_kiosk_visitor_registration_resident_name_label_reserves_font_height():
         )
         app.processEvents()
 
+        labels = [
+            page.resident_name_label,
+            page.resident_birth_label,
+            page.resident_room_label,
+            page.resident_visit_label,
+        ]
         required_height = page.resident_name_label.fontMetrics().height() + 8
         assert page.resident_name_label.minimumHeight() >= required_height
         assert page.resident_name_label.geometry().height() >= required_height
+        assert all(
+            label.geometry().height() >= label.fontMetrics().height()
+            for label in labels
+        )
+        for current_label, next_label in zip(labels, labels[1:]):
+            current_bottom = current_label.geometry().y() + current_label.geometry().height()
+            assert current_bottom <= next_label.geometry().y()
     finally:
         page.close()
