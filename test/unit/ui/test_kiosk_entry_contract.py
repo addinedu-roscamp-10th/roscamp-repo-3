@@ -63,7 +63,7 @@ def test_kiosk_home_ports_wireframe_style_without_english_or_duplicate_cta():
         assert home.findChild(QLabel, "kioskBrandIcon") is not None
         assert "ROPI 요양보호 서비스" in texts
         assert "무엇을 도와드릴까요?" in texts
-        assert "어르신 찾기" in texts
+        assert "어르신 찾기" not in texts
         assert "방문 등록" in texts
         assert "직원 호출" in texts
         assert "현재 위치" in texts
@@ -87,16 +87,17 @@ def test_kiosk_home_ports_wireframe_style_without_english_or_duplicate_cta():
             assert forbidden_label not in texts
 
         cards = home.findChildren(QFrame, "kioskActionCard")
-        assert len(cards) == 3
+        assert len(cards) == 2
         assert all(card.minimumHeight() >= 380 for card in cards)
         assert all(not card.findChildren(QPushButton) for card in cards)
         assert len(home.findChildren(QFrame, "kioskCardAccent")) == 0
-        assert len(home.findChildren(QWidget, "kioskActionIconGlyph")) == 3
+        assert len(home.findChildren(QWidget, "kioskActionIconGlyph")) == 2
+        assert not hasattr(home, "search_card")
     finally:
         window.close()
 
 
-def test_kiosk_home_routes_resident_lookup_and_visit_registration_to_registration():
+def test_kiosk_home_routes_visit_registration_to_registration():
     _app()
 
     from ui.kiosk_ui.main_window import KioskHomeWindow
@@ -104,10 +105,6 @@ def test_kiosk_home_routes_resident_lookup_and_visit_registration_to_registratio
     window = KioskHomeWindow()
 
     try:
-        window.home_page.search_card.clicked.emit()
-        assert window.stack.currentWidget() is window.registration_page
-
-        window.stack.setCurrentWidget(window.home_page)
         window.home_page.register_card.clicked.emit()
         assert window.stack.currentWidget() is window.registration_page
     finally:

@@ -289,7 +289,7 @@ def test_kiosk_visitor_registration_lookup_and_register_hits_real_server_and_db(
     window.show()
 
     try:
-        window.home_page.search_card.clicked.emit()
+        window.home_page.register_card.clicked.emit()
         assert window.stack.currentWidget() is window.registration_page
 
         page = window.registration_page

@@ -1405,12 +1405,6 @@ class KioskHomePage(QWidget):
         card_grid.setHorizontalSpacing(24)
         card_grid.setVerticalSpacing(24)
 
-        self.search_card = KioskHomeActionCard(
-            accent="blue",
-            icon_name="resident_search",
-            title_text="어르신 찾기",
-            desc_text="방문 등록 후 만나실 어르신을 확인합니다.",
-        )
         self.register_card = KioskHomeActionCard(
             accent="green",
             icon_name="visitor_registration",
@@ -1424,9 +1418,8 @@ class KioskHomePage(QWidget):
             desc_text="도움이 필요하시면 직원을 연결해 드립니다.",
         )
 
-        card_grid.addWidget(self.search_card, 0, 0)
-        card_grid.addWidget(self.register_card, 0, 1)
-        card_grid.addWidget(self.call_card, 0, 2)
+        card_grid.addWidget(self.register_card, 0, 0)
+        card_grid.addWidget(self.call_card, 0, 1)
 
         footer = QFrame()
         footer.setObjectName("kioskFooterBar")
@@ -1496,9 +1489,6 @@ class KioskHomeWindow(QMainWindow):
             go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
         )
 
-        self.home_page.search_card.clicked.connect(
-            lambda: self._show_registration_page(focus_resident_search=True)
-        )
         self.home_page.register_card.clicked.connect(
             lambda: self._show_registration_page(focus_resident_search=False)
         )
