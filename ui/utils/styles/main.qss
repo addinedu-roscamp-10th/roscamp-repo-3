@@ -1403,6 +1403,54 @@ QFrame#kioskConfirmationPersonBubble {
     border-radius: 40px;
 }
 
+QWidget#kioskStaffCallModalOverlay {
+    background: rgba(17, 28, 45, 145);
+    border: none;
+}
+
+QFrame#kioskStaffCallModalCard {
+    background: #FFFFFF;
+    border: 1px solid #E8DED2;
+    border-radius: 28px;
+}
+
+QLabel#kioskStaffCallModalIcon {
+    background: #EAF5F2;
+    color: #2F855A;
+    border: 1px solid #BFE5D2;
+    border-radius: 46px;
+    font-size: 48px;
+    font-weight: 900;
+}
+
+QLabel#kioskStaffCallModalIcon[state="error"] {
+    background: #FFF0EA;
+    color: #B9472B;
+    border-color: #F5C6B8;
+}
+
+QLabel#kioskStaffCallModalTitle {
+    color: #111C2D;
+    font-size: 36px;
+    font-weight: 900;
+}
+
+QLabel#kioskStaffCallModalMessage {
+    color: #3F4942;
+    font-size: 22px;
+    font-weight: 800;
+}
+
+QPushButton#kioskStaffCallModalCloseButton {
+    background: #2F855A;
+    color: #FFFFFF;
+    border: 1px solid #2F855A;
+    border-radius: 18px;
+    font-size: 26px;
+    font-weight: 900;
+    padding: 10px 56px;
+}
+
 QLabel#kioskRegistrationSectionTitle {
     color: #102A27;
     font-size: 28px;

@@ -433,3 +433,96 @@ def test_kiosk_guide_confirmation_ports_wireframe_layout_without_overlap():
         assert status_bottom <= notice_top
     finally:
         page.close()
+
+
+def test_kiosk_staff_call_uses_in_app_modal_and_lobby_context():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskHomeWindow
+
+    class FakeStaffCallService:
+        def __init__(self):
+            self.calls = []
+
+        def submit_staff_call(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "직원이 곧 도착합니다.",
+                "reason_code": None,
+                "call_id": "kiosk_call_77",
+                "linked_visitor_id": None,
+                "linked_member_id": None,
+            }
+
+    service = FakeStaffCallService()
+    window = KioskHomeWindow(staff_call_service=service)
+
+    try:
+        window.show()
+        window.home_page.call_card.clicked.emit()
+
+        assert len(service.calls) == 1
+        assert service.calls[0]["call_type"] == "직원 호출"
+        assert service.calls[0]["visitor_id"] is None
+        assert service.calls[0]["member_id"] is None
+        assert service.calls[0]["kiosk_id"] == "lobby_kiosk_01"
+        assert service.calls[0]["idempotency_key"].startswith("kiosk_staff_call_")
+
+        assert window.staff_call_modal.isVisible() is True
+        assert window.staff_call_modal.parent() is window.centralWidget()
+        assert window.staff_call_modal.window() is window
+        assert "직원 호출이 접수되었습니다." in _visible_texts(window.staff_call_modal)
+        assert "직원이 곧 도착합니다." in _visible_texts(window.staff_call_modal)
+
+        window.staff_call_modal.close_button.clicked.emit()
+        assert window.staff_call_modal.isHidden() is True
+    finally:
+        window.close()
+
+
+def test_kiosk_staff_call_includes_registered_visitor_context():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskHomeWindow
+
+    class FakeStaffCallService:
+        def __init__(self):
+            self.calls = []
+
+        def submit_staff_call(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "직원이 곧 도착합니다.",
+                "reason_code": None,
+                "call_id": "member_event_9102",
+                "linked_visitor_id": kwargs.get("visitor_id"),
+                "linked_member_id": kwargs.get("member_id"),
+            }
+
+    service = FakeStaffCallService()
+    patient = {
+        "member_id": 1,
+        "visitor_id": 42,
+        "name": "김*수",
+        "room": "301",
+        "visit_status": "면회 가능",
+        "guide_available": True,
+    }
+    window = KioskHomeWindow(staff_call_service=service)
+
+    try:
+        window.show()
+        window._show_confirmation_page(patient)
+        window.confirmation_page.call_staff_button.clicked.emit()
+        window._show_progress_page(patient, session={"task_id": "guide_1"})
+        window.progress_page.call_staff_button.clicked.emit()
+
+        assert [call["visitor_id"] for call in service.calls] == [42, 42]
+        assert [call["member_id"] for call in service.calls] == [1, 1]
+        assert all(call["kiosk_id"] == "lobby_kiosk_01" for call in service.calls)
+        assert "안내 화면" in service.calls[0]["description"]
+        assert "안내 진행" in service.calls[1]["description"]
+    finally:
+        window.close()

@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 from PyQt6.QtCore import QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
@@ -24,7 +25,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ui.utils.core.styles import load_stylesheet
-from ui.utils.network.service_clients import KioskVisitorRemoteService, VisitGuideRemoteService
+from ui.utils.network.service_clients import (
+    KioskVisitorRemoteService,
+    StaffCallRemoteService,
+    VisitGuideRemoteService,
+)
+
+
+KIOSK_ID = "lobby_kiosk_01"
 
 
 class KioskActionIconGlyph(QWidget):
@@ -380,6 +388,78 @@ class KioskConfirmationActionButton(QPushButton):
         )
         painter.drawLine(icon_center_x + 15, icon_center_y - 5, icon_center_x + 23, icon_center_y - 12)
         painter.drawLine(icon_center_x - 15, icon_center_y - 5, icon_center_x - 23, icon_center_y - 12)
+
+
+class KioskStaffCallModal(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("kioskStaffCallModalOverlay")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.hide()
+
+        overlay_layout = QVBoxLayout(self)
+        overlay_layout.setContentsMargins(48, 48, 48, 48)
+        overlay_layout.setSpacing(0)
+        overlay_layout.addStretch()
+
+        self.card = QFrame()
+        self.card.setObjectName("kioskStaffCallModalCard")
+        self.card.setMinimumWidth(620)
+        self.card.setMaximumWidth(720)
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(44, 42, 44, 42)
+        card_layout.setSpacing(20)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.icon_label = QLabel("✓")
+        self.icon_label.setObjectName("kioskStaffCallModalIcon")
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon_label.setFixedSize(92, 92)
+
+        self.title_label = QLabel("직원 호출이 접수되었습니다.")
+        self.title_label.setObjectName("kioskStaffCallModalTitle")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setWordWrap(True)
+
+        self.message_label = QLabel("잠시만 기다려 주세요.")
+        self.message_label.setObjectName("kioskStaffCallModalMessage")
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.message_label.setWordWrap(True)
+
+        self.close_button = QPushButton("확인")
+        self.close_button.setObjectName("kioskStaffCallModalCloseButton")
+        self.close_button.setMinimumHeight(72)
+        self.close_button.clicked.connect(self.hide)
+
+        card_layout.addWidget(self.icon_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        card_layout.addWidget(self.title_label)
+        card_layout.addWidget(self.message_label)
+        card_layout.addWidget(self.close_button)
+
+        overlay_layout.addWidget(self.card, alignment=Qt.AlignmentFlag.AlignCenter)
+        overlay_layout.addStretch()
+
+    def show_result(self, *, success, message):
+        state = "success" if success else "error"
+        self.setProperty("state", state)
+        self.card.setProperty("state", state)
+        self.icon_label.setProperty("state", state)
+        self.title_label.setText(
+            "직원 호출이 접수되었습니다."
+            if success
+            else "직원 호출 접수에 실패했습니다."
+        )
+        self.icon_label.setText("✓" if success else "!")
+        self.message_label.setText(
+            str(message or "").strip()
+            or ("잠시만 기다려 주세요." if success else "데스크에 문의해 주세요.")
+        )
+        for widget in [self, self.card, self.icon_label, self.title_label, self.message_label]:
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        self.show()
+        self.raise_()
+        self.close_button.setFocus()
 
 
 class KioskFooterStat(QFrame):
@@ -1707,10 +1787,14 @@ class KioskHomePage(QWidget):
 
 
 class KioskHomeWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, *, staff_call_service=None):
         super().__init__()
         self.setWindowTitle("ROPI Kiosk")
         self.resize(1440, 960)
+        self.staff_call_service = staff_call_service or StaffCallRemoteService()
+        self.kiosk_id = KIOSK_ID
+        self.current_patient = None
+        self.current_visitor_session = None
         self._build_ui()
 
     def _build_ui(self):
@@ -1739,15 +1823,31 @@ class KioskHomeWindow(QMainWindow):
         self.home_page.register_card.clicked.connect(
             lambda: self._show_registration_page(focus_resident_search=False)
         )
+        self.home_page.call_card.clicked.connect(
+            lambda: self._submit_staff_call("홈 화면")
+        )
+        self.registration_page.call_staff_button.clicked.connect(
+            lambda: self._submit_staff_call("방문자 등록 화면")
+        )
+        self.confirmation_page.call_staff_button.clicked.connect(
+            lambda: self._submit_staff_call("안내 화면")
+        )
+        self.progress_page.call_staff_button.clicked.connect(
+            lambda: self._submit_staff_call("안내 진행 화면")
+        )
 
         self.stack.addWidget(self.home_page)
         self.stack.addWidget(self.registration_page)
         self.stack.addWidget(self.confirmation_page)
         self.stack.addWidget(self.progress_page)
         root_layout.addWidget(self.stack)
+        self.staff_call_modal = KioskStaffCallModal(root)
         self.setCentralWidget(root)
+        self._sync_staff_call_modal_geometry()
 
     def _show_registration_page(self, *, focus_resident_search=False):
+        self.current_patient = None
+        self.current_visitor_session = None
         self.registration_page.reset_form()
         self.stack.setCurrentWidget(self.registration_page)
         if focus_resident_search:
@@ -1756,12 +1856,108 @@ class KioskHomeWindow(QMainWindow):
         self.registration_page.visitor_name_input.setFocus()
 
     def _show_confirmation_page(self, patient):
+        self.current_patient = patient or None
+        self.current_visitor_session = {
+            "visitor_id": (patient or {}).get("visitor_id"),
+            "member_id": (patient or {}).get("member_id"),
+        }
         self.confirmation_page.set_patient(patient)
         self.stack.setCurrentWidget(self.confirmation_page)
 
     def _show_progress_page(self, patient, session=None):
+        self.current_patient = patient or None
+        self.current_visitor_session = {
+            "visitor_id": (patient or {}).get("visitor_id"),
+            "member_id": (patient or {}).get("member_id"),
+        }
         self.progress_page.set_patient(patient, session=session)
         self.stack.setCurrentWidget(self.progress_page)
+
+    def _submit_staff_call(self, source_screen):
+        context = self._staff_call_context()
+        try:
+            response = self.staff_call_service.submit_staff_call(
+                call_type="직원 호출",
+                description=self._staff_call_description(source_screen, context),
+                idempotency_key=f"kiosk_staff_call_{uuid4().hex}",
+                visitor_id=context.get("visitor_id"),
+                member_id=context.get("member_id"),
+                kiosk_id=self.kiosk_id,
+            )
+        except Exception as exc:
+            self._show_staff_call_modal(
+                success=False,
+                message=f"서버 연결 중 오류가 발생했습니다: {exc}",
+            )
+            return
+
+        success = (response or {}).get("result_code") == "ACCEPTED"
+        self._show_staff_call_modal(
+            success=success,
+            message=(
+                (response or {}).get("result_message")
+                or ("직원이 곧 도착합니다." if success else "데스크에 문의해 주세요.")
+            ),
+        )
+
+    def _staff_call_context(self):
+        current_patient = self.current_patient
+        if self.stack.currentWidget() is self.confirmation_page:
+            current_patient = self.confirmation_page.selected_patient
+        elif self.stack.currentWidget() is self.progress_page:
+            current_patient = self.progress_page.selected_patient
+
+        visitor_id = self._normalize_optional_id(
+            (current_patient or {}).get("visitor_id")
+            or (self.current_visitor_session or {}).get("visitor_id")
+        )
+        member_id = self._normalize_optional_id(
+            (current_patient or {}).get("member_id")
+            or (self.current_visitor_session or {}).get("member_id")
+        )
+        return {
+            "visitor_id": visitor_id,
+            "member_id": member_id,
+            "name": str((current_patient or {}).get("name") or "").strip(),
+            "room": str((current_patient or {}).get("room") or "").strip(),
+        }
+
+    def _staff_call_description(self, source_screen, context):
+        parts = [f"{source_screen}에서 직원 호출을 요청했습니다."]
+        if context.get("name"):
+            parts.append(f"대상={context['name']}")
+        if context.get("room"):
+            parts.append(f"호실={context['room']}")
+        if context.get("visitor_id"):
+            parts.append(f"visitor_id={context['visitor_id']}")
+        if context.get("member_id"):
+            parts.append(f"member_id={context['member_id']}")
+        return " ".join(parts)
+
+    def _show_staff_call_modal(self, *, success, message):
+        self._sync_staff_call_modal_geometry()
+        self.staff_call_modal.show_result(success=success, message=message)
+
+    def _sync_staff_call_modal_geometry(self):
+        if hasattr(self, "staff_call_modal") and self.centralWidget() is not None:
+            self.staff_call_modal.setGeometry(self.centralWidget().rect())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_staff_call_modal_geometry()
+
+    @staticmethod
+    def _normalize_optional_id(value):
+        if value is None:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            normalized = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return normalized if normalized > 0 else None
 
 
 __all__ = ["KioskHomeWindow", "KioskVisitorRegistrationPage", "load_stylesheet"]

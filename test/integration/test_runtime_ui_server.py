@@ -319,6 +319,36 @@ def test_kiosk_visitor_registration_lookup_and_register_hits_real_server_and_db(
         wait_for_qt(qapp, lambda: True, timeout=0.1)
 
 
+def test_kiosk_staff_call_home_hits_real_server_and_db(patched_ui_endpoint, qapp):
+    window = KioskHomeWindow()
+    window.show()
+
+    try:
+        window.home_page.call_card.clicked.emit()
+
+        assert window.staff_call_modal.isVisible() is True
+        assert "직원 호출이 접수되었습니다." in _visible_texts(window.staff_call_modal)
+
+        row = safe_fetch_one(
+            """
+            SELECT call_type, description, visitor_id, member_id, kiosk_id
+            FROM kiosk_staff_call_log
+            WHERE kiosk_id = 'lobby_kiosk_01'
+            ORDER BY kiosk_staff_call_id DESC
+            LIMIT 1
+            """
+        )
+        assert row is not None
+        assert row["call_type"] == "직원 호출"
+        assert "홈 화면" in row["description"]
+        assert row["visitor_id"] is None
+        assert row["member_id"] is None
+        assert row["kiosk_id"] == "lobby_kiosk_01"
+    finally:
+        window.close()
+        wait_for_qt(qapp, lambda: True, timeout=0.1)
+
+
 def test_task_request_page_submit_request_hits_if_del_001(patched_ui_endpoint, qapp, runtime_delivery_schema):
     SessionManager.login(build_runtime_caregiver_session())
     page = TaskRequestPage()
