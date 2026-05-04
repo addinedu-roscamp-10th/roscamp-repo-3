@@ -146,6 +146,16 @@ class FakeGuideNavigationStarter:
         return self.response
 
 
+class FailingGuideNavigationStarter:
+    def __init__(self, error_message="navigation transport failed"):
+        self.error_message = error_message
+        self.started = []
+
+    def __call__(self, **kwargs):
+        self.started.append(kwargs)
+        raise RuntimeError(self.error_message)
+
+
 class FakeGuideTrackingSnapshotStore:
     def __init__(self, snapshot=None):
         self.snapshot = snapshot
@@ -399,6 +409,72 @@ def test_visit_guide_service_start_guide_driving_sends_start_guidance_and_naviga
     assert response["navigation_response"]["navigation_started"] is True
 
 
+def test_visit_guide_service_start_guide_driving_does_not_record_running_when_navigation_rejected():
+    command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
+    lifecycle_repository = FakeGuideTaskLifecycleRepository()
+    navigation_repository = FakeGuideTaskNavigationRepository()
+    navigation_starter = FakeGuideNavigationStarter(
+        response={
+            "result_code": "REJECTED",
+            "result_message": "navigation unavailable",
+            "reason_code": "NAVIGATION_UNAVAILABLE",
+        }
+    )
+    service = VisitGuideService(
+        guide_command_service=command_service,
+        guide_task_lifecycle_repository=lifecycle_repository,
+        guide_task_navigation_repository=navigation_repository,
+        guide_navigation_starter=navigation_starter,
+    )
+
+    ok, message, response = service.start_guide_driving(
+        task_id=3001,
+        target_track_id="track_17",
+    )
+
+    assert ok is False
+    assert message == "navigation unavailable"
+    assert navigation_starter.started == [
+        {
+            "task_id": 3001,
+            "pinky_id": "pinky1",
+            "goal_pose": navigation_repository.response["goal_pose"],
+            "timeout_sec": 120.0,
+        }
+    ]
+    assert command_service.sent == []
+    assert lifecycle_repository.recorded == []
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "NAVIGATION_UNAVAILABLE"
+    assert response["task_status"] == "RUNNING"
+    assert response["phase"] == "WAIT_TARGET_TRACKING"
+    assert response["navigation_response"]["result_code"] == "REJECTED"
+
+
+def test_visit_guide_service_start_guide_driving_does_not_record_running_when_navigation_transport_fails():
+    command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
+    lifecycle_repository = FakeGuideTaskLifecycleRepository()
+    navigation_starter = FailingGuideNavigationStarter("UDS navigation socket missing")
+    service = VisitGuideService(
+        guide_command_service=command_service,
+        guide_task_lifecycle_repository=lifecycle_repository,
+        guide_task_navigation_repository=FakeGuideTaskNavigationRepository(),
+        guide_navigation_starter=navigation_starter,
+    )
+
+    ok, message, response = service.start_guide_driving(
+        task_id=3001,
+        target_track_id="track_17",
+    )
+
+    assert ok is False
+    assert "UDS navigation socket missing" in message
+    assert command_service.sent == []
+    assert lifecycle_repository.recorded == []
+    assert response["reason_code"] == "GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR"
+    assert response["phase"] == "WAIT_TARGET_TRACKING"
+
+
 def test_visit_guide_service_start_guide_driving_requires_target_track_id():
     service = VisitGuideService(
         guide_task_navigation_repository=FakeGuideTaskNavigationRepository(),
@@ -436,3 +512,35 @@ def test_visit_guide_service_async_start_guide_driving_delegates_navigation():
     assert ok is True
     assert navigation_starter.started[0]["pinky_id"] == "pinky1"
     assert response["navigation_response"]["result_code"] == "ACCEPTED"
+
+
+def test_visit_guide_service_async_start_guide_driving_stops_before_command_when_navigation_rejected():
+    command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
+    lifecycle_repository = FakeGuideTaskLifecycleRepository()
+    navigation_starter = FakeGuideNavigationStarter(
+        response={
+            "result_code": "REJECTED",
+            "result_message": "navigation unavailable",
+            "reason_code": "NAVIGATION_UNAVAILABLE",
+        }
+    )
+    service = VisitGuideService(
+        guide_command_service=command_service,
+        guide_task_lifecycle_repository=lifecycle_repository,
+        guide_task_navigation_repository=FakeGuideTaskNavigationRepository(),
+        guide_navigation_starter=navigation_starter,
+    )
+
+    ok, message, response = asyncio.run(
+        service.async_start_guide_driving(
+            task_id=3001,
+            target_track_id="track_17",
+        )
+    )
+
+    assert ok is False
+    assert message == "navigation unavailable"
+    assert command_service.sent == []
+    assert lifecycle_repository.recorded == []
+    assert response["phase"] == "WAIT_TARGET_TRACKING"
+    assert response["navigation_response"]["reason_code"] == "NAVIGATION_UNAVAILABLE"

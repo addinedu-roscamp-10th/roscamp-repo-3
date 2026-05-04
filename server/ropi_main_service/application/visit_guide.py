@@ -311,6 +311,31 @@ class VisitGuideService:
             return False, context.get("result_message") or "안내 주행을 시작할 수 없습니다.", context
 
         target_pinky_id = self._resolve_guide_driving_pinky_id(pinky_id, context)
+        try:
+            navigation_response = self._start_guide_destination_navigation(
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                goal_pose=context.get("goal_pose"),
+                timeout_sec=navigation_timeout_sec,
+            )
+        except Exception as exc:
+            response = self._build_guide_navigation_failure_response(
+                context=context,
+                navigation_response=self._build_guide_navigation_transport_error_response(exc),
+                target_track_id=target_track_id,
+                pinky_id=target_pinky_id,
+            )
+            return False, response["result_message"], response
+
+        if not self._navigation_dispatch_accepted(navigation_response):
+            response = self._build_guide_navigation_failure_response(
+                context=context,
+                navigation_response=navigation_response,
+                target_track_id=target_track_id,
+                pinky_id=target_pinky_id,
+            )
+            return False, response["result_message"], response
+
         command_ok, command_message, command_response = self.send_guide_command(
             task_id=task_id,
             pinky_id=target_pinky_id,
@@ -324,24 +349,10 @@ class VisitGuideService:
             pinky_id=target_pinky_id,
         )
         if not command_ok:
+            response["navigation_response"] = navigation_response
             return False, command_message, response
 
-        navigation_response = self._start_guide_destination_navigation(
-            task_id=task_id,
-            pinky_id=target_pinky_id,
-            goal_pose=context.get("goal_pose"),
-            timeout_sec=navigation_timeout_sec,
-        )
         response["navigation_response"] = navigation_response
-        if not self._navigation_dispatch_accepted(navigation_response):
-            message = (
-                navigation_response.get("result_message")
-                or "안내 목적지 이동 시작이 수락되지 않았습니다."
-            )
-            response["result_code"] = navigation_response.get("result_code") or "REJECTED"
-            response["result_message"] = message
-            response["reason_code"] = navigation_response.get("reason_code")
-            return False, message, response
 
         response["result_code"] = "ACCEPTED"
         response["result_message"] = "안내 주행을 시작했습니다."
@@ -369,6 +380,31 @@ class VisitGuideService:
             return False, context.get("result_message") or "안내 주행을 시작할 수 없습니다.", context
 
         target_pinky_id = self._resolve_guide_driving_pinky_id(pinky_id, context)
+        try:
+            navigation_response = await self._async_start_guide_destination_navigation(
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                goal_pose=context.get("goal_pose"),
+                timeout_sec=navigation_timeout_sec,
+            )
+        except Exception as exc:
+            response = self._build_guide_navigation_failure_response(
+                context=context,
+                navigation_response=self._build_guide_navigation_transport_error_response(exc),
+                target_track_id=target_track_id,
+                pinky_id=target_pinky_id,
+            )
+            return False, response["result_message"], response
+
+        if not self._navigation_dispatch_accepted(navigation_response):
+            response = self._build_guide_navigation_failure_response(
+                context=context,
+                navigation_response=navigation_response,
+                target_track_id=target_track_id,
+                pinky_id=target_pinky_id,
+            )
+            return False, response["result_message"], response
+
         command_ok, command_message, command_response = await self.async_send_guide_command(
             task_id=task_id,
             pinky_id=target_pinky_id,
@@ -382,24 +418,10 @@ class VisitGuideService:
             pinky_id=target_pinky_id,
         )
         if not command_ok:
+            response["navigation_response"] = navigation_response
             return False, command_message, response
 
-        navigation_response = await self._async_start_guide_destination_navigation(
-            task_id=task_id,
-            pinky_id=target_pinky_id,
-            goal_pose=context.get("goal_pose"),
-            timeout_sec=navigation_timeout_sec,
-        )
         response["navigation_response"] = navigation_response
-        if not self._navigation_dispatch_accepted(navigation_response):
-            message = (
-                navigation_response.get("result_message")
-                or "안내 목적지 이동 시작이 수락되지 않았습니다."
-            )
-            response["result_code"] = navigation_response.get("result_code") or "REJECTED"
-            response["result_message"] = message
-            response["reason_code"] = navigation_response.get("reason_code")
-            return False, message, response
 
         response["result_code"] = "ACCEPTED"
         response["result_message"] = "안내 주행을 시작했습니다."
@@ -707,11 +729,48 @@ class VisitGuideService:
         return result_code in {"ACCEPTED", "SUCCESS"}
 
     @staticmethod
+    def _build_guide_navigation_transport_error_response(exc):
+        message = str(exc).strip() or "안내 목적지 이동 시작에 실패했습니다."
+        return {
+            "result_code": "REJECTED",
+            "result_message": message,
+            "reason_code": "GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR",
+        }
+
+    @staticmethod
     def _resolve_guide_driving_pinky_id(pinky_id, context):
         return (
             str(pinky_id or context.get("assigned_robot_id") or DEFAULT_GUIDE_PINKY_ID).strip()
             or DEFAULT_GUIDE_PINKY_ID
         )
+
+    @staticmethod
+    def _build_guide_navigation_failure_response(
+        *,
+        context,
+        navigation_response,
+        target_track_id,
+        pinky_id,
+    ):
+        message = (
+            (navigation_response or {}).get("result_message")
+            or "안내 목적지 이동 시작이 수락되지 않았습니다."
+        )
+        return {
+            "result_code": (navigation_response or {}).get("result_code") or "REJECTED",
+            "result_message": message,
+            "reason_code": (navigation_response or {}).get("reason_code"),
+            "task_id": context.get("task_id"),
+            "task_type": "GUIDE",
+            "task_status": context.get("task_status"),
+            "phase": context.get("phase"),
+            "guide_phase": context.get("guide_phase"),
+            "assigned_robot_id": context.get("assigned_robot_id") or pinky_id,
+            "target_track_id": target_track_id,
+            "destination_id": context.get("destination_id"),
+            "navigation_response": navigation_response,
+            "command_response": None,
+        }
 
     @staticmethod
     def _build_guide_driving_response(*, context, command_response, target_track_id, pinky_id):

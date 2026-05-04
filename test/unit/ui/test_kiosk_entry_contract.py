@@ -711,6 +711,72 @@ def test_kiosk_progress_page_starts_guidance_driving_with_detected_track():
         page.close()
 
 
+def test_kiosk_progress_page_keeps_waiting_state_when_guidance_driving_start_fails():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
+
+    class NavigationRejectedService:
+        def get_task_status(self, *, task_id):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": int(task_id),
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "WAIT_TARGET_TRACKING",
+                "assigned_robot_id": "pinky1",
+            }
+
+        def get_tracking_status(self, **_kwargs):
+            return True, "안내 대상을 확인했습니다.", {
+                "tracking_status": "TRACKING",
+                "active_track_id": "track_17",
+                "target_track_id": "track_17",
+                "tracking_result_seq": 881,
+            }
+
+        def get_guide_runtime_status(self):
+            return False, "대기 중", {"guide_runtime": {"connected": False}}
+
+        def start_guide_driving(self, **_kwargs):
+            return False, "navigation unavailable", {
+                "result_code": "REJECTED",
+                "task_status": "RUNNING",
+                "phase": "WAIT_TARGET_TRACKING",
+                "reason_code": "NAVIGATION_UNAVAILABLE",
+            }
+
+    page = KioskRobotGuidanceProgressPage()
+    page.service = NavigationRejectedService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            },
+            session={
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "task_status": "RUNNING",
+                "phase": "WAIT_TARGET_TRACKING",
+            },
+        )
+
+        assert page.robot_state_chip.text() == "대상 확인 완료"
+        page.start_guidance_driving()
+
+        assert page.distance_label.text() == "navigation unavailable"
+        assert page._current_session_phase() == "WAIT_TARGET_TRACKING"
+        assert page.robot_state_chip.text() == "대상 확인 완료"
+    finally:
+        page.close()
+
+
 def test_kiosk_progress_page_uses_control_tracking_status_before_ros_runtime():
     _app()
 
