@@ -671,6 +671,7 @@ class VisitGuideService:
     @staticmethod
     def _merge_command_lifecycle_response(command_response, lifecycle_result):
         response = dict(command_response or {}) if isinstance(command_response, dict) else {}
+        original_accepted = bool(response.get("accepted"))
         if lifecycle_result:
             response["lifecycle_result"] = lifecycle_result
             for key in (
@@ -684,9 +685,16 @@ class VisitGuideService:
                 "assigned_robot_id",
                 "guide_phase",
                 "target_track_id",
+                "accepted",
             ):
                 if lifecycle_result.get(key) is not None:
                     response[key] = lifecycle_result[key]
+            if (
+                not original_accepted
+                and lifecycle_result.get("accepted")
+                and lifecycle_result.get("result_message")
+            ):
+                response["message"] = lifecycle_result["result_message"]
         return response
 
     def _start_guide_destination_navigation(

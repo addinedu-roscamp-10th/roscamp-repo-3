@@ -10,6 +10,17 @@ GUIDE_COMMAND_ACCEPTED = "GUIDE_COMMAND_ACCEPTED"
 GUIDE_COMMAND_REJECTED = "GUIDE_COMMAND_REJECTED"
 TERMINAL_GUIDE_STATUSES = {"COMPLETED", "CANCELLED", "FAILED"}
 CANCEL_FINISH_REASONS = {"USER_CANCELLED", "OPERATOR_CANCELLED"}
+PRE_DRIVING_CANCEL_PHASES = {
+    "WAIT_GUIDE_START_CONFIRM",
+    "WAIT_TARGET_TRACKING",
+    "WAIT_REIDENTIFY",
+}
+PRE_DRIVING_CANCEL_REJECT_REASON_CODES = {
+    "GUIDE_COMMAND_TRANSPORT_ERROR",
+    "GUIDE_SESSION_NOT_FOUND",
+    "GUIDE_STATE_MISMATCH",
+}
+PRE_DRIVING_CANCEL_MESSAGE = "안내 시작 전 취소가 접수되었습니다."
 
 
 class GuideTaskLifecycleRepository:
@@ -184,6 +195,15 @@ class GuideTaskLifecycleRepository:
         current_status = str(row.get("task_status") or "").strip()
         current_phase = str(row.get("phase") or "").strip() or None
         message = self._extract_message(command_response, accepted=accepted)
+        rejected_reason_code = self._rejected_reason_code(command_response)
+        pre_driving_cancel_fallback = self._is_pre_driving_cancel_fallback(
+            accepted=accepted,
+            command_type=command_type,
+            finish_reason=finish_reason,
+            current_phase=current_phase,
+            rejected_reason_code=rejected_reason_code,
+        )
+        accepted = accepted or pre_driving_cancel_fallback
 
         if accepted:
             result_code = "ACCEPTED"
@@ -191,6 +211,8 @@ class GuideTaskLifecycleRepository:
                 command_type=command_type,
                 finish_reason=finish_reason,
             )
+            if pre_driving_cancel_fallback:
+                message = PRE_DRIVING_CANCEL_MESSAGE
             task_status, phase, guide_phase, is_terminal = self._accepted_target_state(
                 command_type=command_type,
                 finish_reason=finish_reason,
@@ -199,7 +221,7 @@ class GuideTaskLifecycleRepository:
             severity = "INFO"
         else:
             result_code = "REJECTED"
-            reason_code = self._rejected_reason_code(command_response)
+            reason_code = rejected_reason_code
             task_status = current_status
             phase = current_phase
             guide_phase = row.get("guide_phase")
@@ -305,6 +327,23 @@ class GuideTaskLifecycleRepository:
     def _rejected_reason_code(command_response):
         reason_code = str((command_response or {}).get("reason_code") or "").strip()
         return reason_code or "GUIDE_COMMAND_REJECTED"
+
+    @staticmethod
+    def _is_pre_driving_cancel_fallback(
+        *,
+        accepted,
+        command_type,
+        finish_reason,
+        current_phase,
+        rejected_reason_code,
+    ):
+        return (
+            not accepted
+            and command_type == "FINISH_GUIDANCE"
+            and finish_reason in CANCEL_FINISH_REASONS
+            and current_phase in PRE_DRIVING_CANCEL_PHASES
+            and rejected_reason_code in PRE_DRIVING_CANCEL_REJECT_REASON_CODES
+        )
 
     @staticmethod
     def _extract_message(command_response, *, accepted):

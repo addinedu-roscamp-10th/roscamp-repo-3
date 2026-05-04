@@ -59,6 +59,23 @@ class FakeGuideTaskLifecycleRepository:
 
     def record_command_result(self, **kwargs):
         self.recorded.append(kwargs)
+        if (
+            kwargs["command_type"] == "FINISH_GUIDANCE"
+            and kwargs["finish_reason"] == "USER_CANCELLED"
+            and (kwargs.get("command_response") or {}).get("reason_code")
+            == "GUIDE_COMMAND_TRANSPORT_ERROR"
+        ):
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "안내 시작 전 취소가 접수되었습니다.",
+                "reason_code": "USER_CANCELLED",
+                "task_id": int(kwargs["task_id"]),
+                "task_status": "CANCELLED",
+                "phase": "GUIDANCE_CANCELLED",
+                "guide_phase": "CANCELLED",
+                "assigned_robot_id": kwargs["pinky_id"],
+                "accepted": True,
+            }
         if not (kwargs.get("command_response") or {}).get("accepted"):
             return {
                 "result_code": "REJECTED",
@@ -323,6 +340,36 @@ def test_visit_guide_service_records_rejected_lifecycle_when_guide_command_trans
     ]
     assert response["accepted"] is False
     assert response["reason_code"] == "GUIDE_COMMAND_TRANSPORT_ERROR"
+
+
+def test_visit_guide_service_treats_pre_driving_cancel_transport_failure_as_cancelled():
+    command_service = FailingGuideCommandService(
+        "/ropi/control/pinky1/guide_command service is not available."
+    )
+    lifecycle_repository = FakeGuideTaskLifecycleRepository()
+    service = VisitGuideService(
+        guide_command_service=command_service,
+        guide_task_lifecycle_repository=lifecycle_repository,
+    )
+
+    ok, message, response = service.finish_guide_session(
+        task_id=3001,
+        pinky_id="pinky1",
+        finish_reason="USER_CANCELLED",
+    )
+
+    assert ok is True
+    assert message == "안내 시작 전 취소가 접수되었습니다."
+    assert response["accepted"] is True
+    assert response["result_code"] == "ACCEPTED"
+    assert response["reason_code"] == "USER_CANCELLED"
+    assert response["task_status"] == "CANCELLED"
+    assert response["phase"] == "GUIDANCE_CANCELLED"
+    assert response["lifecycle_result"]["accepted"] is True
+    assert lifecycle_repository.recorded[0]["command_type"] == "FINISH_GUIDANCE"
+    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
+        "GUIDE_COMMAND_TRANSPORT_ERROR"
+    )
 
 
 def test_visit_guide_service_async_records_rejected_lifecycle_when_guide_command_transport_fails():
