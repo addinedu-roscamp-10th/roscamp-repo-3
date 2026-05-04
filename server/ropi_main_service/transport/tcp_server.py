@@ -1026,22 +1026,49 @@ class ControlServiceServer:
         if resolved_task_type in {"GUIDE", "PATROL"} and cancellable is None:
             cancellable = False
 
+        payload = {
+            "source": source,
+            "task_id": task_id,
+            "task_type": resolved_task_type,
+            "task_status": response.get("task_status"),
+            "phase": response.get("phase") or response.get("task_status"),
+            "assigned_robot_id": response.get("assigned_robot_id"),
+            "latest_reason_code": response.get("reason_code"),
+            "result_code": response.get("result_code"),
+            "result_message": response.get("result_message"),
+            "cancel_requested": response.get("cancel_requested"),
+            "cancellable": cancellable,
+        }
+        if resolved_task_type == "GUIDE":
+            payload["guide_detail"] = self._build_guide_detail_from_response(response)
+
         await self.task_event_stream_hub.publish(
             "TASK_UPDATED",
-            {
-                "source": source,
-                "task_id": task_id,
-                "task_type": resolved_task_type,
-                "task_status": response.get("task_status"),
-                "phase": response.get("phase") or response.get("task_status"),
-                "assigned_robot_id": response.get("assigned_robot_id"),
-                "latest_reason_code": response.get("reason_code"),
-                "result_code": response.get("result_code"),
-                "result_message": response.get("result_message"),
-                "cancel_requested": response.get("cancel_requested"),
-                "cancellable": cancellable,
-            },
+            payload,
         )
+
+    @staticmethod
+    def _build_guide_detail_from_response(response):
+        guide_detail = response.get("guide_detail")
+        if isinstance(guide_detail, dict):
+            return dict(guide_detail)
+
+        return {
+            "guide_phase": response.get("guide_phase") or response.get("phase"),
+            "target_track_id": response.get("target_track_id"),
+            "visitor_id": response.get("visitor_id"),
+            "visitor_name": response.get("visitor_name"),
+            "relation_name": response.get("relation_name"),
+            "member_id": response.get("member_id"),
+            "resident_name": response.get("resident_name") or response.get("member_name"),
+            "room_no": response.get("room_no"),
+            "destination_id": response.get("destination_id")
+            or response.get("destination_goal_pose_id"),
+            "destination_map_id": response.get("destination_map_id"),
+            "destination_zone_id": response.get("destination_zone_id"),
+            "destination_zone_name": response.get("destination_zone_name"),
+            "destination_purpose": response.get("destination_purpose"),
+        }
 
     async def _build_response_frame(self, frame: TCPFrame):
         try:

@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.utils.pages.caregiver.task_monitor_detail_panels import (
+    GuideRuntimePanel,
     PatrolRuntimePanel,
     TaskResultInfoPanel,
     _display,
@@ -522,6 +523,13 @@ class TaskMonitorPage(QWidget):
         self.cancel_status_label.setWordWrap(True)
         self.cancel_status_label.setHidden(True)
 
+        self.guide_runtime_section = GuideRuntimePanel()
+        self.guide_phase_label = self.guide_runtime_section.guide_phase_label
+        self.target_track_id_label = self.guide_runtime_section.target_track_id_label
+        self.guide_visitor_label = self.guide_runtime_section.visitor_label
+        self.guide_resident_label = self.guide_runtime_section.resident_label
+        self.guide_destination_label = self.guide_runtime_section.destination_label
+
         self.patrol_runtime_section = PatrolRuntimePanel()
         self.patrol_map_placeholder = self.patrol_runtime_section.patrol_map_placeholder
         self.patrol_map_overlay = self.patrol_runtime_section.patrol_map_overlay
@@ -549,6 +557,7 @@ class TaskMonitorPage(QWidget):
         detail_layout.addWidget(self.result_info_panel)
         detail_layout.addLayout(detail_action_row)
         detail_layout.addWidget(self.cancel_status_label)
+        detail_layout.addWidget(self.guide_runtime_section)
         detail_layout.addWidget(self.patrol_runtime_section)
         detail_layout.addStretch(1)
 
@@ -755,10 +764,14 @@ class TaskMonitorPage(QWidget):
         self._render_result_info(task)
         self.cancel_status_label.setHidden(True)
         self._sync_cancel_action(task)
+        self._render_guide_detail(task)
         self._render_fall_alert(task)
 
     def _render_result_info(self, task):
         self.result_info_panel.render(task)
+
+    def _render_guide_detail(self, task):
+        self.guide_runtime_section.render(task)
 
     def _sync_cancel_action(self, task):
         task = task or {}

@@ -1105,6 +1105,21 @@ def test_async_guide_create_task_publishes_task_update(control_service_server):
                 "result_message": "안내 요청이 접수되었습니다.",
                 "cancel_requested": None,
                 "cancellable": False,
+                "guide_detail": {
+                    "guide_phase": "WAIT_GUIDE_START_CONFIRM",
+                    "target_track_id": None,
+                    "visitor_id": None,
+                    "visitor_name": None,
+                    "relation_name": None,
+                    "member_id": None,
+                    "resident_name": "김*수",
+                    "room_no": "301",
+                    "destination_id": "delivery_room_301",
+                    "destination_map_id": None,
+                    "destination_zone_id": None,
+                    "destination_zone_name": None,
+                    "destination_purpose": None,
+                },
             },
         )
     ]

@@ -220,6 +220,7 @@ class TaskMonitorService:
         task_status = row.get("task_status") or "UNKNOWN"
         task_type = row.get("task_type") or "UNKNOWN"
         is_patrol = str(task_type or "").strip().upper() == "PATROL"
+        is_guide = str(task_type or "").strip().upper() == "GUIDE"
         task = {
             "task_id": row.get("task_id"),
             "task_type": task_type,
@@ -236,6 +237,7 @@ class TaskMonitorService:
             "patrol_area_revision": row.get("patrol_area_revision"),
             "patrol_map": cls._format_patrol_map(row) if is_patrol else None,
             "patrol_path": cls._format_patrol_path(row) if is_patrol else None,
+            "guide_detail": cls._format_guide_detail(row) if is_guide else None,
             "cancellable": task_status in CANCELLABLE_TASK_STATUSES,
             "latest_reason_code": row.get("latest_reason_code"),
             "requested_at": cls._isoformat(row.get("requested_at") or row.get("created_at")),
@@ -247,6 +249,42 @@ class TaskMonitorService:
             "latest_alert": cls._format_latest_alert(row),
         }
         return task
+
+    @classmethod
+    def _format_guide_detail(cls, row):
+        nested = row.get("guide_detail")
+        if isinstance(nested, dict):
+            return {
+                "guide_phase": nested.get("guide_phase") or row.get("phase"),
+                "target_track_id": nested.get("target_track_id"),
+                "visitor_id": nested.get("visitor_id"),
+                "visitor_name": nested.get("visitor_name"),
+                "relation_name": nested.get("relation_name"),
+                "member_id": nested.get("member_id"),
+                "resident_name": nested.get("resident_name"),
+                "room_no": nested.get("room_no"),
+                "destination_id": nested.get("destination_id"),
+                "destination_map_id": nested.get("destination_map_id"),
+                "destination_zone_id": nested.get("destination_zone_id"),
+                "destination_zone_name": nested.get("destination_zone_name"),
+                "destination_purpose": nested.get("destination_purpose"),
+            }
+
+        return {
+            "guide_phase": row.get("guide_phase") or row.get("phase"),
+            "target_track_id": row.get("guide_target_track_id"),
+            "visitor_id": row.get("guide_visitor_id"),
+            "visitor_name": row.get("guide_visitor_name"),
+            "relation_name": row.get("guide_relation_name"),
+            "member_id": row.get("guide_member_id"),
+            "resident_name": row.get("guide_resident_name"),
+            "room_no": row.get("guide_room_no"),
+            "destination_id": row.get("guide_destination_id"),
+            "destination_map_id": row.get("guide_destination_map_id"),
+            "destination_zone_id": row.get("guide_destination_zone_id"),
+            "destination_zone_name": row.get("guide_destination_zone_name"),
+            "destination_purpose": row.get("guide_destination_purpose"),
+        }
 
     @classmethod
     def _format_patrol_map(cls, row):

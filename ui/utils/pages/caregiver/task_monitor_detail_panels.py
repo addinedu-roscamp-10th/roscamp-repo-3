@@ -107,6 +107,133 @@ class TaskResultInfoPanel(QFrame):
         self.style().polish(self)
 
 
+class GuideRuntimePanel(QWidget):
+    def __init__(self):
+        super().__init__()
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(12)
+
+        self.guide_info_panel = QFrame()
+        self.guide_info_panel.setObjectName("guideRuntimePanel")
+        panel_layout = QVBoxLayout(self.guide_info_panel)
+        panel_layout.setContentsMargins(14, 14, 14, 14)
+        panel_layout.setSpacing(8)
+
+        title = QLabel("안내 진행")
+        title.setObjectName("sectionTitle")
+        (
+            guide_phase_row,
+            _guide_phase_text,
+            self.guide_phase_label,
+        ) = _metric_row("안내 단계")
+        (
+            target_track_row,
+            _target_track_text,
+            self.target_track_id_label,
+        ) = _metric_row("추적 ID")
+        visitor_row, _visitor_text, self.visitor_label = _metric_row("방문자")
+        resident_row, _resident_text, self.resident_label = _metric_row("어르신")
+        destination_row, _destination_text, self.destination_label = _metric_row("목적지")
+
+        panel_layout.addWidget(title)
+        panel_layout.addWidget(guide_phase_row)
+        panel_layout.addWidget(target_track_row)
+        panel_layout.addWidget(visitor_row)
+        panel_layout.addWidget(resident_row)
+        panel_layout.addWidget(destination_row)
+        root.addWidget(self.guide_info_panel)
+        self.setHidden(True)
+
+    def render(self, task):
+        task = task if isinstance(task, dict) else {}
+        task_type = str(task.get("task_type") or "").strip().upper()
+        if task_type != "GUIDE":
+            self.setHidden(True)
+            self._reset_inactive_state()
+            return
+
+        detail = task.get("guide_detail")
+        detail = detail if isinstance(detail, dict) else {}
+        self.setHidden(False)
+        self.guide_phase_label.setText(
+            _display(
+                detail.get("guide_phase")
+                or task.get("guide_phase")
+                or task.get("phase")
+            )
+        )
+        self.target_track_id_label.setText(
+            _display(detail.get("target_track_id") or task.get("target_track_id"))
+        )
+        self.visitor_label.setText(self._format_visitor(detail, task))
+        self.resident_label.setText(self._format_resident(detail, task))
+        self.destination_label.setText(self._format_destination(detail, task))
+
+    def _reset_inactive_state(self):
+        self.guide_phase_label.setText("-")
+        self.target_track_id_label.setText("-")
+        self.visitor_label.setText("-")
+        self.resident_label.setText("-")
+        self.destination_label.setText("-")
+
+    @classmethod
+    def _format_visitor(cls, detail, task):
+        visitor_name = detail.get("visitor_name") or task.get("visitor_name")
+        visitor_id = detail.get("visitor_id") or task.get("visitor_id")
+        relation_name = detail.get("relation_name") or task.get("relation_name")
+        return cls._join_display_parts(
+            visitor_name,
+            f"visitor_id={visitor_id}" if visitor_id not in (None, "") else None,
+            relation_name,
+        )
+
+    @classmethod
+    def _format_resident(cls, detail, task):
+        resident_name = (
+            detail.get("resident_name")
+            or detail.get("member_name")
+            or task.get("resident_name")
+            or task.get("member_name")
+        )
+        member_id = detail.get("member_id") or task.get("member_id")
+        room_no = detail.get("room_no") or task.get("room_no")
+        room_text = cls._format_room_no(room_no)
+        return cls._join_display_parts(
+            resident_name,
+            f"member_id={member_id}" if member_id not in (None, "") else None,
+            room_text,
+        )
+
+    @classmethod
+    def _format_destination(cls, detail, task):
+        destination_id = (
+            detail.get("destination_id")
+            or detail.get("destination_goal_pose_id")
+            or task.get("destination_id")
+            or task.get("destination_goal_pose_id")
+        )
+        zone_name = detail.get("destination_zone_name") or task.get(
+            "destination_zone_name"
+        )
+        zone_id = detail.get("destination_zone_id") or task.get("destination_zone_id")
+        return cls._join_display_parts(destination_id, zone_name, zone_id)
+
+    @staticmethod
+    def _join_display_parts(*parts):
+        values = [str(part).strip() for part in parts if part not in (None, "")]
+        return " / ".join(values) if values else "-"
+
+    @staticmethod
+    def _format_room_no(room_no):
+        if room_no in (None, ""):
+            return None
+        text = str(room_no).strip()
+        if not text:
+            return None
+        return text if text.endswith("호") else f"{text}호"
+
+
 class PatrolRuntimePanel(QWidget):
     def __init__(self):
         super().__init__()
@@ -236,6 +363,7 @@ class PatrolRuntimePanel(QWidget):
 
 
 __all__ = [
+    "GuideRuntimePanel",
     "PatrolRuntimePanel",
     "TaskResultInfoPanel",
     "_display",

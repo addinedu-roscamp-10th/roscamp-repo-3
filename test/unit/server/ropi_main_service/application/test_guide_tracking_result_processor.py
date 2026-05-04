@@ -33,6 +33,14 @@ class FakeGuideTrackingSnapshotStore:
         return snapshot
 
 
+class FakeTaskEventPublisher:
+    def __init__(self):
+        self.events = []
+
+    async def publish(self, event_type, payload):
+        self.events.append((event_type, payload))
+
+
 def test_processor_publishes_tracking_bbox_for_active_guide_target():
     repository = FakeGuideTrackingRepository(
         active_task={
@@ -222,6 +230,76 @@ def test_processor_publishes_lost_update_without_bbox():
     assert publisher.updates[0]["tracking_status"] == "LOST"
     assert publisher.updates[0]["bbox_valid"] is False
     assert publisher.updates[0]["bbox_xyxy"] == [0, 0, 0, 0]
+
+
+def test_processor_publishes_task_update_with_guide_detail_for_monitor():
+    repository = FakeGuideTrackingRepository(
+        active_task={
+            "task_id": 3001,
+            "assigned_robot_id": "pinky1",
+            "target_track_id": "track_17",
+            "task_status": "RUNNING",
+            "phase": "GUIDANCE_RUNNING",
+        }
+    )
+    publisher = FakeGuideTrackingUpdatePublisher()
+    task_event_publisher = FakeTaskEventPublisher()
+    processor = GuideTrackingResultProcessor(
+        repository=repository,
+        update_publisher=publisher,
+        task_event_publisher=task_event_publisher,
+    )
+
+    async def scenario():
+        return await processor.async_process_batch(
+            {
+                "results": [
+                    {
+                        "result_seq": 881,
+                        "pinky_id": "pinky1",
+                        "frame_ts": "2026-04-19T12:35:10Z",
+                        "tracking_status": "TRACKING",
+                        "active_track_id": "track_17",
+                        "confidence": 0.91,
+                        "image_width_px": 640,
+                        "image_height_px": 480,
+                        "candidate_tracks": [
+                            {
+                                "track_id": "track_17",
+                                "bbox_xyxy": [120, 80, 300, 420],
+                                "score": 0.91,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+    summary = asyncio.run(scenario())
+
+    assert summary["published_count"] == 1
+    assert task_event_publisher.events == [
+        (
+            "TASK_UPDATED",
+            {
+                "source": "GUIDE_TRACKING",
+                "task_id": 3001,
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "GUIDANCE_RUNNING",
+                "assigned_robot_id": "pinky1",
+                "latest_reason_code": "GUIDE_TRACKING_TRACKING",
+                "result_code": "ACCEPTED",
+                "result_message": "안내 tracking 갱신을 전달했습니다.",
+                "cancel_requested": None,
+                "cancellable": True,
+                "guide_detail": {
+                    "guide_phase": "GUIDANCE_RUNNING",
+                    "target_track_id": "track_17",
+                },
+            },
+        )
+    ]
 
 
 def test_processor_ignores_result_without_matching_active_guide_task():

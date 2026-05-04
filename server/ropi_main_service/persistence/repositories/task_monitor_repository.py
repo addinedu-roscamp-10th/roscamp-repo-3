@@ -33,6 +33,19 @@ SELECT
     ptd.waypoint_count,
     ptd.current_waypoint_index,
     ptd.path_snapshot_json,
+    gtd.visitor_id AS guide_visitor_id,
+    gv.visitor_name AS guide_visitor_name,
+    gv.relation_name AS guide_relation_name,
+    gtd.member_id AS guide_member_id,
+    gm.member_name AS guide_resident_name,
+    gm.room_no AS guide_room_no,
+    gtd.destination_goal_pose_id AS guide_destination_id,
+    gtd.guide_phase,
+    gtd.target_track_id AS guide_target_track_id,
+    ggp.map_id AS guide_destination_map_id,
+    ggp.zone_id AS guide_destination_zone_id,
+    goz.zone_name AS guide_destination_zone_name,
+    ggp.purpose AS guide_destination_purpose,
     t.latest_reason_code,
     t.created_at AS requested_at,
     t.started_at,
@@ -64,6 +77,16 @@ LEFT JOIN patrol_area pa
     ON pa.patrol_area_id = ptd.patrol_area_id
 LEFT JOIN map_profile mp
     ON mp.map_id = t.map_id
+LEFT JOIN guide_task_detail gtd
+    ON gtd.task_id = t.task_id
+LEFT JOIN visitor gv
+    ON gv.visitor_id = gtd.visitor_id
+LEFT JOIN member gm
+    ON gm.member_id = gtd.member_id
+LEFT JOIN goal_pose ggp
+    ON ggp.goal_pose_id = gtd.destination_goal_pose_id
+LEFT JOIN operation_zone goz
+    ON goz.zone_id = ggp.zone_id
 LEFT JOIN robot_runtime_status rrs
     ON rrs.robot_id = t.assigned_robot_id
 LEFT JOIN robot_data_log feedback
