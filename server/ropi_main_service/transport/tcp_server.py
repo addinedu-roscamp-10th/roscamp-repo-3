@@ -61,6 +61,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     encode_frame,
     read_frame_from_stream,
 )
+from server.ropi_main_service.transport.frame_router import ControlFrameRouter
 from server.ropi_main_service.transport.rpc_dispatcher import ControlRpcDispatcher
 from server.ropi_main_service.transport.task_event_subscription_handler import (
     TaskEventSubscriptionHandler,
@@ -309,138 +310,124 @@ class ControlServiceServer:
                 lambda: self.task_event_stream_hub.current_watermark()
             ),
         )
+        self.frame_router = ControlFrameRouter(
+            sync_routes=self._build_sync_frame_routes(),
+            async_routes=self._build_async_frame_routes(),
+            async_stream_required_codes={MESSAGE_CODE_TASK_EVENT_SUBSCRIBE},
+        )
         self.fall_inference_stream_task = None
         self.guide_tracking_stream_task = None
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
-        payload = frame.payload or {}
-
-        if frame.message_code == MESSAGE_CODE_HEARTBEAT:
-            response_payload = {
-                "message": "메인 서버 연결 정상",
-                "server_time": datetime.now().isoformat(timespec="seconds"),
-            }
-
-            if payload.get("check_db"):
-                try:
-                    from server.ropi_main_service.persistence.connection import test_connection
-
-                    db_ok, db_result = test_connection()
-                    response_payload["db"] = {
-                        "ok": db_ok,
-                        "detail": db_result,
-                    }
-                except Exception as exc:
-                    response_payload["db"] = {
-                        "ok": False,
-                        "detail": str(exc),
-                    }
-
-            if payload.get("check_ros"):
-                try:
-                    ros_result = RosRuntimeReadinessService().get_status()
-                    response_payload["ros"] = {
-                        "ok": bool(ros_result.get("ready")),
-                        "detail": ros_result,
-                    }
-                except Exception as exc:
-                    response_payload["ros"] = {
-                        "ok": False,
-                        "detail": str(exc),
-                    }
-
-            if payload.get("check_ai"):
-                response_payload["ai"] = _check_ai_server_status()
-
-            return self._success_response(frame, response_payload)
-
-        if frame.message_code == MESSAGE_CODE_LOGIN:
-            ok, result = AuthService().authenticate(
-                payload.get("login_id", ""),
-                payload.get("password", ""),
-                payload.get("role", ""),
-            )
-            if ok:
-                return self._success_response(frame, result)
-            return self._error_response(frame, "AUTH_FAILED", str(result))
-
-        if frame.message_code == MESSAGE_CODE_DELIVERY_CREATE_TASK:
-            return self._dispatch_delivery_create_task(frame, payload, loop=loop)
-
-        if frame.message_code == MESSAGE_CODE_PATROL_CREATE_TASK:
-            return self._dispatch_patrol_create_task(frame, payload, loop=loop)
-
-        if frame.message_code == MESSAGE_CODE_PATROL_RESUME_TASK:
-            return self._dispatch_patrol_resume_task(frame, payload, loop=loop)
-
-        if frame.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY:
-            return self._dispatch_fall_evidence_image_query(frame, payload)
-
-        if frame.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK:
-            return self._dispatch_guide_create_task(frame, payload)
-
-        if frame.message_code == MESSAGE_CODE_TASK_STATUS_QUERY:
-            return self._dispatch_task_status_query(frame, payload)
-
-        if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
-            return self._dispatch_rpc(frame, payload)
-
-        return self._error_response(
-            frame,
-            "UNKNOWN_MESSAGE_CODE",
-            f"지원하지 않는 message_code입니다: 0x{frame.message_code:04x}",
-        )
+        result = self.frame_router.dispatch(frame, loop=loop)
+        if not result.handled:
+            return self._error_response(frame, result.error_code, result.error_message)
+        return result.response
 
     async def async_dispatch_frame(self, frame: TCPFrame) -> TCPFrame:
-        payload = frame.payload or {}
+        result = await self.frame_router.async_dispatch(frame)
+        if not result.handled:
+            return self._error_response(frame, result.error_code, result.error_message)
+        return result.response
 
-        if frame.message_code == MESSAGE_CODE_HEARTBEAT:
-            return await self._dispatch_heartbeat_async(frame, payload)
+    def _build_sync_frame_routes(self):
+        return {
+            MESSAGE_CODE_HEARTBEAT: self._dispatch_heartbeat,
+            MESSAGE_CODE_LOGIN: self._dispatch_login,
+            MESSAGE_CODE_DELIVERY_CREATE_TASK: self._dispatch_delivery_create_task,
+            MESSAGE_CODE_PATROL_CREATE_TASK: self._dispatch_patrol_create_task,
+            MESSAGE_CODE_PATROL_RESUME_TASK: self._dispatch_patrol_resume_task,
+            MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY: self._dispatch_fall_evidence_image_query,
+            MESSAGE_CODE_GUIDE_CREATE_TASK: self._dispatch_guide_create_task,
+            MESSAGE_CODE_TASK_STATUS_QUERY: self._dispatch_task_status_query,
+            MESSAGE_CODE_INTERNAL_RPC: self._dispatch_rpc,
+        }
 
-        if frame.message_code == MESSAGE_CODE_LOGIN:
-            ok, result = await AuthService().async_authenticate(
-                payload.get("login_id", ""),
-                payload.get("password", ""),
-                payload.get("role", ""),
-            )
-            if ok:
-                return self._success_response(frame, result)
-            return self._error_response(frame, "AUTH_FAILED", str(result))
+    def _build_async_frame_routes(self):
+        return {
+            MESSAGE_CODE_HEARTBEAT: self._dispatch_heartbeat_async,
+            MESSAGE_CODE_LOGIN: self._dispatch_login_async,
+            MESSAGE_CODE_DELIVERY_CREATE_TASK: self._dispatch_delivery_create_task_async,
+            MESSAGE_CODE_PATROL_CREATE_TASK: self._dispatch_patrol_create_task_async,
+            MESSAGE_CODE_PATROL_RESUME_TASK: self._dispatch_patrol_resume_task_async,
+            MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY: (
+                self._dispatch_fall_evidence_image_query_async
+            ),
+            MESSAGE_CODE_GUIDE_CREATE_TASK: self._dispatch_guide_create_task_async,
+            MESSAGE_CODE_TASK_STATUS_QUERY: self._dispatch_task_status_query_async,
+            MESSAGE_CODE_INTERNAL_RPC: self._dispatch_rpc_async,
+        }
 
-        if frame.message_code == MESSAGE_CODE_DELIVERY_CREATE_TASK:
-            loop = asyncio.get_running_loop()
-            return await self._dispatch_delivery_create_task_async(frame, payload, loop=loop)
+    def _dispatch_heartbeat(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+        *,
+        loop=None,
+    ) -> TCPFrame:
+        response_payload = {
+            "message": "메인 서버 연결 정상",
+            "server_time": datetime.now().isoformat(timespec="seconds"),
+        }
 
-        if frame.message_code == MESSAGE_CODE_PATROL_CREATE_TASK:
-            return await self._dispatch_patrol_create_task_async(frame, payload)
+        if payload.get("check_db"):
+            try:
+                from server.ropi_main_service.persistence.connection import test_connection
 
-        if frame.message_code == MESSAGE_CODE_PATROL_RESUME_TASK:
-            return await self._dispatch_patrol_resume_task_async(frame, payload)
+                db_ok, db_result = test_connection()
+                response_payload["db"] = {
+                    "ok": db_ok,
+                    "detail": db_result,
+                }
+            except Exception as exc:
+                response_payload["db"] = {
+                    "ok": False,
+                    "detail": str(exc),
+                }
 
-        if frame.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY:
-            return await self._dispatch_fall_evidence_image_query_async(frame, payload)
+        if payload.get("check_ros"):
+            try:
+                ros_result = RosRuntimeReadinessService().get_status()
+                response_payload["ros"] = {
+                    "ok": bool(ros_result.get("ready")),
+                    "detail": ros_result,
+                }
+            except Exception as exc:
+                response_payload["ros"] = {
+                    "ok": False,
+                    "detail": str(exc),
+                }
 
-        if frame.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK:
-            return await self._dispatch_guide_create_task_async(frame, payload)
+        if payload.get("check_ai"):
+            response_payload["ai"] = _check_ai_server_status()
 
-        if frame.message_code == MESSAGE_CODE_TASK_STATUS_QUERY:
-            return await self._dispatch_task_status_query_async(frame, payload)
+        return self._success_response(frame, response_payload)
 
-        if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
-            return await self._dispatch_rpc_async(frame, payload)
-
-        if frame.message_code == MESSAGE_CODE_TASK_EVENT_SUBSCRIBE:
-            return self._error_response(
-                frame,
-                "STREAM_REQUIRED",
-                "task event subscribe는 persistent TCP stream에서만 처리됩니다.",
-            )
-
-        return self._error_response(
-            frame,
-            "UNKNOWN_MESSAGE_CODE",
-            f"지원하지 않는 message_code입니다: 0x{frame.message_code:04x}",
+    def _dispatch_login(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+        *,
+        loop=None,
+    ) -> TCPFrame:
+        ok, result = AuthService().authenticate(
+            payload.get("login_id", ""),
+            payload.get("password", ""),
+            payload.get("role", ""),
         )
+        if ok:
+            return self._success_response(frame, result)
+        return self._error_response(frame, "AUTH_FAILED", str(result))
+
+    async def _dispatch_login_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        ok, result = await AuthService().async_authenticate(
+            payload.get("login_id", ""),
+            payload.get("password", ""),
+            payload.get("role", ""),
+        )
+        if ok:
+            return self._success_response(frame, result)
+        return self._error_response(frame, "AUTH_FAILED", str(result))
 
     async def _dispatch_heartbeat_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
         response_payload = {
@@ -561,7 +548,13 @@ class ControlServiceServer:
         )
         return self._success_response(frame, result)
 
-    def _dispatch_guide_create_task(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+    def _dispatch_guide_create_task(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+        *,
+        loop=None,
+    ) -> TCPFrame:
         try:
             service = SERVICE_REGISTRY["visit_guide"]()
             result = service.create_guide_task(**payload)
@@ -590,6 +583,8 @@ class ControlServiceServer:
         self,
         frame: TCPFrame,
         payload: dict,
+        *,
+        loop=None,
     ) -> TCPFrame:
         try:
             service = SERVICE_REGISTRY["fall_evidence_image"]()
@@ -619,7 +614,13 @@ class ControlServiceServer:
 
         return self._success_response(frame, result)
 
-    def _dispatch_task_status_query(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+    def _dispatch_task_status_query(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+        *,
+        loop=None,
+    ) -> TCPFrame:
         try:
             service = SERVICE_REGISTRY["task_monitor"]()
             result = service.get_task_status(task_id=payload.get("task_id"))
@@ -659,7 +660,7 @@ class ControlServiceServer:
 
         return self._success_response(frame, result.payload)
 
-    def _dispatch_rpc(self, frame: TCPFrame, payload: dict):
+    def _dispatch_rpc(self, frame: TCPFrame, payload: dict, *, loop=None):
         result = self.rpc_dispatcher.dispatch(payload)
         if not result.ok:
             return self._error_response(
