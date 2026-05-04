@@ -24,8 +24,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from ui.utils.core.styles import load_stylesheet
-from ui.utils.network.service_clients import (
+from ui.utils.core.styles import load_stylesheet  # noqa: E402
+from ui.utils.network.service_clients import (  # noqa: E402
     KioskVisitorRemoteService,
     StaffCallRemoteService,
     VisitGuideRemoteService,
@@ -759,7 +759,7 @@ class KioskVisitorRegistrationPage(QWidget):
 
         self.resident_name_label = QLabel("선택된 어르신이 없습니다")
         self.resident_name_label.setObjectName("kioskResidentName")
-        self.resident_name_label.setMinimumHeight(44)
+        self.resident_name_label.setMinimumHeight(48)
         self.resident_name_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
