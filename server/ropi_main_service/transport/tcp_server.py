@@ -61,6 +61,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     encode_frame,
     read_frame_from_stream,
 )
+from server.ropi_main_service.transport.frame_handlers import ControlFrameHandlers
 from server.ropi_main_service.transport.frame_router import ControlFrameRouter
 from server.ropi_main_service.transport.rpc_dispatcher import ControlRpcDispatcher
 from server.ropi_main_service.transport.task_event_subscription_handler import (
@@ -310,6 +311,21 @@ class ControlServiceServer:
                 lambda: self.task_event_stream_hub.current_watermark()
             ),
         )
+        self.frame_handlers = ControlFrameHandlers(
+            service_registry=SERVICE_REGISTRY,
+            rpc_dispatcher=self.rpc_dispatcher,
+            task_update_event_publisher=self.task_update_event_publisher,
+            auth_service_factory=lambda: AuthService(),
+            ros_readiness_service_factory=lambda: RosRuntimeReadinessService(),
+            delivery_request_service_builder=(
+                lambda **kwargs: build_delivery_request_service(**kwargs)
+            ),
+            patrol_request_service_builder=(
+                lambda **kwargs: build_patrol_request_service(**kwargs)
+            ),
+            sync_ai_status_checker=lambda: _check_ai_server_status(),
+            async_ai_status_checker=lambda: _async_check_ai_server_status(),
+        )
         self.frame_router = ControlFrameRouter(
             sync_routes=self._build_sync_frame_routes(),
             async_routes=self._build_async_frame_routes(),
@@ -332,344 +348,51 @@ class ControlServiceServer:
 
     def _build_sync_frame_routes(self):
         return {
-            MESSAGE_CODE_HEARTBEAT: self._dispatch_heartbeat,
-            MESSAGE_CODE_LOGIN: self._dispatch_login,
-            MESSAGE_CODE_DELIVERY_CREATE_TASK: self._dispatch_delivery_create_task,
-            MESSAGE_CODE_PATROL_CREATE_TASK: self._dispatch_patrol_create_task,
-            MESSAGE_CODE_PATROL_RESUME_TASK: self._dispatch_patrol_resume_task,
-            MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY: self._dispatch_fall_evidence_image_query,
-            MESSAGE_CODE_GUIDE_CREATE_TASK: self._dispatch_guide_create_task,
-            MESSAGE_CODE_TASK_STATUS_QUERY: self._dispatch_task_status_query,
-            MESSAGE_CODE_INTERNAL_RPC: self._dispatch_rpc,
+            MESSAGE_CODE_HEARTBEAT: self.frame_handlers.handle_heartbeat,
+            MESSAGE_CODE_LOGIN: self.frame_handlers.handle_login,
+            MESSAGE_CODE_DELIVERY_CREATE_TASK: (
+                self.frame_handlers.handle_delivery_create_task
+            ),
+            MESSAGE_CODE_PATROL_CREATE_TASK: (
+                self.frame_handlers.handle_patrol_create_task
+            ),
+            MESSAGE_CODE_PATROL_RESUME_TASK: (
+                self.frame_handlers.handle_patrol_resume_task
+            ),
+            MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY: (
+                self.frame_handlers.handle_fall_evidence_image_query
+            ),
+            MESSAGE_CODE_GUIDE_CREATE_TASK: self.frame_handlers.handle_guide_create_task,
+            MESSAGE_CODE_TASK_STATUS_QUERY: (
+                self.frame_handlers.handle_task_status_query
+            ),
+            MESSAGE_CODE_INTERNAL_RPC: self.frame_handlers.handle_rpc,
         }
 
     def _build_async_frame_routes(self):
         return {
-            MESSAGE_CODE_HEARTBEAT: self._dispatch_heartbeat_async,
-            MESSAGE_CODE_LOGIN: self._dispatch_login_async,
-            MESSAGE_CODE_DELIVERY_CREATE_TASK: self._dispatch_delivery_create_task_async,
-            MESSAGE_CODE_PATROL_CREATE_TASK: self._dispatch_patrol_create_task_async,
-            MESSAGE_CODE_PATROL_RESUME_TASK: self._dispatch_patrol_resume_task_async,
-            MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY: (
-                self._dispatch_fall_evidence_image_query_async
+            MESSAGE_CODE_HEARTBEAT: self.frame_handlers.handle_heartbeat_async,
+            MESSAGE_CODE_LOGIN: self.frame_handlers.handle_login_async,
+            MESSAGE_CODE_DELIVERY_CREATE_TASK: (
+                self.frame_handlers.handle_delivery_create_task_async
             ),
-            MESSAGE_CODE_GUIDE_CREATE_TASK: self._dispatch_guide_create_task_async,
-            MESSAGE_CODE_TASK_STATUS_QUERY: self._dispatch_task_status_query_async,
-            MESSAGE_CODE_INTERNAL_RPC: self._dispatch_rpc_async,
+            MESSAGE_CODE_PATROL_CREATE_TASK: (
+                self.frame_handlers.handle_patrol_create_task_async
+            ),
+            MESSAGE_CODE_PATROL_RESUME_TASK: (
+                self.frame_handlers.handle_patrol_resume_task_async
+            ),
+            MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY: (
+                self.frame_handlers.handle_fall_evidence_image_query_async
+            ),
+            MESSAGE_CODE_GUIDE_CREATE_TASK: (
+                self.frame_handlers.handle_guide_create_task_async
+            ),
+            MESSAGE_CODE_TASK_STATUS_QUERY: (
+                self.frame_handlers.handle_task_status_query_async
+            ),
+            MESSAGE_CODE_INTERNAL_RPC: self.frame_handlers.handle_rpc_async,
         }
-
-    def _dispatch_heartbeat(
-        self,
-        frame: TCPFrame,
-        payload: dict,
-        *,
-        loop=None,
-    ) -> TCPFrame:
-        response_payload = {
-            "message": "메인 서버 연결 정상",
-            "server_time": datetime.now().isoformat(timespec="seconds"),
-        }
-
-        if payload.get("check_db"):
-            try:
-                from server.ropi_main_service.persistence.connection import test_connection
-
-                db_ok, db_result = test_connection()
-                response_payload["db"] = {
-                    "ok": db_ok,
-                    "detail": db_result,
-                }
-            except Exception as exc:
-                response_payload["db"] = {
-                    "ok": False,
-                    "detail": str(exc),
-                }
-
-        if payload.get("check_ros"):
-            try:
-                ros_result = RosRuntimeReadinessService().get_status()
-                response_payload["ros"] = {
-                    "ok": bool(ros_result.get("ready")),
-                    "detail": ros_result,
-                }
-            except Exception as exc:
-                response_payload["ros"] = {
-                    "ok": False,
-                    "detail": str(exc),
-                }
-
-        if payload.get("check_ai"):
-            response_payload["ai"] = _check_ai_server_status()
-
-        return self._success_response(frame, response_payload)
-
-    def _dispatch_login(
-        self,
-        frame: TCPFrame,
-        payload: dict,
-        *,
-        loop=None,
-    ) -> TCPFrame:
-        ok, result = AuthService().authenticate(
-            payload.get("login_id", ""),
-            payload.get("password", ""),
-            payload.get("role", ""),
-        )
-        if ok:
-            return self._success_response(frame, result)
-        return self._error_response(frame, "AUTH_FAILED", str(result))
-
-    async def _dispatch_login_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        ok, result = await AuthService().async_authenticate(
-            payload.get("login_id", ""),
-            payload.get("password", ""),
-            payload.get("role", ""),
-        )
-        if ok:
-            return self._success_response(frame, result)
-        return self._error_response(frame, "AUTH_FAILED", str(result))
-
-    async def _dispatch_heartbeat_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        response_payload = {
-            "message": "메인 서버 연결 정상",
-            "server_time": datetime.now().isoformat(timespec="seconds"),
-        }
-
-        if payload.get("check_db"):
-            try:
-                from server.ropi_main_service.persistence.async_connection import (
-                    async_test_connection,
-                )
-
-                db_ok, db_result = await async_test_connection()
-                response_payload["db"] = {
-                    "ok": db_ok,
-                    "detail": db_result,
-                }
-            except Exception as exc:
-                response_payload["db"] = {
-                    "ok": False,
-                    "detail": str(exc),
-                }
-
-        if payload.get("check_ros"):
-            try:
-                ros_result = await RosRuntimeReadinessService().async_get_status()
-                response_payload["ros"] = {
-                    "ok": bool(ros_result.get("ready")),
-                    "detail": ros_result,
-                }
-            except Exception as exc:
-                response_payload["ros"] = {
-                    "ok": False,
-                    "detail": str(exc),
-                }
-
-        if payload.get("check_ai"):
-            response_payload["ai"] = await _async_check_ai_server_status()
-
-        return self._success_response(frame, response_payload)
-
-    def _dispatch_delivery_create_task(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
-        service = build_delivery_request_service(loop=loop or asyncio.get_running_loop())
-
-        try:
-            result = service.create_delivery_task(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "DELIVERY_CREATE_ERROR", str(exc))
-
-        return self._success_response(frame, result)
-
-    async def _dispatch_delivery_create_task_async(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
-        service = build_delivery_request_service(loop=loop or asyncio.get_running_loop())
-
-        try:
-            result = await service.async_create_delivery_task(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "DELIVERY_CREATE_ERROR", str(exc))
-
-        await self.task_update_event_publisher.publish_from_response(
-            result,
-            source="DELIVERY_CREATE",
-        )
-        return self._success_response(frame, result)
-
-    def _dispatch_patrol_create_task(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
-        service = build_patrol_request_service(loop=loop)
-
-        try:
-            result = service.create_patrol_task(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "PATROL_CREATE_ERROR", str(exc))
-
-        if isinstance(result, dict):
-            result = {**result, "cancellable": bool(result.get("cancellable", False))}
-        return self._success_response(frame, result)
-
-    async def _dispatch_patrol_create_task_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        service = build_patrol_request_service(loop=asyncio.get_running_loop())
-
-        try:
-            result = await service.async_create_patrol_task(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "PATROL_CREATE_ERROR", str(exc))
-
-        if isinstance(result, dict):
-            result = {**result, "cancellable": bool(result.get("cancellable", False))}
-        await self.task_update_event_publisher.publish_from_response(
-            result,
-            source="PATROL_CREATE",
-            task_type="PATROL",
-        )
-        return self._success_response(frame, result)
-
-    def _dispatch_patrol_resume_task(self, frame: TCPFrame, payload: dict, *, loop=None) -> TCPFrame:
-        service = build_patrol_request_service(loop=loop)
-
-        try:
-            result = service.resume_patrol_task(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "PATROL_RESUME_ERROR", str(exc))
-
-        return self._success_response(frame, result)
-
-    async def _dispatch_patrol_resume_task_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        service = build_patrol_request_service(loop=asyncio.get_running_loop())
-
-        try:
-            result = await service.async_resume_patrol_task(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "PATROL_RESUME_ERROR", str(exc))
-
-        await self.task_update_event_publisher.publish_from_response(
-            result,
-            source="PATROL_RESUME",
-            task_type="PATROL",
-        )
-        return self._success_response(frame, result)
-
-    def _dispatch_guide_create_task(
-        self,
-        frame: TCPFrame,
-        payload: dict,
-        *,
-        loop=None,
-    ) -> TCPFrame:
-        try:
-            service = SERVICE_REGISTRY["visit_guide"]()
-            result = service.create_guide_task(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "GUIDE_CREATE_ERROR", str(exc))
-
-        return self._success_response(frame, result)
-
-    async def _dispatch_guide_create_task_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
-        try:
-            service = SERVICE_REGISTRY["visit_guide"]()
-            result = await service.async_create_guide_task(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "GUIDE_CREATE_ERROR", str(exc))
-
-        if isinstance(result, dict):
-            result = {**result, "cancellable": bool(result.get("cancellable", False))}
-        await self.task_update_event_publisher.publish_from_response(
-            result,
-            source="GUIDE_CREATE",
-            task_type="GUIDE",
-        )
-        return self._success_response(frame, result)
-
-    def _dispatch_fall_evidence_image_query(
-        self,
-        frame: TCPFrame,
-        payload: dict,
-        *,
-        loop=None,
-    ) -> TCPFrame:
-        try:
-            service = SERVICE_REGISTRY["fall_evidence_image"]()
-            result = service.get_fall_evidence_image(**payload)
-        except Exception as exc:
-            return self._error_response(frame, "FALL_EVIDENCE_QUERY_ERROR", str(exc))
-
-        return self._success_response(frame, result)
-
-    async def _dispatch_fall_evidence_image_query_async(
-        self,
-        frame: TCPFrame,
-        payload: dict,
-    ) -> TCPFrame:
-        try:
-            service = SERVICE_REGISTRY["fall_evidence_image"]()
-            async_method = getattr(service, "async_get_fall_evidence_image", None)
-            if async_method is not None:
-                result = await async_method(**payload)
-            else:
-                result = await asyncio.to_thread(
-                    service.get_fall_evidence_image,
-                    **payload,
-                )
-        except Exception as exc:
-            return self._error_response(frame, "FALL_EVIDENCE_QUERY_ERROR", str(exc))
-
-        return self._success_response(frame, result)
-
-    def _dispatch_task_status_query(
-        self,
-        frame: TCPFrame,
-        payload: dict,
-        *,
-        loop=None,
-    ) -> TCPFrame:
-        try:
-            service = SERVICE_REGISTRY["task_monitor"]()
-            result = service.get_task_status(task_id=payload.get("task_id"))
-        except Exception as exc:
-            return self._error_response(frame, "TASK_STATUS_QUERY_ERROR", str(exc))
-
-        return self._success_response(frame, result)
-
-    async def _dispatch_task_status_query_async(
-        self,
-        frame: TCPFrame,
-        payload: dict,
-    ) -> TCPFrame:
-        try:
-            service = SERVICE_REGISTRY["task_monitor"]()
-            async_method = getattr(service, "async_get_task_status", None)
-            if async_method is not None:
-                result = await async_method(task_id=payload.get("task_id"))
-            else:
-                result = await asyncio.to_thread(
-                    service.get_task_status,
-                    task_id=payload.get("task_id"),
-                )
-        except Exception as exc:
-            return self._error_response(frame, "TASK_STATUS_QUERY_ERROR", str(exc))
-
-        return self._success_response(frame, result)
-
-    async def _dispatch_rpc_async(self, frame: TCPFrame, payload: dict):
-        result = await self.rpc_dispatcher.async_dispatch(payload)
-        if not result.ok:
-            return self._error_response(
-                frame,
-                result.error_code,
-                result.error_message,
-            )
-
-        return self._success_response(frame, result.payload)
-
-    def _dispatch_rpc(self, frame: TCPFrame, payload: dict, *, loop=None):
-        result = self.rpc_dispatcher.dispatch(payload)
-        if not result.ok:
-            return self._error_response(
-                frame,
-                result.error_code,
-                result.error_message,
-            )
-
-        return self._success_response(frame, result.payload)
 
     def _build_runtime_service(self, service_name, factory):
         if service_name == "visit_guide" and factory is VisitGuideService:
