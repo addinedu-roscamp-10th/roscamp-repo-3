@@ -7,6 +7,9 @@ from server.ropi_main_service.application import patrol_runtime
 
 
 class FakeRepository:
+    def __init__(self):
+        self.started_calls = []
+
     async def async_get_patrol_execution_snapshot(self, task_id):
         return {
             "task_id": int(task_id),
@@ -29,12 +32,25 @@ class FakeRepository:
             },
         }
 
+    async def async_record_patrol_execution_started(self, task_id):
+        self.started_calls.append(task_id)
+        return {
+            "result_code": "ACCEPTED",
+            "task_id": int(task_id),
+            "task_status": "RUNNING",
+            "phase": "FOLLOW_PATROL_PATH",
+            "assigned_robot_id": "pinky3",
+        }
+
 
 class FakeOrchestrator:
-    def __init__(self):
+    def __init__(self, repository=None):
         self.calls = []
+        self.repository = repository
 
     async def async_run(self, **kwargs):
+        if self.repository is not None:
+            assert self.repository.started_calls == [kwargs["task_id"]]
         self.calls.append(kwargs)
         return {
             "result_code": "SUCCEEDED",
@@ -54,7 +70,7 @@ class FakeTaskRequestRepository:
 def test_build_patrol_request_service_starts_background_patrol_workflow():
     workflow_task_manager = DeliveryWorkflowTaskManager()
     repository = FakeRepository()
-    orchestrator = FakeOrchestrator()
+    orchestrator = FakeOrchestrator(repository=repository)
     task_request_repository = FakeTaskRequestRepository()
 
     async def scenario():
@@ -70,6 +86,7 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
 
     asyncio.run(scenario())
 
+    assert repository.started_calls == ["2001"]
     assert orchestrator.calls == [
         {
             "task_id": "2001",

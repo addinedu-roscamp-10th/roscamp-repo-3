@@ -63,6 +63,12 @@ def build_patrol_request_service(
                     "reason_code": "PATROL_TASK_NOT_FOUND",
                 }
 
+            start_response = await patrol_execution_repository.async_record_patrol_execution_started(
+                task_id
+            )
+            if start_response.get("result_code") != "ACCEPTED":
+                return start_response
+
             return await patrol_orchestrator.async_run(
                 task_id=str(task_id),
                 path_snapshot_json=snapshot["path_snapshot_json"],
