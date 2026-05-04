@@ -63,6 +63,32 @@ def test_runtime_readiness_uses_delivery_runtime_config():
     ]
 
 
+def test_runtime_readiness_can_preflight_guide_runtime_without_arm_checks():
+    command_client = FakeCommandClient()
+    service = RosRuntimeReadinessService(
+        command_client=command_client,
+        runtime_config=DeliveryRuntimeConfig(pinky_id="pinky1"),
+        arm_ids=[],
+        include_guide=True,
+        readiness_timeout_sec=0.8,
+    )
+
+    response = service.get_status()
+
+    assert response == {"ready": True, "checks": []}
+    assert command_client.calls == [
+        {
+            "command": "get_runtime_status",
+            "payload": {
+                "pinky_id": "pinky1",
+                "arm_ids": [],
+                "include_guide": True,
+            },
+            "timeout": 0.8,
+        }
+    ]
+
+
 def test_async_runtime_readiness_uses_async_ros_service_command_client():
     command_client = FakeAsyncCommandClient()
     service = RosRuntimeReadinessService(

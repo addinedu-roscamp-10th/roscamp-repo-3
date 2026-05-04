@@ -443,7 +443,11 @@ def test_visit_guide_service_start_guide_driving_does_not_record_running_when_na
         }
     ]
     assert command_service.sent == []
-    assert lifecycle_repository.recorded == []
+    assert lifecycle_repository.recorded[0]["command_type"] == "START_GUIDANCE"
+    assert lifecycle_repository.recorded[0]["target_track_id"] == "track_17"
+    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
+        "NAVIGATION_UNAVAILABLE"
+    )
     assert response["result_code"] == "REJECTED"
     assert response["reason_code"] == "NAVIGATION_UNAVAILABLE"
     assert response["task_status"] == "RUNNING"
@@ -470,7 +474,11 @@ def test_visit_guide_service_start_guide_driving_does_not_record_running_when_na
     assert ok is False
     assert "UDS navigation socket missing" in message
     assert command_service.sent == []
-    assert lifecycle_repository.recorded == []
+    assert lifecycle_repository.recorded[0]["command_type"] == "START_GUIDANCE"
+    assert lifecycle_repository.recorded[0]["target_track_id"] == "track_17"
+    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
+        "GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR"
+    )
     assert response["reason_code"] == "GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR"
     assert response["phase"] == "WAIT_TARGET_TRACKING"
 
@@ -541,6 +549,10 @@ def test_visit_guide_service_async_start_guide_driving_stops_before_command_when
     assert ok is False
     assert message == "navigation unavailable"
     assert command_service.sent == []
-    assert lifecycle_repository.recorded == []
+    assert lifecycle_repository.recorded[0]["command_type"] == "START_GUIDANCE"
+    assert lifecycle_repository.recorded[0]["target_track_id"] == "track_17"
+    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
+        "NAVIGATION_UNAVAILABLE"
+    )
     assert response["phase"] == "WAIT_TARGET_TRACKING"
     assert response["navigation_response"]["reason_code"] == "NAVIGATION_UNAVAILABLE"

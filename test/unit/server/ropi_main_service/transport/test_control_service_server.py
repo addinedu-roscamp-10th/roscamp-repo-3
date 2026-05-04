@@ -1246,6 +1246,132 @@ def test_async_guide_start_driving_rpc_publishes_task_update(control_service_ser
     assert published_events[0][1]["phase"] == "GUIDANCE_RUNNING"
 
 
+def test_guide_navigation_background_rejects_when_guide_ros_runtime_not_ready(
+    control_service_server,
+):
+    readiness_calls = []
+
+    class FakeReadinessService:
+        def __init__(self, **kwargs):
+            readiness_calls.append(kwargs)
+
+        def get_status(self):
+            return {
+                "ready": False,
+                "checks": [
+                    {
+                        "name": "pinky1.navigate_to_goal",
+                        "ready": True,
+                        "action_name": "/ropi/control/pinky1/navigate_to_goal",
+                    },
+                    {
+                        "name": "pinky1.guide_command",
+                        "ready": False,
+                        "service_name": "/ropi/control/pinky1/guide_command",
+                    },
+                ],
+            }
+
+    class FakeWorkflowTaskManager:
+        def create_task(self, coro, **kwargs):
+            coro.close()
+            raise AssertionError("navigation must not be queued when guide runtime is not ready")
+
+    async def scenario():
+        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService",
+            FakeReadinessService,
+        ):
+            return control_service_server._start_guide_navigation_background(
+                task_id="3001",
+                pinky_id="pinky1",
+                goal_pose={"pose": {"position": {"x": 1.0}}},
+                timeout_sec=3,
+            )
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "GUIDE_RUNTIME_NOT_READY"
+    assert response["navigation_started"] is False
+    assert response["task_id"] == "3001"
+    assert readiness_calls[0]["include_guide"] is True
+    assert readiness_calls[0]["arm_ids"] == []
+
+
+def test_guide_navigation_background_preflights_runtime_before_queueing(
+    control_service_server,
+):
+    readiness_calls = []
+    queued_tasks = []
+
+    class FakeReadinessService:
+        def __init__(self, **kwargs):
+            readiness_calls.append(kwargs)
+
+        def get_status(self):
+            return {
+                "ready": True,
+                "checks": [
+                    {
+                        "name": "pinky1.navigate_to_goal",
+                        "ready": True,
+                        "action_name": "/ropi/control/pinky1/navigate_to_goal",
+                    },
+                    {
+                        "name": "pinky1.guide_command",
+                        "ready": True,
+                        "service_name": "/ropi/control/pinky1/guide_command",
+                    },
+                ],
+            }
+
+    class FakeNavigationService:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def async_navigate(self, **kwargs):
+            return {"accepted": True, "result_code": "SUCCESS", **kwargs}
+
+    class FakeTask:
+        def add_done_callback(self, callback):
+            self.callback = callback
+
+    class FakeWorkflowTaskManager:
+        def create_task(self, coro, **kwargs):
+            queued_tasks.append(kwargs)
+            coro.close()
+            return FakeTask()
+
+    async def scenario():
+        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService",
+                FakeReadinessService,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.GoalPoseNavigationService",
+                FakeNavigationService,
+            ),
+        ):
+            return control_service_server._start_guide_navigation_background(
+                task_id="3001",
+                pinky_id="pinky1",
+                goal_pose={"pose": {"position": {"x": 1.0}}},
+                timeout_sec=3,
+            )
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["navigation_started"] is True
+    assert queued_tasks[0]["name"] == "guide_destination_navigation_3001"
+    assert readiness_calls[0]["include_guide"] is True
+    assert readiness_calls[0]["arm_ids"] == []
+
+
 def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_update(
     control_service_server,
 ):

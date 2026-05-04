@@ -325,6 +325,12 @@ class VisitGuideService:
                 target_track_id=target_track_id,
                 pinky_id=target_pinky_id,
             )
+            self._record_guide_driving_start_rejection(
+                response=response,
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                target_track_id=target_track_id,
+            )
             return False, response["result_message"], response
 
         if not self._navigation_dispatch_accepted(navigation_response):
@@ -333,6 +339,12 @@ class VisitGuideService:
                 navigation_response=navigation_response,
                 target_track_id=target_track_id,
                 pinky_id=target_pinky_id,
+            )
+            self._record_guide_driving_start_rejection(
+                response=response,
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                target_track_id=target_track_id,
             )
             return False, response["result_message"], response
 
@@ -394,6 +406,12 @@ class VisitGuideService:
                 target_track_id=target_track_id,
                 pinky_id=target_pinky_id,
             )
+            await self._async_record_guide_driving_start_rejection(
+                response=response,
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                target_track_id=target_track_id,
+            )
             return False, response["result_message"], response
 
         if not self._navigation_dispatch_accepted(navigation_response):
@@ -402,6 +420,12 @@ class VisitGuideService:
                 navigation_response=navigation_response,
                 target_track_id=target_track_id,
                 pinky_id=target_pinky_id,
+            )
+            await self._async_record_guide_driving_start_rejection(
+                response=response,
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                target_track_id=target_track_id,
             )
             return False, response["result_message"], response
 
@@ -771,6 +795,52 @@ class VisitGuideService:
             "navigation_response": navigation_response,
             "command_response": None,
         }
+
+    def _record_guide_driving_start_rejection(
+        self,
+        *,
+        response,
+        task_id,
+        pinky_id,
+        target_track_id,
+    ):
+        if self._normalize_positive_id(task_id) is None:
+            return
+
+        command_response = dict(response or {})
+        command_response["accepted"] = False
+        self.guide_task_lifecycle_repository.record_command_result(
+            task_id=task_id,
+            pinky_id=pinky_id,
+            command_type=START_GUIDANCE_COMMAND,
+            target_track_id=target_track_id,
+            wait_timeout_sec=0,
+            finish_reason="",
+            command_response=command_response,
+        )
+
+    async def _async_record_guide_driving_start_rejection(
+        self,
+        *,
+        response,
+        task_id,
+        pinky_id,
+        target_track_id,
+    ):
+        if self._normalize_positive_id(task_id) is None:
+            return
+
+        command_response = dict(response or {})
+        command_response["accepted"] = False
+        await self.guide_task_lifecycle_repository.async_record_command_result(
+            task_id=task_id,
+            pinky_id=pinky_id,
+            command_type=START_GUIDANCE_COMMAND,
+            target_track_id=target_track_id,
+            wait_timeout_sec=0,
+            finish_reason="",
+            command_response=command_response,
+        )
 
     @staticmethod
     def _build_guide_driving_response(*, context, command_response, target_track_id, pinky_id):

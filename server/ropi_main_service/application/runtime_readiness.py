@@ -20,27 +20,27 @@ class RosRuntimeReadinessService:
         *,
         command_client=None,
         runtime_config=None,
+        arm_ids=None,
+        include_patrol=False,
+        include_guide=False,
         readiness_timeout_sec=DEFAULT_READINESS_TIMEOUT_SEC,
     ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
         self.runtime_config = runtime_config or get_delivery_runtime_config()
+        self.arm_ids = list(self.runtime_config.arm_ids if arm_ids is None else arm_ids)
+        self.include_patrol = bool(include_patrol)
+        self.include_guide = bool(include_guide)
         self.readiness_timeout_sec = float(readiness_timeout_sec)
 
     def get_status(self):
         return self.command_client.send_command(
             "get_runtime_status",
-            {
-                "pinky_id": self.runtime_config.pinky_id,
-                "arm_ids": list(self.runtime_config.arm_ids),
-            },
+            self._build_payload(),
             timeout=self.readiness_timeout_sec,
         )
 
     async def async_get_status(self):
-        payload = {
-            "pinky_id": self.runtime_config.pinky_id,
-            "arm_ids": list(self.runtime_config.arm_ids),
-        }
+        payload = self._build_payload()
         async_send_command = getattr(self.command_client, "async_send_command", None)
 
         if async_send_command is not None:
@@ -56,6 +56,17 @@ class RosRuntimeReadinessService:
             payload,
             timeout=self.readiness_timeout_sec,
         )
+
+    def _build_payload(self):
+        payload = {
+            "pinky_id": self.runtime_config.pinky_id,
+            "arm_ids": list(self.arm_ids),
+        }
+        if self.include_patrol:
+            payload["include_patrol"] = True
+        if self.include_guide:
+            payload["include_guide"] = True
+        return payload
 
 
 __all__ = ["RosRuntimeReadinessService"]

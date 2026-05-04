@@ -72,6 +72,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 CONTROL_SERVER_HOST = os.getenv("CONTROL_SERVER_HOST", "127.0.0.1")
 CONTROL_SERVER_PORT = int(os.getenv("CONTROL_SERVER_PORT", "5050"))
 AI_HEALTH_CONNECT_TIMEOUT_SEC = float(os.getenv("AI_HEALTH_CONNECT_TIMEOUT_SEC", "0.5"))
+GUIDE_RUNTIME_READINESS_TIMEOUT_SEC = 1.0
 logger = logging.getLogger(__name__)
 
 
@@ -752,6 +753,64 @@ class ControlServiceServer:
             )
         return factory()
 
+    def _get_guide_runtime_readiness_status(self, *, pinky_id):
+        try:
+            return RosRuntimeReadinessService(
+                runtime_config=DeliveryRuntimeConfig(pinky_id=pinky_id),
+                arm_ids=[],
+                include_guide=True,
+                readiness_timeout_sec=GUIDE_RUNTIME_READINESS_TIMEOUT_SEC,
+            ).get_status()
+        except Exception as exc:
+            return {
+                "ready": False,
+                "checks": [],
+                "error": str(exc),
+            }
+
+    @staticmethod
+    def _guide_runtime_ready(runtime_status, *, pinky_id):
+        if not isinstance(runtime_status, dict):
+            return False
+
+        checks = runtime_status.get("checks")
+        if not isinstance(checks, list):
+            return False
+
+        required_endpoints = {
+            f"/ropi/control/{pinky_id}/navigate_to_goal",
+            f"/ropi/control/{pinky_id}/guide_command",
+        }
+        readiness_by_endpoint = {}
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            endpoint = check.get("action_name") or check.get("service_name")
+            if endpoint in required_endpoints:
+                readiness_by_endpoint[endpoint] = check.get("ready") is True
+
+        return all(readiness_by_endpoint.get(endpoint) is True for endpoint in required_endpoints)
+
+    @staticmethod
+    def _build_guide_runtime_not_ready_response(*, task_id, pinky_id, runtime_status):
+        error = ""
+        if isinstance(runtime_status, dict):
+            error = str(runtime_status.get("error") or "").strip()
+        result_message = "안내 ROS 런타임이 준비되지 않았습니다."
+        if error:
+            result_message = f"{result_message} ({error})"
+
+        return {
+            "result_code": "REJECTED",
+            "result_message": result_message,
+            "reason_code": "GUIDE_RUNTIME_NOT_READY",
+            "navigation_started": False,
+            "task_id": task_id,
+            "pinky_id": pinky_id,
+            "nav_phase": "GUIDE_DESTINATION",
+            "runtime_status": runtime_status,
+        }
+
     def _start_guide_navigation_background(
         self,
         *,
@@ -760,8 +819,16 @@ class ControlServiceServer:
         goal_pose,
         timeout_sec,
     ):
-        loop = asyncio.get_running_loop()
         target_pinky_id = str(pinky_id or "").strip() or "pinky1"
+        runtime_status = self._get_guide_runtime_readiness_status(pinky_id=target_pinky_id)
+        if not self._guide_runtime_ready(runtime_status, pinky_id=target_pinky_id):
+            return self._build_guide_runtime_not_ready_response(
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                runtime_status=runtime_status,
+            )
+
+        loop = asyncio.get_running_loop()
         navigation_service = GoalPoseNavigationService(
             runtime_config=DeliveryRuntimeConfig(pinky_id=target_pinky_id),
         )
