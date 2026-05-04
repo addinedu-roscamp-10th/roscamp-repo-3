@@ -415,14 +415,17 @@ class VisitGuideService:
         wait_timeout_sec=0,
         finish_reason="",
     ):
-        response = self.guide_command_service.send(
-            task_id=task_id,
-            pinky_id=pinky_id or self.default_pinky_id,
-            command_type=command_type,
-            target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
-        )
+        try:
+            response = self.guide_command_service.send(
+                task_id=task_id,
+                pinky_id=pinky_id or self.default_pinky_id,
+                command_type=command_type,
+                target_track_id=target_track_id,
+                wait_timeout_sec=wait_timeout_sec,
+                finish_reason=finish_reason,
+            )
+        except Exception as exc:
+            response = self._build_guide_command_transport_error_response(exc)
         response = self._attach_guide_command_lifecycle(
             response=response,
             task_id=task_id,
@@ -451,14 +454,17 @@ class VisitGuideService:
         wait_timeout_sec=0,
         finish_reason="",
     ):
-        response = await self.guide_command_service.async_send(
-            task_id=task_id,
-            pinky_id=pinky_id or self.default_pinky_id,
-            command_type=command_type,
-            target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
-        )
+        try:
+            response = await self.guide_command_service.async_send(
+                task_id=task_id,
+                pinky_id=pinky_id or self.default_pinky_id,
+                command_type=command_type,
+                target_track_id=target_track_id,
+                wait_timeout_sec=wait_timeout_sec,
+                finish_reason=finish_reason,
+            )
+        except Exception as exc:
+            response = self._build_guide_command_transport_error_response(exc)
         response = await self._async_attach_guide_command_lifecycle(
             response=response,
             task_id=task_id,
@@ -552,6 +558,17 @@ class VisitGuideService:
         if guide_runtime.get("stale"):
             return False, "안내 추적 업데이트가 오래되어 최신 상태가 아닙니다.", status
         return True, "안내 추적 상태를 확인했습니다.", status
+
+    @staticmethod
+    def _build_guide_command_transport_error_response(exc):
+        message = str(exc).strip() or "안내 제어 명령 전송에 실패했습니다."
+        return {
+            "accepted": False,
+            "result_code": "REJECTED",
+            "result_message": message,
+            "reason_code": "GUIDE_COMMAND_TRANSPORT_ERROR",
+            "message": message,
+        }
 
     def _attach_guide_command_lifecycle(
         self,
