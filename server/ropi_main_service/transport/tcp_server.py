@@ -9,19 +9,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from server.ropi_main_service.application.auth import AuthService
-from server.ropi_main_service.application.caregiver_rpc_facade import (
-    CaregiverRpcFacade,
-)
-from server.ropi_main_service.application.coordinate_config import CoordinateConfigService
 from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
 from server.ropi_main_service.application.guide_tracking_runtime import (
     start_guide_tracking_stream_if_enabled,
-)
-from server.ropi_main_service.application.fall_evidence_image import (
-    FallEvidenceImageService,
 )
 from server.ropi_main_service.application.guide_navigation_runtime import (
     GuideNavigationRuntimeStarter,
@@ -30,16 +23,9 @@ from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
 from server.ropi_main_service.application.patrol_runtime import build_patrol_request_service
-from server.ropi_main_service.application.inventory import InventoryService
-from server.ropi_main_service.application.kiosk_visitor import KioskVisitorService
-from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
-from server.ropi_main_service.application.staff_call import StaffCallService
-from server.ropi_main_service.application.task_monitor import TaskMonitorService
-from server.ropi_main_service.application.task_request import TaskRequestService
+from server.ropi_main_service.application.rpc_service_registry import SERVICE_REGISTRY
 from server.ropi_main_service.application.visit_guide import VisitGuideService
-from server.ropi_main_service.application.visitor_info import VisitorInfoService
-from server.ropi_main_service.application.visitor_register import VisitorRegisterService
 from server.ropi_main_service.observability import configure_logging, log_event
 from server.ropi_main_service.persistence.async_connection import close_pool
 from server.ropi_main_service.persistence.background_db_writer import (
@@ -160,22 +146,6 @@ async def _async_check_ai_server_status():
         if writer is not None:
             writer.close()
             await writer.wait_closed()
-
-
-SERVICE_REGISTRY = {
-    "caregiver": CaregiverRpcFacade,
-    "coordinate_config": CoordinateConfigService,
-    "patient": PatientService,
-    "inventory": InventoryService,
-    "kiosk_visitor": KioskVisitorService,
-    "fall_evidence_image": FallEvidenceImageService,
-    "task_monitor": TaskMonitorService,
-    "task_request": TaskRequestService,
-    "visit_guide": VisitGuideService,
-    "visitor_info": VisitorInfoService,
-    "visitor_register": VisitorRegisterService,
-    "staff_call": StaffCallService,
-}
 
 
 class ControlServiceServer:
