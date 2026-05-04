@@ -43,10 +43,11 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
     MESSAGE_CODE_TASK_STATUS_QUERY,
     TCPFrame,
-    TCPFrameError,
     build_frame,
     encode_frame,
-    read_frame_from_stream,
+)
+from server.ropi_main_service.transport.client_session_handler import (
+    ControlClientSessionHandler,
 )
 from server.ropi_main_service.transport.frame_handlers import ControlFrameHandlers
 from server.ropi_main_service.transport.frame_router import ControlFrameRouter
@@ -161,6 +162,14 @@ class ControlServiceServer:
         self.task_event_stream_hub = TaskEventStreamHub()
         self.task_event_subscription_handler = TaskEventSubscriptionHandler(
             stream_hub=self.task_event_stream_hub,
+        )
+        self.client_session_handler = ControlClientSessionHandler(
+            stream_hub=self.task_event_stream_hub,
+            task_event_subscription_handler=self.task_event_subscription_handler,
+            build_response_frame=self._build_response_frame,
+            encode_response=self._encode_response,
+            success_response=self._success_response,
+            error_response=self._error_response,
         )
         self.task_update_event_publisher = TaskUpdateEventPublisher(
             publish_event=(
@@ -335,63 +344,7 @@ class ControlServiceServer:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ):
-        try:
-            while not reader.at_eof():
-                try:
-                    request_frame = await read_frame_from_stream(reader)
-                except TCPFrameError:
-                    break
-
-                if request_frame.message_code == MESSAGE_CODE_TASK_EVENT_SUBSCRIBE:
-                    response_frame = await self._handle_task_event_subscribe(
-                        request_frame,
-                        writer,
-                    )
-                    writer.write(self._encode_response(response_frame))
-                    await writer.drain()
-                    await self._replay_task_events_after_subscribe(
-                        request_frame,
-                        response_frame,
-                    )
-                    continue
-
-                response_frame = await self._build_response_frame(request_frame)
-                writer.write(self._encode_response(response_frame))
-                await writer.drain()
-        finally:
-            await self.task_event_stream_hub.unsubscribe(writer=writer)
-            writer.close()
-            await writer.wait_closed()
-
-    async def _handle_task_event_subscribe(
-        self,
-        frame: TCPFrame,
-        writer: asyncio.StreamWriter,
-    ) -> TCPFrame:
-        result = await self.task_event_subscription_handler.subscribe(
-            frame.payload or {},
-            writer=writer,
-        )
-        if not result.accepted:
-            return self._error_response(
-                frame,
-                result.error_code,
-                result.error_message,
-            )
-        return self._success_response(frame, result.payload)
-
-    async def _replay_task_events_after_subscribe(
-        self,
-        frame: TCPFrame,
-        response_frame: TCPFrame,
-    ):
-        if response_frame.is_error:
-            return
-
-        await self.task_event_subscription_handler.replay_after_subscribe(
-            frame.payload or {},
-            subscribe_accepted=True,
-        )
+        await self.client_session_handler.handle_client(reader, writer)
 
     async def _build_response_frame(self, frame: TCPFrame):
         try:
