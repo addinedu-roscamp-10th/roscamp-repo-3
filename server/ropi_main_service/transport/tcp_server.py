@@ -3,6 +3,7 @@ import asyncio
 import inspect
 import logging
 import os
+import socket
 from datetime import date, datetime
 from pathlib import Path
 
@@ -11,18 +12,25 @@ from dotenv import load_dotenv
 from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.action_feedback import RosActionFeedbackService
 from server.ropi_main_service.application.caregiver import CaregiverService
+from server.ropi_main_service.application.coordinate_config import CoordinateConfigService
 from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
+from server.ropi_main_service.application.guide_tracking_runtime import (
+    start_guide_tracking_stream_if_enabled,
+)
 from server.ropi_main_service.application.fall_evidence_image import (
     FallEvidenceImageService,
 )
+from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
+from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
 from server.ropi_main_service.application.patrol_runtime import build_patrol_request_service
 from server.ropi_main_service.application.inventory import InventoryService
+from server.ropi_main_service.application.kiosk_visitor import KioskVisitorService
 from server.ropi_main_service.application.patient import PatientService
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.staff_call import StaffCallService
@@ -38,6 +46,7 @@ from server.ropi_main_service.persistence.background_db_writer import (
 )
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
@@ -45,6 +54,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_EVENT_SUBSCRIBE,
+    MESSAGE_CODE_TASK_STATUS_QUERY,
     TCPFrame,
     TCPFrameError,
     build_frame,
@@ -61,6 +71,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 CONTROL_SERVER_HOST = os.getenv("CONTROL_SERVER_HOST", "127.0.0.1")
 CONTROL_SERVER_PORT = int(os.getenv("CONTROL_SERVER_PORT", "5050"))
+AI_HEALTH_CONNECT_TIMEOUT_SEC = float(os.getenv("AI_HEALTH_CONNECT_TIMEOUT_SEC", "0.5"))
 logger = logging.getLogger(__name__)
 
 
@@ -74,6 +85,71 @@ def _serialize(value):
     if isinstance(value, tuple):
         return [_serialize(item) for item in value]
     return value
+
+
+def _ai_server_endpoint():
+    host = (
+        os.getenv("AI_FALL_EVIDENCE_HOST")
+        or os.getenv("AI_GUIDE_TRACKING_STREAM_HOST")
+        or os.getenv("AI_FALL_STREAM_HOST")
+        or os.getenv("AI_SERVER_HOST")
+    )
+    host = str(host or "").strip()
+    if not host:
+        return None
+
+    port = (
+        os.getenv("AI_FALL_EVIDENCE_PORT")
+        or os.getenv("AI_GUIDE_TRACKING_STREAM_PORT")
+        or os.getenv("AI_FALL_STREAM_PORT")
+        or "6000"
+    )
+    return host, int(port)
+
+
+def _ai_not_configured_status():
+    return {
+        "ok": False,
+        "disabled": True,
+        "detail": "AI server endpoint is not configured.",
+    }
+
+
+def _check_ai_server_status():
+    endpoint = _ai_server_endpoint()
+    if endpoint is None:
+        return _ai_not_configured_status()
+
+    host, port = endpoint
+    try:
+        with socket.create_connection(
+            (host, port),
+            timeout=AI_HEALTH_CONNECT_TIMEOUT_SEC,
+        ):
+            return {"ok": True, "detail": {"host": host, "port": port}}
+    except OSError as exc:
+        return {"ok": False, "detail": str(exc)}
+
+
+async def _async_check_ai_server_status():
+    endpoint = _ai_server_endpoint()
+    if endpoint is None:
+        return _ai_not_configured_status()
+
+    host, port = endpoint
+    writer = None
+    try:
+        _reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=AI_HEALTH_CONNECT_TIMEOUT_SEC,
+        )
+        return {"ok": True, "detail": {"host": host, "port": port}}
+    except (OSError, asyncio.TimeoutError) as exc:
+        return {"ok": False, "detail": str(exc)}
+    finally:
+        if writer is not None:
+            writer.close()
+            await writer.wait_closed()
 
 
 class CaregiverFacade:
@@ -100,6 +176,18 @@ class CaregiverFacade:
             "flow_data": flow_data,
             "timeline_rows": await self.service.async_get_timeline_data(),
         }
+
+    def get_robot_status_bundle(self):
+        return self.service.get_robot_status_bundle()
+
+    async def async_get_robot_status_bundle(self):
+        return await self.service.async_get_robot_status_bundle()
+
+    def get_alert_log_bundle(self, **filters):
+        return self.service.get_alert_log_bundle(**filters)
+
+    async def async_get_alert_log_bundle(self, **filters):
+        return await self.service.async_get_alert_log_bundle(**filters)
 
     def _attach_action_feedback(self, flow_data):
         for task in self._iter_feedback_target_tasks(flow_data):
@@ -129,12 +217,13 @@ class CaregiverFacade:
 
     @staticmethod
     def _iter_feedback_target_tasks(flow_data):
-        for task in flow_data.get("RUNNING", []):
-            if not isinstance(task, dict):
-                continue
-            if task.get("task_status") not in ("RUNNING", "CANCEL_REQUESTED"):
-                continue
-            yield task
+        for column_key in ("IN_PROGRESS", "CANCELING", "RUNNING"):
+            for task in flow_data.get(column_key, []):
+                if not isinstance(task, dict):
+                    continue
+                if task.get("task_status") not in ("RUNNING", "CANCEL_REQUESTED"):
+                    continue
+                yield task
 
     @classmethod
     def _apply_feedback_response(cls, task, response):
@@ -169,8 +258,10 @@ class CaregiverFacade:
 
 SERVICE_REGISTRY = {
     "caregiver": CaregiverFacade,
+    "coordinate_config": CoordinateConfigService,
     "patient": PatientService,
     "inventory": InventoryService,
+    "kiosk_visitor": KioskVisitorService,
     "fall_evidence_image": FallEvidenceImageService,
     "task_monitor": TaskMonitorService,
     "task_request": TaskRequestService,
@@ -190,6 +281,7 @@ class ControlServiceServer:
         self.delivery_workflow_task_manager = get_default_workflow_task_manager()
         self.task_event_stream_hub = TaskEventStreamHub()
         self.fall_inference_stream_task = None
+        self.guide_tracking_stream_task = None
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         payload = frame.payload or {}
@@ -228,6 +320,9 @@ class ControlServiceServer:
                         "detail": str(exc),
                     }
 
+            if payload.get("check_ai"):
+                response_payload["ai"] = _check_ai_server_status()
+
             return self._success_response(frame, response_payload)
 
         if frame.message_code == MESSAGE_CODE_LOGIN:
@@ -251,6 +346,12 @@ class ControlServiceServer:
 
         if frame.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY:
             return self._dispatch_fall_evidence_image_query(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK:
+            return self._dispatch_guide_create_task(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_TASK_STATUS_QUERY:
+            return self._dispatch_task_status_query(frame, payload)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return self._dispatch_rpc(frame, payload)
@@ -289,6 +390,12 @@ class ControlServiceServer:
 
         if frame.message_code == MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY:
             return await self._dispatch_fall_evidence_image_query_async(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK:
+            return await self._dispatch_guide_create_task_async(frame, payload)
+
+        if frame.message_code == MESSAGE_CODE_TASK_STATUS_QUERY:
+            return await self._dispatch_task_status_query_async(frame, payload)
 
         if frame.message_code == MESSAGE_CODE_INTERNAL_RPC:
             return await self._dispatch_rpc_async(frame, payload)
@@ -341,6 +448,9 @@ class ControlServiceServer:
                     "ok": False,
                     "detail": str(exc),
                 }
+
+        if payload.get("check_ai"):
+            response_payload["ai"] = await _async_check_ai_server_status()
 
         return self._success_response(frame, response_payload)
 
@@ -422,6 +532,31 @@ class ControlServiceServer:
         )
         return self._success_response(frame, result)
 
+    def _dispatch_guide_create_task(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["visit_guide"]()
+            result = service.create_guide_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_CREATE_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def _dispatch_guide_create_task_async(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["visit_guide"]()
+            result = await service.async_create_guide_task(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_CREATE_ERROR", str(exc))
+
+        if isinstance(result, dict):
+            result = {**result, "cancellable": bool(result.get("cancellable", False))}
+        await self._publish_task_updated_from_response(
+            result,
+            source="GUIDE_CREATE",
+            task_type="GUIDE",
+        )
+        return self._success_response(frame, result)
+
     def _dispatch_fall_evidence_image_query(
         self,
         frame: TCPFrame,
@@ -455,6 +590,35 @@ class ControlServiceServer:
 
         return self._success_response(frame, result)
 
+    def _dispatch_task_status_query(self, frame: TCPFrame, payload: dict) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["task_monitor"]()
+            result = service.get_task_status(task_id=payload.get("task_id"))
+        except Exception as exc:
+            return self._error_response(frame, "TASK_STATUS_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def _dispatch_task_status_query_async(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+    ) -> TCPFrame:
+        try:
+            service = SERVICE_REGISTRY["task_monitor"]()
+            async_method = getattr(service, "async_get_task_status", None)
+            if async_method is not None:
+                result = await async_method(task_id=payload.get("task_id"))
+            else:
+                result = await asyncio.to_thread(
+                    service.get_task_status,
+                    task_id=payload.get("task_id"),
+                )
+        except Exception as exc:
+            return self._error_response(frame, "TASK_STATUS_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
     async def _dispatch_rpc_async(self, frame: TCPFrame, payload: dict):
         service_name = payload.get("service")
         method_name = payload.get("method")
@@ -472,7 +636,7 @@ class ControlServiceServer:
                 f"지원하지 않는 서비스입니다: {service_name}",
             )
 
-        service = factory()
+        service = self._build_runtime_service(service_name, factory)
         async_method = getattr(service, f"async_{method_name}", None)
         method = async_method or getattr(service, method_name, None)
         if method is None:
@@ -490,10 +654,30 @@ class ControlServiceServer:
         except Exception as exc:
             return self._error_response(frame, "RPC_ERROR", str(exc))
 
-        if service_name == "task_request" and method_name == "cancel_delivery_task":
+        if service_name == "task_request" and method_name in {
+            "cancel_delivery_task",
+            "cancel_task",
+        }:
+            source = (
+                "DELIVERY_CANCEL"
+                if method_name == "cancel_delivery_task"
+                else "TASK_CANCEL"
+            )
             await self._publish_task_updated_from_response(
                 result,
-                source="DELIVERY_CANCEL",
+                source=source,
+            )
+
+        if service_name == "visit_guide" and method_name in {
+            "begin_guide_session",
+            "send_guide_command",
+            "finish_guide_session",
+            "start_guide_driving",
+        }:
+            await self._publish_task_updated_from_response(
+                self._extract_task_update_response(result),
+                source="GUIDE_COMMAND",
+                task_type="GUIDE",
             )
 
         result = self._attach_task_monitor_handoff_seq(result, task_monitor_handoff_seq)
@@ -551,9 +735,98 @@ class ControlServiceServer:
             "last_event_seq": handoff_seq,
         }
 
+    @staticmethod
+    def _extract_task_update_response(result):
+        if isinstance(result, dict):
+            return result
+        if isinstance(result, (list, tuple)) and len(result) >= 3:
+            payload = result[2]
+            if isinstance(payload, dict):
+                return payload
+        return {}
+
+    def _build_runtime_service(self, service_name, factory):
+        if service_name == "visit_guide" and factory is VisitGuideService:
+            return VisitGuideService(
+                guide_navigation_starter=self._start_guide_navigation_background,
+            )
+        return factory()
+
+    def _start_guide_navigation_background(
+        self,
+        *,
+        task_id,
+        pinky_id,
+        goal_pose,
+        timeout_sec,
+    ):
+        loop = asyncio.get_running_loop()
+        target_pinky_id = str(pinky_id or "").strip() or "pinky1"
+        navigation_service = GoalPoseNavigationService(
+            runtime_config=DeliveryRuntimeConfig(pinky_id=target_pinky_id),
+        )
+        background_task = self.delivery_workflow_task_manager.create_task(
+            navigation_service.async_navigate(
+                task_id=task_id,
+                pinky_id=target_pinky_id,
+                nav_phase="GUIDE_DESTINATION",
+                goal_pose=goal_pose,
+                timeout_sec=timeout_sec,
+            ),
+            name=f"guide_destination_navigation_{task_id}",
+            loop=loop,
+            cancel_on_shutdown=True,
+        )
+        background_task.add_done_callback(
+            lambda task: self._handle_guide_navigation_done(task, task_id=task_id)
+        )
+        return {
+            "result_code": "ACCEPTED",
+            "result_message": "안내 목적지 이동을 시작했습니다.",
+            "navigation_started": True,
+            "task_id": task_id,
+            "pinky_id": target_pinky_id,
+            "nav_phase": "GUIDE_DESTINATION",
+        }
+
+    @staticmethod
+    def _handle_guide_navigation_done(task, *, task_id):
+        try:
+            result = task.result()
+        except asyncio.CancelledError:
+            log_event(
+                logger,
+                logging.WARNING,
+                "guide_destination_navigation_cancelled",
+                task_id=task_id,
+                reason_code="GUIDE_NAVIGATION_TASK_CANCELLED",
+            )
+            return
+        except Exception as exc:
+            logger.exception(
+                "guide destination navigation failed",
+                extra={"task_id": task_id, "error": str(exc)},
+            )
+            return
+
+        log_event(
+            logger,
+            logging.INFO,
+            "guide_destination_navigation_finished",
+            task_id=task_id,
+            result_code=(result or {}).get("result_code"),
+            result_message=(result or {}).get("result_message"),
+            reason_code=(result or {}).get("reason_code"),
+        )
+
     async def start(self):
         self.db_writer.start()
         self.fall_inference_stream_task = start_fall_inference_stream_if_enabled(
+            loop=asyncio.get_running_loop(),
+            task_event_publisher=self.task_event_stream_hub,
+            workflow_task_manager=self.delivery_workflow_task_manager,
+        )
+        self.guide_tracking_stream_task = start_guide_tracking_stream_if_enabled(
             loop=asyncio.get_running_loop(),
             task_event_publisher=self.task_event_stream_hub,
             workflow_task_manager=self.delivery_workflow_task_manager,
@@ -683,7 +956,7 @@ class ControlServiceServer:
 
         cancellable = response.get("cancellable")
         resolved_task_type = task_type or response.get("task_type") or "DELIVERY"
-        if resolved_task_type == "PATROL" and cancellable is None:
+        if resolved_task_type in {"GUIDE", "PATROL"} and cancellable is None:
             cancellable = False
 
         await self.task_event_stream_hub.publish(

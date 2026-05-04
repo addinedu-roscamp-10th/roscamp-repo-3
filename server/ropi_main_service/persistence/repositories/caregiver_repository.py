@@ -28,5 +28,80 @@ class CaregiverRepository:
     async def async_get_flow_board_events(self, limit=50):
         return await async_fetch_all(load_sql("caregiver/flow_board_events.sql"), (limit,))
 
+    def get_alert_logs(
+        self,
+        *,
+        period_start=None,
+        severity=None,
+        source_component=None,
+        task_id=None,
+        robot_id=None,
+        event_type=None,
+        limit=100,
+    ):
+        return fetch_all(
+            load_sql("caregiver/alert_logs.sql"),
+            self._alert_log_params(
+                period_start=period_start,
+                severity=severity,
+                source_component=source_component,
+                task_id=task_id,
+                robot_id=robot_id,
+                event_type=event_type,
+                limit=limit,
+            ),
+        )
+
+    async def async_get_alert_logs(
+        self,
+        *,
+        period_start=None,
+        severity=None,
+        source_component=None,
+        task_id=None,
+        robot_id=None,
+        event_type=None,
+        limit=100,
+    ):
+        return await async_fetch_all(
+            load_sql("caregiver/alert_logs.sql"),
+            self._alert_log_params(
+                period_start=period_start,
+                severity=severity,
+                source_component=source_component,
+                task_id=task_id,
+                robot_id=robot_id,
+                event_type=event_type,
+                limit=limit,
+            ),
+        )
+
+    @staticmethod
+    def _alert_log_params(
+        *,
+        period_start,
+        severity,
+        source_component,
+        task_id,
+        robot_id,
+        event_type,
+        limit,
+    ):
+        return (
+            period_start,
+            period_start,
+            severity,
+            severity,
+            source_component,
+            source_component,
+            task_id,
+            task_id,
+            robot_id,
+            robot_id,
+            event_type,
+            event_type,
+            limit,
+        )
+
 
 __all__ = ["CaregiverRepository"]

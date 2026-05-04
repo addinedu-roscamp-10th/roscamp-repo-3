@@ -63,6 +63,7 @@ def test_schema_contains_control_task_and_log_tables():
         "ai_inference_log",
         "stream_metrics_log",
         "idempotency_record",
+        "kiosk_staff_call_log",
     ):
         assert f"CREATE TABLE `{table_name}`" in ddl
 
@@ -126,6 +127,23 @@ def test_operation_zone_does_not_store_patrol_robot_hint():
     assert "`default_robot_id`" not in seed_sql
 
 
+def test_operation_zone_supports_optional_boundary_polygon():
+    ddl = _ddl()
+    seed_sql = _seed_sql()
+
+    operation_zone_section = ddl.split("CREATE TABLE `operation_zone`", 1)[1].split(
+        "CREATE TABLE `patrol_area`",
+        1,
+    )[0]
+
+    assert "`boundary_json` JSON NULL" in operation_zone_section
+    assert "`boundary_json`" in seed_sql
+    assert '"type":"POLYGON"' in seed_sql
+    assert '"vertices"' in seed_sql
+    assert '"frame_id":"map"' in seed_sql
+    assert "`path_json`" not in operation_zone_section
+
+
 def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
     seed_sql = _seed_sql()
 
@@ -166,11 +184,49 @@ def test_schema_contains_expected_indexes():
         "idx_robot_data_log_task_received_at",
         "idx_stream_metrics_robot_window",
         "idx_ai_inference_task_inferred_at",
+        "idx_kiosk_staff_call_created_at",
         "uq_idempotency",
+        "uq_kiosk_staff_call_idempotency",
     )
 
     for index_name in expected_indexes:
         assert index_name in ddl
+
+
+def test_kiosk_staff_call_log_supports_unlinked_lobby_calls():
+    ddl = _ddl()
+
+    section = ddl.split("CREATE TABLE `kiosk_staff_call_log`", 1)[1].split(
+        "CREATE TABLE `idempotency_record`",
+        1,
+    )[0]
+
+    assert "`visitor_id` BIGINT UNSIGNED NULL" in section
+    assert "`member_id` BIGINT UNSIGNED NULL" in section
+    assert "`kiosk_id` VARCHAR(100) NULL" in section
+    assert "CONSTRAINT `fk_kiosk_staff_call_visitor`" in section
+    assert "CONSTRAINT `fk_kiosk_staff_call_member`" in section
+
+
+def test_robot_schema_does_not_add_capability_or_station_assignment_tables():
+    ddl = _ddl()
+    seed_sql = _seed_sql()
+
+    assert "CREATE TABLE `robot_capability`" not in ddl
+    assert "CREATE TABLE `robot_station_assignment`" not in ddl
+    assert "INSERT INTO `robot_capability`" not in seed_sql
+    assert "INSERT INTO `robot_station_assignment`" not in seed_sql
+
+
+def test_dummy_robot_seed_does_not_encode_fixed_pinky_scenario_roles():
+    seed_sql = _seed_sql()
+
+    assert "('pinky1', 'Pinky Pro', '192.168.0.101',\n 'IDLE', '모바일팀'" in seed_sql
+    assert "('pinky2', 'Pinky Pro', '192.168.0.102',\n 'IDLE', '모바일팀'" in seed_sql
+    assert "('pinky3', 'Pinky Pro', '192.168.0.103',\n 'IDLE', '모바일팀'" in seed_sql
+    assert "('pinky1', 'Pinky Pro', '192.168.0.101',\n 'IDLE', '안내팀'" not in seed_sql
+    assert "('pinky2', 'Pinky Pro', '192.168.0.102',\n 'IDLE', '운반팀'" not in seed_sql
+    assert "('pinky3', 'Pinky Pro', '192.168.0.103',\n 'IDLE', '순찰팀'" not in seed_sql
 
 
 def test_dummy_data_targets_current_schema_tables():

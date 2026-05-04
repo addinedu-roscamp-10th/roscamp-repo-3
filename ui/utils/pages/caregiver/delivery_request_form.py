@@ -1,6 +1,6 @@
 import logging
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.utils.config.network_config import CONTROL_SERVER_TIMEOUT
+from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.pages.caregiver.task_request_builders import (
     PayloadValidationError,
     build_delivery_create_payload,
@@ -224,18 +225,12 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.submit_btn.setEnabled(False)
         self.submit_btn.setText("불러오는 중...")
 
-        self.load_thread = QThread(self)
-        self.load_worker = TaskRequestOptionsLoadWorker()
-        self.load_worker.moveToThread(self.load_thread)
-
-        self.load_thread.started.connect(self.load_worker.run)
-        self.load_worker.finished.connect(self._handle_items_loaded)
-        self.load_worker.finished.connect(self.load_thread.quit)
-        self.load_worker.finished.connect(self.load_worker.deleteLater)
-        self.load_thread.finished.connect(self.load_thread.deleteLater)
-        self.load_thread.finished.connect(self._clear_load_thread)
-
-        self.load_thread.start()
+        self.load_thread, self.load_worker = start_worker_thread(
+            self,
+            worker=TaskRequestOptionsLoadWorker(),
+            finished_handler=self._handle_items_loaded,
+            clear_handler=self._clear_load_thread,
+        )
 
     def _handle_items_loaded(self, ok, payload):
         logger.debug("delivery items load finished: ok=%s", ok)
@@ -317,18 +312,12 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
         self.submit_btn.setText("등록 중...")
         logger.debug("delivery submit started")
 
-        self.submit_thread = QThread(self)
-        self.submit_worker = DeliverySubmitWorker(payload)
-        self.submit_worker.moveToThread(self.submit_thread)
-
-        self.submit_thread.started.connect(self.submit_worker.run)
-        self.submit_worker.finished.connect(self._handle_submit_finished)
-        self.submit_worker.finished.connect(self.submit_thread.quit)
-        self.submit_worker.finished.connect(self.submit_worker.deleteLater)
-        self.submit_thread.finished.connect(self.submit_thread.deleteLater)
-        self.submit_thread.finished.connect(self._clear_submit_thread)
-
-        self.submit_thread.start()
+        self.submit_thread, self.submit_worker = start_worker_thread(
+            self,
+            worker=DeliverySubmitWorker(payload),
+            finished_handler=self._handle_submit_finished,
+            clear_handler=self._clear_submit_thread,
+        )
 
     def _handle_submit_finished(self, success, response):
         logger.debug("delivery submit finished: success=%s", success)

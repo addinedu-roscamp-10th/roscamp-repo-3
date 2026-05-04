@@ -7,6 +7,7 @@ from server.ropi_main_service.application.task_monitor import TaskMonitorService
 class FakeTaskMonitorRepository:
     def __init__(self):
         self.calls = []
+        self.status_row = None
         self.snapshot = {
             "last_event_seq": 91,
             "tasks": [
@@ -14,12 +15,31 @@ class FakeTaskMonitorRepository:
                     "task_id": 2001,
                     "task_type": "PATROL",
                     "task_status": "RUNNING",
-                    "task_outcome": None,
+                    "task_outcome": "FAILED",
+                    "result_code": "FAILED",
+                    "result_message": "순찰 workflow 실패",
                     "phase": "WAIT_FALL_RESPONSE",
                     "assigned_robot_id": "pinky3",
+                    "map_id": "map_test11_0423",
+                    "map_name": "map_test11_0423",
+                    "map_revision": 1,
+                    "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
+                    "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
+                    "map_frame_id": "map",
                     "patrol_area_id": "ward_3f",
                     "patrol_area_name": "3층 병동",
                     "patrol_area_revision": 2,
+                    "patrol_path_frame_id": "map",
+                    "waypoint_count": 3,
+                    "current_waypoint_index": 1,
+                    "path_snapshot_json": {
+                        "header": {"frame_id": "map"},
+                        "poses": [
+                            {"x": 0.1666, "y": -0.4497, "yaw": 1.5708},
+                            {"x": 1.6946, "y": 0.0043, "yaw": 0.0},
+                            {"x": 0.8577, "y": 0.2560, "yaw": 0.0},
+                        ],
+                    },
                     "latest_reason_code": "FALL_DETECTED",
                     "requested_at": datetime(2026, 4, 30, 10, 0, 0),
                     "started_at": datetime(2026, 4, 30, 10, 1, 0),
@@ -63,6 +83,14 @@ class FakeTaskMonitorRepository:
         self.calls.append(kwargs)
         return self.snapshot
 
+    def get_task_status(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.status_row
+
+    async def async_get_task_status(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.status_row
+
 def test_task_monitor_snapshot_formats_nested_feedback_robot_and_alert():
     repository = FakeTaskMonitorRepository()
     service = TaskMonitorService(repository=repository)
@@ -91,10 +119,31 @@ def test_task_monitor_snapshot_formats_nested_feedback_robot_and_alert():
     assert task["task_id"] == 2001
     assert task["task_type"] == "PATROL"
     assert task["task_status"] == "RUNNING"
+    assert task["result_code"] == "FAILED"
+    assert task["result_message"] == "순찰 workflow 실패"
+    assert task["reason_code"] == "FALL_DETECTED"
     assert task["phase"] == "WAIT_FALL_RESPONSE"
     assert task["assigned_robot_id"] == "pinky3"
     assert task["cancellable"] is True
     assert task["patrol_area_name"] == "3층 병동"
+    assert task["patrol_map"] == {
+        "map_id": "map_test11_0423",
+        "map_name": "map_test11_0423",
+        "map_revision": 1,
+        "frame_id": "map",
+        "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
+        "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
+    }
+    assert task["patrol_path"] == {
+        "frame_id": "map",
+        "waypoint_count": 3,
+        "current_waypoint_index": 1,
+        "poses": [
+            {"x": 0.1666, "y": -0.4497, "yaw": 1.5708},
+            {"x": 1.6946, "y": 0.0043, "yaw": 0.0},
+            {"x": 0.8577, "y": 0.2560, "yaw": 0.0},
+        ],
+    }
     assert task["latest_feedback"] == {
         "feedback_summary": "MOVING / 남은 거리 1.25m",
         "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
@@ -151,3 +200,58 @@ def test_task_monitor_snapshot_async_uses_async_repository_method():
 
     assert response["result_code"] == "ACCEPTED"
     assert repository.calls[0]["task_types"] == ("PATROL",)
+
+
+def test_task_monitor_get_task_status_formats_single_task():
+    repository = FakeTaskMonitorRepository()
+    repository.status_row = {
+        "task_id": 3001,
+        "task_type": "GUIDE",
+        "task_status": "RUNNING",
+        "phase": "GUIDANCE_RUNNING",
+        "assigned_robot_id": "pinky1",
+        "updated_at": datetime(2026, 5, 4, 15, 10, 0),
+    }
+    service = TaskMonitorService(repository=repository)
+
+    response = service.get_task_status(task_id="3001")
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_id"] == 3001
+    assert response["task_type"] == "GUIDE"
+    assert response["task_status"] == "RUNNING"
+    assert response["phase"] == "GUIDANCE_RUNNING"
+    assert response["assigned_robot_id"] == "pinky1"
+    assert response["updated_at"] == "2026-05-04T15:10:00"
+    assert repository.calls[-1] == {"task_id": 3001}
+
+
+def test_task_monitor_get_task_status_returns_not_found_for_missing_task():
+    repository = FakeTaskMonitorRepository()
+    service = TaskMonitorService(repository=repository)
+
+    response = service.get_task_status(task_id=9999)
+
+    assert response == {
+        "result_code": "NOT_FOUND",
+        "result_message": "태스크를 찾을 수 없습니다.",
+        "reason_code": "TASK_NOT_FOUND",
+        "task_id": 9999,
+    }
+
+
+def test_task_monitor_async_get_task_status_uses_async_repository_method():
+    repository = FakeTaskMonitorRepository()
+    repository.status_row = {
+        "task_id": 3001,
+        "task_type": "GUIDE",
+        "task_status": "COMPLETED",
+        "phase": "GUIDANCE_FINISHED",
+    }
+    service = TaskMonitorService(repository=repository)
+
+    response = asyncio.run(service.async_get_task_status(task_id="3001"))
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_status"] == "COMPLETED"
+    assert repository.calls[-1] == {"task_id": 3001}

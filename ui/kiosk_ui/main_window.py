@@ -1,9 +1,12 @@
 import sys
 from pathlib import Path
+from uuid import uuid4
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QRectF, QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -22,38 +25,104 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ui.utils.core.styles import load_stylesheet
-from ui.utils.network.service_clients import VisitGuideRemoteService
+from ui.utils.network.service_clients import (
+    KioskVisitorRemoteService,
+    StaffCallRemoteService,
+    VisitGuideRemoteService,
+)
+
+
+KIOSK_ID = "lobby_kiosk_01"
+
+
+class KioskActionIconGlyph(QWidget):
+    def __init__(self, *, icon_name, accent):
+        super().__init__()
+        self.icon_name = icon_name
+        self.accent = accent
+        self.setObjectName("kioskActionIconGlyph")
+        self.setFixedSize(84, 84)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        color = QColor(
+            {
+                "blue": "#00477F",
+                "green": "#2F855A",
+                "coral": "#A23C22",
+            }.get(self.accent, "#1E293B")
+        )
+        pen = QPen(color, 5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        if self.icon_name == "resident_search":
+            self._draw_resident_search(painter)
+        elif self.icon_name == "visitor_registration":
+            self._draw_visitor_registration(painter)
+        else:
+            self._draw_staff_call(painter)
+
+    def _draw_resident_search(self, painter):
+        painter.drawEllipse(QRectF(20, 15, 40, 40))
+        painter.drawLine(53, 50, 73, 70)
+
+    def _draw_visitor_registration(self, painter):
+        painter.drawRoundedRect(QRectF(18, 10, 48, 64), 8, 8)
+        painter.drawLine(30, 27, 54, 27)
+        painter.drawLine(30, 40, 50, 40)
+        painter.drawLine(30, 53, 43, 53)
+        painter.drawLine(30, 61, 39, 70)
+        painter.drawLine(39, 70, 60, 47)
+
+    def _draw_staff_call(self, painter):
+        bell = QPainterPath()
+        bell.moveTo(22, 57)
+        bell.cubicTo(27, 50, 27, 43, 27, 36)
+        bell.cubicTo(27, 24, 33, 18, 42, 18)
+        bell.cubicTo(51, 18, 57, 24, 57, 36)
+        bell.cubicTo(57, 43, 57, 50, 62, 57)
+        bell.lineTo(22, 57)
+        painter.drawPath(bell)
+        painter.drawArc(QRectF(34, 58, 16, 14), 200 * 16, 140 * 16)
+        painter.drawLine(15, 26, 8, 18)
+        painter.drawLine(69, 26, 76, 18)
 
 
 class KioskHomeActionCard(QFrame):
     clicked = pyqtSignal()
 
-    def __init__(self, *, accent, icon_text, title_text, desc_text):
+    def __init__(self, *, accent, icon_name, title_text, desc_text):
         super().__init__()
         self.setObjectName("kioskActionCard")
         self.setProperty("accent", accent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(400)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 28, 28, 28)
-        layout.setSpacing(18)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        self.accent_bar = QFrame()
-        self.accent_bar.setObjectName("kioskCardAccent")
-        self.accent_bar.setProperty("accent", accent)
-        self.accent_bar.setFixedHeight(8)
+        body = QFrame()
+        body.setObjectName("kioskActionCardBody")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(48, 44, 48, 44)
+        body_layout.setSpacing(24)
 
         icon_wrap = QFrame()
         icon_wrap.setObjectName("kioskIconBubble")
         icon_wrap.setProperty("accent", accent)
-        icon_wrap.setFixedSize(116, 116)
+        icon_wrap.setFixedSize(128, 128)
         icon_layout = QVBoxLayout(icon_wrap)
         icon_layout.setContentsMargins(0, 0, 0, 0)
         icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.icon = QLabel(icon_text)
-        self.icon.setObjectName("kioskActionIcon")
-        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon = KioskActionIconGlyph(icon_name=icon_name, accent=accent)
         icon_layout.addWidget(self.icon)
 
         self.title = QLabel(title_text)
@@ -65,21 +134,15 @@ class KioskHomeActionCard(QFrame):
         self.desc.setWordWrap(True)
         self.desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.cta = QPushButton("선택")
-        self.cta.setObjectName("kioskGhostButton")
-        self.cta.setProperty("accent", accent)
-        self.cta.setMinimumHeight(56)
+        body_layout.addStretch()
+        body_layout.addWidget(icon_wrap, alignment=Qt.AlignmentFlag.AlignHCenter)
+        body_layout.addWidget(self.title)
+        body_layout.addWidget(self.desc)
+        body_layout.addStretch()
 
-        layout.addWidget(self.accent_bar)
-        layout.addSpacing(4)
-        layout.addWidget(icon_wrap, alignment=Qt.AlignmentFlag.AlignHCenter)
-        layout.addWidget(self.title)
-        layout.addWidget(self.desc)
-        layout.addStretch()
-        layout.addWidget(self.cta)
+        layout.addWidget(body, 1)
 
-        self.cta.clicked.connect(self.clicked.emit)
-        for widget in [self.icon, self.title, self.desc]:
+        for widget in [icon_wrap, self.icon, self.title, self.desc]:
             widget.mousePressEvent = self._child_click
 
     def mousePressEvent(self, event):
@@ -89,6 +152,314 @@ class KioskHomeActionCard(QFrame):
 
     def _child_click(self, event):
         self.clicked.emit()
+
+
+class KioskSearchIconButton(QPushButton):
+    def __init__(self):
+        super().__init__("")
+        self.setProperty("iconName", "search")
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#FFFFFF"), 5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        cx = self.width() / 2 - 8
+        cy = self.height() / 2 - 5
+        painter.drawEllipse(QRectF(cx - 15, cy - 15, 30, 30))
+        painter.drawLine(int(cx + 11), int(cy + 11), int(cx + 28), int(cy + 28))
+
+
+class KioskResidentPersonIcon(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("kioskResidentPersonIcon")
+        self.setFixedSize(56, 56)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        pen = QPen(QColor("#2F855A"), 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        painter.drawEllipse(QRectF(22, 10, 12, 12))
+
+        shoulders = QPainterPath()
+        shoulders.moveTo(14, 42)
+        shoulders.cubicTo(14, 32, 21, 27, 28, 27)
+        shoulders.cubicTo(35, 27, 42, 32, 42, 42)
+        shoulders.lineTo(14, 42)
+        painter.drawPath(shoulders)
+
+
+class KioskNavigationActionButton(QPushButton):
+    def __init__(self, text):
+        super().__init__(text)
+        self.setProperty("iconName", "navigation")
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor("#FFFFFF")))
+
+        center_y = self.height() / 2
+        path = QPainterPath()
+        path.moveTo(36, center_y - 15)
+        path.lineTo(56, center_y)
+        path.lineTo(36, center_y + 15)
+        path.lineTo(42, center_y)
+        path.closeSubpath()
+        painter.drawPath(path)
+
+
+class KioskFooterNavigationButton(QPushButton):
+    def __init__(self, text, icon_name):
+        super().__init__(text)
+        self.icon_name = icon_name
+        self.setProperty("iconName", icon_name)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#111C2D"), 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        text_width = self.fontMetrics().horizontalAdvance(self.text())
+        icon_center_x = int(self.width() / 2 - text_width / 2 - 34)
+        icon_center_y = int(self.height() / 2)
+
+        if self.icon_name == "arrow_back":
+            self._draw_back_icon(painter, icon_center_x, icon_center_y)
+        else:
+            self._draw_home_icon(painter, icon_center_x, icon_center_y)
+
+    def _draw_back_icon(self, painter, x, y):
+        painter.drawLine(x + 14, y, x - 14, y)
+        painter.drawLine(x - 14, y, x - 3, y - 11)
+        painter.drawLine(x - 14, y, x - 3, y + 11)
+
+    def _draw_home_icon(self, painter, x, y):
+        painter.drawLine(x - 15, y - 3, x, y - 17)
+        painter.drawLine(x, y - 17, x + 15, y - 3)
+        painter.drawRoundedRect(QRectF(x - 11, y - 3, 22, 20), 3, 3)
+        painter.drawLine(x - 3, y + 17, x - 3, y + 6)
+        painter.drawLine(x + 3, y + 6, x + 3, y + 17)
+
+
+class KioskTopIconButton(QPushButton):
+    def __init__(self, icon_name):
+        super().__init__("")
+        self.icon_name = icon_name
+        self.setObjectName("kioskTopIconButton")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(72, 72)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        color = QColor("#2F855A" if self.icon_name == "arrow_back" else "#64748B")
+        pen = QPen(color, 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        center_x = int(self.width() / 2)
+        center_y = int(self.height() / 2)
+        if self.icon_name == "arrow_back":
+            painter.drawLine(center_x + 14, center_y, center_x - 14, center_y)
+            painter.drawLine(center_x - 14, center_y, center_x - 3, center_y - 11)
+            painter.drawLine(center_x - 14, center_y, center_x - 3, center_y + 11)
+            return
+
+        painter.drawLine(center_x - 15, center_y - 3, center_x, center_y - 17)
+        painter.drawLine(center_x, center_y - 17, center_x + 15, center_y - 3)
+        painter.drawRoundedRect(QRectF(center_x - 11, center_y - 3, 22, 20), 3, 3)
+        painter.drawLine(center_x - 3, center_y + 17, center_x - 3, center_y + 6)
+        painter.drawLine(center_x + 3, center_y + 6, center_x + 3, center_y + 17)
+
+
+class KioskGuideNoticeGlyph(QWidget):
+    def __init__(self, icon_name, *, object_name="kioskGuideNoticeLineIcon"):
+        super().__init__()
+        self.icon_name = icon_name
+        self.setObjectName(object_name)
+        self.setFixedSize(44, 44)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        if self.icon_name == "info":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor("#2B6CB0")))
+            painter.drawEllipse(QRectF(4, 4, 36, 36))
+            pen = QPen(QColor("#FFFFFF"), 4)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.drawPoint(22, 15)
+            painter.drawLine(22, 22, 22, 31)
+            return
+
+        pen = QPen(QColor("#2B6CB0"), 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        if self.icon_name == "walk":
+            painter.drawEllipse(QRectF(17, 4, 10, 10))
+            painter.drawLine(22, 16, 22, 27)
+            painter.drawLine(22, 20, 13, 25)
+            painter.drawLine(22, 27, 13, 38)
+            painter.drawLine(22, 27, 33, 38)
+            painter.drawLine(22, 19, 32, 22)
+        elif self.icon_name == "obstacle":
+            painter.drawRoundedRect(QRectF(8, 9, 28, 20), 5, 5)
+            painter.drawLine(14, 35, 30, 35)
+            painter.drawLine(16, 29, 12, 35)
+            painter.drawLine(28, 29, 32, 35)
+            painter.drawPoint(17, 19)
+            painter.drawPoint(27, 19)
+        else:
+            painter.drawRoundedRect(QRectF(9, 8, 26, 26), 7, 7)
+            painter.drawLine(22, 15, 22, 27)
+            painter.drawLine(16, 21, 28, 21)
+            painter.drawLine(15, 36, 29, 36)
+
+
+class KioskConfirmationActionButton(QPushButton):
+    def __init__(self, text, icon_name):
+        super().__init__(text)
+        self.icon_name = icon_name
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        color = QColor("#FFFFFF" if self.icon_name == "play" else "#B9472B")
+        pen = QPen(color, 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        text_width = self.fontMetrics().horizontalAdvance(self.text())
+        icon_center_x = int(self.width() / 2 - text_width / 2 - 34)
+        icon_center_y = int(self.height() / 2)
+        if self.icon_name == "play":
+            painter.setBrush(QBrush(color))
+            path = QPainterPath()
+            path.moveTo(icon_center_x - 6, icon_center_y - 14)
+            path.lineTo(icon_center_x + 14, icon_center_y)
+            path.lineTo(icon_center_x - 6, icon_center_y + 14)
+            path.closeSubpath()
+            painter.drawPath(path)
+            return
+
+        painter.drawEllipse(QRectF(icon_center_x - 10, icon_center_y - 18, 20, 20))
+        painter.drawArc(
+            QRectF(icon_center_x - 17, icon_center_y - 1, 34, 28),
+            25 * 16,
+            130 * 16,
+        )
+        painter.drawLine(icon_center_x + 15, icon_center_y - 5, icon_center_x + 23, icon_center_y - 12)
+        painter.drawLine(icon_center_x - 15, icon_center_y - 5, icon_center_x - 23, icon_center_y - 12)
+
+
+class KioskStaffCallModal(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("kioskStaffCallModalOverlay")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.hide()
+
+        overlay_layout = QVBoxLayout(self)
+        overlay_layout.setContentsMargins(48, 48, 48, 48)
+        overlay_layout.setSpacing(0)
+        overlay_layout.addStretch()
+
+        self.card = QFrame()
+        self.card.setObjectName("kioskStaffCallModalCard")
+        self.card.setMinimumWidth(620)
+        self.card.setMaximumWidth(720)
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(44, 42, 44, 42)
+        card_layout.setSpacing(20)
+        card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.icon_label = QLabel("✓")
+        self.icon_label.setObjectName("kioskStaffCallModalIcon")
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon_label.setFixedSize(92, 92)
+
+        self.title_label = QLabel("직원 호출이 접수되었습니다.")
+        self.title_label.setObjectName("kioskStaffCallModalTitle")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setWordWrap(True)
+
+        self.message_label = QLabel("잠시만 기다려 주세요.")
+        self.message_label.setObjectName("kioskStaffCallModalMessage")
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.message_label.setWordWrap(True)
+
+        self.close_button = QPushButton("확인")
+        self.close_button.setObjectName("kioskStaffCallModalCloseButton")
+        self.close_button.setMinimumHeight(72)
+        self.close_button.clicked.connect(self.hide)
+
+        card_layout.addWidget(self.icon_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        card_layout.addWidget(self.title_label)
+        card_layout.addWidget(self.message_label)
+        card_layout.addWidget(self.close_button)
+
+        overlay_layout.addWidget(self.card, alignment=Qt.AlignmentFlag.AlignCenter)
+        overlay_layout.addStretch()
+
+    def show_result(self, *, success, message):
+        state = "success" if success else "error"
+        self.setProperty("state", state)
+        self.card.setProperty("state", state)
+        self.icon_label.setProperty("state", state)
+        self.title_label.setText(
+            "직원 호출이 접수되었습니다."
+            if success
+            else "직원 호출 접수에 실패했습니다."
+        )
+        self.icon_label.setText("✓" if success else "!")
+        self.message_label.setText(
+            str(message or "").strip()
+            or ("잠시만 기다려 주세요." if success else "데스크에 문의해 주세요.")
+        )
+        for widget in [self, self.card, self.icon_label, self.title_label, self.message_label]:
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        self.show()
+        self.raise_()
+        self.close_button.setFocus()
 
 
 class KioskFooterStat(QFrame):
@@ -121,21 +492,122 @@ class KioskFooterStat(QFrame):
         layout.addLayout(text_wrap)
 
 
-class KioskResidentSearchPage(QWidget):
-    def __init__(self, *, go_home_page=None, go_confirmation_page=None, go_back_page=None):
+class KioskPurposeIcon(QWidget):
+    def __init__(self, *, icon_name):
         super().__init__()
+        self.icon_name = icon_name
+        self.setObjectName("kioskPurposeIcon")
+        self.setFixedSize(42, 42)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(QColor("#00477F"), 4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        if self.icon_name == "family":
+            painter.drawEllipse(QRectF(8, 6, 12, 12))
+            painter.drawEllipse(QRectF(23, 6, 12, 12))
+            painter.drawArc(QRectF(4, 20, 18, 18), 15 * 16, 150 * 16)
+            painter.drawArc(QRectF(21, 20, 18, 18), 15 * 16, 150 * 16)
+        elif self.icon_name == "friend":
+            painter.drawEllipse(QRectF(14, 5, 14, 14))
+            painter.drawEllipse(QRectF(4, 17, 11, 11))
+            painter.drawEllipse(QRectF(27, 17, 11, 11))
+            painter.drawArc(QRectF(9, 22, 24, 18), 20 * 16, 140 * 16)
+        elif self.icon_name == "consult":
+            painter.drawRoundedRect(QRectF(6, 8, 30, 24), 5, 5)
+            painter.drawLine(13, 17, 29, 17)
+            painter.drawLine(13, 24, 23, 24)
+            painter.drawLine(18, 32, 12, 38)
+        else:
+            painter.setBrush(QBrush(QColor("#00477F")))
+            painter.drawEllipse(QRectF(8, 18, 6, 6))
+            painter.drawEllipse(QRectF(18, 18, 6, 6))
+            painter.drawEllipse(QRectF(28, 18, 6, 6))
+
+
+class KioskPurposeOptionCard(QFrame):
+    clicked = pyqtSignal(str)
+
+    def __init__(self, *, key, label, icon_name):
+        super().__init__()
+        self.key = key
+        self.setObjectName("kioskPurposeOptionCard")
+        self.setProperty("selected", False)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(96)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon_bubble = QFrame()
+        icon_bubble.setObjectName("kioskPurposeIconBubble")
+        icon_bubble.setFixedSize(52, 52)
+        icon_layout = QVBoxLayout(icon_bubble)
+        icon_layout.setContentsMargins(0, 0, 0, 0)
+        icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_layout.addWidget(KioskPurposeIcon(icon_name=icon_name))
+
+        self.label = QLabel(label)
+        self.label.setObjectName("kioskPurposeLabel")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(icon_bubble, alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self.label)
+
+        for widget in [icon_bubble, self.label]:
+            widget.mousePressEvent = self._child_click
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.key)
+        super().mousePressEvent(event)
+
+    def _child_click(self, event):
+        self.clicked.emit(self.key)
+
+
+class KioskVisitorRegistrationPage(QWidget):
+    PURPOSE_OPTIONS = (
+        {"key": "family", "label": "가족 면회", "icon": "family"},
+        {"key": "friend", "label": "지인 방문", "icon": "friend"},
+        {"key": "consult", "label": "상담/문의", "icon": "consult"},
+        {"key": "other", "label": "기타", "icon": "other"},
+    )
+
+    def __init__(
+        self,
+        *,
+        go_home_page=None,
+        go_confirmation_page=None,
+        go_back_page=None,
+        service=None,
+    ):
+        super().__init__()
+        self.setObjectName("kioskVisitorRegistrationPage")
         self.go_home_page = go_home_page
         self.go_confirmation_page = go_confirmation_page
         self.go_back_page = go_back_page
-        self.service = VisitGuideRemoteService()
-        self.selected_patient = None
+        self.service = service or KioskVisitorRemoteService()
+        self.selected_resident = None
+        self.selected_visit_purpose = None
+        self.visitor_session = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
         header = QFrame()
-        header.setObjectName("kioskSearchTopBar")
+        header.setObjectName("kioskRegistrationTopBar")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(56, 28, 56, 28)
         header_layout.setSpacing(18)
@@ -148,66 +620,131 @@ class KioskResidentSearchPage(QWidget):
         brand_icon.setObjectName("kioskBrandIcon")
 
         brand = QLabel("ROPI 요양보호 서비스")
-        brand.setObjectName("kioskSearchBrand")
+        brand.setObjectName("kioskRegistrationBrand")
 
         brand_wrap.addWidget(brand_icon)
         brand_wrap.addWidget(brand)
-        header_layout.addStretch()
         header_layout.addLayout(brand_wrap)
         header_layout.addStretch()
 
         self.call_staff_button = QPushButton("직원 호출")
         self.call_staff_button.setObjectName("kioskSearchCallButton")
-        self.call_staff_button.setMinimumHeight(64)
-
+        self.call_staff_button.setMinimumHeight(72)
         header_layout.addWidget(self.call_staff_button)
 
+        canvas = QFrame()
+        canvas.setObjectName("kioskRegistrationCanvas")
+        canvas_layout = QVBoxLayout(canvas)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_layout.setSpacing(0)
+
         page_shell = QVBoxLayout()
-        page_shell.setContentsMargins(56, 32, 56, 0)
-        page_shell.setSpacing(24)
+        page_shell.setContentsMargins(56, 30, 56, 0)
+        page_shell.setSpacing(22)
         page_shell.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        title = QLabel("어르신 찾기")
+        title = QLabel("방문자 등록")
         title.setObjectName("kioskSearchPageTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        subtitle = QLabel("방 번호나 성함을 입력해 주세요.")
+        subtitle = QLabel("방문자 정보를 입력한 뒤 만나실 어르신을 확인해 주세요.")
         subtitle.setObjectName("kioskSearchPageSubtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        content_row = QHBoxLayout()
+        content_row.setSpacing(24)
+
+        form_card = QFrame()
+        form_card.setObjectName("kioskRegistrationFormCard")
+        form_layout = QVBoxLayout(form_card)
+        form_layout.setContentsMargins(28, 26, 28, 26)
+        form_layout.setSpacing(16)
+
+        form_title = QLabel("방문자 정보")
+        form_title.setObjectName("kioskRegistrationSectionTitle")
+
+        name_field, self.visitor_name_input = self._create_labeled_input(
+            "성함",
+            "예: 김민수",
+        )
+        phone_field, self.phone_input = self._create_labeled_input(
+            "연락처",
+            "예: 010-1234-5678",
+        )
+        relation_field, self.relationship_input = self._create_labeled_input(
+            "관계",
+            "예: 아들, 보호자",
+        )
+
+        self.privacy_checkbox = QCheckBox("개인정보 수집 및 방문 기록 저장에 동의합니다.")
+        self.privacy_checkbox.setObjectName("kioskPrivacyCheckbox")
+        self.privacy_checkbox.stateChanged.connect(self._sync_action_state)
+
+        form_layout.addWidget(form_title)
+        form_layout.addWidget(name_field)
+        form_layout.addWidget(phone_field)
+        form_layout.addWidget(relation_field)
+        form_layout.addWidget(self.privacy_checkbox)
+        form_layout.addStretch()
+
+        resident_card = QFrame()
+        resident_card.setObjectName("kioskRegistrationResidentCard")
+        resident_layout = QVBoxLayout(resident_card)
+        resident_layout.setContentsMargins(28, 26, 28, 26)
+        resident_layout.setSpacing(16)
+
+        resident_title = QLabel("만나실 어르신")
+        resident_title.setObjectName("kioskRegistrationSectionTitle")
+
+        purpose_title = QLabel("방문 목적")
+        purpose_title.setObjectName("kioskRegistrationSectionTitle")
+
+        purpose_row = QHBoxLayout()
+        purpose_row.setSpacing(10)
+        self.purpose_cards = {}
+        for option in self.PURPOSE_OPTIONS:
+            card = KioskPurposeOptionCard(
+                key=option["key"],
+                label=option["label"],
+                icon_name=option["icon"],
+            )
+            card.clicked.connect(self.select_visit_purpose)
+            self.purpose_cards[option["key"]] = card
+            purpose_row.addWidget(card, 1)
+
+        resident_hint = QLabel("방문자 정보를 먼저 입력하면 어르신 검색을 사용할 수 있습니다.")
+        resident_hint.setObjectName("kioskRegistrationHint")
+        resident_hint.setWordWrap(True)
 
         search_card = QFrame()
         search_card.setObjectName("kioskSearchInputCard")
         search_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        search_card.setFixedHeight(76)
+        search_card.setFixedHeight(92)
         search_layout = QHBoxLayout(search_card)
         search_layout.setContentsMargins(0, 0, 0, 0)
         search_layout.setSpacing(0)
 
-        self.search_input = QLineEdit()
-        self.search_input.setObjectName("kioskSearchInput")
-        self.search_input.setPlaceholderText("예: 302호 또는 김철수")
-        self.search_input.returnPressed.connect(self.search_patient)
+        self.resident_search_input = QLineEdit()
+        self.resident_search_input.setObjectName("kioskSearchInput")
+        self.resident_search_input.setPlaceholderText("성함 또는 방 번호 입력")
+        self.resident_search_input.setFixedHeight(72)
+        self.resident_search_input.textChanged.connect(self._sync_action_state)
+        self.resident_search_input.returnPressed.connect(self.search_resident)
 
-        self.search_button = QPushButton("찾기")
+        self.search_button = KioskSearchIconButton()
         self.search_button.setObjectName("kioskSearchSubmitButton")
-        self.search_button.setMinimumHeight(72)
-        self.search_button.clicked.connect(self.search_patient)
+        self.search_button.setMinimumSize(128, 88)
+        self.search_button.clicked.connect(self.search_resident)
 
-        search_layout.addWidget(self.search_input, 1)
+        search_layout.addWidget(self.resident_search_input, 1)
         search_layout.addWidget(self.search_button)
 
-        self.status_label = QLabel("어르신을 검색하면 결과가 이곳에 표시됩니다.")
-        self.status_label.setObjectName("kioskSearchStatusText")
-        self.status_label.setWordWrap(True)
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.result_card = QFrame()
-        self.result_card.setObjectName("kioskResidentResultCard")
-        self.result_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self.result_card.setMinimumHeight(150)
-        result_layout = QHBoxLayout(self.result_card)
-        result_layout.setContentsMargins(24, 24, 24, 24)
-        result_layout.setSpacing(18)
+        self.resident_summary_card = QFrame()
+        self.resident_summary_card.setObjectName("kioskRegistrationResidentSummary")
+        self.resident_summary_card.setMinimumHeight(176)
+        summary_layout = QHBoxLayout(self.resident_summary_card)
+        summary_layout.setContentsMargins(22, 18, 22, 18)
+        summary_layout.setSpacing(18)
 
         avatar = QFrame()
         avatar.setObjectName("kioskResidentAvatar")
@@ -215,47 +752,62 @@ class KioskResidentSearchPage(QWidget):
         avatar_layout = QVBoxLayout(avatar)
         avatar_layout.setContentsMargins(0, 0, 0, 0)
         avatar_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        avatar_layout.addWidget(KioskResidentPersonIcon())
 
-        avatar_icon = QLabel("◉")
-        avatar_icon.setObjectName("kioskResidentAvatarIcon")
-        avatar_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        avatar_layout.addWidget(avatar_icon)
+        resident_text = QVBoxLayout()
+        resident_text.setSpacing(4)
 
-        info_wrap = QVBoxLayout()
-        info_wrap.setSpacing(6)
+        self.resident_name_label = QLabel("선택된 어르신이 없습니다")
+        self.resident_name_label.setObjectName("kioskResidentName")
+        self.resident_name_label.setMinimumHeight(44)
+        self.resident_name_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
-        self.name_label = QLabel("검색 결과가 없습니다")
-        self.name_label.setObjectName("kioskResidentName")
+        self.resident_birth_label = QLabel("생년월일 -")
+        self.resident_birth_label.setObjectName("kioskResidentMeta")
+        self.resident_birth_label.setMinimumHeight(24)
+        self.resident_birth_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
-        self.room_label = QLabel("병실: -")
-        self.room_label.setObjectName("kioskResidentRoom")
+        self.resident_room_label = QLabel("호실 -")
+        self.resident_room_label.setObjectName("kioskResidentRoom")
+        self.resident_room_label.setMinimumHeight(28)
+        self.resident_room_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
-        self.location_label = QLabel("위치: -")
-        self.location_label.setObjectName("kioskResidentMeta")
+        self.resident_visit_label = QLabel("방문 상태 -")
+        self.resident_visit_label.setObjectName("kioskResidentMeta")
+        self.resident_visit_label.setMinimumHeight(24)
+        self.resident_visit_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
-        self.visit_label = QLabel("면회 상태: -")
-        self.visit_label.setObjectName("kioskResidentMeta")
+        resident_text.addWidget(self.resident_name_label)
+        resident_text.addWidget(self.resident_birth_label)
+        resident_text.addWidget(self.resident_room_label)
+        resident_text.addWidget(self.resident_visit_label)
 
-        info_wrap.addWidget(self.name_label)
-        info_wrap.addWidget(self.room_label)
-        info_wrap.addWidget(self.location_label)
-        info_wrap.addWidget(self.visit_label)
+        summary_layout.addWidget(avatar)
+        summary_layout.addLayout(resident_text, 1)
 
-        self.start_button = QPushButton("안내 시작")
-        self.start_button.setObjectName("kioskResidentActionButton")
-        self.start_button.setMinimumHeight(72)
-        self.start_button.clicked.connect(self.start_guidance)
+        resident_layout.addWidget(purpose_title)
+        resident_layout.addLayout(purpose_row)
+        resident_layout.addWidget(resident_title)
+        resident_layout.addWidget(resident_hint)
+        resident_layout.addWidget(search_card)
+        resident_layout.addWidget(self.resident_summary_card)
+        resident_layout.addStretch()
 
-        result_layout.addWidget(avatar)
-        result_layout.addLayout(info_wrap, 1)
-        result_layout.addWidget(self.start_button)
+        content_row.addWidget(form_card, 1)
+        content_row.addWidget(resident_card, 1)
 
-        page_shell.addWidget(header)
         page_shell.addWidget(title)
         page_shell.addWidget(subtitle)
-        page_shell.addWidget(search_card)
-        page_shell.addWidget(self.result_card)
-        page_shell.addWidget(self.status_label)
+        page_shell.addLayout(content_row, 1)
+        canvas_layout.addLayout(page_shell, 1)
 
         bottom_bar = QFrame()
         bottom_bar.setObjectName("kioskSearchBottomBar")
@@ -263,66 +815,298 @@ class KioskResidentSearchPage(QWidget):
         action_row.setContentsMargins(56, 20, 56, 20)
         action_row.setSpacing(24)
 
-        self.back_button = QPushButton("이전")
+        self.back_button = KioskFooterNavigationButton("이전", "arrow_back")
         self.back_button.setObjectName("kioskSearchFooterButton")
         self.back_button.setMinimumHeight(72)
         self.back_button.clicked.connect(self._go_back)
 
-        self.home_button = QPushButton("처음으로")
+        self.home_button = KioskFooterNavigationButton("처음으로", "home")
         self.home_button.setObjectName("kioskSearchFooterButton")
         self.home_button.setMinimumHeight(72)
         self.home_button.clicked.connect(self._go_home)
 
+        self.register_button = QPushButton("등록하기")
+        self.register_button.setObjectName("kioskRegistrationPrimaryButton")
+        self.register_button.setMinimumHeight(72)
+        self.register_button.clicked.connect(self.register_visit)
+
         action_row.addWidget(self.back_button)
         action_row.addStretch()
         action_row.addWidget(self.home_button)
+        action_row.addWidget(self.register_button)
 
-        root.addLayout(page_shell, 1)
+        root.addWidget(header)
+        root.addWidget(canvas, 1)
         root.addWidget(bottom_bar)
 
-    def search_patient(self):
+        for input_widget in [
+            self.visitor_name_input,
+            self.phone_input,
+            self.relationship_input,
+        ]:
+            input_widget.textChanged.connect(self._on_visitor_context_changed)
+
+        self._sync_action_state()
+
+    def _create_labeled_input(self, label_text, placeholder_text):
+        field = QFrame()
+        field.setObjectName("kioskRegistrationField")
+        layout = QVBoxLayout(field)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        label = QLabel(label_text)
+        label.setObjectName("kioskRegistrationFieldLabel")
+
+        input_widget = QLineEdit()
+        input_widget.setObjectName("kioskRegistrationInput")
+        input_widget.setPlaceholderText(placeholder_text)
+        input_widget.setFixedHeight(72)
+
+        layout.addWidget(label)
+        layout.addWidget(input_widget)
+        return field, input_widget
+
+    def search_resident(self):
+        if not self._visitor_context_ready():
+            self._set_status("방문자 정보와 개인정보 동의를 먼저 완료해 주세요.")
+            self._sync_action_state()
+            return
+
+        keyword = self.resident_search_input.text().strip()
+        if not keyword:
+            self._set_status("만나실 어르신의 성함 또는 방 번호를 입력해 주세요.")
+            self._sync_action_state()
+            return
+
         try:
-            ok, message, patient = self.service.search_patient(self.search_input.text())
+            response = self.service.lookup_residents(keyword=keyword, limit=5)
         except Exception as exc:
-            self.selected_patient = None
-            self._clear_result()
-            self.status_label.setText(f"검색 중 오류가 발생했습니다: {exc}")
+            self.selected_resident = None
+            self._clear_resident_result()
+            self._set_status(f"검색 중 오류가 발생했습니다: {exc}")
+            self._sync_action_state()
             return
 
-        self.selected_patient = patient if ok else None
-        if not ok:
-            self._clear_result()
-            self.status_label.setText(message)
+        result_code = response.get("result_code")
+        matches = response.get("matches") or []
+        if result_code != "FOUND" or not matches:
+            self.selected_resident = None
+            self._clear_resident_result()
+            self._set_status(
+                response.get("result_message") or "일치하는 어르신 정보가 없습니다."
+            )
+            self._sync_action_state()
             return
 
-        self.name_label.setText(f"{patient.get('name', '-')} 어르신")
-        self.room_label.setText(f"{patient.get('room', '-')}호")
-        self.location_label.setText(f"위치: {patient.get('location', '-')}")
-        self.visit_label.setText(f"면회 상태: {patient.get('status', '-')}")
-        self.status_label.setText("검색 결과를 확인했습니다. 안내가 필요하면 안내 시작을 눌러주세요.")
+        self.selected_resident = self._resident_from_lookup_match(matches[0])
+        self._show_resident_result(self.selected_resident)
+        self._set_status("", visible=False)
+        self._sync_action_state()
 
-    def start_guidance(self):
-        if not self.selected_patient:
-            self.status_label.setText("먼저 어르신을 검색해 주세요.")
+    def register_visit(self):
+        if not self._visitor_context_ready():
+            self._set_status("방문자 정보와 개인정보 동의를 먼저 완료해 주세요.")
+            self._sync_action_state()
             return
+        if not self.selected_resident:
+            self._set_status("만나실 어르신을 먼저 검색해 주세요.")
+            self._sync_action_state()
+            return
+
+        payload = self._registration_payload()
+        try:
+            response = self.service.register_visit(**payload)
+        except Exception as exc:
+            self._set_status(f"방문 등록 중 오류가 발생했습니다: {exc}")
+            return
+
+        if response.get("result_code") != "REGISTERED":
+            self.visitor_session = None
+            self._set_status(
+                response.get("result_message") or "방문 등록을 완료하지 못했습니다."
+            )
+            return
+
+        self.visitor_session = {
+            "visitor_id": int(response["visitor_id"]),
+            "member_id": int(response["member_id"]),
+            "resident_name": (
+                response.get("resident_name") or self.selected_resident["display_name"]
+            ),
+            "room_no": response.get("room_no") or "-",
+            "visit_status": response.get("visit_status") or "면회 가능",
+        }
+        patient = self._patient_from_registration_response(response)
+        self._set_status("방문 등록이 완료되었습니다. 안내 확인 화면으로 이동합니다.")
 
         if self.go_confirmation_page:
-            self.go_confirmation_page(self.selected_patient)
+            self.go_confirmation_page(patient)
+
+    def reset_form(self):
+        for input_widget in [
+            self.visitor_name_input,
+            self.phone_input,
+            self.relationship_input,
+            self.resident_search_input,
+        ]:
+            input_widget.clear()
+        self.privacy_checkbox.setChecked(False)
+        self.selected_visit_purpose = None
+        self.selected_resident = None
+        self.visitor_session = None
+        self._clear_resident_result()
+        self._set_status("", visible=False)
+        self._sync_action_state()
+        self._refresh_purpose_card_styles()
+
+    def _registration_payload(self):
+        return {
+            "visitor_name": self.visitor_name_input.text().strip(),
+            "phone_no": self.phone_input.text().strip(),
+            "relationship": self.relationship_input.text().strip(),
+            "visit_purpose": self.selected_visit_purpose,
+            "target_member_id": int(self.selected_resident["member_id"]),
+            "privacy_agreed": self.privacy_checkbox.isChecked(),
+            "kiosk_id": None,
+        }
+
+    def _patient_from_registration_response(self, response):
+        return {
+            "member_id": int(response.get("member_id") or self.selected_resident["member_id"]),
+            "visitor_id": int(response["visitor_id"]),
+            "name": str(response.get("resident_name") or self.selected_resident["display_name"]),
+            "room": self._normalize_room(response.get("room_no")),
+            "visit_status": response.get("visit_status") or "면회 가능",
+            "guide_available": bool(self.selected_resident.get("guide_available")),
+        }
+
+    @classmethod
+    def _resident_from_lookup_match(cls, match):
+        return {
+            "member_id": int(match["member_id"]),
+            "display_name": str(match.get("display_name") or "-").strip() or "-",
+            "birth_date": str(match.get("birth_date") or "-").strip() or "-",
+            "room_no": cls._normalize_room(match.get("room_no")),
+            "visit_available": bool(match.get("visit_available", True)),
+            "guide_available": bool(match.get("guide_available", True)),
+        }
+
+    def _show_resident_result(self, resident):
+        self.resident_name_label.setText(f"{resident['display_name']} 어르신")
+        self.resident_birth_label.setText(f"생년월일 {resident['birth_date']}")
+        self.resident_room_label.setText(self._format_room_label(resident.get("room_no")))
+        self.resident_visit_label.setText(
+            "방문 등록 가능" if resident.get("visit_available") else "방문 제한"
+        )
+
+    def _clear_resident_result(self):
+        self.resident_name_label.setText("선택된 어르신이 없습니다")
+        self.resident_birth_label.setText("생년월일 -")
+        self.resident_room_label.setText("호실 -")
+        self.resident_visit_label.setText("방문 상태 -")
+
+    def _on_visitor_context_changed(self):
+        if self.selected_resident:
+            self.selected_resident = None
+            self._clear_resident_result()
+            self._set_status("방문자 정보가 변경되어 어르신 검색을 다시 확인해 주세요.")
+        self._sync_action_state()
+
+    def _set_status(self, text, *, visible=True):
+        if not visible or not text:
             return
 
-        self.status_label.setText("안내 확인 화면으로 이동할 수 없습니다.")
+        if "방문자 정보와 개인정보" in text:
+            self._show_resident_message(
+                "방문자 정보 입력 필요",
+                "방문자 정보와 개인정보 동의를 먼저 완료해 주세요.",
+            )
+            return
+        if "만나실 어르신" in text:
+            self._show_resident_message("어르신 검색 필요", text)
+            return
+        if "일치하는" in text:
+            self._show_resident_message(
+                "검색 결과가 없습니다",
+                "이름 또는 호실을 다시 확인해 주세요.",
+            )
+            return
+        if "오류" in text or "실패" in text:
+            self._show_resident_message("처리 실패", text)
+            return
 
-    def reset_search(self):
-        self.search_input.clear()
-        self.selected_patient = None
-        self._clear_result()
-        self.status_label.setText("어르신을 검색하면 결과가 이곳에 표시됩니다.")
+        self._show_resident_message("안내", text)
 
-    def _clear_result(self):
-        self.name_label.setText("검색 결과가 없습니다")
-        self.room_label.setText("병실: -")
-        self.location_label.setText("위치: -")
-        self.visit_label.setText("면회 상태: -")
+    def _show_resident_message(self, title, detail):
+        self.resident_name_label.setText(title)
+        self.resident_birth_label.setText(detail)
+        self.resident_room_label.setText("호실 -")
+        self.resident_visit_label.setText("방문 상태 -")
+
+    def select_visit_purpose(self, purpose_key):
+        option = next(
+            (item for item in self.PURPOSE_OPTIONS if item["key"] == purpose_key),
+            None,
+        )
+        if option is None:
+            return
+        previous = self.selected_visit_purpose
+        self.selected_visit_purpose = option["label"]
+        self._refresh_purpose_card_styles()
+        if previous != self.selected_visit_purpose:
+            self._on_visitor_context_changed()
+            return
+        self._sync_action_state()
+
+    def _refresh_purpose_card_styles(self):
+        selected_key = next(
+            (
+                option["key"]
+                for option in self.PURPOSE_OPTIONS
+                if option["label"] == self.selected_visit_purpose
+            ),
+            None,
+        )
+        for key, card in self.purpose_cards.items():
+            card.setProperty("selected", key == selected_key)
+            card.style().unpolish(card)
+            card.style().polish(card)
+
+    def _visitor_context_ready(self):
+        return (
+            bool(self.visitor_name_input.text().strip())
+            and bool(self.phone_input.text().strip())
+            and bool(self.relationship_input.text().strip())
+            and bool(self.selected_visit_purpose)
+            and self.privacy_checkbox.isChecked()
+        )
+
+    def _sync_action_state(self):
+        can_search = self._visitor_context_ready() and bool(
+            self.resident_search_input.text().strip()
+        )
+        self.search_button.setEnabled(can_search)
+        can_register = bool(
+            self.selected_resident
+            and self.selected_resident.get("visit_available")
+            and self._visitor_context_ready()
+        )
+        self.register_button.setEnabled(can_register)
+
+    @staticmethod
+    def _normalize_room(room_no):
+        room = str(room_no or "").strip()
+        if room.endswith("호"):
+            room = room[:-1].strip()
+        return room or "-"
+
+    @classmethod
+    def _format_room_label(cls, room_no):
+        room = cls._normalize_room(room_no)
+        if room == "-":
+            return "호실 -"
+        return f"호실 {room}호"
 
     def _go_home(self):
         if self.go_home_page:
@@ -338,39 +1122,36 @@ class KioskResidentSearchPage(QWidget):
 class KioskGuideConfirmationPage(QWidget):
     def __init__(self, *, go_home_page=None, go_back_page=None, go_progress_page=None):
         super().__init__()
+        self.setObjectName("kioskGuideConfirmationPage")
         self.go_home_page = go_home_page
         self.go_back_page = go_back_page
         self.go_progress_page = go_progress_page
         self.service = VisitGuideRemoteService()
         self.selected_patient = None
         self.current_session = None
+        self.detected_target_track_id = None
+        self._guide_request_id = None
+        self._guide_idempotency_key = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        page_shell = QVBoxLayout()
-        page_shell.setContentsMargins(56, 24, 56, 0)
-        page_shell.setSpacing(28)
-
-        header = QFrame()
-        header.setObjectName("kioskConfirmationTopBar")
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        self.top_bar = QFrame()
+        self.top_bar.setObjectName("kioskConfirmationTopBar")
+        self.top_bar.setFixedHeight(96)
+        header_layout = QHBoxLayout(self.top_bar)
+        header_layout.setContentsMargins(64, 12, 64, 12)
         header_layout.setSpacing(12)
 
-        self.back_button = QPushButton("뒤로")
-        self.back_button.setObjectName("kioskRoundIconButton")
-        self.back_button.setMinimumSize(72, 72)
+        self.back_button = KioskTopIconButton("arrow_back")
         self.back_button.clicked.connect(self._go_back)
 
         brand = QLabel("ROPI")
         brand.setObjectName("kioskConfirmationBrand")
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.home_button = QPushButton("홈")
-        self.home_button.setObjectName("kioskRoundIconButton")
-        self.home_button.setMinimumSize(72, 72)
+        self.home_button = KioskTopIconButton("home")
         self.home_button.clicked.connect(self._go_home)
 
         header_layout.addWidget(self.back_button)
@@ -379,37 +1160,64 @@ class KioskGuideConfirmationPage(QWidget):
         header_layout.addStretch()
         header_layout.addWidget(self.home_button)
 
+        page_shell = QVBoxLayout()
+        page_shell.setContentsMargins(64, 32, 64, 0)
+        page_shell.setSpacing(28)
+        page_shell.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+
         self.summary_card = QFrame()
         self.summary_card.setObjectName("kioskConfirmationSummaryCard")
+        self.summary_card.setMinimumHeight(190)
+        self.summary_card.setMinimumWidth(860)
+        self.summary_card.setMaximumWidth(960)
+        self.summary_card.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         summary_layout = QVBoxLayout(self.summary_card)
-        summary_layout.setContentsMargins(28, 28, 28, 28)
-        summary_layout.setSpacing(10)
+        summary_layout.setContentsMargins(32, 24, 32, 24)
+        summary_layout.setSpacing(12)
         summary_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        summary_icon = QLabel("○")
-        summary_icon.setObjectName("kioskConfirmationSummaryIcon")
-        summary_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        summary_icon_wrap = QFrame()
+        summary_icon_wrap.setObjectName("kioskConfirmationPersonBubble")
+        summary_icon_wrap.setFixedSize(80, 80)
+        summary_icon_layout = QVBoxLayout(summary_icon_wrap)
+        summary_icon_layout.setContentsMargins(0, 0, 0, 0)
+        summary_icon_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        summary_icon_layout.addWidget(KioskResidentPersonIcon())
 
         self.summary_title = QLabel("어르신을 선택해 주세요")
         self.summary_title.setObjectName("kioskConfirmationTitle")
         self.summary_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.summary_title.setMinimumHeight(48)
 
         self.summary_subtitle = QLabel("안내를 시작하시겠습니까?")
         self.summary_subtitle.setObjectName("kioskConfirmationSubtitle")
         self.summary_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.summary_subtitle.setMinimumHeight(32)
 
-        summary_layout.addWidget(summary_icon)
+        summary_layout.addWidget(summary_icon_wrap, alignment=Qt.AlignmentFlag.AlignHCenter)
         summary_layout.addWidget(self.summary_title)
         summary_layout.addWidget(self.summary_subtitle)
 
         self.robot_status_card = QFrame()
         self.robot_status_card.setObjectName("kioskConfirmationStatusCard")
+        self.robot_status_card.setMinimumHeight(96)
+        self.robot_status_card.setMinimumWidth(860)
+        self.robot_status_card.setMaximumWidth(960)
+        self.robot_status_card.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         robot_layout = QHBoxLayout(self.robot_status_card)
-        robot_layout.setContentsMargins(24, 22, 24, 22)
-        robot_layout.setSpacing(18)
+        robot_layout.setContentsMargins(28, 18, 28, 18)
+        robot_layout.setSpacing(20)
 
         ready_chip = QLabel("준비 완료")
         ready_chip.setObjectName("kioskReadyChip")
+        ready_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ready_chip.setMinimumHeight(44)
 
         self.robot_status_text = QLabel("안내 로봇 [ROPI-01]이 대기 중입니다.")
         self.robot_status_text.setObjectName("kioskRobotStatusText")
@@ -420,118 +1228,224 @@ class KioskGuideConfirmationPage(QWidget):
 
         self.notice_card = QFrame()
         self.notice_card.setObjectName("kioskGuideNoticeCard")
+        self.notice_card.setMinimumHeight(284)
+        self.notice_card.setMinimumWidth(860)
+        self.notice_card.setMaximumWidth(960)
+        self.notice_card.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         notice_layout = QVBoxLayout(self.notice_card)
         notice_layout.setContentsMargins(0, 0, 0, 0)
         notice_layout.setSpacing(0)
 
-        notice_header = QFrame()
-        notice_header.setObjectName("kioskGuideNoticeHeader")
-        notice_header_layout = QHBoxLayout(notice_header)
+        self.notice_header = QFrame()
+        self.notice_header.setObjectName("kioskGuideNoticeHeader")
+        self.notice_header.setFixedHeight(72)
+        notice_header_layout = QHBoxLayout(self.notice_header)
         notice_header_layout.setContentsMargins(20, 16, 20, 16)
-        notice_header_layout.setSpacing(10)
+        notice_header_layout.setSpacing(12)
 
-        notice_header_icon = QLabel("i")
-        notice_header_icon.setObjectName("kioskGuideNoticeHeaderIcon")
+        self.notice_header_icon = KioskGuideNoticeGlyph(
+            "info",
+            object_name="kioskGuideNoticeHeaderIcon",
+        )
 
         notice_header_title = QLabel("안내 시 주의사항")
         notice_header_title.setObjectName("kioskGuideNoticeHeaderTitle")
+        notice_header_title.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         notice_header_layout.addStretch()
-        notice_header_layout.addWidget(notice_header_icon)
+        notice_header_layout.addWidget(self.notice_header_icon)
         notice_header_layout.addWidget(notice_header_title)
         notice_header_layout.addStretch()
 
         notice_body = QFrame()
         notice_body.setObjectName("kioskGuideNoticeBody")
         notice_body_layout = QVBoxLayout(notice_body)
-        notice_body_layout.setContentsMargins(28, 24, 28, 24)
-        notice_body_layout.setSpacing(18)
+        notice_body_layout.setContentsMargins(32, 22, 32, 22)
+        notice_body_layout.setSpacing(16)
 
-        for text in [
-            "1. 로봇의 이동 속도에 맞춰 천천히 따라와 주세요.",
-            "2. 로봇 앞에 사람이 많거나 장애물이 있으면 잠시 멈출 수 있습니다.",
-            "3. 도움이 필요하면 직원 호출을 눌러 바로 도움을 요청해 주세요.",
+        self.notice_rows = []
+        for icon_name, text in [
+            ("walk", "1. 로봇의 보폭에 맞춰 천천히 따라와 주세요."),
+            ("obstacle", "2. 로봇 앞에 장애물이 있으면 멈출 수 있습니다."),
+            ("help", "3. 도움이 필요하면 직원 호출 버튼을 눌러 주세요."),
         ]:
+            row = QFrame()
+            row.setObjectName("kioskGuideNoticeRow")
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(16)
+            icon = KioskGuideNoticeGlyph(icon_name)
             line = QLabel(text)
             line.setObjectName("kioskGuideNoticeLine")
             line.setWordWrap(True)
-            notice_body_layout.addWidget(line)
+            line.setMinimumHeight(32)
+            row_layout.addWidget(icon, alignment=Qt.AlignmentFlag.AlignTop)
+            row_layout.addWidget(line, 1)
+            notice_body_layout.addWidget(row)
+            self.notice_rows.append(row)
 
-        notice_layout.addWidget(notice_header)
+        notice_layout.addWidget(self.notice_header)
         notice_layout.addWidget(notice_body)
 
         self.inline_status = QLabel("안내 시작을 누르면 로봇 안내 요청이 접수됩니다.")
         self.inline_status.setObjectName("kioskStatusText")
         self.inline_status.setWordWrap(True)
         self.inline_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.inline_status.setMaximumWidth(960)
+        self.inline_status.setHidden(True)
 
-        page_shell.addWidget(header)
-        page_shell.addWidget(self.summary_card)
-        page_shell.addWidget(self.robot_status_card)
-        page_shell.addWidget(self.notice_card, 1)
-        page_shell.addWidget(self.inline_status)
+        page_shell.addWidget(self.summary_card, alignment=Qt.AlignmentFlag.AlignHCenter)
+        page_shell.addWidget(self.robot_status_card, alignment=Qt.AlignmentFlag.AlignHCenter)
+        page_shell.addWidget(self.notice_card, alignment=Qt.AlignmentFlag.AlignHCenter)
+        page_shell.addWidget(self.inline_status, alignment=Qt.AlignmentFlag.AlignHCenter)
+        page_shell.addStretch()
 
         bottom_bar = QFrame()
         bottom_bar.setObjectName("kioskConfirmationBottomBar")
+        bottom_bar.setFixedHeight(120)
         bottom_layout = QHBoxLayout(bottom_bar)
-        bottom_layout.setContentsMargins(56, 20, 56, 20)
+        bottom_layout.setContentsMargins(64, 20, 64, 20)
         bottom_layout.setSpacing(24)
 
-        self.confirm_button = QPushButton("안내 시작")
+        self.confirm_button = KioskConfirmationActionButton("안내 시작", "play")
         self.confirm_button.setObjectName("kioskConfirmationPrimaryButton")
-        self.confirm_button.setMinimumHeight(80)
+        self.confirm_button.setFixedHeight(80)
+        self.confirm_button.setMaximumWidth(420)
+        self.confirm_button.setEnabled(False)
         self.confirm_button.clicked.connect(self.confirm_guidance)
 
-        self.call_staff_button = QPushButton("직원 호출")
+        self.call_staff_button = KioskConfirmationActionButton("직원 호출", "support")
         self.call_staff_button.setObjectName("kioskConfirmationSecondaryButton")
-        self.call_staff_button.setMinimumHeight(80)
+        self.call_staff_button.setFixedHeight(80)
+        self.call_staff_button.setMaximumWidth(420)
 
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.confirm_button, 1)
         bottom_layout.addWidget(self.call_staff_button, 1)
         bottom_layout.addStretch()
 
+        root.addWidget(self.top_bar)
         root.addLayout(page_shell, 1)
         root.addWidget(bottom_bar)
 
     def set_patient(self, patient):
         self.selected_patient = patient or None
         self.current_session = None
+        self._guide_request_id = None
+        self._guide_idempotency_key = None
         if not self.selected_patient:
             self.summary_title.setText("어르신을 선택해 주세요")
             self.summary_subtitle.setText("안내를 시작하시겠습니까?")
+            self.confirm_button.setEnabled(False)
+            self.inline_status.setHidden(True)
             return
 
         name = str(self.selected_patient.get("name", "-")).strip() or "-"
         room = str(self.selected_patient.get("room", "-")).strip() or "-"
-        self.summary_title.setText(f"{name} 어르신 ({room})")
+        self.summary_title.setText(f"{name} 어르신 ({self._format_room_label(room)})")
         self.summary_subtitle.setText("안내를 시작하시겠습니까?")
-        self.inline_status.setText("안내 시작을 누르면 로봇 안내 요청이 접수됩니다.")
+        self.confirm_button.setEnabled(bool(self.selected_patient.get("guide_available", True)))
+        self.inline_status.setHidden(True)
 
     def confirm_guidance(self):
+        if not self.selected_patient:
+            self.inline_status.setText("방문 등록 후 안내를 시작할 수 있습니다.")
+            self.inline_status.setHidden(False)
+            return
+
+        visitor_id = self._visitor_id()
+        if visitor_id is None:
+            self.inline_status.setText("방문 등록 정보가 없어 안내를 시작할 수 없습니다.")
+            self.inline_status.setHidden(False)
+            return
+
         try:
-            success, message, session = self.service.begin_guide_session(
-                patient=self.selected_patient,
-                command_type="WAIT_TARGET_TRACKING",
+            guide_task = self.service.create_guide_task(
+                request_id=self._current_guide_request_id(),
+                visitor_id=visitor_id,
+                idempotency_key=self._current_guide_idempotency_key(),
             )
         except Exception as exc:
             self.inline_status.setText(f"안내 시작 중 오류가 발생했습니다: {exc}")
+            self.inline_status.setHidden(False)
             return
 
-        if success and self.selected_patient and session:
+        if guide_task.get("result_code") != "ACCEPTED":
+            self.inline_status.setText(
+                guide_task.get("result_message") or "안내 요청이 거부되었습니다."
+            )
+            self.inline_status.setHidden(False)
+            return
+
+        try:
+            command_success, message, command_response = self.service.send_guide_command(
+                task_id=guide_task.get("task_id"),
+                pinky_id=guide_task.get("assigned_robot_id"),
+                command_type="WAIT_TARGET_TRACKING",
+            )
+        except Exception as exc:
+            command_success = False
+            message = f"로봇 호출 명령을 보낼 수 없습니다: {exc}"
+            command_response = {
+                "accepted": False,
+                "reason_code": "GUIDE_COMMAND_ERROR",
+                "result_message": message,
+            }
+
+        session = {
+            **guide_task,
+            "pinky_id": guide_task.get("assigned_robot_id"),
+            "command_type": "WAIT_TARGET_TRACKING",
+            "command_result_code": "COMMAND_ACCEPTED" if command_success else "COMMAND_FAILED",
+            "command_message": message,
+            "command_response": command_response,
+        }
+        if self.selected_patient:
             self.current_session = session
             name = self.selected_patient.get("name", "-")
             room = self.selected_patient.get("room", "-")
             task_id = str(session.get("task_id", "-")).strip() or "-"
-            self.inline_status.setText(
-                f"{name} 어르신 안내 요청이 접수되었습니다. {room} 방향 대상 추적을 준비합니다. "
-                f"(task_id={task_id})"
+            status_message = (
+                f"{name} 어르신 안내 요청이 접수되었습니다. {room} 방향 대상 추적을 준비합니다."
+                if command_success
+                else f"{name} 어르신 안내 요청은 접수되었습니다. 로봇 호출 상태를 확인 중입니다."
             )
+            self.inline_status.setText(f"{status_message} (task_id={task_id})")
             if self.go_progress_page:
                 self.go_progress_page(self.selected_patient, session)
             return
 
-        self.inline_status.setText(message)
+    def _visitor_id(self):
+        raw = (self.selected_patient or {}).get("visitor_id")
+        try:
+            visitor_id = int(raw)
+        except (TypeError, ValueError):
+            return None
+        if visitor_id <= 0:
+            return None
+        return visitor_id
+
+    def _current_guide_request_id(self):
+        if self._guide_request_id is None:
+            self._guide_request_id = f"kiosk_guide_{uuid4().hex}"
+        return self._guide_request_id
+
+    def _current_guide_idempotency_key(self):
+        if self._guide_idempotency_key is None:
+            self._guide_idempotency_key = f"idem_{self._current_guide_request_id()}"
+        return self._guide_idempotency_key
+
+    @staticmethod
+    def _format_room_label(room):
+        normalized = str(room or "-").strip() or "-"
+        if normalized == "-":
+            return normalized
+        if normalized.endswith("호"):
+            return normalized
+        return f"{normalized}호"
 
     def _go_home(self):
         if self.go_home_page:
@@ -546,46 +1460,58 @@ class KioskProgressStage(QFrame):
     def __init__(self, *, title_text, active=False, completed=False):
         super().__init__()
         self.setObjectName("kioskProgressStage")
+        self._state = "pending"
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        badge = QLabel("●" if (active or completed) else "○")
-        badge.setObjectName("kioskProgressStageBadge")
-        if active:
-            badge.setProperty("state", "active")
-        elif completed:
-            badge.setProperty("state", "done")
-        else:
-            badge.setProperty("state", "pending")
-        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setFixedSize(72, 72)
+        self.badge = QLabel()
+        self.badge.setObjectName("kioskProgressStageBadge")
+        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.badge.setFixedSize(72, 72)
 
-        title = QLabel(title_text)
-        title.setObjectName("kioskProgressStageTitle")
-        if active:
-            title.setProperty("state", "active")
-        elif completed:
-            title.setProperty("state", "done")
-        else:
-            title.setProperty("state", "pending")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setWordWrap(True)
+        self.title = QLabel(title_text)
+        self.title.setObjectName("kioskProgressStageTitle")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title.setWordWrap(True)
 
-        layout.addWidget(badge)
-        layout.addWidget(title)
+        layout.addWidget(self.badge)
+        layout.addWidget(self.title)
+        if active:
+            self.set_state("active")
+        elif completed:
+            self.set_state("done")
+        else:
+            self.set_state("pending")
+
+    def set_state(self, state):
+        normalized = str(state or "pending").strip() or "pending"
+        if normalized not in {"pending", "active", "done"}:
+            normalized = "pending"
+        self._state = normalized
+        self.setProperty("state", normalized)
+        self.badge.setProperty("state", normalized)
+        self.title.setProperty("state", normalized)
+        self.badge.setText("●" if normalized in {"active", "done"} else "○")
+        for widget in (self, self.badge, self.title):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
 
 
 class KioskRobotGuidanceProgressPage(QWidget):
     def __init__(self, *, go_home_page=None, go_call_staff_page=None):
         super().__init__()
+        self.setObjectName("kioskProgressPage")
         self.go_home_page = go_home_page
         self.go_call_staff_page = go_call_staff_page
         self.service = VisitGuideRemoteService()
         self.selected_patient = None
         self.current_session = None
+        self.status_timer = QTimer(self)
+        self.status_timer.setInterval(3000)
+        self.status_timer.timeout.connect(self.refresh_progress_status)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -621,16 +1547,16 @@ class KioskRobotGuidanceProgressPage(QWidget):
         header_wrap.setSpacing(10)
         header_wrap.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        title = QLabel("로봇을 따라 이동해 주세요")
-        title.setObjectName("kioskProgressTitle")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_title_label = QLabel("안내를 준비하고 있습니다")
+        self.progress_title_label.setObjectName("kioskProgressTitle")
+        self.progress_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        subtitle = QLabel("목적지까지 안전하게 안내해 드립니다.")
-        subtitle.setObjectName("kioskProgressSubtitle")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_subtitle_label = QLabel("로봇과 안내 대상을 확인하는 중입니다.")
+        self.progress_subtitle_label.setObjectName("kioskProgressSubtitle")
+        self.progress_subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        header_wrap.addWidget(title)
-        header_wrap.addWidget(subtitle)
+        header_wrap.addWidget(self.progress_title_label)
+        header_wrap.addWidget(self.progress_subtitle_label)
 
         progress_card = QFrame()
         progress_card.setObjectName("kioskProgressCard")
@@ -644,14 +1570,14 @@ class KioskRobotGuidanceProgressPage(QWidget):
         line_layout.setContentsMargins(0, 0, 0, 0)
         line_layout.setSpacing(8)
 
-        stages = [
+        self.progress_stages = [
             KioskProgressStage(title_text="요청 접수", completed=True),
             KioskProgressStage(title_text="로봇 배정", completed=True),
-            KioskProgressStage(title_text="출발 준비", completed=True),
-            KioskProgressStage(title_text="이동 중", active=True),
+            KioskProgressStage(title_text="출발 준비", active=True),
+            KioskProgressStage(title_text="이동 중"),
             KioskProgressStage(title_text="도착", completed=False),
         ]
-        for stage in stages:
+        for stage in self.progress_stages:
             line_layout.addWidget(stage, 1)
 
         progress_layout.addWidget(line_wrap)
@@ -697,7 +1623,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         progress_bar_layout.addWidget(self.progress_bar_fill)
 
-        self.distance_label = QLabel("남은 거리: 약 25m")
+        self.distance_label = QLabel("안내 상태를 확인하고 있습니다.")
         self.distance_label.setObjectName("kioskRobotDistanceText")
 
         robot_text_wrap.addLayout(top_text_row)
@@ -746,6 +1672,12 @@ class KioskRobotGuidanceProgressPage(QWidget):
         self.call_staff_button.setObjectName("kioskProgressPrimaryButton")
         self.call_staff_button.setMinimumHeight(72)
 
+        self.start_driving_button = QPushButton("안내 주행 시작")
+        self.start_driving_button.setObjectName("kioskProgressPrimaryButton")
+        self.start_driving_button.setMinimumHeight(72)
+        self.start_driving_button.setEnabled(False)
+        self.start_driving_button.clicked.connect(self.start_guidance_driving)
+
         self.cancel_button = QPushButton("안내 취소")
         self.cancel_button.setObjectName("kioskProgressSecondaryButton")
         self.cancel_button.setMinimumHeight(72)
@@ -753,6 +1685,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.call_staff_button, 1)
+        bottom_layout.addWidget(self.start_driving_button, 1)
         bottom_layout.addWidget(self.cancel_button, 1)
         bottom_layout.addStretch()
 
@@ -763,19 +1696,87 @@ class KioskRobotGuidanceProgressPage(QWidget):
     def set_patient(self, patient, session=None):
         self.selected_patient = patient or None
         self.current_session = session or None
+        self.detected_target_track_id = self._session_target_track_id()
+        self.start_driving_button.setEnabled(bool(self.detected_target_track_id))
+        task_id = str((self.current_session or {}).get("task_id", "-")).strip() or "-"
         if self.selected_patient:
             name = str(self.selected_patient.get("name", "-")).strip() or "-"
             room = str(self.selected_patient.get("room", "-")).strip() or "-"
-            task_id = str((self.current_session or {}).get("task_id", "-")).strip() or "-"
             self.request_id_label.setText(
                 f"안내 대상: {name} 어르신 / 목적지: {room} / task_id: {task_id}"
             )
         else:
             self.request_id_label.setText("안내 대상: -")
 
+        self._apply_session_status()
+        self.refresh_progress_status()
+        self._set_status_polling_enabled(bool(task_id and task_id != "-"))
+
+    def refresh_progress_status(self):
+        task_applied = self.refresh_task_status()
+        if self._is_terminal_task_status((self.current_session or {}).get("task_status")):
+            return task_applied
         self.refresh_runtime_status()
+        return task_applied
+
+    def refresh_task_status(self):
+        task_id = str((self.current_session or {}).get("task_id", "")).strip()
+        if not task_id:
+            return False
+
+        get_task_status = getattr(self.service, "get_task_status", None)
+        if get_task_status is None:
+            return False
+
+        try:
+            status = get_task_status(task_id=task_id)
+        except Exception:
+            return False
+
+        return self._apply_task_status_payload(status or {})
+
+    def _apply_task_status_payload(self, payload):
+        result_code = str((payload or {}).get("result_code") or "").strip().upper()
+        if result_code and result_code != "ACCEPTED":
+            message = str((payload or {}).get("result_message") or "").strip()
+            if message:
+                self.distance_label.setText(message)
+            return False
+
+        phase = str((payload or {}).get("phase") or "").strip()
+        task_status = str((payload or {}).get("task_status") or "").strip()
+        if not phase and not task_status:
+            return False
+
+        self.current_session = {
+            **(self.current_session or {}),
+            "task_status": task_status or (self.current_session or {}).get("task_status"),
+            "phase": phase or (self.current_session or {}).get("phase"),
+            "assigned_robot_id": (
+                (payload or {}).get("assigned_robot_id")
+                or (self.current_session or {}).get("assigned_robot_id")
+            ),
+        }
+        self._update_guide_progress_display(phase, task_status)
+        if self._is_terminal_task_status(task_status):
+            self._set_status_polling_enabled(False)
+        return True
 
     def refresh_runtime_status(self):
+        task_id = str((self.current_session or {}).get("task_id", "")).strip()
+        pinky_id = str((self.current_session or {}).get("pinky_id", "pinky1")).strip() or "pinky1"
+        get_tracking_status = getattr(self.service, "get_tracking_status", None)
+        if get_tracking_status is not None and task_id:
+            try:
+                ok, _message, status = get_tracking_status(
+                    task_id=task_id,
+                    pinky_id=pinky_id,
+                )
+                if self._apply_tracking_status_payload(ok, status or {}):
+                    return
+            except Exception:
+                pass
+
         try:
             ok, message, status = self.service.get_guide_runtime_status()
         except Exception:
@@ -783,20 +1784,270 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         guide_runtime = (status or {}).get("guide_runtime") or {}
         last_update = guide_runtime.get("last_update") or {}
-        tracking_status = str(last_update.get("tracking_status") or "").strip()
-        tracking_seq = last_update.get("tracking_result_seq")
+        self._apply_tracking_status_payload(ok, last_update)
+
+    def _apply_tracking_status_payload(self, ok, payload):
+        tracking_status = str((payload or {}).get("tracking_status") or "").strip()
+        if not ok and tracking_status in {"", "NOT_TRACKING"}:
+            return False
+
+        target_track_id = str(
+            (payload or {}).get("active_track_id")
+            or (payload or {}).get("target_track_id")
+            or ""
+        ).strip()
+        tracking_seq = (payload or {}).get("tracking_result_seq")
 
         if ok and tracking_status:
-            self.robot_state_chip.setText(tracking_status)
             if tracking_status == "TRACKING":
-                self.distance_label.setText("안내 추적이 정상적으로 진행 중입니다.")
+                if self._current_session_phase() == "GUIDANCE_RUNNING":
+                    self.robot_state_chip.setText("안내 중")
+                    self.distance_label.setText("로봇 안내가 진행 중입니다.")
+                else:
+                    self.robot_state_chip.setText("대상 확인 완료")
+                    self.distance_label.setText("안내 대상을 확인했습니다. 주행을 시작할 수 있습니다.")
+                if target_track_id:
+                    self.detected_target_track_id = target_track_id
+                    self.start_driving_button.setEnabled(
+                        self._current_session_phase() != "GUIDANCE_RUNNING"
+                    )
             else:
+                self.robot_state_chip.setText(tracking_status)
                 self.distance_label.setText(f"현재 상태: {tracking_status}")
 
         if tracking_seq is not None and self.selected_patient:
             self.request_id_label.setText(
                 f"안내 대상: {self.selected_patient.get('name', '-')} / 추적 순번: {tracking_seq}"
             )
+        return bool(tracking_status)
+
+    def start_guidance_driving(self):
+        task_id = str((self.current_session or {}).get("task_id", "")).strip()
+        if not task_id:
+            self.distance_label.setText("안내 주행 시작에 필요한 task_id가 없습니다.")
+            return
+
+        target_track_id = self.detected_target_track_id or self._session_target_track_id()
+        if not target_track_id:
+            self.distance_label.setText("안내 대상 확인 후 주행을 시작할 수 있습니다.")
+            self.start_driving_button.setEnabled(False)
+            return
+
+        pinky_id = str((self.current_session or {}).get("pinky_id", "pinky1")).strip() or "pinky1"
+        try:
+            success, message, response = self.service.start_guide_driving(
+                task_id=task_id,
+                pinky_id=pinky_id,
+                target_track_id=target_track_id,
+            )
+        except Exception as exc:
+            self.distance_label.setText(f"안내 주행 시작 중 오류가 발생했습니다: {exc}")
+            return
+
+        if not success:
+            self.distance_label.setText(message or "안내 주행 시작이 거부되었습니다.")
+            return
+
+        self.current_session = {
+            **(self.current_session or {}),
+            "target_track_id": target_track_id,
+            "command_response": response or {},
+        }
+        self.start_driving_button.setEnabled(False)
+        self._apply_session_status()
+        self.distance_label.setText(message or "안내 주행을 시작했습니다.")
+        self.refresh_task_status()
+
+    def _apply_session_status(self):
+        session = self.current_session or {}
+        command_response = session.get("command_response") or {}
+        phase = str(
+            command_response.get("phase")
+            or command_response.get("guide_phase")
+            or session.get("phase")
+            or session.get("guide_phase")
+            or ""
+        ).strip()
+        task_status = str(
+            command_response.get("task_status")
+            or session.get("task_status")
+            or ""
+        ).strip()
+        if not phase and not task_status:
+            return
+
+        self._update_guide_progress_display(phase, task_status)
+        self._apply_command_warning()
+
+        if self.selected_patient:
+            name = str(self.selected_patient.get("name", "-")).strip() or "-"
+            room = str(self.selected_patient.get("room", "-")).strip() or "-"
+            task_id = str(session.get("task_id", "-")).strip() or "-"
+            phase_label = self._guide_phase_label(phase, task_status)
+            self.request_id_label.setText(
+                f"안내 대상: {name} 어르신 / 목적지: {room} / task_id: {task_id} / 상태: {phase_label}"
+            )
+
+    def _apply_command_warning(self):
+        session = self.current_session or {}
+        if session.get("command_result_code") != "COMMAND_FAILED":
+            return
+
+        message = str(session.get("command_message") or "").strip()
+        self.distance_label.setText(
+            message or "로봇 호출 명령을 보낼 수 없습니다. 직원에게 문의해 주세요."
+        )
+        self.start_driving_button.setEnabled(False)
+
+    def _update_guide_progress_display(self, phase, task_status):
+        self.robot_state_chip.setText(self._guide_status_label(phase, task_status))
+        self.distance_label.setText(self._guide_status_message(phase, task_status))
+        title, subtitle = self._guide_header_text(phase, task_status)
+        self.progress_title_label.setText(title)
+        self.progress_subtitle_label.setText(subtitle)
+        self._apply_progress_stage_states(phase, task_status)
+        if self._is_terminal_task_status(task_status):
+            self.start_driving_button.setEnabled(False)
+            self.cancel_button.setEnabled(False)
+        elif self._is_guidance_running(phase, task_status):
+            self.start_driving_button.setEnabled(False)
+
+    @staticmethod
+    def _guide_status_label(phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        if normalized_status == "CANCELLED":
+            return "안내 취소"
+        if normalized_status == "COMPLETED":
+            return "안내 완료"
+        if normalized_status == "FAILED":
+            return "안내 실패"
+        if normalized_phase == "WAIT_TARGET_TRACKING":
+            return "대상 확인 중"
+        if normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
+            return "안내 중"
+        if normalized_phase == "WAIT_REIDENTIFY":
+            return "재확인 중"
+        return "안내 준비"
+
+    @staticmethod
+    def _guide_status_message(phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        if normalized_status == "CANCELLED":
+            return "안내가 취소되었습니다."
+        if normalized_status == "COMPLETED":
+            return "안내가 완료되었습니다."
+        if normalized_status == "FAILED":
+            return "안내를 시작하지 못했습니다. 직원에게 도움을 요청해주세요."
+        if normalized_phase == "WAIT_TARGET_TRACKING":
+            return "로봇이 안내 대상을 확인하고 있습니다."
+        if normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
+            return "로봇을 따라 이동해주세요."
+        if normalized_phase == "WAIT_REIDENTIFY":
+            return "대상을 다시 확인하고 있습니다."
+        return "안내 요청 상태를 확인하고 있습니다."
+
+    @staticmethod
+    def _guide_header_text(phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        if normalized_status == "COMPLETED":
+            return "목적지에 도착했습니다", "방문 안내가 완료되었습니다."
+        if normalized_status == "CANCELLED":
+            return "안내가 중단되었습니다", "필요하면 직원에게 도움을 요청해 주세요."
+        if normalized_status == "FAILED":
+            return "안내를 시작하지 못했습니다", "직원에게 도움을 요청해 주세요."
+        if normalized_phase == "WAIT_TARGET_TRACKING":
+            return "안내를 준비하고 있습니다", "로봇이 안내 대상을 확인하는 중입니다."
+        if normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
+            return "로봇을 따라 이동해 주세요", "목적지까지 안전하게 안내해 드립니다."
+        return "안내 요청을 확인하고 있습니다", "잠시만 기다려 주세요."
+
+    def _apply_progress_stage_states(self, phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        active_index = 0
+
+        if normalized_status in {"WAITING", "WAITING_DISPATCH"}:
+            active_index = 0
+        elif normalized_status in {"READY", "ASSIGNED"}:
+            active_index = 1
+        elif normalized_status in {"COMPLETED", "CANCELLED", "FAILED"}:
+            active_index = 4
+        elif normalized_phase in {
+            "WAIT_GUIDE_START_CONFIRM",
+            "WAIT_TARGET_TRACKING",
+            "WAIT_REIDENTIFY",
+        }:
+            active_index = 2
+        elif normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
+            active_index = 3
+
+        for index, stage in enumerate(self.progress_stages):
+            if index < active_index:
+                stage.set_state("done")
+            elif index == active_index:
+                stage.set_state("active")
+            else:
+                stage.set_state("pending")
+
+        fill_widths = [90, 170, 260, 420, 520]
+        self.progress_bar_fill.setFixedWidth(
+            fill_widths[min(active_index, len(fill_widths) - 1)]
+        )
+
+    @staticmethod
+    def _is_guidance_running(phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        if normalized_phase:
+            return normalized_phase == "GUIDANCE_RUNNING"
+        return normalized_status == "RUNNING"
+
+    @staticmethod
+    def _is_terminal_task_status(task_status):
+        return str(task_status or "").strip().upper() in {"COMPLETED", "CANCELLED", "FAILED"}
+
+    @staticmethod
+    def _guide_phase_label(phase, task_status):
+        normalized_phase = str(phase or "").strip().upper()
+        normalized_status = str(task_status or "").strip().upper()
+        labels = {
+            "WAIT_TARGET_TRACKING": "대상 확인 대기",
+            "GUIDANCE_RUNNING": "안내 주행 중",
+            "WAIT_REIDENTIFY": "대상 재확인",
+            "GUIDANCE_CANCELLED": "안내 취소",
+            "GUIDANCE_FINISHED": "안내 완료",
+            "WAIT_GUIDE_START_CONFIRM": "안내 시작 대기",
+        }
+        if normalized_phase in labels:
+            return labels[normalized_phase]
+        if normalized_status == "CANCELLED":
+            return "안내 취소"
+        if normalized_status == "COMPLETED":
+            return "안내 완료"
+        return normalized_phase or normalized_status or "-"
+
+    def _session_target_track_id(self):
+        session = self.current_session or {}
+        command_response = session.get("command_response") or {}
+        return str(
+            command_response.get("target_track_id")
+            or session.get("target_track_id")
+            or ""
+        ).strip()
+
+    def _current_session_phase(self):
+        session = self.current_session or {}
+        command_response = session.get("command_response") or {}
+        return str(
+            command_response.get("phase")
+            or command_response.get("guide_phase")
+            or session.get("phase")
+            or session.get("guide_phase")
+            or ""
+        ).strip().upper()
 
     def finish_guidance(self):
         task_id = str((self.current_session or {}).get("task_id", "")).strip()
@@ -817,14 +2068,22 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         if success:
             self.distance_label.setText("안내 종료 요청이 접수되었습니다.")
+            self._set_status_polling_enabled(False)
             self._go_home()
             return
 
         self.distance_label.setText(f"안내 종료 실패: {message}")
 
     def _go_home(self):
+        self._set_status_polling_enabled(False)
         if self.go_home_page:
             self.go_home_page()
+
+    def _set_status_polling_enabled(self, enabled):
+        if enabled and not self.status_timer.isActive():
+            self.status_timer.start()
+        elif not enabled and self.status_timer.isActive():
+            self.status_timer.stop()
 
 
 class KioskHomePage(QWidget):
@@ -839,18 +2098,16 @@ class KioskHomePage(QWidget):
         top_bar = QFrame()
         top_bar.setObjectName("kioskTopBar")
         top_layout = QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(56, 28, 56, 28)
-        top_layout.setSpacing(18)
-
-        brand_wrap = QVBoxLayout()
-        brand_wrap.setSpacing(4)
+        top_layout.setContentsMargins(64, 36, 64, 36)
+        top_layout.setSpacing(24)
 
         brand_row = QHBoxLayout()
-        brand_row.setSpacing(10)
+        brand_row.setSpacing(18)
         brand_row.setContentsMargins(0, 0, 0, 0)
 
         brand_icon = QLabel("✚")
         brand_icon.setObjectName("kioskBrandIcon")
+        brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         brand_title = QLabel("ROPI 요양보호 서비스")
         brand_title.setObjectName("kioskBrandTitle")
@@ -859,77 +2116,49 @@ class KioskHomePage(QWidget):
         brand_row.addWidget(brand_title)
         brand_row.addStretch()
 
-        brand_subtitle = QLabel("방문 등록, 어르신 찾기, 직원 호출을 한 화면에서 빠르게 진행할 수 있습니다.")
-        brand_subtitle.setObjectName("kioskBrandSubtitle")
-        brand_subtitle.setWordWrap(True)
+        top_layout.addLayout(brand_row, 1)
 
-        brand_wrap.addLayout(brand_row)
-        brand_wrap.addWidget(brand_subtitle)
-
-        action_wrap = QHBoxLayout()
-        action_wrap.setSpacing(12)
-
-        self.help_button = QPushButton("도움말")
-        self.help_button.setObjectName("kioskSecondaryButton")
-        self.help_button.setMinimumHeight(60)
-
-        action_wrap.addWidget(self.help_button)
-
-        top_layout.addLayout(brand_wrap, 1)
-        top_layout.addLayout(action_wrap)
-
-        content = QVBoxLayout()
-        content.setContentsMargins(56, 32, 56, 0)
-        content.setSpacing(28)
+        canvas = QFrame()
+        canvas.setObjectName("kioskHomeCanvas")
+        content = QVBoxLayout(canvas)
+        content.setContentsMargins(64, 32, 64, 48)
+        content.setSpacing(64)
 
         hero_wrap = QVBoxLayout()
-        hero_wrap.setSpacing(10)
-
-        hero_eyebrow = QLabel("방문자 키오스크")
-        hero_eyebrow.setObjectName("kioskEyebrow")
+        hero_wrap.setSpacing(0)
+        hero_wrap.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         hero_title = QLabel("무엇을 도와드릴까요?")
         hero_title.setObjectName("kioskHeroTitle")
+        hero_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        hero_desc = QLabel("필요한 서비스를 선택하면 다음 단계로 바로 이동합니다.")
-        hero_desc.setObjectName("kioskHeroDesc")
-
-        hero_wrap.addWidget(hero_eyebrow, alignment=Qt.AlignmentFlag.AlignHCenter)
-        hero_wrap.addWidget(hero_title, alignment=Qt.AlignmentFlag.AlignHCenter)
-        hero_wrap.addWidget(hero_desc, alignment=Qt.AlignmentFlag.AlignHCenter)
+        hero_wrap.addWidget(hero_title)
 
         card_grid = QGridLayout()
-        card_grid.setHorizontalSpacing(22)
-        card_grid.setVerticalSpacing(22)
+        card_grid.setHorizontalSpacing(24)
+        card_grid.setVerticalSpacing(24)
 
-        self.search_card = KioskHomeActionCard(
-            accent="blue",
-            icon_text="⌕",
-            title_text="어르신 찾기",
-            desc_text="찾으시는 어르신의 병실과 위치 안내를 확인합니다.",
-        )
         self.register_card = KioskHomeActionCard(
             accent="green",
-            icon_text="✓",
+            icon_name="visitor_registration",
             title_text="방문 등록",
-            desc_text="방문 목적과 인적 사항을 입력해 접수 절차를 시작합니다.",
+            desc_text="시설 방문을 위해 인적 사항을 등록합니다.",
         )
         self.call_card = KioskHomeActionCard(
             accent="coral",
-            icon_text="!",
+            icon_name="staff_call",
             title_text="직원 호출",
-            desc_text="직접 도움이 필요할 때 직원에게 바로 요청을 보냅니다.",
+            desc_text="도움이 필요하시면 직원을 연결해 드립니다.",
         )
 
-        card_grid.addWidget(self.search_card, 0, 0)
-        card_grid.addWidget(self.register_card, 0, 1)
-        card_grid.addWidget(self.call_card, 0, 2)
+        card_grid.addWidget(self.register_card, 0, 0)
+        card_grid.addWidget(self.call_card, 0, 1)
 
         footer = QFrame()
         footer.setObjectName("kioskFooterBar")
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(24, 18, 24, 18)
-        footer_layout.setSpacing(18)
+        footer_layout.setContentsMargins(64, 20, 64, 20)
+        footer_layout.setSpacing(24)
 
         footer_layout.addWidget(
             KioskFooterStat(
@@ -953,20 +2182,25 @@ class KioskHomePage(QWidget):
             )
         )
 
+        content.addStretch()
         content.addLayout(hero_wrap)
-        content.addLayout(card_grid)
+        content.addLayout(card_grid, 1)
         content.addStretch()
 
         root.addWidget(top_bar)
-        root.addLayout(content, 1)
+        root.addWidget(canvas, 1)
         root.addWidget(footer)
 
 
 class KioskHomeWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, *, staff_call_service=None):
         super().__init__()
         self.setWindowTitle("ROPI Kiosk")
         self.resize(1440, 960)
+        self.staff_call_service = staff_call_service or StaffCallRemoteService()
+        self.kiosk_id = KIOSK_ID
+        self.current_patient = None
+        self.current_visitor_session = None
         self._build_ui()
 
     def _build_ui(self):
@@ -978,41 +2212,161 @@ class KioskHomeWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         self.home_page = KioskHomePage()
-        self.search_page = KioskResidentSearchPage(
+        self.registration_page = KioskVisitorRegistrationPage(
             go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
             go_confirmation_page=self._show_confirmation_page,
             go_back_page=lambda: self.stack.setCurrentWidget(self.home_page),
         )
         self.confirmation_page = KioskGuideConfirmationPage(
             go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
-            go_back_page=lambda: self.stack.setCurrentWidget(self.search_page),
+            go_back_page=lambda: self.stack.setCurrentWidget(self.registration_page),
             go_progress_page=self._show_progress_page,
         )
         self.progress_page = KioskRobotGuidanceProgressPage(
             go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
         )
 
-        self.home_page.search_card.clicked.connect(
-            lambda: self.stack.setCurrentWidget(self.search_page)
+        self.home_page.register_card.clicked.connect(
+            lambda: self._show_registration_page(focus_resident_search=False)
+        )
+        self.home_page.call_card.clicked.connect(
+            lambda: self._submit_staff_call("홈 화면")
+        )
+        self.registration_page.call_staff_button.clicked.connect(
+            lambda: self._submit_staff_call("방문자 등록 화면")
+        )
+        self.confirmation_page.call_staff_button.clicked.connect(
+            lambda: self._submit_staff_call("안내 화면")
+        )
+        self.progress_page.call_staff_button.clicked.connect(
+            lambda: self._submit_staff_call("안내 진행 화면")
         )
 
         self.stack.addWidget(self.home_page)
-        self.stack.addWidget(self.search_page)
+        self.stack.addWidget(self.registration_page)
         self.stack.addWidget(self.confirmation_page)
         self.stack.addWidget(self.progress_page)
         root_layout.addWidget(self.stack)
+        self.staff_call_modal = KioskStaffCallModal(root)
         self.setCentralWidget(root)
+        self._sync_staff_call_modal_geometry()
+
+    def _show_registration_page(self, *, focus_resident_search=False):
+        self.current_patient = None
+        self.current_visitor_session = None
+        self.registration_page.reset_form()
+        self.stack.setCurrentWidget(self.registration_page)
+        if focus_resident_search:
+            self.registration_page.resident_search_input.setFocus()
+            return
+        self.registration_page.visitor_name_input.setFocus()
 
     def _show_confirmation_page(self, patient):
+        self.current_patient = patient or None
+        self.current_visitor_session = {
+            "visitor_id": (patient or {}).get("visitor_id"),
+            "member_id": (patient or {}).get("member_id"),
+        }
         self.confirmation_page.set_patient(patient)
         self.stack.setCurrentWidget(self.confirmation_page)
 
     def _show_progress_page(self, patient, session=None):
+        self.current_patient = patient or None
+        self.current_visitor_session = {
+            "visitor_id": (patient or {}).get("visitor_id"),
+            "member_id": (patient or {}).get("member_id"),
+        }
         self.progress_page.set_patient(patient, session=session)
         self.stack.setCurrentWidget(self.progress_page)
 
+    def _submit_staff_call(self, source_screen):
+        context = self._staff_call_context()
+        try:
+            response = self.staff_call_service.submit_staff_call(
+                call_type="직원 호출",
+                description=self._staff_call_description(source_screen, context),
+                idempotency_key=f"kiosk_staff_call_{uuid4().hex}",
+                visitor_id=context.get("visitor_id"),
+                member_id=context.get("member_id"),
+                kiosk_id=self.kiosk_id,
+            )
+        except Exception as exc:
+            self._show_staff_call_modal(
+                success=False,
+                message=f"서버 연결 중 오류가 발생했습니다: {exc}",
+            )
+            return
 
-__all__ = ["KioskHomeWindow", "load_stylesheet"]
+        success = (response or {}).get("result_code") == "ACCEPTED"
+        self._show_staff_call_modal(
+            success=success,
+            message=(
+                (response or {}).get("result_message")
+                or ("직원이 곧 도착합니다." if success else "데스크에 문의해 주세요.")
+            ),
+        )
+
+    def _staff_call_context(self):
+        current_patient = self.current_patient
+        if self.stack.currentWidget() is self.confirmation_page:
+            current_patient = self.confirmation_page.selected_patient
+        elif self.stack.currentWidget() is self.progress_page:
+            current_patient = self.progress_page.selected_patient
+
+        visitor_id = self._normalize_optional_id(
+            (current_patient or {}).get("visitor_id")
+            or (self.current_visitor_session or {}).get("visitor_id")
+        )
+        member_id = self._normalize_optional_id(
+            (current_patient or {}).get("member_id")
+            or (self.current_visitor_session or {}).get("member_id")
+        )
+        return {
+            "visitor_id": visitor_id,
+            "member_id": member_id,
+            "name": str((current_patient or {}).get("name") or "").strip(),
+            "room": str((current_patient or {}).get("room") or "").strip(),
+        }
+
+    def _staff_call_description(self, source_screen, context):
+        parts = [f"{source_screen}에서 직원 호출을 요청했습니다."]
+        if context.get("name"):
+            parts.append(f"대상={context['name']}")
+        if context.get("room"):
+            parts.append(f"호실={context['room']}")
+        if context.get("visitor_id"):
+            parts.append(f"visitor_id={context['visitor_id']}")
+        if context.get("member_id"):
+            parts.append(f"member_id={context['member_id']}")
+        return " ".join(parts)
+
+    def _show_staff_call_modal(self, *, success, message):
+        self._sync_staff_call_modal_geometry()
+        self.staff_call_modal.show_result(success=success, message=message)
+
+    def _sync_staff_call_modal_geometry(self):
+        if hasattr(self, "staff_call_modal") and self.centralWidget() is not None:
+            self.staff_call_modal.setGeometry(self.centralWidget().rect())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_staff_call_modal_geometry()
+
+    @staticmethod
+    def _normalize_optional_id(value):
+        if value is None:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            normalized = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return normalized if normalized > 0 else None
+
+
+__all__ = ["KioskHomeWindow", "KioskVisitorRegistrationPage", "load_stylesheet"]
 
 
 def main():

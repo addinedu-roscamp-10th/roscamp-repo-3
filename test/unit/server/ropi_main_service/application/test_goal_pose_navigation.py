@@ -183,6 +183,32 @@ def test_navigate_uses_runtime_config_pinky_id():
     assert command_client.calls[0]["payload"]["pinky_id"] == "pinky9"
 
 
+def test_navigate_guide_destination_can_override_pinky_id():
+    command_client = FakeRosCommandClient()
+    command_execution_recorder = RecordingCommandExecutionRecorder()
+    service = GoalPoseNavigationService(
+        command_client=command_client,
+        command_execution_recorder=command_execution_recorder,
+    )
+
+    response = service.navigate(
+        task_id="3001",
+        pinky_id="pinky1",
+        nav_phase="GUIDE_DESTINATION",
+        goal_pose=build_goal_pose(),
+        timeout_sec=120,
+    )
+
+    assert response["result_code"] == "SUCCESS"
+    assert command_client.calls[0]["payload"]["pinky_id"] == "pinky1"
+    assert command_client.calls[0]["payload"]["goal"]["nav_phase"] == "GUIDE_DESTINATION"
+    assert command_execution_recorder.specs[0].target_robot_id == "pinky1"
+    assert (
+        command_execution_recorder.specs[0].target_endpoint
+        == "/ropi/control/pinky1/navigate_to_goal"
+    )
+
+
 def test_navigate_defaults_goal_pose_frame_id_to_map():
     command_client = FakeRosCommandClient()
     service = GoalPoseNavigationService(
@@ -219,14 +245,14 @@ def test_navigate_accepts_return_to_dock_phase_in_phase1_runtime():
     assert response["result_code"] == "SUCCESS"
 
 
-def test_navigate_rejects_non_delivery_phase_in_phase1():
+def test_navigate_rejects_unknown_phase_in_phase1():
     command_client = FakeRosCommandClient()
     service = GoalPoseNavigationService(command_client=command_client)
 
     with pytest.raises(ValueError, match="nav_phase"):
         service.navigate(
             task_id="task_delivery_003",
-            nav_phase="GUIDE_DESTINATION",
+            nav_phase="GUIDE_UNKNOWN",
             goal_pose=build_goal_pose(),
             timeout_sec=60,
         )

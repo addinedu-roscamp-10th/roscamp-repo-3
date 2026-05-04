@@ -24,13 +24,13 @@ SPEC_PINKY_STATES = {
     "RETURNING_TO_DOCK",
     "DOCK_IDLE",
     "CHARGING",
-    "FAULT_RECOVERY",
+    "FAIL_RECOVERY",
 }
 SPEC_CHARGING_STATES = {
     "NOT_CHARGING",
     "CHARGING",
     "CHARGE_COMPLETE",
-    "CHARGING_FAULT",
+    "CHARGING_FAIL",
 }
 
 
@@ -65,7 +65,7 @@ class PinkyStatusRuntimePublisher(Node):
         self.declare_parameter("battery_percent_topic", "")
         self.declare_parameter("battery_voltage_topic", "")
         self.declare_parameter("state_topic", "/transport/amr_status")
-        self.declare_parameter("task_topic", "")
+        self.declare_parameter("task_topic", "/ropi/robots/{pinky_id}/active_task_id")
         self.declare_parameter("charging_topic", "")
         self.declare_parameter("docked_topic", "")
         self.declare_parameter("fail_topic", "")
@@ -140,22 +140,22 @@ class PinkyStatusRuntimePublisher(Node):
             self.create_subscription(String, state_topic, self._on_state, qos)
             self.get_logger().info(f"Using state source topic: {state_topic}")
 
-        task_topic = str(self.get_parameter("task_topic").value).strip()
+        task_topic = self._resolve_topic_parameter("task_topic")
         if task_topic:
             self.create_subscription(String, task_topic, self._on_task, qos)
             self.get_logger().info(f"Using task source topic: {task_topic}")
 
-        charging_topic = str(self.get_parameter("charging_topic").value).strip()
+        charging_topic = self._resolve_topic_parameter("charging_topic")
         if charging_topic:
             self.create_subscription(String, charging_topic, self._on_charging, qos)
             self.get_logger().info(f"Using charging source topic: {charging_topic}")
 
-        docked_topic = str(self.get_parameter("docked_topic").value).strip()
+        docked_topic = self._resolve_topic_parameter("docked_topic")
         if docked_topic:
             self.create_subscription(Bool, docked_topic, self._on_docked, qos)
             self.get_logger().info(f"Using docked source topic: {docked_topic}")
 
-        fail_topic = str(self.get_parameter("fail_topic").value).strip()
+        fail_topic = self._resolve_topic_parameter("fail_topic")
         if fail_topic:
             self.create_subscription(String, fail_topic, self._on_fail, qos)
             self.get_logger().info(f"Using fail source topic: {fail_topic}")
@@ -183,8 +183,16 @@ class PinkyStatusRuntimePublisher(Node):
             return "RETURNING_TO_DOCK"
         if value in {"DONE", "AMR_REJECTED"} or value.endswith("_REJECTED"):
             return "IDLE"
+        if value == "FAULT_RECOVERY":
+            return "FAIL_RECOVERY"
         if value in {"FAILED", "AMR_FAILED"} or value.endswith("_FAILED"):
-            return "FAULT_RECOVERY"
+            return "FAIL_RECOVERY"
+        return value
+
+    def _resolve_topic_parameter(self, name: str) -> str:
+        value = str(self.get_parameter(name).value).strip()
+        if "{pinky_id}" in value:
+            return value.format(pinky_id=self._pinky_id)
         return value
 
     @staticmethod
@@ -192,6 +200,8 @@ class PinkyStatusRuntimePublisher(Node):
         value = str(raw_state or "").strip().upper()
         if not value or value == "UNKNOWN":
             return "NOT_CHARGING"
+        if value == "CHARGING_FAULT":
+            return "CHARGING_FAIL"
         if value in SPEC_CHARGING_STATES:
             return value
         return value

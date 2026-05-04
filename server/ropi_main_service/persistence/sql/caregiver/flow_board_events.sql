@@ -16,5 +16,18 @@ LEFT JOIN task_event_log tel
       ORDER BY latest_tel.occurred_at DESC, latest_tel.task_event_log_id DESC
       LIMIT 1
   )
-ORDER BY t.updated_at DESC, t.task_id DESC
+ORDER BY
+    CASE WHEN t.task_status IN (
+        'WAITING',
+        'WAITING_DISPATCH',
+        'READY',
+        'ASSIGNED',
+        'RUNNING',
+        'IN_PROGRESS',
+        'CANCEL_REQUESTED',
+        'CANCELLING',
+        'PREEMPTING'
+    ) THEN 0 ELSE 1 END,
+    t.updated_at DESC,
+    t.task_id DESC
 LIMIT %s

@@ -12,7 +12,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 
 from ropi_interface.action import ExecutePatrolPath
 from ropi_interface.srv import FallResponseControl
@@ -32,6 +32,7 @@ class PatrolPathActionServer(Node):
         self.declare_parameter("action_name", "")
         self.declare_parameter("fall_response_service_name", "")
         self.declare_parameter("alarm_topic", "/fall_alarm")
+        self.declare_parameter("active_task_topic", "/ropi/robots/{robot_id}/active_task_id")
         self.declare_parameter("nav_check_interval_sec", 0.2)
 
         self.robot_id = str(self.get_parameter("robot_id").value).strip() or "pinky3"
@@ -43,6 +44,7 @@ class PatrolPathActionServer(Node):
             or f"/ropi/control/{self.robot_id}/fall_response_control"
         )
         self.alarm_topic = str(self.get_parameter("alarm_topic").value).strip() or "/fall_alarm"
+        self.active_task_topic = self._resolve_robot_topic("active_task_topic")
         self.nav_check_interval_sec = float(self.get_parameter("nav_check_interval_sec").value)
 
         self.callback_group = ReentrantCallbackGroup()
@@ -61,6 +63,7 @@ class PatrolPathActionServer(Node):
         self.navigator.waitUntilNav2Active()
         self.get_logger().info("Nav2 ACTIVE")
         self.alarm_pub = self.create_publisher(Bool, self.alarm_topic, 10)
+        self.active_task_pub = self.create_publisher(String, self.active_task_topic, 10)
 
         self.action_server = ActionServer(
             self,
@@ -79,8 +82,20 @@ class PatrolPathActionServer(Node):
         )
         self.get_logger().info(
             f"READY robot_id={self.robot_id} action={self.action_name} "
-            f"fall_response_service={self.fall_response_service_name}"
+            f"fall_response_service={self.fall_response_service_name} "
+            f"active_task_topic={self.active_task_topic}"
         )
+
+    def _resolve_robot_topic(self, parameter_name):
+        value = str(self.get_parameter(parameter_name).value).strip()
+        if "{robot_id}" in value:
+            return value.format(robot_id=self.robot_id)
+        return value
+
+    def _publish_active_task_id(self, task_id):
+        msg = String()
+        msg.data = str(task_id or "").strip()
+        self.active_task_pub.publish(msg)
 
     def goal_callback(self, goal_request):
         waypoint_count = len(getattr(goal_request.path, "poses", []) or [])
@@ -102,6 +117,7 @@ class PatrolPathActionServer(Node):
         self.get_logger().info(
             f"PATROL GOAL RECEIVED task_id={goal_request.task_id}, waypoints={waypoint_count}"
         )
+        self._publish_active_task_id(goal_request.task_id)
         return GoalResponse.ACCEPT
 
     def cancel_callback(self, goal_handle):
@@ -251,6 +267,7 @@ class PatrolPathActionServer(Node):
             result.finished_at = self.get_clock().now().to_msg()
             return result
         finally:
+            clear_active_task = False
             with self.lock:
                 self.is_busy = False
                 if not self.fall_response_active:
@@ -258,6 +275,9 @@ class PatrolPathActionServer(Node):
                     self.active_path = None
                     self.active_waypoint_index = 0
                     self.stop_requested_task_id = None
+                    clear_active_task = True
+            if clear_active_task:
+                self._publish_active_task_id("")
 
     def fall_response_callback(self, request, response):
         task_id = str(request.task_id or "").strip()
@@ -382,6 +402,7 @@ class PatrolPathActionServer(Node):
                 self.active_waypoint_index = 0
 
         self._publish_alarm(False)
+        self._publish_active_task_id("")
         try:
             self.navigator.cancelTask()
         except Exception as exc:
@@ -460,16 +481,13 @@ class PatrolPathActionServer(Node):
                     self.get_logger().warn(
                         f"Internal patrol restart failed at waypoint {index + 1}."
                     )
+                    self._clear_active_task_if_current(task_id)
                     return
 
             self.get_logger().info(f"Internal patrol restart completed task_id={task_id}")
-            with self.lock:
-                if self.active_patrol_snapshot and self.active_patrol_snapshot.get("task_id") == task_id:
-                    self.active_patrol_snapshot = None
-                self.active_task_id = None
-                self.active_path = None
-                self.active_waypoint_index = 0
+            self._clear_active_task_if_current(task_id, clear_snapshot=True)
         finally:
+            clear_active_task = False
             with self.lock:
                 if str(self.stop_requested_task_id or "").strip() == task_id:
                     self.active_patrol_snapshot = None
@@ -477,7 +495,29 @@ class PatrolPathActionServer(Node):
                     self.active_path = None
                     self.active_waypoint_index = 0
                     self.stop_requested_task_id = None
+                    clear_active_task = True
                 self.internal_restart_running = False
+            if clear_active_task:
+                self._publish_active_task_id("")
+
+    def _clear_active_task_if_current(self, task_id, *, clear_snapshot=False):
+        should_publish = False
+        with self.lock:
+            active_task_id = str(self.active_task_id or "").strip()
+            snapshot_task_id = ""
+            if self.active_patrol_snapshot is not None:
+                snapshot_task_id = str(
+                    self.active_patrol_snapshot.get("task_id") or ""
+                ).strip()
+            if active_task_id == task_id or snapshot_task_id == task_id:
+                if clear_snapshot and snapshot_task_id == task_id:
+                    self.active_patrol_snapshot = None
+                self.active_task_id = None
+                self.active_path = None
+                self.active_waypoint_index = 0
+                should_publish = True
+        if should_publish:
+            self._publish_active_task_id("")
 
     def _publish_alarm(self, active):
         msg = Bool()

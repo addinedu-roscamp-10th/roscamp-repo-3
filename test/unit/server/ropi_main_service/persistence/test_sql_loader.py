@@ -8,6 +8,9 @@ def test_load_sql_reads_query_file_under_sql_root():
 
     assert sql.startswith("SELECT")
     assert "robot_runtime_status" in sql
+    assert "total_robot_count" in sql
+    assert "warning_error_count" in sql
+    assert "task_event_log" in sql
 
 
 def test_load_sql_reads_all_repository_sql_files():

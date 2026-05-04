@@ -12,11 +12,11 @@ NAV_ITEMS = [
     ("home", "홈"),
     ("task_request", "작업 요청"),
     ("task_monitor", "작업 모니터"),
+    ("coordinate_settings", "좌표/구역 설정"),
     ("robot_status", "로봇 상태"),
     ("inventory", "재고 관리"),
     ("patient", "어르신 정보"),
     ("alerts", "알림/로그"),
-    ("system_health", "시스템 상태"),
 ]
 
 
@@ -36,13 +36,15 @@ def test_shared_admin_shell_components_expose_ropi_contract():
     from ui.utils.widgets.admin_shell import (
         AdminSidebar,
         PageHeader,
+        PageTimeCard,
         SystemStatusStrip,
     )
 
     sidebar = AdminSidebar(nav_items=NAV_ITEMS, user_name="테스트 보호사")
     header = PageHeader(title="작업 현황", subtitle="전체 시나리오 상태")
+    time_card = PageTimeCard(show_last_update=False)
     status_header = PageHeader(
-        title="시스템 상태",
+        title="서비스 상태",
         subtitle="서비스 연결 상태",
         show_status=True,
     )
@@ -62,9 +64,14 @@ def test_shared_admin_shell_components_expose_ropi_contract():
         assert side_buttons == [label for _, label in NAV_ITEMS]
 
         assert header.objectName() == "pageHeader"
+        assert header.findChild(QLabel, "pageHeaderEyebrow") is None
         assert header.findChild(QLabel, "pageTitle").text() == "작업 현황"
         assert header.findChild(QLabel, "pageSubtitle").text() == "전체 시나리오 상태"
         assert header.findChild(QFrame, "systemStatusStrip") is None
+        assert time_card.objectName() == "pageTimeCard"
+        assert time_card.findChild(QLabel, "timeCardClock").text()
+        assert time_card.findChild(QLabel, "timeCardDate").text()
+        assert time_card.last_update_label.isHidden() is True
         assert status_header.findChild(QFrame, "systemStatusStrip") is not None
 
         assert status_strip.objectName() == "systemStatusStrip"
@@ -80,6 +87,7 @@ def test_shared_admin_shell_components_expose_ropi_contract():
     finally:
         sidebar.close()
         header.close()
+        time_card.close()
         status_header.close()
         default_status_strip.close()
         status_strip.close()
@@ -96,6 +104,8 @@ def test_caregiver_main_window_uses_shared_admin_shell_contract():
         assert hasattr(window, "admin_shell")
         assert window.findChild(QFrame, "adminSidebar") is not None
         assert window.findChild(QStackedWidget, "adminPageStack") is window.stack
+        assert not hasattr(window, "system_health_btn")
+        assert not hasattr(window, "system_health_page")
 
         brand = window.findChild(QLabel, "sidebarBrand")
         assert brand is not None
@@ -130,10 +140,10 @@ def test_caregiver_common_shell_routes_placeholder_pages():
         assert window.stack.currentWidget() is window.task_monitor_page
         assert window.task_monitor_btn.isChecked()
 
-        window.system_health_btn.click()
-        assert window.system_health_page is not None
-        assert window.stack.currentWidget() is window.system_health_page
-        assert window.system_health_btn.isChecked()
+        window.coordinate_settings_btn.click()
+        assert window.coordinate_settings_page is not None
+        assert window.stack.currentWidget() is window.coordinate_settings_page
+        assert window.coordinate_settings_btn.isChecked()
     finally:
         window.close()
 
@@ -142,7 +152,7 @@ def test_caregiver_shell_pages_use_common_page_header():
     _app()
 
     from ui.admin_ui.main_window import CaregiverMainWindow
-    from ui.utils.widgets.admin_shell import PageHeader
+    from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
     window = CaregiverMainWindow()
 
@@ -152,11 +162,11 @@ def test_caregiver_shell_pages_use_common_page_header():
         ("home", None),
         ("task_request", window.task_btn),
         ("task_monitor", window.task_monitor_btn),
+        ("coordinate_settings", window.coordinate_settings_btn),
         ("robot_status", window.robot_status_btn),
         ("inventory", window.inventory_btn),
         ("patient", window.patient_btn),
         ("alerts", window.alert_btn),
-        ("system_health", window.system_health_btn),
     ]
 
     try:
@@ -165,6 +175,7 @@ def test_caregiver_shell_pages_use_common_page_header():
                 button.click()
             current_page = window.stack.currentWidget()
             assert current_page.findChild(PageHeader, "pageHeader") is not None
+            assert current_page.findChild(PageTimeCard) is not None
 
         labels = _label_texts(window)
         assert "Task Request" not in labels
@@ -188,11 +199,11 @@ def test_caregiver_shell_status_strip_only_appears_on_status_context_pages():
         ("home", None, True),
         ("task_request", window.task_btn, False),
         ("task_monitor", window.task_monitor_btn, False),
+        ("coordinate_settings", window.coordinate_settings_btn, False),
         ("robot_status", window.robot_status_btn, False),
         ("inventory", window.inventory_btn, False),
         ("patient", window.patient_btn, False),
         ("alerts", window.alert_btn, False),
-        ("system_health", window.system_health_btn, True),
     ]
 
     try:

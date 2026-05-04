@@ -1,10 +1,12 @@
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_CREATE_TASK,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
+    MESSAGE_CODE_TASK_STATUS_QUERY,
 )
 from ui.utils.network.tcp_client import send_request
 
@@ -50,8 +52,46 @@ class CaregiverRemoteService:
     def get_dashboard_bundle(self):
         return _rpc("caregiver", "get_dashboard_bundle")
 
+    def get_robot_status_bundle(self):
+        return _rpc("caregiver", "get_robot_status_bundle")
+
+    def get_alert_log_bundle(
+        self,
+        *,
+        period="LAST_24_HOURS",
+        severity=None,
+        source_component=None,
+        task_id=None,
+        robot_id=None,
+        event_type=None,
+        limit=100,
+    ):
+        return _rpc(
+            "caregiver",
+            "get_alert_log_bundle",
+            period=period,
+            severity=severity,
+            source_component=source_component,
+            task_id=task_id,
+            robot_id=robot_id,
+            event_type=event_type,
+            limit=limit,
+        )
+
 
 class PatientRemoteService:
+    def search_patient_candidates(self, name: str = "", room_no: str = "", limit: int = 10):
+        return _rpc(
+            "patient",
+            "search_patient_candidates",
+            name=name,
+            room_no=room_no,
+            limit=limit,
+        )
+
+    def get_patient_info(self, member_id):
+        return _rpc("patient", "get_patient_info", member_id=member_id)
+
     def search_patient_info(self, name: str, room_no: str):
         return _rpc("patient", "search_patient_info", name=name, room_no=room_no)
 
@@ -60,8 +100,27 @@ class InventoryRemoteService:
     def get_inventory_rows(self):
         return _rpc("inventory", "get_inventory_rows")
 
+    def get_inventory_bundle(self):
+        return _rpc("inventory", "get_inventory_bundle")
+
     def add_inventory(self, item_name, quantity):
         return _rpc("inventory", "add_inventory", item_name=item_name, quantity=quantity)
+
+    def add_item_quantity(self, *, item_id, quantity_delta):
+        return _rpc(
+            "inventory",
+            "add_item_quantity",
+            item_id=item_id,
+            quantity_delta=quantity_delta,
+        )
+
+    def set_item_quantity(self, *, item_id, quantity):
+        return _rpc(
+            "inventory",
+            "set_item_quantity",
+            item_id=item_id,
+            quantity=quantity,
+        )
 
 
 class DeliveryRequestRemoteService:
@@ -118,6 +177,131 @@ class DeliveryRequestRemoteService:
         return self._rpc("cancel_delivery_task", **kwargs)
 
 
+class CoordinateConfigRemoteService:
+    _SERVICE_NAME = "coordinate_config"
+
+    def _rpc(self, method: str, **kwargs):
+        return _rpc(self._SERVICE_NAME, method, **kwargs)
+
+    def get_active_map_bundle(
+        self,
+        *,
+        include_disabled=True,
+        include_zone_boundaries=True,
+        include_patrol_paths=True,
+    ):
+        return self._rpc(
+            "get_active_map_bundle",
+            include_disabled=include_disabled,
+            include_zone_boundaries=include_zone_boundaries,
+            include_patrol_paths=include_patrol_paths,
+        )
+
+    def create_operation_zone(
+        self,
+        *,
+        zone_id,
+        zone_name,
+        zone_type,
+        map_id=None,
+        is_enabled=True,
+    ):
+        return self._rpc(
+            "create_operation_zone",
+            zone_id=zone_id,
+            zone_name=zone_name,
+            zone_type=zone_type,
+            map_id=map_id,
+            is_enabled=is_enabled,
+        )
+
+    def update_operation_zone(
+        self,
+        *,
+        zone_id,
+        expected_revision,
+        zone_name,
+        zone_type,
+        is_enabled,
+    ):
+        return self._rpc(
+            "update_operation_zone",
+            zone_id=zone_id,
+            expected_revision=expected_revision,
+            zone_name=zone_name,
+            zone_type=zone_type,
+            is_enabled=is_enabled,
+        )
+
+    def update_operation_zone_boundary(
+        self,
+        *,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        return self._rpc(
+            "update_operation_zone_boundary",
+            zone_id=zone_id,
+            expected_revision=expected_revision,
+            boundary_json=boundary_json,
+        )
+
+    def update_goal_pose(
+        self,
+        *,
+        goal_pose_id,
+        expected_updated_at=None,
+        zone_id=None,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled,
+    ):
+        return self._rpc(
+            "update_goal_pose",
+            goal_pose_id=goal_pose_id,
+            expected_updated_at=expected_updated_at,
+            zone_id=zone_id,
+            purpose=purpose,
+            pose_x=pose_x,
+            pose_y=pose_y,
+            pose_yaw=pose_yaw,
+            frame_id=frame_id,
+            is_enabled=is_enabled,
+        )
+
+    def update_patrol_area_path(
+        self,
+        *,
+        patrol_area_id,
+        expected_revision,
+        path_json,
+    ):
+        return self._rpc(
+            "update_patrol_area_path",
+            patrol_area_id=patrol_area_id,
+            expected_revision=expected_revision,
+            path_json=path_json,
+        )
+
+    def get_map_asset(
+        self,
+        *,
+        asset_type,
+        map_id=None,
+        encoding=None,
+    ):
+        return self._rpc(
+            "get_map_asset",
+            asset_type=asset_type,
+            map_id=map_id,
+            encoding=encoding,
+        )
+
+
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"
 
@@ -143,6 +327,34 @@ class TaskMonitorRemoteService:
             recent_terminal_limit=recent_terminal_limit,
             limit=limit,
         )
+
+    def cancel_task(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        reason="operator_cancel",
+    ):
+        return _rpc(
+            "task_request",
+            "cancel_task",
+            task_id=str(task_id).strip(),
+            caregiver_id=caregiver_id,
+            reason=reason,
+        )
+
+    def get_task_status(self, *, task_id):
+        payload = {
+            "task_id": str(task_id).strip(),
+        }
+        response = send_request(MESSAGE_CODE_TASK_STATUS_QUERY, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+
+        return response.get("payload")
 
     def get_fall_evidence_image(
         self,
@@ -171,6 +383,19 @@ class TaskMonitorRemoteService:
 
 
 class VisitGuideRemoteService:
+    def create_guide_task(self, *, request_id, visitor_id, idempotency_key):
+        payload = {
+            "request_id": request_id,
+            "visitor_id": visitor_id,
+            "idempotency_key": idempotency_key,
+        }
+        response = send_request(MESSAGE_CODE_GUIDE_CREATE_TASK, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+
+        return response.get("payload")
+
     def search_patient(self, keyword: str):
         return _rpc("visit_guide", "search_patient", keyword=keyword)
 
@@ -217,6 +442,24 @@ class VisitGuideRemoteService:
             kwargs["pinky_id"] = pinky_id
         return _rpc("visit_guide", "finish_guide_session", **kwargs)
 
+    def start_guide_driving(
+        self,
+        *,
+        task_id,
+        target_track_id,
+        pinky_id=None,
+        navigation_timeout_sec=None,
+    ):
+        kwargs = {
+            "task_id": task_id,
+            "target_track_id": target_track_id,
+        }
+        if pinky_id is not None:
+            kwargs["pinky_id"] = pinky_id
+        if navigation_timeout_sec is not None:
+            kwargs["navigation_timeout_sec"] = navigation_timeout_sec
+        return _rpc("visit_guide", "start_guide_driving", **kwargs)
+
     def send_guide_command(
         self,
         *,
@@ -244,6 +487,27 @@ class VisitGuideRemoteService:
             kwargs["pinky_id"] = pinky_id
         return _rpc("visit_guide", "get_guide_runtime_status", **kwargs)
 
+    def get_tracking_status(self, *, task_id=None, pinky_id=None):
+        kwargs = {}
+        if task_id is not None:
+            kwargs["task_id"] = task_id
+        if pinky_id is not None:
+            kwargs["pinky_id"] = pinky_id
+        return _rpc("visit_guide", "get_tracking_status", **kwargs)
+
+    def get_task_status(self, *, task_id):
+        payload = {
+            "task_id": str(task_id).strip(),
+        }
+        response = send_request(MESSAGE_CODE_TASK_STATUS_QUERY, payload)
+
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+
+        return response.get("payload")
+
 
 class VisitorInfoRemoteService:
     def get_patient_visit_info(self, keyword: str):
@@ -255,6 +519,67 @@ class VisitorRegisterRemoteService:
         return _rpc("visitor_register", "submit_registration", **payload)
 
 
+class KioskVisitorRemoteService:
+    def lookup_residents(self, *, keyword: str, limit: int = 10):
+        return _rpc(
+            "kiosk_visitor",
+            "lookup_residents",
+            keyword=keyword,
+            limit=limit,
+        )
+
+    def register_visit(
+        self,
+        *,
+        visitor_name: str,
+        phone_no: str,
+        relationship: str,
+        visit_purpose: str,
+        target_member_id,
+        privacy_agreed: bool,
+        kiosk_id=None,
+    ):
+        return _rpc(
+            "kiosk_visitor",
+            "register_visit",
+            visitor_name=visitor_name,
+            phone_no=phone_no,
+            relationship=relationship,
+            visit_purpose=visit_purpose,
+            target_member_id=target_member_id,
+            privacy_agreed=privacy_agreed,
+            kiosk_id=kiosk_id,
+        )
+
+    def get_care_history(self, *, visitor_id):
+        return _rpc(
+            "kiosk_visitor",
+            "get_care_history",
+            visitor_id=visitor_id,
+        )
+
+
 class StaffCallRemoteService:
-    def submit_staff_call(self, **payload):
-        return _rpc("staff_call", "submit_staff_call", **payload)
+    def submit_staff_call(
+        self,
+        *,
+        call_type,
+        idempotency_key,
+        description=None,
+        detail=None,
+        visitor_id=None,
+        member_id=None,
+        kiosk_id=None,
+    ):
+        kwargs = {
+            "call_type": call_type,
+            "idempotency_key": idempotency_key,
+            "visitor_id": visitor_id,
+            "member_id": member_id,
+            "kiosk_id": kiosk_id,
+        }
+        if description is not None:
+            kwargs["description"] = description
+        if detail is not None:
+            kwargs["detail"] = detail
+        return _rpc("staff_call", "submit_staff_call", **kwargs)

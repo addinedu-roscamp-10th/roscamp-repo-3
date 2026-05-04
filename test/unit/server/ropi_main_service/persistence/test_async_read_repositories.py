@@ -4,7 +4,13 @@ from server.ropi_main_service.persistence.repositories import caregiver_reposito
 from server.ropi_main_service.persistence.repositories import inventory_repository
 from server.ropi_main_service.persistence.repositories import patient_repository
 from server.ropi_main_service.persistence.repositories import staff_call_repository
+from server.ropi_main_service.persistence.repositories import (
+    delivery_request_event_repository,
+)
 from server.ropi_main_service.persistence.repositories import task_request_repository
+from server.ropi_main_service.persistence.repositories import (
+    task_request_lookup_repository,
+)
 from server.ropi_main_service.persistence.repositories import user_repository
 from server.ropi_main_service.persistence.repositories import visit_guide_repository
 from server.ropi_main_service.persistence.repositories import visitor_info_repository
@@ -64,6 +70,49 @@ def test_caregiver_repository_async_timeline_uses_async_fetch_all(monkeypatch):
     assert calls[0][1] == (10,)
 
 
+def test_caregiver_repository_async_alert_logs_use_partial_text_filters(monkeypatch):
+    calls = []
+
+    async def fake_async_fetch_all(query, params=None):
+        calls.append((query, params))
+        return [{"event_id": 11}]
+
+    monkeypatch.setattr(caregiver_repository, "async_fetch_all", fake_async_fetch_all)
+
+    rows = asyncio.run(
+        caregiver_repository.CaregiverRepository().async_get_alert_logs(
+            period_start=None,
+            severity=None,
+            source_component="Control",
+            task_id="1001",
+            robot_id="pinky",
+            event_type="TASK",
+            limit=25,
+        )
+    )
+
+    assert rows == [{"event_id": 11}]
+    assert "tel.component LIKE" in calls[0][0]
+    assert "tel.robot_id LIKE" in calls[0][0]
+    assert "tel.event_name LIKE" in calls[0][0]
+    assert "tel.task_id = %s" in calls[0][0]
+    assert calls[0][1] == (
+        None,
+        None,
+        None,
+        None,
+        "Control",
+        "Control",
+        "1001",
+        "1001",
+        "pinky",
+        "pinky",
+        "TASK",
+        "TASK",
+        25,
+    )
+
+
 def test_patient_repository_async_member_lookup_uses_async_fetch_one(monkeypatch):
     calls = []
 
@@ -83,6 +132,45 @@ def test_patient_repository_async_member_lookup_uses_async_fetch_one(monkeypatch
     assert row == {"member_id": 1}
     assert "FROM member" in calls[0][0]
     assert calls[0][1] == ("김환자", "301")
+
+
+def test_patient_repository_async_candidates_use_partial_filters(monkeypatch):
+    calls = []
+
+    async def fake_async_fetch_all(query, params=None):
+        calls.append((query, params))
+        return [{"member_id": 1}]
+
+    monkeypatch.setattr(patient_repository, "async_fetch_all", fake_async_fetch_all)
+
+    rows = asyncio.run(
+        patient_repository.PatientRepository().async_list_member_candidates(
+            name="김",
+            room_no="",
+            limit=7,
+        )
+    )
+
+    assert rows == [{"member_id": 1}]
+    assert "LIKE" in calls[0][0]
+    assert "LIMIT %s" in calls[0][0]
+    assert calls[0][1] == ("김", "김", "", "", 7)
+
+
+def test_patient_repository_async_member_lookup_by_id_uses_async_fetch_one(monkeypatch):
+    calls = []
+
+    async def fake_async_fetch_one(query, params=None):
+        calls.append((query, params))
+        return {"member_id": 1}
+
+    monkeypatch.setattr(patient_repository, "async_fetch_one", fake_async_fetch_one)
+
+    row = asyncio.run(patient_repository.PatientRepository().async_find_member_by_id(1))
+
+    assert row == {"member_id": 1}
+    assert "WHERE member_id = %s" in calls[0][0]
+    assert calls[0][1] == (1,)
 
 
 def test_visitor_info_repository_async_visit_info_uses_async_fetch_one(monkeypatch):
@@ -138,14 +226,59 @@ def test_inventory_repository_async_add_quantity_uses_async_execute(monkeypatch)
     assert calls[0][1] == (3, "1")
 
 
-def test_staff_call_repository_async_create_uses_async_execute(monkeypatch):
+def test_inventory_repository_async_set_quantity_uses_async_execute(monkeypatch):
     calls = []
 
     async def fake_async_execute(query, params=None):
         calls.append((query, params))
         return 1
 
-    monkeypatch.setattr(staff_call_repository, "async_execute", fake_async_execute)
+    monkeypatch.setattr(inventory_repository, "async_execute", fake_async_execute)
+
+    updated = asyncio.run(
+        inventory_repository.InventoryRepository().async_set_quantity("1", 12)
+    )
+
+    assert updated is True
+    assert "UPDATE item" in calls[0][0]
+    assert "quantity = %s" in calls[0][0]
+    assert calls[0][1] == (12, "1")
+
+
+def test_staff_call_repository_async_create_uses_staff_call_transaction(monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self.calls = []
+            self.lastrowid = 9102
+            self._last_query = ""
+
+        async def execute(self, query, params=None):
+            self.calls.append((query, params))
+            self._last_query = query
+
+        async def fetchone(self):
+            if "FROM idempotency_record" in self._last_query:
+                return None
+            if "FROM member" in self._last_query:
+                return {"member_id": 7, "member_name": "김영수", "room_no": "301"}
+            return None
+
+    class FakeTransaction:
+        def __init__(self):
+            self.cursor = FakeCursor()
+
+        async def __aenter__(self):
+            return self.cursor
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    fake_transaction = FakeTransaction()
+    monkeypatch.setattr(
+        staff_call_repository,
+        "async_transaction",
+        lambda: fake_transaction,
+    )
 
     result = asyncio.run(
         staff_call_repository.StaffCallRepository().async_create_staff_call(
@@ -155,10 +288,15 @@ def test_staff_call_repository_async_create_uses_async_execute(monkeypatch):
         )
     )
 
-    assert result == (True, "직원 호출 요청이 접수되었습니다.")
-    assert "INSERT INTO member_event" in calls[0][0]
-    assert calls[0][1][0] == 7
-    assert calls[0][1][1] == "STAFF_CALL"
+    assert result["result_code"] == "ACCEPTED"
+    assert result["call_id"] == "member_event_9102"
+    event_params = next(
+        params
+        for query, params in fake_transaction.cursor.calls
+        if "INSERT INTO member_event" in query
+    )
+    assert event_params[0] == 7
+    assert event_params[1] == "STAFF_CALL"
 
 
 def test_task_request_repository_async_create_delivery_request_uses_member_event(monkeypatch):
@@ -173,8 +311,16 @@ def test_task_request_repository_async_create_delivery_request_uses_member_event
         execute_calls.append((query, params))
         return 1
 
-    monkeypatch.setattr(task_request_repository, "async_fetch_one", fake_async_fetch_one)
-    monkeypatch.setattr(task_request_repository, "async_execute", fake_async_execute)
+    monkeypatch.setattr(
+        task_request_lookup_repository,
+        "async_fetch_one",
+        fake_async_fetch_one,
+    )
+    monkeypatch.setattr(
+        delivery_request_event_repository,
+        "async_execute",
+        fake_async_execute,
+    )
 
     result = asyncio.run(
         task_request_repository.DeliveryRequestRepository().async_create_delivery_request(

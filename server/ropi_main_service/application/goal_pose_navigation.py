@@ -17,6 +17,8 @@ DEFAULT_FRAME_ID = "map"
 ALLOWED_PHASE1_NAV_PHASES = {
     "DELIVERY_PICKUP",
     "DELIVERY_DESTINATION",
+    "GUIDE_START_POSE",
+    "GUIDE_DESTINATION",
     "RETURN_TO_DOCK",
 }
 DEFAULT_IPC_TIMEOUT_BUFFER_SEC = 5.0
@@ -38,12 +40,13 @@ class GoalPoseNavigationService:
         self.ipc_timeout_buffer_sec = ipc_timeout_buffer_sec
         self.minimum_ipc_timeout_sec = minimum_ipc_timeout_sec
 
-    def navigate(self, *, task_id, nav_phase, goal_pose, timeout_sec):
+    def navigate(self, *, task_id, nav_phase, goal_pose, timeout_sec, pinky_id=None):
         command, payload, ipc_timeout = self._build_navigation_command(
             task_id=task_id,
             nav_phase=nav_phase,
             goal_pose=goal_pose,
             timeout_sec=timeout_sec,
+            pinky_id=pinky_id,
         )
 
         return self.command_execution_recorder.record(
@@ -59,12 +62,13 @@ class GoalPoseNavigationService:
             ),
         )
 
-    async def async_navigate(self, *, task_id, nav_phase, goal_pose, timeout_sec):
+    async def async_navigate(self, *, task_id, nav_phase, goal_pose, timeout_sec, pinky_id=None):
         command, payload, ipc_timeout = self._build_navigation_command(
             task_id=task_id,
             nav_phase=nav_phase,
             goal_pose=goal_pose,
             timeout_sec=timeout_sec,
+            pinky_id=pinky_id,
         )
         command_client = self._get_command_client()
         async_send_command = getattr(command_client, "async_send_command", None)
@@ -91,7 +95,7 @@ class GoalPoseNavigationService:
 
         return await self.command_execution_recorder.async_record(spec, _send_sync_command_in_thread)
 
-    def _build_navigation_command(self, *, task_id, nav_phase, goal_pose, timeout_sec):
+    def _build_navigation_command(self, *, task_id, nav_phase, goal_pose, timeout_sec, pinky_id=None):
         self._validate_request(
             task_id=task_id,
             nav_phase=nav_phase,
@@ -100,6 +104,7 @@ class GoalPoseNavigationService:
         )
 
         normalized_goal_pose = self._normalize_goal_pose(goal_pose)
+        target_pinky_id = str(pinky_id or self.runtime_config.pinky_id).strip()
         goal = {
             "task_id": task_id,
             "nav_phase": nav_phase,
@@ -110,7 +115,7 @@ class GoalPoseNavigationService:
         return (
             "navigate_to_goal",
             {
-                "pinky_id": self.runtime_config.pinky_id,
+                "pinky_id": target_pinky_id,
                 "goal": goal,
             },
             self._build_ipc_timeout_sec(timeout_sec),

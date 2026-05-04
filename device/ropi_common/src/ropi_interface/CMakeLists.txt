@@ -21,6 +21,7 @@ set(
 set(
   SRV_FILES
   "srv/FallResponseControl.srv"
+  "srv/GuideCommand.srv"
 )
 
 set(

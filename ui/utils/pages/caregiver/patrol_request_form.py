@@ -1,6 +1,6 @@
 import logging
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -22,6 +22,7 @@ from ui.utils.pages.caregiver.task_request_constants import (
     PRIORITY_CODE_TO_LABEL,
 )
 from ui.utils.config.network_config import CONTROL_SERVER_TIMEOUT
+from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.pages.caregiver.task_request_workers import PatrolSubmitWorker
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.common import InlineStatusMixin
@@ -222,18 +223,12 @@ class PatrolRequestForm(QWidget, InlineStatusMixin):
         self.submit_btn.setText("등록 중...")
         logger.debug("patrol submit started")
 
-        self.submit_thread = QThread(self)
-        self.submit_worker = PatrolSubmitWorker(payload)
-        self.submit_worker.moveToThread(self.submit_thread)
-
-        self.submit_thread.started.connect(self.submit_worker.run)
-        self.submit_worker.finished.connect(self._handle_submit_finished)
-        self.submit_worker.finished.connect(self.submit_thread.quit)
-        self.submit_worker.finished.connect(self.submit_worker.deleteLater)
-        self.submit_thread.finished.connect(self.submit_thread.deleteLater)
-        self.submit_thread.finished.connect(self._clear_submit_thread)
-
-        self.submit_thread.start()
+        self.submit_thread, self.submit_worker = start_worker_thread(
+            self,
+            worker=PatrolSubmitWorker(payload),
+            finished_handler=self._handle_submit_finished,
+            clear_handler=self._clear_submit_thread,
+        )
 
     def _handle_submit_finished(self, success, response):
         logger.debug("patrol submit finished: success=%s", success)

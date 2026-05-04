@@ -6,14 +6,19 @@ from unittest.mock import patch
 import pytest
 
 from server.ropi_main_service.transport import tcp_server
+from server.ropi_main_service.application.coordinate_config import (
+    CoordinateConfigService,
+)
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_CREATE_TASK,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
+    MESSAGE_CODE_TASK_STATUS_QUERY,
     TCPFrame,
 )
 
@@ -21,6 +26,61 @@ from server.ropi_main_service.transport.tcp_protocol import (
 class FakeTaskRequestService:
     def get_product_names(self):
         return ["기저귀", "물티슈"]
+
+
+class FakeCoordinateConfigRepository:
+    def __init__(self, *, yaml_path=None):
+        self.map_profile = {
+            "map_id": "map_test11_0423",
+            "map_name": "map_test11_0423",
+            "map_revision": 1,
+            "yaml_path": yaml_path or "missing.yaml",
+            "pgm_path": "missing.pgm",
+            "frame_id": "map",
+            "is_active": True,
+        }
+
+    def get_active_map_profile(self):
+        return self.map_profile
+
+    def get_operation_zones(self, *, map_id, include_disabled=True):
+        return [
+            {
+                "zone_id": "room_301",
+                "map_id": map_id,
+                "zone_name": "301호",
+                "zone_type": "ROOM",
+                "revision": 1,
+                "is_enabled": True,
+            }
+        ]
+
+    def get_goal_poses(self, *, map_id, include_disabled=True):
+        return []
+
+    def get_patrol_areas(self, *, map_id, include_disabled=True):
+        return []
+
+    def update_operation_zone_boundary(
+        self,
+        *,
+        map_id,
+        zone_id,
+        expected_revision,
+        boundary_json,
+    ):
+        return {
+            "status": "UPDATED",
+            "operation_zone": {
+                "zone_id": zone_id,
+                "map_id": map_id,
+                "zone_name": "301호",
+                "zone_type": "ROOM",
+                "revision": expected_revision + 1,
+                "boundary_json": boundary_json,
+                "is_enabled": True,
+            },
+        }
 
 
 @pytest.fixture
@@ -80,6 +140,87 @@ def test_heartbeat_with_ros_check_puts_ros_status_under_payload(control_service_
     }
 
 
+def test_internal_rpc_dispatches_kiosk_visitor_lookup_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=41,
+        payload={
+            "service": "kiosk_visitor",
+            "method": "lookup_residents",
+            "kwargs": {"keyword": ""},
+        },
+    )
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "KEYWORD_EMPTY"
+
+
+def test_internal_rpc_dispatches_kiosk_visitor_care_history_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=42,
+        payload={
+            "service": "kiosk_visitor",
+            "method": "get_care_history",
+            "kwargs": {"visitor_id": ""},
+        },
+    )
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "VISITOR_ID_INVALID"
+
+
+def test_internal_rpc_dispatches_staff_call_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=43,
+        payload={
+            "service": "staff_call",
+            "method": "submit_staff_call",
+            "kwargs": {
+                "call_type": "",
+                "description": "도움 필요",
+                "idempotency_key": "idem_staff_001",
+            },
+        },
+    )
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "CALL_TYPE_EMPTY"
+
+
+def test_heartbeat_with_ai_check_reports_disabled_when_ai_endpoint_is_not_configured(
+    control_service_server,
+    monkeypatch,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_HEARTBEAT,
+        sequence_no=5,
+        payload={"check_ai": True},
+    )
+    monkeypatch.delenv("AI_SERVER_HOST", raising=False)
+    monkeypatch.delenv("AI_FALL_STREAM_HOST", raising=False)
+    monkeypatch.delenv("AI_FALL_EVIDENCE_HOST", raising=False)
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["ai"] == {
+        "ok": False,
+        "disabled": True,
+        "detail": "AI server endpoint is not configured.",
+    }
+
+
 def test_rpc_dispatch_routes_to_registered_service(control_service_server):
     payload = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,
@@ -98,6 +239,121 @@ def test_rpc_dispatch_routes_to_registered_service(control_service_server):
     assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
     assert response.sequence_no == 2
     assert response.is_response is True
+
+
+def test_coordinate_config_rpc_service_is_registered():
+    assert tcp_server.SERVICE_REGISTRY["coordinate_config"].__name__ == (
+        "CoordinateConfigService"
+    )
+
+
+def test_coordinate_config_bundle_rpc_smoke_routes_through_internal_rpc(
+    control_service_server,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=42,
+        payload={
+            "service": "coordinate_config",
+            "method": "get_active_map_bundle",
+            "kwargs": {"include_disabled": False},
+        },
+    )
+
+    with patch.dict(
+        tcp_server.SERVICE_REGISTRY,
+        {
+            "coordinate_config": lambda: CoordinateConfigService(
+                repository=FakeCoordinateConfigRepository(),
+            )
+        },
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
+    assert response.sequence_no == 42
+    assert response.payload["result_code"] == "OK"
+    assert response.payload["map_profile"]["map_id"] == "map_test11_0423"
+    assert response.payload["operation_zones"][0]["zone_id"] == "room_301"
+
+
+def test_coordinate_config_map_asset_rpc_smoke_routes_through_internal_rpc(
+    control_service_server,
+    tmp_path,
+):
+    yaml_path = tmp_path / "map.yaml"
+    yaml_path.write_text("image: map.pgm\n", encoding="utf-8")
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=43,
+        payload={
+            "service": "coordinate_config",
+            "method": "get_map_asset",
+            "kwargs": {"asset_type": "YAML"},
+        },
+    )
+
+    with patch.dict(
+        tcp_server.SERVICE_REGISTRY,
+        {
+            "coordinate_config": lambda: CoordinateConfigService(
+                repository=FakeCoordinateConfigRepository(yaml_path=str(yaml_path)),
+            )
+        },
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
+    assert response.sequence_no == 43
+    assert response.payload["result_code"] == "OK"
+    assert response.payload["asset_type"] == "YAML"
+    assert response.payload["encoding"] == "TEXT"
+    assert response.payload["content_text"] == "image: map.pgm\n"
+
+
+def test_coordinate_config_boundary_update_rpc_smoke_routes_through_internal_rpc(
+    control_service_server,
+):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=44,
+        payload={
+            "service": "coordinate_config",
+            "method": "update_operation_zone_boundary",
+            "kwargs": {
+                "zone_id": "room_301",
+                "expected_revision": 1,
+                "boundary_json": {
+                    "type": "POLYGON",
+                    "header": {"frame_id": "map"},
+                    "vertices": [
+                        {"x": 0.0, "y": 0.0},
+                        {"x": 1.0, "y": 0.0},
+                        {"x": 1.0, "y": 1.0},
+                    ],
+                },
+            },
+        },
+    )
+
+    with patch.dict(
+        tcp_server.SERVICE_REGISTRY,
+        {
+            "coordinate_config": lambda: CoordinateConfigService(
+                repository=FakeCoordinateConfigRepository(),
+            )
+        },
+    ):
+        response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_INTERNAL_RPC
+    assert response.sequence_no == 44
+    assert response.payload["result_code"] == "UPDATED"
+    assert response.payload["operation_zone"]["revision"] == 2
+    assert response.payload["operation_zone"]["boundary_vertex_count"] == 3
 
 
 def test_task_monitor_snapshot_rpc_uses_stream_watermark_for_handoff(
@@ -413,15 +669,16 @@ def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
 
         def get_flow_board_data(self):
             return {
-                "READY": [],
+                "WAITING": [],
                 "ASSIGNED": [],
-                "RUNNING": [
+                "IN_PROGRESS": [
                     {
                         "task_id": 101,
                         "task_status": "RUNNING",
                         "description": "delivery task",
                     }
                 ],
+                "CANCELING": [],
                 "DONE": [],
             }
 
@@ -454,9 +711,56 @@ def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
     ):
         bundle = tcp_server.CaregiverFacade().get_dashboard_bundle()
 
-    task = bundle["flow_data"]["RUNNING"][0]
+    task = bundle["flow_data"]["IN_PROGRESS"][0]
     assert task["feedback"]["feedback_type"] == "NAVIGATION_FEEDBACK"
     assert task["feedback_summary"] == "MOVING / 남은 거리 1.25m"
+
+
+def test_caregiver_facade_exposes_robot_status_bundle():
+    class FakeCaregiverService:
+        def get_robot_status_bundle(self):
+            return {
+                "summary": {"total_robot_count": 1},
+                "robots": [{"robot_id": "pinky2"}],
+                "delivery_composition": [],
+            }
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        FakeCaregiverService,
+    ):
+        bundle = tcp_server.CaregiverFacade().get_robot_status_bundle()
+
+    assert bundle == {
+        "summary": {"total_robot_count": 1},
+        "robots": [{"robot_id": "pinky2"}],
+        "delivery_composition": [],
+    }
+
+
+def test_caregiver_facade_exposes_alert_log_bundle():
+    class FakeCaregiverService:
+        def get_alert_log_bundle(self, **filters):
+            return {
+                "summary": {"total_event_count": 1},
+                "events": [{"event_id": 11}],
+                "filters": filters,
+            }
+
+    with patch(
+        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        FakeCaregiverService,
+    ):
+        bundle = tcp_server.CaregiverFacade().get_alert_log_bundle(
+            period="LAST_24_HOURS",
+            severity="ERROR",
+        )
+
+    assert bundle == {
+        "summary": {"total_event_count": 1},
+        "events": [{"event_id": 11}],
+        "filters": {"period": "LAST_24_HOURS", "severity": "ERROR"},
+    }
 
 
 def test_async_rpc_dispatch_offloads_sync_service_method(control_service_server):
@@ -576,6 +880,49 @@ def test_async_patrol_create_task_uses_native_async_service(control_service_serv
     assert response.payload["task_id"] == 2001
     assert response.payload["assigned_robot_id"] == "pinky3"
     assert response.payload["patrol_area_revision"] == 7
+
+
+def test_async_guide_create_task_uses_native_async_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_GUIDE_CREATE_TASK,
+        sequence_no=40,
+        payload={
+            "request_id": "req_guide_001",
+            "visitor_id": 1,
+            "idempotency_key": "idem_guide_001",
+        },
+    )
+
+    class FakeAsyncVisitGuideService:
+        async def async_create_guide_task(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "assigned_robot_id": "pinky1",
+                "resident_name": "김*수",
+                "room_no": "301",
+                "destination_id": "delivery_room_301",
+            }
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+            side_effect=AssertionError("guide create should not use thread fallback"),
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.message_code == MESSAGE_CODE_GUIDE_CREATE_TASK
+    assert response.payload["result_code"] == "ACCEPTED"
+    assert response.payload["task_id"] == 3001
+    assert response.payload["destination_id"] == "delivery_room_301"
 
 
 def test_async_delivery_create_task_publishes_task_update(control_service_server):
@@ -700,6 +1047,203 @@ def test_async_patrol_create_task_publishes_task_update(control_service_server):
             },
         )
     ]
+
+
+def test_async_guide_create_task_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_GUIDE_CREATE_TASK,
+        sequence_no=41,
+        payload={
+            "request_id": "req_guide_001",
+            "visitor_id": 1,
+            "idempotency_key": "idem_guide_001",
+        },
+    )
+    published_events = []
+
+    class FakeAsyncVisitGuideService:
+        async def async_create_guide_task(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "result_message": "안내 요청이 접수되었습니다.",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "assigned_robot_id": "pinky1",
+                "resident_name": "김*수",
+                "room_no": "301",
+                "destination_id": "delivery_room_301",
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert published_events == [
+        (
+            "TASK_UPDATED",
+            {
+                "source": "GUIDE_CREATE",
+                "task_id": 3001,
+                "task_type": "GUIDE",
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "assigned_robot_id": "pinky1",
+                "latest_reason_code": None,
+                "result_code": "ACCEPTED",
+                "result_message": "안내 요청이 접수되었습니다.",
+                "cancel_requested": None,
+                "cancellable": False,
+            },
+        )
+    ]
+
+
+def test_async_guide_command_rpc_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=42,
+        payload={
+            "service": "visit_guide",
+            "method": "send_guide_command",
+            "kwargs": {
+                "task_id": "3001",
+                "pinky_id": "pinky1",
+                "command_type": "WAIT_TARGET_TRACKING",
+            },
+        },
+    )
+    published_events = []
+
+    class FakeAsyncVisitGuideService:
+        async def async_send_guide_command(self, **payload):
+            return True, "안내 제어 명령이 수락되었습니다.", {
+                "accepted": True,
+                "result_code": "ACCEPTED",
+                "result_message": "안내 제어 명령이 수락되었습니다.",
+                "task_id": payload["task_id"],
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "WAIT_TARGET_TRACKING",
+                "assigned_robot_id": payload["pinky_id"],
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload[0] is True
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "GUIDE_COMMAND"
+    assert published_events[0][1]["task_type"] == "GUIDE"
+    assert published_events[0][1]["task_status"] == "RUNNING"
+    assert published_events[0][1]["phase"] == "WAIT_TARGET_TRACKING"
+
+
+def test_async_task_status_query_dispatches_if_com_001(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_TASK_STATUS_QUERY,
+        sequence_no=41,
+        payload={"task_id": "3001"},
+    )
+
+    class FakeAsyncTaskMonitorService:
+        async def async_get_task_status(self, **payload):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": int(payload["task_id"]),
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "GUIDANCE_RUNNING",
+                "assigned_robot_id": "pinky1",
+            }
+
+    async def scenario():
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"task_monitor": FakeAsyncTaskMonitorService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.is_error is False
+    assert response.payload["result_code"] == "ACCEPTED"
+    assert response.payload["task_id"] == 3001
+    assert response.payload["task_status"] == "RUNNING"
+
+
+def test_async_guide_start_driving_rpc_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=43,
+        payload={
+            "service": "visit_guide",
+            "method": "start_guide_driving",
+            "kwargs": {
+                "task_id": "3001",
+                "target_track_id": "track_17",
+            },
+        },
+    )
+    published_events = []
+
+    class FakeAsyncVisitGuideService:
+        async def async_start_guide_driving(self, **payload):
+            return True, "안내 주행을 시작했습니다.", {
+                "result_code": "ACCEPTED",
+                "result_message": "안내 주행을 시작했습니다.",
+                "task_id": payload["task_id"],
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "GUIDANCE_RUNNING",
+                "assigned_robot_id": "pinky1",
+                "target_track_id": payload["target_track_id"],
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload[0] is True
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "GUIDE_COMMAND"
+    assert published_events[0][1]["task_status"] == "RUNNING"
+    assert published_events[0][1]["phase"] == "GUIDANCE_RUNNING"
 
 
 def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_update(
@@ -867,6 +1411,59 @@ def test_async_delivery_cancel_publishes_task_update(control_service_server):
     assert published_events[0][0] == "TASK_UPDATED"
     assert published_events[0][1]["source"] == "DELIVERY_CANCEL"
     assert published_events[0][1]["task_id"] == "101"
+    assert published_events[0][1]["task_status"] == "CANCEL_REQUESTED"
+    assert published_events[0][1]["latest_reason_code"] == "USER_CANCEL_REQUESTED"
+
+
+def test_async_common_cancel_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=23,
+        payload={
+            "service": "task_request",
+            "method": "cancel_task",
+            "kwargs": {
+                "task_id": "2001",
+                "caregiver_id": 7,
+                "reason": "operator_cancel",
+            },
+        },
+    )
+    published_events = []
+
+    class FakeTaskRequestService:
+        async def async_cancel_task(self, **kwargs):
+            return {
+                "result_code": "CANCEL_REQUESTED",
+                "result_message": "순찰 중단 요청이 접수되었습니다.",
+                "reason_code": "USER_CANCEL_REQUESTED",
+                "task_id": kwargs["task_id"],
+                "task_type": "PATROL",
+                "task_status": "CANCEL_REQUESTED",
+                "phase": "CANCEL_REQUESTED",
+                "assigned_robot_id": "pinky3",
+                "cancel_requested": True,
+                "cancellable": False,
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"task_request": FakeTaskRequestService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "TASK_CANCEL"
+    assert published_events[0][1]["task_type"] == "PATROL"
     assert published_events[0][1]["task_status"] == "CANCEL_REQUESTED"
     assert published_events[0][1]["latest_reason_code"] == "USER_CANCEL_REQUESTED"
 

@@ -121,13 +121,13 @@ INSERT INTO `robot`
  `created_at`, `updated_at`)
 VALUES
 ('pinky1', 'Pinky Pro', '192.168.0.101',
- 'IDLE', '안내팀', NOW(), NOW()),
+ 'IDLE', '모바일팀', NOW(), NOW()),
 
 ('pinky2', 'Pinky Pro', '192.168.0.102',
- 'IDLE', '운반팀', NOW(), NOW()),
+ 'IDLE', '모바일팀', NOW(), NOW()),
 
 ('pinky3', 'Pinky Pro', '192.168.0.103',
- 'IDLE', '순찰팀', NOW(), NOW()),
+ 'IDLE', '모바일팀', NOW(), NOW()),
 
 ('jetcobot1', 'JetCobot', '192.168.0.111',
  'IDLE', '운반팀', NOW(), NOW()),
@@ -164,15 +164,27 @@ VALUES
 -- operation_zone
 -- =========================
 INSERT INTO `operation_zone`
-(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `is_enabled`,
- `created_at`, `updated_at`)
+(`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `boundary_json`,
+ `is_enabled`, `created_at`, `updated_at`)
 VALUES
-('room_301', 'map_test11_0423', '301호', 'ROOM', 1, TRUE, NOW(), NOW()),
-('room_302', 'map_test11_0423', '302호', 'ROOM', 1, TRUE, NOW(), NOW()),
-('room_305', 'map_test11_0423', '305호', 'ROOM', 1, TRUE, NOW(), NOW()),
-('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1, TRUE, NOW(), NOW()),
-('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1, TRUE, NOW(), NOW()),
-('dock', 'map_test11_0423', '충전소', 'DOCK', 1, TRUE, NOW(), NOW());
+('room_301', 'map_test11_0423', '301호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":1.2,"y":-0.4},{"x":2.2,"y":-0.4},{"x":2.2,"y":0.5},{"x":1.2,"y":0.5}]}',
+ TRUE, NOW(), NOW()),
+('room_302', 'map_test11_0423', '302호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":2.6,"y":0.6},{"x":3.4,"y":0.6},{"x":3.4,"y":1.4},{"x":2.6,"y":1.4}]}',
+ TRUE, NOW(), NOW()),
+('room_305', 'map_test11_0423', '305호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":3.5},{"x":1.5,"y":3.5},{"x":1.5,"y":4.5},{"x":0.5,"y":4.5}]}',
+ TRUE, NOW(), NOW()),
+('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":-0.7,"y":0.8},{"x":0.3,"y":0.8},{"x":0.3,"y":1.6},{"x":-0.7,"y":1.6}]}',
+ TRUE, NOW(), NOW()),
+('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":-0.3,"y":-0.9},{"x":0.6,"y":-0.9},{"x":0.6,"y":-0.1},{"x":-0.3,"y":-0.1}]}',
+ TRUE, NOW(), NOW()),
+('dock', 'map_test11_0423', '충전소', 'DOCK', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":-0.1},{"x":1.2,"y":-0.1},{"x":1.2,"y":0.6},{"x":0.5,"y":0.6}]}',
+ TRUE, NOW(), NOW());
 
 -- =========================
 -- patrol_area
@@ -261,4 +273,5 @@ INSERT INTO `robot_runtime_status`
 (`robot_id`, `robot_kind`, `runtime_state`, `active_task_id`, `battery_percent`,
  `pose_x`, `pose_y`, `pose_yaw`, `frame_id`, `fault_code`, `last_seen_at`, `updated_at`)
 VALUES
-('pinky2', 'PINKY', 'RUNNING', 1, 87.5, 1.2, 0.8, 0.0, 'map', NULL, NOW(3), NOW(3));
+('pinky2', 'PINKY', 'RUNNING', 1, 87.5, 1.2, 0.8, 0.0, 'map', NULL,
+ DATE_SUB(NOW(3), INTERVAL 1 DAY), DATE_SUB(NOW(3), INTERVAL 1 DAY));

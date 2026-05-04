@@ -88,6 +88,11 @@ def test_task_monitor_repository_reads_watermark_and_tasks_in_one_transaction(
     assert "MAX(task_event_log_id)" in watermark_query
     assert watermark_params is None
     assert "FROM task t" in task_query
+    assert "t.map_id" in task_query
+    assert "ptd.path_snapshot_json" in task_query
+    assert "ptd.current_waypoint_index" in task_query
+    assert "LEFT JOIN map_profile mp" in task_query
+    assert "mp.map_id = t.map_id" in task_query
     assert "t.task_type IN (%s)" in task_query
     assert "t.task_status IN (%s, %s)" in task_query
     assert task_params == ("PATROL", "RUNNING", "WAIT_FALL_RESPONSE", 25)
@@ -120,3 +125,28 @@ def test_task_monitor_repository_fetches_fall_evidence_alert_candidates(monkeypa
     assert "LEFT JOIN task_event_log tel" in query
     assert "FALL_ALERT_CREATED" in query
     assert params == (2001, 20)
+
+
+def test_task_monitor_repository_fetches_single_task_status(monkeypatch):
+    calls = []
+
+    def fake_fetch_all(query, params=None):
+        calls.append((query, params))
+        return [
+            {
+                "task_id": 3001,
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+            }
+        ]
+
+    monkeypatch.setattr(task_monitor_repository, "fetch_all", fake_fetch_all)
+
+    row = task_monitor_repository.TaskMonitorRepository().get_task_status(task_id=3001)
+
+    assert row["task_id"] == 3001
+    query, params = calls[0]
+    assert "FROM task t" in query
+    assert "WHERE t.task_id = %s" in query
+    assert "LIMIT %s" in query
+    assert params == (3001, 1)

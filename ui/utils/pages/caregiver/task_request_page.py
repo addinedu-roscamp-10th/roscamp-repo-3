@@ -1,6 +1,6 @@
 import logging
 
-from PyQt6.QtCore import Qt, QThread, QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -15,16 +15,15 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.pages.caregiver.task_request_forms import (
     DeliveryRequestForm,
-    FollowRequestForm,
-    GuideRequestForm,
-    NotReadyScenarioForm,
     PatrolRequestForm,
 )
 from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
 from ui.utils.pages.caregiver.task_request_workers import (
     DeliveryCancelWorker,
 )
-from ui.utils.widgets.admin_shell import PageHeader
+from ui.utils.core.responses import normalize_ui_response
+from ui.utils.core.worker_threads import start_worker_thread
+from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
 
 logger = logging.getLogger(__name__)
@@ -50,13 +49,12 @@ class TaskRequestPage(QWidget):
 
         self.delivery_btn = QPushButton("물품 운반")
         self.patrol_btn = QPushButton("순찰")
-        self.guide_btn = QPushButton("안내 (준비 중)")
-        self.follow_btn = QPushButton("추종 (준비 중)")
+        self.follow_btn = QPushButton("추종")
+        self.follow_btn.setEnabled(False)
 
         for btn in [
             self.delivery_btn,
             self.patrol_btn,
-            self.guide_btn,
             self.follow_btn,
         ]:
             btn.setObjectName("scenarioTabButton")
@@ -84,6 +82,7 @@ class TaskRequestPage(QWidget):
         self.form_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.form_scroll = QScrollArea()
+        self.form_scroll.setObjectName("requestFormScroll")
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setSizePolicy(
             QSizePolicy.Policy.Preferred,
@@ -98,6 +97,7 @@ class TaskRequestPage(QWidget):
 
         self.side_panel = TaskRequestSidePanel()
         self.side_scroll = QScrollArea()
+        self.side_scroll.setObjectName("requestSideScroll")
         self.side_scroll.setWidgetResizable(True)
         self.side_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.side_scroll.setHorizontalScrollBarPolicy(
@@ -107,8 +107,6 @@ class TaskRequestPage(QWidget):
 
         self.delivery_btn.clicked.connect(self.show_delivery_page)
         self.patrol_btn.clicked.connect(self.show_patrol_page)
-        self.guide_btn.clicked.connect(self.show_guide_page)
-        self.follow_btn.clicked.connect(self.show_follow_page)
         self.side_panel.cancel_task_btn.clicked.connect(self._request_delivery_cancel)
 
         self.content_row.addWidget(
@@ -140,9 +138,16 @@ class TaskRequestPage(QWidget):
         self.robot_destination_label = self.side_panel.robot_destination_label
         self.robot_map_label = self.side_panel.robot_map_label
 
-        root.addWidget(
-            PageHeader("작업 요청", "작업 종류를 선택하여 해당 요청을 등록하세요.")
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
+        header_row.addWidget(
+            PageHeader("작업 요청", "작업 종류를 선택하여 해당 요청을 등록하세요."),
+            1,
         )
+        self.time_card = PageTimeCard(show_last_update=False)
+        header_row.addWidget(self.time_card)
+
+        root.addLayout(header_row)
         root.addLayout(top_tabs)
         root.addLayout(self.content_row, 1)
 
@@ -150,13 +155,9 @@ class TaskRequestPage(QWidget):
         logger.debug("initialize task request forms")
         self.delivery_form = DeliveryRequestForm()
         self.patrol_form = PatrolRequestForm()
-        self.guide_form = GuideRequestForm()
-        self.follow_form = FollowRequestForm()
         self.forms = [
             self.delivery_form,
             self.patrol_form,
-            self.guide_form,
-            self.follow_form,
         ]
 
         self.delivery_form.preview_changed.connect(self.side_panel.update_preview)
@@ -211,8 +212,6 @@ class TaskRequestPage(QWidget):
         form_to_button = {
             self.delivery_form: self.delivery_btn,
             self.patrol_form: self.patrol_btn,
-            self.guide_form: self.guide_btn,
-            self.follow_form: self.follow_btn,
         }
         for target_form, button in form_to_button.items():
             button.setChecked(target_form is form)
@@ -228,14 +227,6 @@ class TaskRequestPage(QWidget):
         self._show_form(self.patrol_form)
         self.patrol_form.emit_preview_changed()
         logger.debug("switched to patrol page")
-
-    def show_guide_page(self):
-        self._show_form(self.guide_form)
-        logger.debug("switched to guide page")
-
-    def show_follow_page(self):
-        self._show_form(self.follow_form)
-        logger.debug("switched to follow page")
 
     def _request_delivery_cancel(self):
         task_id = self.cancel_task_btn.property("task_id")
@@ -268,34 +259,19 @@ class TaskRequestPage(QWidget):
         if self.cancel_thread is not None:
             return
 
-        self.cancel_thread = QThread(self)
-        self.cancel_worker = DeliveryCancelWorker(task_id=task_id)
-        self.cancel_worker.moveToThread(self.cancel_thread)
-
-        self.cancel_thread.started.connect(self.cancel_worker.run)
-        self.cancel_worker.finished.connect(self._handle_cancel_finished)
-        self.cancel_worker.finished.connect(self.cancel_thread.quit)
-        self.cancel_worker.finished.connect(self.cancel_worker.deleteLater)
-        self.cancel_thread.finished.connect(self.cancel_thread.deleteLater)
-        self.cancel_thread.finished.connect(self._clear_cancel_thread)
-
-        self.cancel_thread.start()
+        self.cancel_thread, self.cancel_worker = start_worker_thread(
+            self,
+            worker=DeliveryCancelWorker(task_id=task_id),
+            finished_handler=self._handle_cancel_finished,
+            clear_handler=self._clear_cancel_thread,
+        )
 
     def _handle_cancel_finished(self, success, response):
-        response = response or {}
-        if not isinstance(response, dict):
-            response = {
-                "result_code": "CLIENT_ERROR",
-                "result_message": str(response),
-                "reason_code": "CLIENT_RESPONSE_INVALID",
-                "cancel_requested": False,
-            }
-        elif not success and not response.get("result_code"):
-            response = {
-                **response,
-                "result_code": "CLIENT_ERROR",
-                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
-            }
+        response = normalize_ui_response(
+            response,
+            success=success,
+            default_fields={"cancel_requested": False},
+        )
 
         self.side_panel.show_delivery_result(response)
 
@@ -330,9 +306,6 @@ class TaskRequestPage(QWidget):
 
 __all__ = [
     "DeliveryRequestForm",
-    "FollowRequestForm",
-    "GuideRequestForm",
-    "NotReadyScenarioForm",
     "PatrolRequestForm",
     "TaskRequestPage",
 ]

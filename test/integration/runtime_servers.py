@@ -12,6 +12,7 @@ from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, enco
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
+    MESSAGE_CODE_GUIDE_TRACKING_RESULT_SUBSCRIBE,
     build_frame,
     encode_frame,
     read_frame_from_socket,
@@ -52,10 +53,16 @@ def wait_for_server_ready(server_process, server_port: int, app, timeout: float 
 
 @pytest.fixture(scope="session")
 def ros_service_stub(tmp_path_factory):
-    socket_path = tmp_path_factory.mktemp("ros-runtime") / "ropi_ros_service.sock"
+    del tmp_path_factory
+    socket_dir = PROJECT_ROOT / ".pytest_tmp" / "ros-runtime"
+    socket_dir.mkdir(parents=True, exist_ok=True)
+    socket_path = socket_dir / "ropi_ros_service.sock"
     ready = threading.Event()
     stop_requested = threading.Event()
     finished = threading.Event()
+    requests = []
+    request_lock = threading.Lock()
+    guide_tracking_published = threading.Event()
 
     def run_server():
         if socket_path.exists():
@@ -82,6 +89,9 @@ def ros_service_stub(tmp_path_factory):
                         except Exception:
                             continue
 
+                        with request_lock:
+                            requests.append(request)
+
                         if request.get("command") == "get_runtime_status":
                             response = {
                                 "ok": True,
@@ -92,6 +102,28 @@ def ros_service_stub(tmp_path_factory):
                                         {"name": "arm1.execute_manipulation", "ready": True},
                                         {"name": "arm2.execute_manipulation", "ready": True},
                                     ],
+                                },
+                            }
+                        elif request.get("command") == "cancel_action":
+                            payload = request.get("payload") or {}
+                            response = {
+                                "ok": True,
+                                "payload": {
+                                    "result_code": "CANCEL_REQUESTED",
+                                    "result_message": "action cancel request was accepted.",
+                                    "task_id": payload.get("task_id"),
+                                    "action_name": payload.get("action_name"),
+                                    "cancel_requested": True,
+                                },
+                            }
+                        elif request.get("command") == "publish_guide_tracking_update":
+                            guide_tracking_published.set()
+                            response = {
+                                "ok": True,
+                                "payload": {
+                                    "accepted": True,
+                                    "result_code": "ACCEPTED",
+                                    "result_message": "guide tracking update accepted.",
                                 },
                             }
                         else:
@@ -117,7 +149,12 @@ def ros_service_stub(tmp_path_factory):
     assert ready.wait(timeout=5), "fake ros service did not become ready"
 
     try:
-        yield {"socket_path": str(socket_path)}
+        yield {
+            "socket_path": str(socket_path),
+            "requests": requests,
+            "request_lock": request_lock,
+            "guide_tracking_published": guide_tracking_published,
+        }
     finally:
         stop_requested.set()
         try:
@@ -129,6 +166,135 @@ def ros_service_stub(tmp_path_factory):
         server_thread.join(timeout=5)
         if socket_path.exists():
             socket_path.unlink()
+        assert finished.is_set()
+
+
+@pytest.fixture
+def ai_guide_tracking_stream_server():
+    server_port = find_free_port()
+    ready = threading.Event()
+    subscribed = threading.Event()
+    push_requested = threading.Event()
+    stop_requested = threading.Event()
+    finished = threading.Event()
+    requests = []
+    request_lock = threading.Lock()
+
+    def run_server():
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
+                server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                server_sock.bind((SERVER_HOST, server_port))
+                server_sock.listen(1)
+                server_sock.settimeout(0.2)
+                ready.set()
+
+                while not stop_requested.is_set():
+                    try:
+                        conn, _ = server_sock.accept()
+                    except TimeoutError:
+                        continue
+                    except OSError:
+                        break
+
+                    with conn:
+                        try:
+                            request_frame = read_frame_from_socket(conn)
+                        except Exception:
+                            continue
+
+                        payload = (
+                            request_frame.payload
+                            if isinstance(request_frame.payload, dict)
+                            else {}
+                        )
+                        with request_lock:
+                            requests.append(payload)
+
+                        ack_frame = build_frame(
+                            MESSAGE_CODE_GUIDE_TRACKING_RESULT_SUBSCRIBE,
+                            request_frame.sequence_no,
+                            {
+                                "result_code": "ACCEPTED",
+                                "result_message": None,
+                                "accepted_consumer_id": payload.get("consumer_id"),
+                                "subscribed_pinky_id": payload.get("pinky_id"),
+                                "subscribed_tracking_mode": payload.get("tracking_mode"),
+                            },
+                            is_response=True,
+                        )
+                        try:
+                            conn.sendall(encode_frame(ack_frame))
+                        except BrokenPipeError:
+                            continue
+
+                        subscribed.set()
+                        while not stop_requested.is_set():
+                            if push_requested.wait(timeout=0.1):
+                                break
+
+                        if stop_requested.is_set():
+                            break
+
+                        push_frame = build_frame(
+                            MESSAGE_CODE_GUIDE_TRACKING_RESULT_SUBSCRIBE,
+                            881,
+                            {
+                                "batch_end_seq": 881,
+                                "results": [
+                                    {
+                                        "result_seq": 881,
+                                        "pinky_id": "pinky1",
+                                        "frame_ts": "2026-04-19T12:35:10Z",
+                                        "tracking_status": "TRACKING",
+                                        "active_track_id": "track_17",
+                                        "confidence": 0.91,
+                                        "image_width_px": 640,
+                                        "image_height_px": 480,
+                                        "candidate_tracks": [
+                                            {
+                                                "track_id": "track_17",
+                                                "bbox_xyxy": [120, 80, 300, 420],
+                                                "score": 0.91,
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                            is_push=True,
+                        )
+                        try:
+                            conn.sendall(encode_frame(push_frame))
+                        except BrokenPipeError:
+                            continue
+
+                        while not stop_requested.wait(timeout=0.1):
+                            pass
+        finally:
+            finished.set()
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    assert ready.wait(timeout=5), "fake AI guide tracking stream server did not become ready"
+
+    try:
+        yield {
+            "host": SERVER_HOST,
+            "port": server_port,
+            "requests": requests,
+            "request_lock": request_lock,
+            "subscribed": subscribed,
+            "push_requested": push_requested,
+        }
+    finally:
+        stop_requested.set()
+        push_requested.set()
+        try:
+            with socket.create_connection((SERVER_HOST, server_port), timeout=0.2):
+                pass
+        except OSError:
+            pass
+        server_thread.join(timeout=5)
         assert finished.is_set()
 
 
@@ -363,6 +529,31 @@ def control_server_with_ai_fall_stream(qapp, ros_service_stub, ai_fall_stream_se
             "AI_FALL_STREAM_LAST_SEQ": "0",
             "AI_FALL_STREAM_CONNECT_TIMEOUT_SEC": "5.0",
             "AI_FALL_STREAM_RECONNECT_DELAY_SEC": "0.2",
+        },
+    )
+
+    wait_for_server_ready(server_process, server_port, qapp)
+    yield from _yield_control_server(server_process, server_port)
+
+
+@pytest.fixture
+def control_server_with_ai_guide_tracking(
+    qapp,
+    ros_service_stub,
+    ai_guide_tracking_stream_server,
+):
+    server_port = find_free_port()
+    server_process = _start_control_server(
+        server_port=server_port,
+        ros_socket_path=ros_service_stub["socket_path"],
+        extra_env={
+            "AI_GUIDE_TRACKING_STREAM_ENABLED": "true",
+            "AI_GUIDE_TRACKING_STREAM_HOST": ai_guide_tracking_stream_server["host"],
+            "AI_GUIDE_TRACKING_STREAM_PORT": str(ai_guide_tracking_stream_server["port"]),
+            "AI_GUIDE_TRACKING_STREAM_CONSUMER_ID": "control_service_ai_guide",
+            "AI_GUIDE_TRACKING_STREAM_LAST_SEQ": "0",
+            "AI_GUIDE_TRACKING_STREAM_CONNECT_TIMEOUT_SEC": "5.0",
+            "AI_GUIDE_TRACKING_STREAM_RECONNECT_DELAY_SEC": "0.2",
         },
     )
 

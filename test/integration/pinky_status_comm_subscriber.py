@@ -22,8 +22,15 @@ class PinkyStatusCommView:
     battery_voltage: float
     fail_code: str
     frame_id: str
+    pose_stamp_sec: int
+    pose_stamp_nanosec: int
     x: float
     y: float
+    z: float
+    qx: float
+    qy: float
+    qz: float
+    qw: float
     theta_deg: float
     measured_at_sec: int
     measured_at_nanosec: int
@@ -66,30 +73,41 @@ class PinkyStatusCommSubscriber(Node):
 
         pose = payload.get("pose", {})
         pose_header = pose.get("header", {})
+        pose_stamp = pose_header.get("stamp", {})
         pose_pose = pose.get("pose", {})
         position = pose_pose.get("position", {})
         orientation = pose_pose.get("orientation", {})
         timestamp = payload.get("timestamp", {})
         received_at = self.get_clock().now().to_msg()
+        qz = self._float_value(orientation.get("z"), 0.0)
+        qw = self._float_value(orientation.get("w"), 1.0)
 
         view = PinkyStatusCommView(
-            pinky_id=str(payload.get("pinky_id", "")),
-            pinky_state=str(payload.get("pinky_state", "")),
-            active_task_id=str(payload.get("active_task_id", "")),
-            charging_state=str(payload.get("charging_state", "")),
-            docked=bool(payload.get("docked", False)),
-            battery_percent=float(payload.get("battery_percent", 0.0)),
-            battery_voltage=float(payload.get("battery_voltage", 0.0)),
-            fail_code=str(payload.get("fail_code", payload.get("fault_code", ""))),
-            frame_id=str(pose_header.get("frame_id", "")),
-            x=float(position.get("x", 0.0)),
-            y=float(position.get("y", 0.0)),
-            theta_deg=self._yaw_deg(
-                float(orientation.get("z", 0.0)),
-                float(orientation.get("w", 1.0)),
+            pinky_id=self._string_value(payload.get("pinky_id")),
+            pinky_state=self._string_value(payload.get("pinky_state")),
+            active_task_id=self._string_value(
+                payload.get("active_task_id", payload.get("task_id"))
             ),
-            measured_at_sec=int(timestamp.get("sec", 0)),
-            measured_at_nanosec=int(timestamp.get("nanosec", 0)),
+            charging_state=self._string_value(payload.get("charging_state")),
+            docked=bool(payload.get("docked", False)),
+            battery_percent=self._float_value(payload.get("battery_percent"), 0.0),
+            battery_voltage=self._float_value(payload.get("battery_voltage"), 0.0),
+            fail_code=self._string_value(
+                payload.get("fail_code", payload.get("fault_code"))
+            ),
+            frame_id=self._string_value(pose_header.get("frame_id")),
+            pose_stamp_sec=self._int_value(pose_stamp.get("sec"), 0),
+            pose_stamp_nanosec=self._int_value(pose_stamp.get("nanosec"), 0),
+            x=self._float_value(position.get("x"), 0.0),
+            y=self._float_value(position.get("y"), 0.0),
+            z=self._float_value(position.get("z"), 0.0),
+            qx=self._float_value(orientation.get("x"), 0.0),
+            qy=self._float_value(orientation.get("y"), 0.0),
+            qz=qz,
+            qw=qw,
+            theta_deg=self._yaw_deg(qz, qw),
+            measured_at_sec=self._int_value(timestamp.get("sec"), 0),
+            measured_at_nanosec=self._int_value(timestamp.get("nanosec"), 0),
             received_at_sec=int(received_at.sec),
             received_at_nanosec=int(received_at.nanosec),
             stale=False,
@@ -121,6 +139,30 @@ class PinkyStatusCommSubscriber(Node):
     @staticmethod
     def _yaw_deg(z: float, w: float) -> float:
         return math.degrees(2.0 * math.atan2(z, w))
+
+    @staticmethod
+    def _string_value(value, default: str = "") -> str:
+        if value is None:
+            return default
+        return str(value)
+
+    @staticmethod
+    def _float_value(value, default: float) -> float:
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _int_value(value, default: int) -> int:
+        if value is None:
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
 
 def main(args=None):

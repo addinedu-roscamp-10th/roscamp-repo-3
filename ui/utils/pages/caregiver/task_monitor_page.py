@@ -2,7 +2,7 @@ import base64
 import binascii
 import logging
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -19,11 +19,20 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.utils.pages.caregiver.task_monitor_detail_panels import (
+    PatrolRuntimePanel,
+    TaskResultInfoPanel,
+    _display,
+    _format_pose,
+    _metric_row,
+)
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_workers import PatrolResumeWorker
+from ui.utils.core.responses import normalize_ui_response
+from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.network.service_clients import TaskMonitorRemoteService
 from ui.utils.session.session_manager import SessionManager
-from ui.utils.widgets.admin_shell import PageHeader
+from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 
 
 logger = logging.getLogger(__name__)
@@ -32,12 +41,23 @@ WAITING_FALL_RESPONSE_PHASES = {
     "WAIT_FALL_RESPONSE",
     "WAITING_FALL_RESPONSE",
 }
-
-
-def _display(value):
-    if value is None or value == "":
-        return "-"
-    return str(value)
+CANCELLABLE_TASK_STATUSES = {
+    "WAITING",
+    "WAITING_DISPATCH",
+    "READY",
+    "ASSIGNED",
+    "RUNNING",
+}
+CANCEL_IN_PROGRESS_STATUSES = {
+    "CANCEL_REQUESTED",
+    "CANCELLING",
+    "PREEMPTING",
+}
+TERMINAL_TASK_STATUSES = {
+    "CANCELLED",
+    "COMPLETED",
+    "FAILED",
+}
 
 
 def _task_key(value):
@@ -45,40 +65,6 @@ def _task_key(value):
     if text in {"", "-"}:
         return None
     return text
-
-
-def _metric_row(label_text, value_text="-", value_object_name="sideMetricValue"):
-    row = QFrame()
-    row.setObjectName("sideMetricRow")
-    row_layout = QHBoxLayout(row)
-    row_layout.setContentsMargins(12, 10, 12, 10)
-    row_layout.setSpacing(10)
-
-    label = QLabel(label_text)
-    label.setObjectName("sideMetricLabel")
-    value = QLabel(value_text)
-    value.setObjectName(value_object_name)
-    value.setWordWrap(True)
-    value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-    row_layout.addWidget(label)
-    row_layout.addStretch(1)
-    row_layout.addWidget(value)
-    return row, label, value
-
-
-def _format_pose(pose):
-    if not isinstance(pose, dict):
-        return _display(pose)
-
-    try:
-        x = float(pose.get("x"))
-        y = float(pose.get("y"))
-        yaw = float(pose.get("yaw", 0.0))
-    except (TypeError, ValueError):
-        return _display(pose)
-
-    return f"x={x:.2f}, y={y:.2f}, yaw={yaw:.2f}"
 
 
 class PatrolResumeDialog(QDialog):
@@ -375,6 +361,40 @@ class FallEvidenceImageLookupWorker(QObject):
             )
 
 
+class TaskCancelWorker(QObject):
+    finished = pyqtSignal(bool, object)
+
+    def __init__(self, *, payload):
+        super().__init__()
+        self.payload = payload if isinstance(payload, dict) else {}
+
+    def run(self):
+        service = TaskMonitorRemoteService()
+
+        try:
+            response = service.cancel_task(**self.payload) or {}
+            result_code = str(response.get("result_code", "")).upper()
+            success = bool(response.get("cancel_requested")) or result_code in {
+                "ACCEPTED",
+                "CANCEL_REQUESTED",
+                "CANCELLED",
+            }
+            self.finished.emit(success, response)
+        except Exception as exc:
+            self.finished.emit(
+                False,
+                {
+                    "result_code": "CLIENT_ERROR",
+                    "result_message": f"작업 취소 요청 중 오류가 발생했습니다.\n{exc}",
+                    "reason_code": "CLIENT_EXCEPTION",
+                    "task_id": self.payload.get("task_id"),
+                    "task_status": None,
+                    "assigned_robot_id": None,
+                    "cancel_requested": False,
+                },
+            )
+
+
 class TaskMonitorPage(QWidget):
     def __init__(self, *, autostart_stream=True):
         super().__init__()
@@ -382,6 +402,7 @@ class TaskMonitorPage(QWidget):
         self._tasks = {}
         self._row_by_task_id = {}
         self._selected_task_id = None
+        self._last_event_seq = 0
         self._resume_dialog = None
         self.snapshot_thread = None
         self.snapshot_worker = None
@@ -391,6 +412,8 @@ class TaskMonitorPage(QWidget):
         self.patrol_resume_worker = None
         self.fall_evidence_thread = None
         self.fall_evidence_worker = None
+        self.task_cancel_thread = None
+        self.task_cancel_worker = None
         self._fall_evidence_dialog = None
         self._build_ui()
         if autostart_stream:
@@ -401,12 +424,30 @@ class TaskMonitorPage(QWidget):
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(18)
 
-        root.addWidget(
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
+        header_row.addWidget(
             PageHeader(
                 "작업 모니터",
                 "운반, 순찰, 안내 작업의 진행 상태와 피드백을 확인합니다.",
-            )
+            ),
+            1,
         )
+        self.time_card = PageTimeCard(
+            status_text="이벤트 스트림 연결 대기",
+            refresh_text="새로고침",
+            on_refresh=self.refresh_snapshot,
+        )
+        self.refresh_snapshot_btn = self.time_card.refresh_button
+        self.reconnect_stream_btn = QPushButton("스트림 재연결")
+        self.reconnect_stream_btn.setObjectName("secondaryButton")
+        self.reconnect_stream_btn.clicked.connect(self.reconnect_task_event_stream)
+        self.time_card.add_action(self.reconnect_stream_btn)
+        self.stream_status_label = self.time_card.status_label
+        self.last_update_label = self.time_card.last_update_label
+        header_row.addWidget(self.time_card)
+
+        root.addLayout(header_row)
 
         content_row = QHBoxLayout()
         content_row.setSpacing(18)
@@ -419,8 +460,10 @@ class TaskMonitorPage(QWidget):
 
         list_title = QLabel("작업 목록")
         list_title.setObjectName("sectionTitle")
-        self.stream_status_label = QLabel("이벤트 스트림 연결 대기")
-        self.stream_status_label.setObjectName("mutedText")
+        list_header = QHBoxLayout()
+        list_header.setSpacing(8)
+        list_header.addWidget(list_title)
+        list_header.addStretch(1)
         self.empty_state_label = QLabel("수신된 작업 이벤트가 없습니다.")
         self.empty_state_label.setObjectName("mutedText")
 
@@ -435,8 +478,7 @@ class TaskMonitorPage(QWidget):
         self.task_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.task_table.itemSelectionChanged.connect(self._handle_table_selection_changed)
 
-        list_layout.addWidget(list_title)
-        list_layout.addWidget(self.stream_status_label)
+        list_layout.addLayout(list_header)
         list_layout.addWidget(self.empty_state_label)
         list_layout.addWidget(self.task_table, 1)
 
@@ -461,65 +503,40 @@ class TaskMonitorPage(QWidget):
         feedback_row, _feedback_text, self.detail_feedback_label = _metric_row("피드백")
         pose_row, _pose_text, self.detail_pose_label = _metric_row("위치")
 
-        self.patrol_map_placeholder = QFrame()
-        self.patrol_map_placeholder.setObjectName("patrolMapPlaceholder")
-        map_layout = QVBoxLayout(self.patrol_map_placeholder)
-        map_layout.setContentsMargins(16, 16, 16, 16)
-        self.fall_marker_label = QLabel("낙상 지점 미수신")
-        self.fall_marker_label.setObjectName("fallAlertMarker")
-        self.fall_marker_label.setWordWrap(True)
-        self.fall_marker_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        map_layout.addWidget(self.fall_marker_label)
+        self.result_info_panel = TaskResultInfoPanel()
+        self.detail_result_code_label = self.result_info_panel.result_code_label
+        self.detail_reason_code_label = self.result_info_panel.reason_code_label
+        self.detail_result_message_label = self.result_info_panel.result_message_label
 
-        self.fall_alert_panel = QFrame()
-        self.fall_alert_panel.setObjectName("fallAlertPanel")
-        alert_layout = QVBoxLayout(self.fall_alert_panel)
-        alert_layout.setContentsMargins(14, 14, 14, 14)
-        alert_layout.setSpacing(8)
+        detail_action_row = QHBoxLayout()
+        detail_action_row.setSpacing(8)
+        self.cancel_task_btn = QPushButton("작업 취소")
+        self.cancel_task_btn.setObjectName("dangerButton")
+        self.cancel_task_btn.setEnabled(False)
+        self.cancel_task_btn.clicked.connect(self._request_task_cancel)
+        detail_action_row.addStretch(1)
+        detail_action_row.addWidget(self.cancel_task_btn)
 
-        alert_title = QLabel("낙상 감지")
-        alert_title.setObjectName("sectionTitle")
-        alert_task_row, _alert_task_text, self.fall_alert_task_label = _metric_row(
-            "task_id"
-        )
-        evidence_row, _evidence_text, self.evidence_image_id_label = _metric_row(
-            "증거사진"
-        )
-        frame_row, _frame_text, self.fall_frame_id_label = _metric_row("frame_id")
-        streak_row, _streak_text, self.fall_streak_label = _metric_row("누적 감지")
+        self.cancel_status_label = QLabel("")
+        self.cancel_status_label.setObjectName("mutedText")
+        self.cancel_status_label.setWordWrap(True)
+        self.cancel_status_label.setHidden(True)
 
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
-        self.evidence_image_btn = QPushButton("증거사진 조회")
-        self.evidence_image_btn.setObjectName("secondaryButton")
-        self.evidence_image_btn.setEnabled(False)
+        self.patrol_runtime_section = PatrolRuntimePanel()
+        self.patrol_map_placeholder = self.patrol_runtime_section.patrol_map_placeholder
+        self.patrol_map_overlay = self.patrol_runtime_section.patrol_map_overlay
+        self.fall_marker_label = self.patrol_runtime_section.fall_marker_label
+        self.fall_alert_panel = self.patrol_runtime_section.alert_panel
+        self.fall_alert_task_label = self.patrol_runtime_section.fall_alert_task_label
+        self.evidence_image_id_label = self.patrol_runtime_section.evidence_image_id_label
+        self.fall_frame_id_label = self.patrol_runtime_section.fall_frame_id_label
+        self.fall_streak_label = self.patrol_runtime_section.fall_streak_label
+        self.evidence_image_btn = self.patrol_runtime_section.evidence_image_btn
+        self.evidence_status_label = self.patrol_runtime_section.evidence_status_label
         self.evidence_image_btn.clicked.connect(self.open_fall_evidence_dialog)
-        self.resume_patrol_btn = QPushButton("현장 조치 후 순찰 재개")
-        self.resume_patrol_btn.setObjectName("patrolResumeButton")
-        self.resume_patrol_btn.setEnabled(False)
+        self.resume_patrol_btn = self.patrol_runtime_section.resume_patrol_btn
+        self.resume_status_label = self.patrol_runtime_section.resume_status_label
         self.resume_patrol_btn.clicked.connect(self.open_patrol_resume_dialog)
-        action_row.addWidget(self.evidence_image_btn)
-        action_row.addWidget(self.resume_patrol_btn)
-
-        self.evidence_status_label = QLabel("")
-        self.evidence_status_label.setObjectName("mutedText")
-        self.evidence_status_label.setWordWrap(True)
-        self.evidence_status_label.setHidden(True)
-
-        self.resume_status_label = QLabel("")
-        self.resume_status_label.setObjectName("mutedText")
-        self.resume_status_label.setWordWrap(True)
-        self.resume_status_label.setHidden(True)
-
-        alert_layout.addWidget(alert_title)
-        alert_layout.addWidget(alert_task_row)
-        alert_layout.addWidget(evidence_row)
-        alert_layout.addWidget(frame_row)
-        alert_layout.addWidget(streak_row)
-        alert_layout.addLayout(action_row)
-        alert_layout.addWidget(self.evidence_status_label)
-        alert_layout.addWidget(self.resume_status_label)
-        self.fall_alert_panel.setHidden(True)
 
         detail_layout.addWidget(detail_title)
         detail_layout.addWidget(task_id_row)
@@ -529,8 +546,10 @@ class TaskMonitorPage(QWidget):
         detail_layout.addWidget(robot_row)
         detail_layout.addWidget(feedback_row)
         detail_layout.addWidget(pose_row)
-        detail_layout.addWidget(self.patrol_map_placeholder)
-        detail_layout.addWidget(self.fall_alert_panel)
+        detail_layout.addWidget(self.result_info_panel)
+        detail_layout.addLayout(detail_action_row)
+        detail_layout.addWidget(self.cancel_status_label)
+        detail_layout.addWidget(self.patrol_runtime_section)
         detail_layout.addStretch(1)
 
         content_row.addWidget(list_card, 3)
@@ -546,14 +565,17 @@ class TaskMonitorPage(QWidget):
 
         if event_type == "TASK_UPDATED":
             self._apply_task_updated(payload)
+            self._mark_last_update("event")
             return
 
         if event_type == "ACTION_FEEDBACK_UPDATED":
             self._apply_action_feedback_updated(payload)
+            self._mark_last_update("event")
             return
 
         if event_type in {"ALERT_CREATED", "FALL_ALERT_CREATED"}:
             self._apply_alert_created(payload)
+            self._mark_last_update("event")
 
     def apply_snapshot(self, snapshot):
         snapshot = snapshot if isinstance(snapshot, dict) else {}
@@ -601,8 +623,11 @@ class TaskMonitorPage(QWidget):
                 normalized["pose"] = latest_feedback.get("pose")
 
         latest_robot = normalized.get("latest_robot")
-        if isinstance(latest_robot, dict) and not normalized.get("assigned_robot_id"):
-            normalized["assigned_robot_id"] = latest_robot.get("robot_id")
+        if isinstance(latest_robot, dict):
+            if not normalized.get("assigned_robot_id"):
+                normalized["assigned_robot_id"] = latest_robot.get("robot_id")
+            if latest_robot.get("pose") is not None and not normalized.get("pose"):
+                normalized["pose"] = latest_robot.get("pose")
 
         latest_alert = normalized.get("latest_alert")
         if isinstance(latest_alert, dict):
@@ -727,41 +752,114 @@ class TaskMonitorPage(QWidget):
         self.detail_robot_label.setText(_display(task.get("assigned_robot_id")))
         self.detail_feedback_label.setText(_display(task.get("feedback_summary")))
         self.detail_pose_label.setText(_format_pose(task.get("pose")))
+        self._render_result_info(task)
+        self.cancel_status_label.setHidden(True)
+        self._sync_cancel_action(task)
         self._render_fall_alert(task)
+
+    def _render_result_info(self, task):
+        self.result_info_panel.render(task)
+
+    def _sync_cancel_action(self, task):
+        task = task or {}
+        task_id = task.get("task_id")
+        task_type = str(task.get("task_type") or "").strip().upper()
+        task_status = str(task.get("task_status") or "").strip().upper()
+        cancellable = task.get("cancellable")
+        default_text = "순찰 중단" if task_type == "PATROL" else "작업 취소"
+
+        self.cancel_task_btn.setProperty("task_id", task_id)
+        self.cancel_task_btn.setProperty("task_type", task_type)
+        self.cancel_task_btn.setProperty("task_status", task_status)
+        self.cancel_task_btn.setText(default_text)
+
+        if task_status in CANCEL_IN_PROGRESS_STATUSES:
+            self.cancel_task_btn.setText("취소 처리 중")
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if task_status in TERMINAL_TASK_STATUSES:
+            self.cancel_task_btn.setText("취소 불가")
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if _task_key(task_id) is None:
+            self.cancel_task_btn.setEnabled(False)
+            return
+
+        if cancellable is not None:
+            self.cancel_task_btn.setEnabled(bool(cancellable))
+            return
+
+        self.cancel_task_btn.setEnabled(task_status in CANCELLABLE_TASK_STATUSES)
+
+    def _request_task_cancel(self):
+        task = self._current_task() or {}
+        task_id = _task_key(task.get("task_id"))
+        if task_id is None:
+            self.cancel_status_label.setText("취소할 task_id가 없습니다.")
+            self.cancel_status_label.setHidden(False)
+            return
+
+        current_user = SessionManager.current_user()
+        caregiver_id = getattr(current_user, "user_id", None)
+        if not str(caregiver_id or "").strip().isdigit():
+            self.cancel_status_label.setText("취소 요청자 caregiver_id가 없습니다.")
+            self.cancel_status_label.setHidden(False)
+            return
+
+        payload = {
+            "task_id": task_id,
+            "caregiver_id": int(caregiver_id),
+            "reason": "operator_cancel",
+        }
+        self.cancel_task_btn.setEnabled(False)
+        self.cancel_task_btn.setText("취소 요청 전송 중...")
+        self.cancel_status_label.setText("취소 요청 전송 중...")
+        self.cancel_status_label.setHidden(False)
+        self._start_task_cancel(payload)
+
+    def _start_task_cancel(self, payload):
+        if self.task_cancel_thread is not None:
+            return
+
+        self.task_cancel_thread, self.task_cancel_worker = start_worker_thread(
+            self,
+            worker=TaskCancelWorker(payload=payload),
+            finished_handler=self._handle_task_cancel_finished,
+            clear_handler=self._clear_task_cancel_thread,
+        )
+
+    def _handle_task_cancel_finished(self, success, response):
+        response = normalize_ui_response(
+            response,
+            success=success,
+            default_fields={"cancel_requested": False},
+        )
+
+        if response.get("task_id"):
+            self._apply_task_updated(response)
+        else:
+            self._render_detail(self._current_task())
+
+        result_code = _display(response.get("result_code"))
+        reason_code = _display(response.get("reason_code"))
+        message = _display(response.get("result_message"))
+        self.cancel_status_label.setText(f"{result_code} / {reason_code}: {message}")
+        self.cancel_status_label.setHidden(False)
+        self._mark_last_update("cancel")
+
+    def _clear_task_cancel_thread(self):
+        self.task_cancel_thread = None
+        self.task_cancel_worker = None
 
     def _render_fall_alert(self, task):
         alert = task.get("fall_alert") or {}
-        has_alert = bool(alert)
-        should_show = has_alert or self._can_resume_patrol(task)
-        self.fall_alert_panel.setHidden(not should_show)
-        self.evidence_status_label.setHidden(True)
-        self.resume_status_label.setHidden(True)
-
-        if not should_show:
-            self.fall_marker_label.setText("낙상 지점 미수신")
-            self.evidence_image_btn.setEnabled(False)
-            self.resume_patrol_btn.setEnabled(False)
-            return
-
-        task_id = task.get("task_id")
-        evidence_id = alert.get("evidence_image_id")
-        frame_id = alert.get("frame_id")
-        fall_streak_ms = alert.get("fall_streak_ms")
-        zone_text = alert.get("zone_name") or alert.get("zone_id") or "구역 미수신"
-        pose_text = _format_pose(alert.get("alert_pose") or alert.get("pose"))
-
-        self.fall_alert_task_label.setText(_display(task_id))
-        self.evidence_image_id_label.setText(_display(evidence_id))
-        self.fall_frame_id_label.setText(_display(frame_id))
-        self.fall_streak_label.setText(
-            f"{fall_streak_ms}ms" if fall_streak_ms not in (None, "") else "-"
+        self.patrol_runtime_section.render(
+            task,
+            can_resume=self._can_resume_patrol(task),
+            evidence_available=self._is_evidence_image_available(alert),
         )
-        self.fall_marker_label.setText(f"{zone_text}\n{pose_text}")
-        self.evidence_image_btn.setEnabled(
-            self._is_evidence_image_available(alert)
-        )
-        self.resume_patrol_btn.setEnabled(self._can_resume_patrol(task))
-        self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
 
     def _can_resume_patrol(self, task):
         task_type = str(task.get("task_type") or "").strip().upper()
@@ -803,37 +901,19 @@ class TaskMonitorPage(QWidget):
         if self.fall_evidence_thread is not None:
             return
 
-        self.fall_evidence_thread = QThread(self)
-        self.fall_evidence_worker = FallEvidenceImageLookupWorker(payload=payload)
-        self.fall_evidence_worker.moveToThread(self.fall_evidence_thread)
-
-        self.fall_evidence_thread.started.connect(self.fall_evidence_worker.run)
-        self.fall_evidence_worker.finished.connect(self._handle_fall_evidence_finished)
-        self.fall_evidence_worker.finished.connect(self.fall_evidence_thread.quit)
-        self.fall_evidence_worker.finished.connect(
-            self.fall_evidence_worker.deleteLater
+        self.fall_evidence_thread, self.fall_evidence_worker = start_worker_thread(
+            self,
+            worker=FallEvidenceImageLookupWorker(payload=payload),
+            finished_handler=self._handle_fall_evidence_finished,
+            clear_handler=self._clear_fall_evidence_thread,
         )
-        self.fall_evidence_thread.finished.connect(
-            self.fall_evidence_thread.deleteLater
-        )
-        self.fall_evidence_thread.finished.connect(self._clear_fall_evidence_thread)
-
-        self.fall_evidence_thread.start()
 
     def _handle_fall_evidence_finished(self, success, response):
-        response = response or {}
-        if not isinstance(response, dict):
-            response = {
-                "result_code": "CLIENT_ERROR",
-                "result_message": str(response),
-                "reason_code": "CLIENT_RESPONSE_INVALID",
-            }
-        elif not response.get("result_code"):
-            response = {
-                **response,
-                "result_code": "CLIENT_ERROR",
-                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
-            }
+        response = normalize_ui_response(
+            response,
+            success=success,
+            require_result_code=True,
+        )
 
         self.evidence_image_btn.setText("증거사진 조회")
         self.evidence_image_btn.setEnabled(self._has_current_evidence_image())
@@ -909,37 +989,15 @@ class TaskMonitorPage(QWidget):
         if self.patrol_resume_thread is not None:
             return
 
-        self.patrol_resume_thread = QThread(self)
-        self.patrol_resume_worker = PatrolResumeWorker(payload=payload)
-        self.patrol_resume_worker.moveToThread(self.patrol_resume_thread)
-
-        self.patrol_resume_thread.started.connect(self.patrol_resume_worker.run)
-        self.patrol_resume_worker.finished.connect(self._handle_patrol_resume_finished)
-        self.patrol_resume_worker.finished.connect(self.patrol_resume_thread.quit)
-        self.patrol_resume_worker.finished.connect(
-            self.patrol_resume_worker.deleteLater
+        self.patrol_resume_thread, self.patrol_resume_worker = start_worker_thread(
+            self,
+            worker=PatrolResumeWorker(payload=payload),
+            finished_handler=self._handle_patrol_resume_finished,
+            clear_handler=self._clear_patrol_resume_thread,
         )
-        self.patrol_resume_thread.finished.connect(
-            self.patrol_resume_thread.deleteLater
-        )
-        self.patrol_resume_thread.finished.connect(self._clear_patrol_resume_thread)
-
-        self.patrol_resume_thread.start()
 
     def _handle_patrol_resume_finished(self, success, response):
-        response = response or {}
-        if not isinstance(response, dict):
-            response = {
-                "result_code": "CLIENT_ERROR",
-                "result_message": str(response),
-                "reason_code": "CLIENT_RESPONSE_INVALID",
-            }
-        elif not success and not response.get("result_code"):
-            response = {
-                **response,
-                "result_code": "CLIENT_ERROR",
-                "reason_code": response.get("reason_code") or "CLIENT_ERROR",
-            }
+        response = normalize_ui_response(response, success=success)
 
         self.resume_status_label.setText(_display(response.get("result_message")))
         self.resume_status_label.setHidden(False)
@@ -948,30 +1006,33 @@ class TaskMonitorPage(QWidget):
             self._apply_task_updated(response)
         else:
             self._render_detail(self._tasks.get("task_id:" + str(self._selected_task_id)))
+        self._mark_last_update("patrol resume")
 
     def _clear_patrol_resume_thread(self):
         self.patrol_resume_thread = None
         self.patrol_resume_worker = None
 
-    def _start_snapshot_load(self):
+    def refresh_snapshot(self):
+        self._start_snapshot_load(status_text="수동 새로고침 중")
+
+    def reconnect_task_event_stream(self):
+        self.stream_status_label.setText("이벤트 스트림 재연결 중")
+        self._stop_task_event_stream_thread()
+        self._start_task_event_stream(last_seq=self._last_event_seq)
+
+    def _start_snapshot_load(self, *, status_text="초기 상태 조회 중"):
         if self.snapshot_thread is not None:
-            return
+            return False
 
-        self.snapshot_thread = QThread(self)
-        self.snapshot_worker = TaskMonitorSnapshotLoadWorker(
-            consumer_id=self.consumer_id,
+        self.refresh_snapshot_btn.setEnabled(False)
+        self.stream_status_label.setText(status_text)
+        self.snapshot_thread, self.snapshot_worker = start_worker_thread(
+            self,
+            worker=TaskMonitorSnapshotLoadWorker(consumer_id=self.consumer_id),
+            finished_handler=self._handle_snapshot_loaded,
+            clear_handler=self._clear_snapshot_thread,
         )
-        self.snapshot_worker.moveToThread(self.snapshot_thread)
-
-        self.snapshot_thread.started.connect(self.snapshot_worker.run)
-        self.snapshot_worker.finished.connect(self._handle_snapshot_loaded)
-        self.snapshot_worker.finished.connect(self.snapshot_thread.quit)
-        self.snapshot_worker.finished.connect(self.snapshot_worker.deleteLater)
-        self.snapshot_thread.finished.connect(self.snapshot_thread.deleteLater)
-        self.snapshot_thread.finished.connect(self._clear_snapshot_thread)
-
-        self.stream_status_label.setText("초기 상태 조회 중")
-        self.snapshot_thread.start()
+        return True
 
     def _handle_snapshot_loaded(self, success, response):
         last_seq = 0
@@ -981,54 +1042,67 @@ class TaskMonitorPage(QWidget):
                 last_seq = int(response.get("last_event_seq") or 0)
             except (TypeError, ValueError):
                 last_seq = 0
+            self._last_event_seq = last_seq
             self.stream_status_label.setText("초기 상태 조회 완료")
+            self._mark_last_update("snapshot")
         else:
             self.stream_status_label.setText(f"초기 상태 조회 실패: {response}")
 
+        self.refresh_snapshot_btn.setEnabled(True)
         self._start_task_event_stream(last_seq=last_seq)
 
     def _clear_snapshot_thread(self):
         self.snapshot_thread = None
         self.snapshot_worker = None
+        self.refresh_snapshot_btn.setEnabled(True)
 
     def _start_task_event_stream(self, *, last_seq=0):
         if self.task_event_thread is not None:
             return
 
-        self.task_event_thread = QThread(self)
-        self.task_event_worker = TaskEventStreamWorker(
-            consumer_id=self.consumer_id,
-            last_seq=last_seq,
-        )
-        self.task_event_worker.moveToThread(self.task_event_thread)
-
-        self.task_event_thread.started.connect(self.task_event_worker.run)
-        self.task_event_worker.batch_received.connect(self._handle_task_event_batch)
-        self.task_event_worker.failed.connect(self._handle_task_event_stream_failed)
-        self.task_event_worker.finished.connect(self.task_event_thread.quit)
-        self.task_event_worker.finished.connect(self.task_event_worker.deleteLater)
-        self.task_event_thread.finished.connect(self.task_event_thread.deleteLater)
-        self.task_event_thread.finished.connect(self._clear_task_event_stream_thread)
-
         self.stream_status_label.setText("이벤트 스트림 연결 중")
-        self.task_event_thread.start()
+        self.reconnect_stream_btn.setEnabled(True)
+        self.task_event_thread, self.task_event_worker = start_worker_thread(
+            self,
+            worker=TaskEventStreamWorker(
+                consumer_id=self.consumer_id,
+                last_seq=last_seq,
+            ),
+            clear_handler=self._clear_task_event_stream_thread,
+            worker_signal_connections={
+                "batch_received": self._handle_task_event_batch,
+                "failed": self._handle_task_event_stream_failed,
+            },
+        )
 
     def _handle_task_event_batch(self, batch):
         if not isinstance(batch, dict):
             return
 
-        self.stream_status_label.setText("이벤트 스트림 수신 중")
+        try:
+            self._last_event_seq = int(batch.get("batch_end_seq") or self._last_event_seq)
+        except (TypeError, ValueError):
+            pass
+
+        self.stream_status_label.setText(
+            f"이벤트 스트림 수신 중 (seq {self._last_event_seq})"
+        )
         for event in batch.get("events") or []:
             if isinstance(event, dict):
                 self.apply_stream_event(event)
+        self._mark_last_update("event")
 
     def _handle_task_event_stream_failed(self, error):
         logger.debug("task monitor event stream stopped: %s", error)
         self.stream_status_label.setText(f"이벤트 스트림 중단: {error}")
+        self.reconnect_stream_btn.setEnabled(True)
 
     def _clear_task_event_stream_thread(self):
         self.task_event_thread = None
         self.task_event_worker = None
+
+    def _mark_last_update(self, source):
+        self.time_card.mark_updated(source)
 
     def _stop_task_event_stream_thread(self):
         worker = self.task_event_worker
@@ -1064,6 +1138,14 @@ class TaskMonitorPage(QWidget):
             self.fall_evidence_thread.wait(1000)
         self._clear_fall_evidence_thread()
 
+    def _stop_task_cancel_thread(self):
+        if self.task_cancel_thread is None:
+            return
+        if self.task_cancel_thread.isRunning():
+            self.task_cancel_thread.quit()
+            self.task_cancel_thread.wait(1000)
+        self._clear_task_cancel_thread()
+
     def reset_page(self):
         if self.task_table.rowCount() > 0:
             self._render_detail(self._tasks.get("task_id:" + str(self._selected_task_id)))
@@ -1073,6 +1155,7 @@ class TaskMonitorPage(QWidget):
         self._stop_task_event_stream_thread()
         self._stop_patrol_resume_thread()
         self._stop_fall_evidence_thread()
+        self._stop_task_cancel_thread()
 
     def closeEvent(self, event):
         self.shutdown()
@@ -1083,6 +1166,7 @@ __all__ = [
     "FallEvidenceImageDialog",
     "FallEvidenceImageLookupWorker",
     "PatrolResumeDialog",
+    "TaskCancelWorker",
     "TaskMonitorPage",
     "TaskMonitorSnapshotLoadWorker",
 ]

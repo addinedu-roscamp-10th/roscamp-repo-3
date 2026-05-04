@@ -21,11 +21,12 @@ class IdempotencyRepository:
         requester_id,
         idempotency_key,
         request_hash,
+        requester_type="CAREGIVER",
         scope="DELIVERY_CREATE_TASK",
     ):
         cur.execute(
             load_sql("idempotency/find_task_create_response.sql"),
-            (scope, requester_id, idempotency_key),
+            (scope, requester_type, requester_id, idempotency_key),
         )
         row = cur.fetchone()
         return self._response_from_row(row, request_hash)
@@ -37,11 +38,12 @@ class IdempotencyRepository:
         requester_id,
         idempotency_key,
         request_hash,
+        requester_type="CAREGIVER",
         scope="DELIVERY_CREATE_TASK",
     ):
         await cur.execute(
             load_sql("idempotency/find_task_create_response.sql"),
-            (scope, requester_id, idempotency_key),
+            (scope, requester_type, requester_id, idempotency_key),
         )
         row = await cur.fetchone()
         return self._response_from_row(row, request_hash)
@@ -55,12 +57,14 @@ class IdempotencyRepository:
         request_hash,
         response,
         task_id,
+        requester_type="CAREGIVER",
         scope="DELIVERY_CREATE_TASK",
     ):
         cur.execute(
             load_sql("idempotency/insert_task_create_record.sql"),
             (
                 scope,
+                requester_type,
                 requester_id,
                 idempotency_key,
                 request_hash,
@@ -78,12 +82,14 @@ class IdempotencyRepository:
         request_hash,
         response,
         task_id,
+        requester_type="CAREGIVER",
         scope="DELIVERY_CREATE_TASK",
     ):
         await cur.execute(
             load_sql("idempotency/insert_task_create_record.sql"),
             (
                 scope,
+                requester_type,
                 requester_id,
                 idempotency_key,
                 request_hash,

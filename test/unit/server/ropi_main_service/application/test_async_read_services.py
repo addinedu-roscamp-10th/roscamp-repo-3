@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.caregiver import CaregiverService
@@ -24,19 +25,25 @@ class FakeAsyncCaregiverRepository:
     async def async_get_dashboard_summary(self):
         return {
             "available_robot_count": 2,
+            "total_robot_count": 5,
             "waiting_job_count": 3,
             "running_job_count": 1,
+            "warning_error_count": 4,
         }
 
     async def async_get_robot_board(self):
         return [
             {
                 "robot_id": "pinky2",
+                "robot_type_name": "MOBILE",
                 "robot_status": "IDLE",
                 "current_location": "x=1.0, y=2.0",
                 "battery_percent": 90,
+                "current_task_id": 101,
                 "current_task_phase": None,
                 "current_task_status": None,
+                "last_seen_at": "2026-05-03T12:00:00",
+                "last_seen_age_sec": 5,
             }
         ]
 
@@ -66,6 +73,24 @@ class FakeAsyncCaregiverRepository:
 
 
 class FakeAsyncPatientRepository:
+    async def async_list_member_candidates(self, name="", room_no="", limit=10):
+        return [
+            {
+                "member_id": 1,
+                "member_name": name or "김환자",
+                "room_no": room_no or "301",
+                "admission_date": "2026-04-01",
+            }
+        ]
+
+    async def async_find_member_by_id(self, member_id):
+        return {
+            "member_id": int(member_id),
+            "member_name": "김환자",
+            "room_no": "301",
+            "admission_date": "2026-04-01",
+        }
+
     async def async_find_member_by_name_and_room(self, name, room_no):
         return {
             "member_id": 1,
@@ -90,11 +115,51 @@ class FakeAsyncVisitorInfoRepository:
 
 
 class FakeAsyncInventoryRepository:
+    def __init__(self):
+        self.rows = [
+            {
+                "item_id": "1",
+                "item_type": "생활용품",
+                "item_name": "기저귀",
+                "quantity": 0,
+                "updated_at": "2026-05-03T10:00:00",
+            },
+            {
+                "item_id": "2",
+                "item_type": "생활용품",
+                "item_name": "물티슈",
+                "quantity": 8,
+                "updated_at": "2026-05-03T11:00:00",
+            },
+            {
+                "item_id": "3",
+                "item_type": "식료품",
+                "item_name": "두유",
+                "quantity": 25,
+                "updated_at": "2026-05-03T09:00:00",
+            },
+        ]
+
+    def get_all_products(self):
+        return list(self.rows)
+
+    def add_quantity(self, item_id, quantity):
+        self.added = (item_id, quantity)
+        return True
+
+    def set_quantity(self, item_id, quantity):
+        self.set = (item_id, quantity)
+        return True
+
     async def async_get_all_products(self):
-        return [{"item_id": "1", "item_name": "물티슈"}]
+        return list(self.rows)
 
     async def async_add_quantity(self, item_id, quantity):
         self.added = (item_id, quantity)
+        return True
+
+    async def async_set_quantity(self, item_id, quantity):
+        self.set = (item_id, quantity)
         return True
 
 
@@ -108,8 +173,16 @@ class FakeAsyncDeliveryRequestRepository:
 
 
 class FakeAsyncStaffCallRepository:
-    async def async_create_staff_call(self, call_type, detail, member_id=None):
-        return True, "직원 호출 요청이 접수되었습니다."
+    async def async_submit_staff_call(self, **kwargs):
+        self.submitted = kwargs
+        return {
+            "result_code": "ACCEPTED",
+            "result_message": "직원이 곧 도착합니다.",
+            "reason_code": None,
+            "call_id": "member_event_9102",
+            "linked_visitor_id": None,
+            "linked_member_id": kwargs.get("member_id"),
+        }
 
 
 class FakeAsyncVisitGuideRepository:
@@ -156,13 +229,22 @@ def test_caregiver_service_async_methods_keep_response_shape():
 
     assert result["summary"] == {
         "available_robot_count": 2,
+        "total_robot_count": 5,
         "waiting_job_count": 3,
         "running_job_count": 1,
+        "warning_error_count": 4,
     }
     assert result["robots"][0]["robot_name"] == "pinky2"
+    assert result["robots"][0]["robot_id"] == "pinky2"
+    assert result["robots"][0]["robot_type"] == "MOBILE"
+    assert "robot_role" not in result["robots"][0]
+    assert result["robots"][0]["connection_status"] == "ONLINE"
+    assert result["robots"][0]["runtime_state"] == "IDLE"
+    assert result["robots"][0]["current_task_id"] == 101
+    assert result["robots"][0]["last_seen_at"] == "2026-05-03T12:00:00"
     assert result["robots"][0]["chip_type"] == "green"
     assert result["timeline"] == [["12:00:00", "1", "DELIVERY_TASK_ACCEPTED", "accepted"]]
-    assert result["flow"]["READY"] == [
+    assert result["flow"]["WAITING"] == [
         {
             "event_id": 1,
             "task_id": 101,
@@ -177,7 +259,207 @@ def test_caregiver_service_async_methods_keep_response_shape():
     ]
 
 
-def test_caregiver_flow_board_keeps_cancel_requested_in_running_lane():
+def test_caregiver_service_robot_status_bundle_is_robot_centered():
+    rows = [
+        {
+            "robot_id": "pinky2",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "모바일팀",
+            "robot_status": "RUNNING",
+            "current_location": "x=1.0, y=2.0",
+            "battery_percent": 87.5,
+            "current_task_id": 101,
+            "current_task_phase": "DELIVERY_DESTINATION",
+            "current_task_status": "RUNNING",
+            "last_seen_at": "2026-05-03T12:00:00",
+            "last_seen_age_sec": 5,
+            "fault_code": None,
+        },
+        {
+            "robot_id": "jetcobot1",
+            "robot_type_name": "JetCobot",
+            "robot_manager_name": "운반팀",
+            "robot_status": "ERROR",
+            "current_location": None,
+            "battery_percent": None,
+            "current_task_id": None,
+            "current_task_phase": None,
+            "current_task_status": None,
+            "last_seen_at": "2026-05-03T11:59:00",
+            "last_seen_age_sec": 5,
+            "fault_code": "ARM_FAULT",
+        },
+        {
+            "robot_id": "pinky3",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "모바일팀",
+            "robot_status": "IDLE",
+            "current_location": None,
+            "battery_percent": 55,
+            "current_task_id": None,
+            "current_task_phase": None,
+            "current_task_status": None,
+            "last_seen_at": None,
+            "fault_code": None,
+        },
+    ]
+
+    robots = CaregiverService._format_robot_board_data(rows)
+    bundle = CaregiverService._format_robot_status_bundle(robots)
+
+    assert bundle["summary"] == {
+        "total_robot_count": 3,
+        "online_robot_count": 1,
+        "offline_robot_count": 1,
+        "caution_robot_count": 1,
+    }
+    assert bundle["robots"][0]["robot_id"] == "pinky2"
+    assert bundle["robots"][0]["display_name"] == "Pinky Pro"
+    assert bundle["robots"][0]["robot_type"] == "MOBILE"
+    assert "scenario_role" not in bundle["robots"][0]
+    assert bundle["robots"][0]["manager_group"] == "모바일팀"
+    assert bundle["robots"][0]["capabilities"] == ["GUIDE", "DELIVERY", "PATROL"]
+    assert bundle["robots"][0]["connection_status"] == "ONLINE"
+    assert bundle["robots"][0]["current_phase"] == "DELIVERY_DESTINATION"
+    assert bundle["robots"][1]["station_roles"] == [
+        {"task_type": "DELIVERY", "station_role": "PICKUP"}
+    ]
+    assert bundle["robots"][1]["connection_status"] == "DEGRADED"
+    assert bundle["robots"][2]["connection_status"] == "OFFLINE"
+    assert bundle["delivery_composition"] == [
+        {"label": "픽업 로봇팔", "value": "jetcobot1"},
+        {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
+    ]
+
+
+def test_caregiver_service_marks_stale_runtime_offline_and_hides_ip_location():
+    rows = [
+        {
+            "robot_id": "pinky2",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "운반팀",
+            "robot_status": "IDLE",
+            "current_location": "좌표 x=1.2, y=0.8",
+            "battery_percent": 87.5,
+            "current_task_id": None,
+            "current_task_phase": None,
+            "current_task_status": None,
+            "last_seen_at": "2026-05-03T12:00:00",
+            "last_seen_age_sec": 3600,
+            "fault_code": None,
+        },
+        {
+            "robot_id": "pinky3",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "모바일팀",
+            "robot_status": "IDLE",
+            "current_location": "192.168.0.13",
+            "battery_percent": 80,
+            "current_task_id": None,
+            "current_task_phase": None,
+            "current_task_status": None,
+            "last_seen_at": "2026-05-03T12:00:00",
+            "last_seen_age_sec": 5,
+            "fault_code": None,
+        },
+    ]
+
+    robots = CaregiverService._format_robot_board_data(rows)
+
+    assert robots[0]["connection_status"] == "OFFLINE"
+    assert robots[0]["chip_type"] == "red"
+    assert robots[0]["current_location"] == "-"
+    assert robots[0]["zone"] == "-"
+    assert robots[0]["battery"] == "-"
+    assert robots[0]["battery_percent"] is None
+    assert robots[1]["connection_status"] == "ONLINE"
+    assert robots[1]["current_location"] == "-"
+
+
+def test_caregiver_service_flow_board_uses_dashboard_status_buckets():
+    rows = [
+        {"task_id": 1, "task_status": "WAITING_DISPATCH", "description": "waiting"},
+        {"task_id": 2, "task_status": "READY", "description": "ready"},
+        {"task_id": 3, "task_status": "ASSIGNED", "description": "assigned"},
+        {"task_id": 4, "task_status": "RUNNING", "description": "running"},
+        {"task_id": 5, "task_status": "CANCEL_REQUESTED", "description": "canceling"},
+        {"task_id": 6, "task_status": "FAILED", "description": "failed"},
+    ]
+
+    flow = CaregiverService._format_flow_board_data(rows)
+
+    assert list(flow) == ["WAITING", "ASSIGNED", "IN_PROGRESS", "CANCELING", "DONE"]
+    assert [task["task_id"] for task in flow["WAITING"]] == [1, 2]
+    assert [task["task_id"] for task in flow["ASSIGNED"]] == [3]
+    assert [task["task_id"] for task in flow["IN_PROGRESS"]] == [4]
+    assert [task["task_id"] for task in flow["CANCELING"]] == [5]
+    assert [task["task_id"] for task in flow["DONE"]] == [6]
+
+
+def test_caregiver_service_alert_log_bundle_formats_operator_events():
+    rows = [
+        {
+            "event_id": 11,
+            "occurred_at": datetime(2026, 5, 3, 12, 0, 0),
+            "severity": "ERROR",
+            "source_component": "Control Service",
+            "task_id": 1001,
+            "robot_id": "pinky2",
+            "event_type": "TASK_FAILED",
+            "result_code": "FAILED",
+            "reason_code": "ROS_ACTION_FAILED",
+            "message": "navigation failed",
+            "payload_json": '{"phase":"DELIVERY_DESTINATION"}',
+        },
+        {
+            "event_id": 12,
+            "occurred_at": "2026-05-03T12:01:00",
+            "severity": "WARNING",
+            "source_component": "AI Server",
+            "task_id": 1002,
+            "robot_id": "pinky3",
+            "event_type": "FALL_ALERT_CREATED",
+            "result_code": "ACCEPTED",
+            "reason_code": None,
+            "message": "fall alert candidate accepted",
+            "payload_json": '{"evidence_image_available":true}',
+        },
+    ]
+
+    bundle = CaregiverService._format_alert_log_bundle(rows)
+
+    assert bundle["summary"] == {
+        "total_event_count": 2,
+        "info_count": 0,
+        "warning_count": 1,
+        "error_count": 1,
+        "critical_count": 0,
+    }
+    assert bundle["events"][0] == {
+        "event_id": 11,
+        "occurred_at": "2026-05-03T12:00:00",
+        "severity": "ERROR",
+        "source_component": "Control Service",
+        "task_id": 1001,
+        "robot_id": "pinky2",
+        "event_type": "TASK_FAILED",
+        "result_code": "FAILED",
+        "reason_code": "ROS_ACTION_FAILED",
+        "message": "navigation failed",
+        "payload": {"phase": "DELIVERY_DESTINATION"},
+    }
+
+
+def test_caregiver_service_alert_log_period_and_limit_normalization():
+    from server.ropi_main_service.application.formatting import bounded_int
+
+    assert CaregiverService._alert_log_period_start("ALL") is None
+    assert bounded_int(0, default=100, minimum=1, maximum=200) == 1
+    assert bounded_int(500, default=100, minimum=1, maximum=200) == 200
+    assert bounded_int("50", default=100, minimum=1, maximum=200) == 50
+
+
+def test_caregiver_flow_board_keeps_cancel_requested_in_canceling_lane():
     rows = [
         {
             "event_id": 2,
@@ -192,9 +474,9 @@ def test_caregiver_flow_board_keeps_cancel_requested_in_running_lane():
 
     flow = CaregiverService._format_flow_board_data(rows)
 
-    assert flow["RUNNING"][0]["task_id"] == 102
-    assert flow["RUNNING"][0]["task_status"] == "CANCEL_REQUESTED"
-    assert flow["RUNNING"][0]["cancellable"] is False
+    assert flow["CANCELING"][0]["task_id"] == 102
+    assert flow["CANCELING"][0]["task_status"] == "CANCEL_REQUESTED"
+    assert flow["CANCELING"][0]["cancellable"] is False
     assert flow["DONE"] == []
 
 
@@ -212,6 +494,31 @@ def test_patient_service_async_search_keeps_response_shape():
     assert result["prescription_paths"] == ["/tmp/prescription.png"]
 
 
+def test_patient_service_async_candidate_search_allows_partial_input():
+    service = PatientService(repository=FakeAsyncPatientRepository())
+
+    candidates = asyncio.run(service.async_search_patient_candidates("김", ""))
+
+    assert candidates == [
+        {
+            "member_id": 1,
+            "name": "김",
+            "room_no": "301",
+            "admission_date": "2026-04-01",
+        }
+    ]
+
+
+def test_patient_service_async_get_patient_info_uses_member_id():
+    service = PatientService(repository=FakeAsyncPatientRepository())
+
+    result = asyncio.run(service.async_get_patient_info(1))
+
+    assert result["member_id"] == 1
+    assert result["name"] == "김환자"
+    assert result["room_no"] == "301"
+
+
 def test_visitor_info_service_async_get_patient_visit_info():
     service = VisitorInfoService(repository=FakeAsyncVisitorInfoRepository())
 
@@ -225,7 +532,54 @@ def test_inventory_service_async_get_inventory_rows():
 
     rows = asyncio.run(service.async_get_inventory_rows())
 
-    assert rows == [{"item_id": "1", "item_name": "물티슈"}]
+    assert rows[0]["item_id"] == "1"
+    assert rows[0]["item_name"] == "기저귀"
+
+
+def test_inventory_service_get_inventory_bundle_normalizes_phase1_item_summary():
+    service = InventoryService(repository=FakeAsyncInventoryRepository())
+
+    bundle = service.get_inventory_bundle()
+
+    assert bundle["summary"] == {
+        "total_item_count": 3,
+        "total_quantity": 33,
+        "low_stock_item_count": 2,
+        "empty_item_count": 1,
+        "low_stock_threshold": 10,
+        "last_updated_at": "2026-05-03T11:00:00",
+    }
+    assert bundle["items"][0] == {
+        "item_id": "1",
+        "item_type": "생활용품",
+        "item_name": "기저귀",
+        "quantity": 0,
+        "updated_at": "2026-05-03T10:00:00",
+    }
+    assert [item["item_id"] for item in bundle["low_stock_items"]] == ["1", "2"]
+
+
+def test_inventory_service_item_id_quantity_mutations_return_rpc_shape():
+    repository = FakeAsyncInventoryRepository()
+    service = InventoryService(repository=repository)
+
+    add_result = service.add_item_quantity("2", 4)
+    set_result = service.set_item_quantity("2", 12)
+
+    assert add_result == {
+        "result_code": "UPDATED",
+        "result_message": "재고가 추가되었습니다.",
+        "item_id": "2",
+        "quantity_delta": 4,
+    }
+    assert set_result == {
+        "result_code": "UPDATED",
+        "result_message": "재고 수량이 수정되었습니다.",
+        "item_id": "2",
+        "quantity": 12,
+    }
+    assert repository.added == ("2", 4)
+    assert repository.set == ("2", 12)
 
 
 def test_inventory_service_async_add_inventory():
@@ -235,7 +589,7 @@ def test_inventory_service_async_add_inventory():
     result = asyncio.run(service.async_add_inventory("물티슈", 2))
 
     assert result == (True, "재고가 추가되었습니다.")
-    assert repository.added == ("1", 2)
+    assert repository.added == ("2", 2)
 
 
 def test_delivery_request_service_async_product_list_and_submit_request():
@@ -260,11 +614,22 @@ def test_delivery_request_service_async_product_list_and_submit_request():
 
 
 def test_staff_call_service_async_submit_staff_call():
-    service = StaffCallService(repository=FakeAsyncStaffCallRepository())
+    repository = FakeAsyncStaffCallRepository()
+    service = StaffCallService(repository=repository)
 
-    result = asyncio.run(service.async_submit_staff_call("긴급", "도움 필요", member_id="1"))
+    result = asyncio.run(
+        service.async_submit_staff_call(
+            "긴급",
+            "도움 필요",
+            member_id="1",
+            idempotency_key="idem_staff_001",
+        )
+    )
 
-    assert result == (True, "직원 호출 요청이 접수되었습니다.")
+    assert result["result_code"] == "ACCEPTED"
+    assert result["call_id"] == "member_event_9102"
+    assert repository.submitted["description"] == "도움 필요"
+    assert repository.submitted["member_id"] == 1
 
 
 def test_visit_guide_service_async_search_and_start():

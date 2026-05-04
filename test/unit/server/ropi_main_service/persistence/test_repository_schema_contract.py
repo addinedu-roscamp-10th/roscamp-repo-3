@@ -55,6 +55,7 @@ def test_inventory_repository_uses_item_schema():
             _source("inventory_repository.py"),
             _sql_source("inventory/list_items.sql"),
             _sql_source("inventory/add_quantity.sql"),
+            _sql_source("inventory/set_quantity.sql"),
         )
     )
 
@@ -109,9 +110,23 @@ def test_caregiver_repository_uses_task_and_runtime_status_tables():
             "caregiver/robot_board.sql",
             "caregiver/timeline.sql",
             "caregiver/flow_board_events.sql",
+            "caregiver/alert_logs.sql",
         )
     )
 
     assert "FROM task" in source
     assert "robot_runtime_status" in source
     assert "task_event_log" in source
+    assert "robot_manager_name" in source
+    assert "robot_capability" not in source
+    assert "robot_station_assignment" not in source
+    assert "capability_codes" not in source
+    assert "station_assignments" not in source
+    assert "fault_code" in source
+    assert "last_seen_at" in source
+    assert "last_seen_age_sec" in source
+    assert "TIMESTAMPDIFF" in source
+    assert "r.ip_address" not in _sql_source("caregiver/robot_board.sql")
+    assert "CASE WHEN t.task_status IN" in _sql_source("caregiver/flow_board_events.sql")
+    assert "source_component" in source
+    assert "event_type" in source
