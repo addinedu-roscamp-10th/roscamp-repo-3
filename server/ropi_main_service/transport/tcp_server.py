@@ -63,6 +63,9 @@ from server.ropi_main_service.transport.tcp_protocol import (
 )
 from server.ropi_main_service.transport.rpc_dispatcher import ControlRpcDispatcher
 from server.ropi_main_service.transport.task_event_stream import TaskEventStreamHub
+from server.ropi_main_service.transport.task_update_event_publisher import (
+    TaskUpdateEventPublisher,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SERVER_ROOT = PROJECT_ROOT / "server"
@@ -284,10 +287,18 @@ class ControlServiceServer:
             workflow_task_manager=self.delivery_workflow_task_manager,
         )
         self.task_event_stream_hub = TaskEventStreamHub()
+        self.task_update_event_publisher = TaskUpdateEventPublisher(
+            publish_event=(
+                lambda event_type, payload: self.task_event_stream_hub.publish(
+                    event_type,
+                    payload,
+                )
+            ),
+        )
         self.rpc_dispatcher = ControlRpcDispatcher(
             service_registry=SERVICE_REGISTRY,
             async_service_builder=self._build_runtime_service,
-            task_update_publisher=self._publish_task_updated_from_response,
+            task_update_publisher=self.task_update_event_publisher.publish_from_response,
             task_monitor_watermark_provider=(
                 lambda: self.task_event_stream_hub.current_watermark()
             ),
@@ -484,7 +495,7 @@ class ControlServiceServer:
         except Exception as exc:
             return self._error_response(frame, "DELIVERY_CREATE_ERROR", str(exc))
 
-        await self._publish_task_updated_from_response(
+        await self.task_update_event_publisher.publish_from_response(
             result,
             source="DELIVERY_CREATE",
         )
@@ -512,7 +523,7 @@ class ControlServiceServer:
 
         if isinstance(result, dict):
             result = {**result, "cancellable": bool(result.get("cancellable", False))}
-        await self._publish_task_updated_from_response(
+        await self.task_update_event_publisher.publish_from_response(
             result,
             source="PATROL_CREATE",
             task_type="PATROL",
@@ -537,7 +548,7 @@ class ControlServiceServer:
         except Exception as exc:
             return self._error_response(frame, "PATROL_RESUME_ERROR", str(exc))
 
-        await self._publish_task_updated_from_response(
+        await self.task_update_event_publisher.publish_from_response(
             result,
             source="PATROL_RESUME",
             task_type="PATROL",
@@ -562,7 +573,7 @@ class ControlServiceServer:
 
         if isinstance(result, dict):
             result = {**result, "cancellable": bool(result.get("cancellable", False))}
-        await self._publish_task_updated_from_response(
+        await self.task_update_event_publisher.publish_from_response(
             result,
             source="GUIDE_CREATE",
             task_type="GUIDE",
@@ -788,63 +799,6 @@ class ControlServiceServer:
             consumer_id=payload.get("consumer_id"),
             last_seq=payload.get("last_seq", 0),
         )
-
-    async def _publish_task_updated_from_response(self, response, *, source, task_type=None):
-        if not isinstance(response, dict):
-            return
-
-        task_id = response.get("task_id")
-        if task_id in (None, ""):
-            return
-
-        cancellable = response.get("cancellable")
-        resolved_task_type = task_type or response.get("task_type") or "DELIVERY"
-        if resolved_task_type in {"GUIDE", "PATROL"} and cancellable is None:
-            cancellable = False
-
-        payload = {
-            "source": source,
-            "task_id": task_id,
-            "task_type": resolved_task_type,
-            "task_status": response.get("task_status"),
-            "phase": response.get("phase") or response.get("task_status"),
-            "assigned_robot_id": response.get("assigned_robot_id"),
-            "latest_reason_code": response.get("reason_code"),
-            "result_code": response.get("result_code"),
-            "result_message": response.get("result_message"),
-            "cancel_requested": response.get("cancel_requested"),
-            "cancellable": cancellable,
-        }
-        if resolved_task_type == "GUIDE":
-            payload["guide_detail"] = self._build_guide_detail_from_response(response)
-
-        await self.task_event_stream_hub.publish(
-            "TASK_UPDATED",
-            payload,
-        )
-
-    @staticmethod
-    def _build_guide_detail_from_response(response):
-        guide_detail = response.get("guide_detail")
-        if isinstance(guide_detail, dict):
-            return dict(guide_detail)
-
-        return {
-            "guide_phase": response.get("guide_phase") or response.get("phase"),
-            "target_track_id": response.get("target_track_id"),
-            "visitor_id": response.get("visitor_id"),
-            "visitor_name": response.get("visitor_name"),
-            "relation_name": response.get("relation_name"),
-            "member_id": response.get("member_id"),
-            "resident_name": response.get("resident_name") or response.get("member_name"),
-            "room_no": response.get("room_no"),
-            "destination_id": response.get("destination_id")
-            or response.get("destination_goal_pose_id"),
-            "destination_map_id": response.get("destination_map_id"),
-            "destination_zone_id": response.get("destination_zone_id"),
-            "destination_zone_name": response.get("destination_zone_name"),
-            "destination_purpose": response.get("destination_purpose"),
-        }
 
     async def _build_response_frame(self, frame: TCPFrame):
         try:
