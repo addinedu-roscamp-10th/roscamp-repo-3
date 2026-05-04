@@ -6,6 +6,9 @@ from unittest.mock import patch
 import pytest
 
 from server.ropi_main_service.transport import tcp_server
+from server.ropi_main_service.application.caregiver_rpc_facade import (
+    CaregiverRpcFacade,
+)
 from server.ropi_main_service.application.coordinate_config import (
     CoordinateConfigService,
 )
@@ -245,6 +248,10 @@ def test_coordinate_config_rpc_service_is_registered():
     assert tcp_server.SERVICE_REGISTRY["coordinate_config"].__name__ == (
         "CoordinateConfigService"
     )
+
+
+def test_caregiver_rpc_service_is_registered_with_application_facade():
+    assert tcp_server.SERVICE_REGISTRY["caregiver"] is CaregiverRpcFacade
 
 
 def test_coordinate_config_bundle_rpc_smoke_routes_through_internal_rpc(
@@ -703,13 +710,13 @@ def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
             }
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        "server.ropi_main_service.application.caregiver_rpc_facade.CaregiverService",
         FakeCaregiverService,
     ), patch(
-        "server.ropi_main_service.transport.tcp_server.RosActionFeedbackService",
+        "server.ropi_main_service.application.caregiver_rpc_facade.RosActionFeedbackService",
         FakeActionFeedbackService,
     ):
-        bundle = tcp_server.CaregiverFacade().get_dashboard_bundle()
+        bundle = CaregiverRpcFacade().get_dashboard_bundle()
 
     task = bundle["flow_data"]["IN_PROGRESS"][0]
     assert task["feedback"]["feedback_type"] == "NAVIGATION_FEEDBACK"
@@ -726,10 +733,10 @@ def test_caregiver_facade_exposes_robot_status_bundle():
             }
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        "server.ropi_main_service.application.caregiver_rpc_facade.CaregiverService",
         FakeCaregiverService,
     ):
-        bundle = tcp_server.CaregiverFacade().get_robot_status_bundle()
+        bundle = CaregiverRpcFacade().get_robot_status_bundle()
 
     assert bundle == {
         "summary": {"total_robot_count": 1},
@@ -748,10 +755,10 @@ def test_caregiver_facade_exposes_alert_log_bundle():
             }
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        "server.ropi_main_service.application.caregiver_rpc_facade.CaregiverService",
         FakeCaregiverService,
     ):
-        bundle = tcp_server.CaregiverFacade().get_alert_log_bundle(
+        bundle = CaregiverRpcFacade().get_alert_log_bundle(
             period="LAST_24_HOURS",
             severity="ERROR",
         )
