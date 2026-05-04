@@ -1,0 +1,9 @@
+string task_id
+string target_track_id
+string tracking_status
+uint32 tracking_result_seq
+builtin_interfaces/Time frame_ts
+bool bbox_valid
+int32[4] bbox_xyxy
+uint32 image_width_px
+uint32 image_height_px

@@ -104,7 +104,7 @@ source /home/addinedu/dev/roscamp-repo-3/device/install/setup.bash
 ```bash
 source /opt/ros/jazzy/setup.bash
 source /home/addinedu/dev/roscamp-repo-3/device/install/setup.bash
-python3 -c "from ropi_interface.action import ExecutePatrolPath; from ropi_interface.srv import FallResponseControl; print('ropi_interface ok')"
+python3 -c "from ropi_interface.action import ExecutePatrolPath; from ropi_interface.msg import GuideTrackingUpdate; from ropi_interface.srv import FallResponseControl; print('ropi_interface ok')"
 ```
 
 ## 실행 순서
