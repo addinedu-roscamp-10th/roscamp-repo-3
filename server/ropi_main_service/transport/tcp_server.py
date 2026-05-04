@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import inspect
 import logging
 import os
 import socket
@@ -62,6 +61,7 @@ from server.ropi_main_service.transport.tcp_protocol import (
     encode_frame,
     read_frame_from_stream,
 )
+from server.ropi_main_service.transport.rpc_dispatcher import ControlRpcDispatcher
 from server.ropi_main_service.transport.task_event_stream import TaskEventStreamHub
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -284,6 +284,14 @@ class ControlServiceServer:
             workflow_task_manager=self.delivery_workflow_task_manager,
         )
         self.task_event_stream_hub = TaskEventStreamHub()
+        self.rpc_dispatcher = ControlRpcDispatcher(
+            service_registry=SERVICE_REGISTRY,
+            async_service_builder=self._build_runtime_service,
+            task_update_publisher=self._publish_task_updated_from_response,
+            task_monitor_watermark_provider=(
+                lambda: self.task_event_stream_hub.current_watermark()
+            ),
+        )
         self.fall_inference_stream_task = None
         self.guide_tracking_stream_task = None
 
@@ -624,130 +632,26 @@ class ControlServiceServer:
         return self._success_response(frame, result)
 
     async def _dispatch_rpc_async(self, frame: TCPFrame, payload: dict):
-        service_name = payload.get("service")
-        method_name = payload.get("method")
-        kwargs = payload.get("kwargs") or {}
-        task_monitor_handoff_seq = self._task_monitor_handoff_seq(
-            service_name,
-            method_name,
-        )
-
-        factory = SERVICE_REGISTRY.get(service_name)
-        if factory is None:
+        result = await self.rpc_dispatcher.async_dispatch(payload)
+        if not result.ok:
             return self._error_response(
                 frame,
-                "UNKNOWN_SERVICE",
-                f"지원하지 않는 서비스입니다: {service_name}",
+                result.error_code,
+                result.error_message,
             )
 
-        service = self._build_runtime_service(service_name, factory)
-        async_method = getattr(service, f"async_{method_name}", None)
-        method = async_method or getattr(service, method_name, None)
-        if method is None:
-            return self._error_response(
-                frame,
-                "UNKNOWN_METHOD",
-                f"지원하지 않는 메서드입니다: {service_name}.{method_name}",
-            )
-
-        try:
-            if inspect.iscoroutinefunction(method):
-                result = await method(**kwargs)
-            else:
-                result = await asyncio.to_thread(method, **kwargs)
-        except Exception as exc:
-            return self._error_response(frame, "RPC_ERROR", str(exc))
-
-        if service_name == "task_request" and method_name in {
-            "cancel_delivery_task",
-            "cancel_task",
-        }:
-            source = (
-                "DELIVERY_CANCEL"
-                if method_name == "cancel_delivery_task"
-                else "TASK_CANCEL"
-            )
-            await self._publish_task_updated_from_response(
-                result,
-                source=source,
-            )
-
-        if service_name == "visit_guide" and method_name in {
-            "begin_guide_session",
-            "send_guide_command",
-            "finish_guide_session",
-            "start_guide_driving",
-        }:
-            await self._publish_task_updated_from_response(
-                self._extract_task_update_response(result),
-                source="GUIDE_COMMAND",
-                task_type="GUIDE",
-            )
-
-        result = self._attach_task_monitor_handoff_seq(result, task_monitor_handoff_seq)
-
-        return self._success_response(frame, result)
+        return self._success_response(frame, result.payload)
 
     def _dispatch_rpc(self, frame: TCPFrame, payload: dict):
-        service_name = payload.get("service")
-        method_name = payload.get("method")
-        kwargs = payload.get("kwargs") or {}
-        task_monitor_handoff_seq = self._task_monitor_handoff_seq(
-            service_name,
-            method_name,
-        )
-
-        factory = SERVICE_REGISTRY.get(service_name)
-        if factory is None:
+        result = self.rpc_dispatcher.dispatch(payload)
+        if not result.ok:
             return self._error_response(
                 frame,
-                "UNKNOWN_SERVICE",
-                f"지원하지 않는 서비스입니다: {service_name}",
+                result.error_code,
+                result.error_message,
             )
 
-        service = factory()
-        if not hasattr(service, method_name):
-            return self._error_response(
-                frame,
-                "UNKNOWN_METHOD",
-                f"지원하지 않는 메서드입니다: {service_name}.{method_name}",
-            )
-
-        try:
-            result = getattr(service, method_name)(**kwargs)
-        except Exception as exc:
-            return self._error_response(frame, "RPC_ERROR", str(exc))
-
-        result = self._attach_task_monitor_handoff_seq(result, task_monitor_handoff_seq)
-
-        return self._success_response(frame, result)
-
-    def _task_monitor_handoff_seq(self, service_name, method_name):
-        if (
-            service_name == "task_monitor"
-            and method_name == "get_task_monitor_snapshot"
-        ):
-            return self.task_event_stream_hub.current_watermark()
-        return None
-
-    @staticmethod
-    def _attach_task_monitor_handoff_seq(result, handoff_seq):
-        if handoff_seq is None or not isinstance(result, dict):
-            return result
-        return {
-            **result,
-            "last_event_seq": handoff_seq,
-        }
-
-    @staticmethod
-    def _extract_task_update_response(result):
-        if isinstance(result, dict):
-            return result
-        if isinstance(result, (list, tuple)) and len(result) >= 3:
-            payload = result[2]
-            if isinstance(payload, dict):
-                return payload
-        return {}
+        return self._success_response(frame, result.payload)
 
     def _build_runtime_service(self, service_name, factory):
         if service_name == "visit_guide" and factory is VisitGuideService:
