@@ -20,6 +20,8 @@ class FakeAsyncCursor:
         if "FROM visitor" in self._last_query:
             return {
                 "visitor_id": 1,
+                "visitor_name": "김민수",
+                "relation_name": "아들",
                 "member_id": 7,
                 "member_name": "김영수",
                 "room_no": "301",
@@ -28,6 +30,9 @@ class FakeAsyncCursor:
             return {
                 "goal_pose_id": "delivery_room_301",
                 "map_id": "map_test11_0423",
+                "zone_id": "room_301",
+                "zone_name": "301호",
+                "purpose": "DESTINATION",
             }
         return None
 
@@ -52,6 +57,8 @@ class FakeSyncCursor:
         if "FROM visitor" in self._last_query:
             return {
                 "visitor_id": 1,
+                "visitor_name": "김민수",
+                "relation_name": "아들",
                 "member_id": 7,
                 "member_name": "김영수",
                 "room_no": "301",
@@ -60,6 +67,9 @@ class FakeSyncCursor:
             return {
                 "goal_pose_id": "delivery_room_301",
                 "map_id": "map_test11_0423",
+                "zone_id": "room_301",
+                "zone_name": "301호",
+                "purpose": "DESTINATION",
             }
         return None
 
@@ -185,9 +195,17 @@ def test_async_create_guide_task_writes_task_detail_history_and_event():
         "task_status": "WAITING_DISPATCH",
         "phase": "WAIT_GUIDE_START_CONFIRM",
         "assigned_robot_id": "pinky1",
+        "visitor_id": 1,
+        "visitor_name": "김민수",
+        "relation_name": "아들",
+        "member_id": 7,
         "resident_name": "김영수",
         "room_no": "301",
         "destination_id": "delivery_room_301",
+        "destination_map_id": "map_test11_0423",
+        "destination_zone_id": "room_301",
+        "destination_zone_name": "301호",
+        "destination_purpose": "DESTINATION",
     }
     assert idempotency_repository.find_args["scope"] == GUIDE_CREATE_SCOPE
     assert idempotency_repository.find_args["requester_type"] == "VISITOR"
@@ -207,6 +225,8 @@ def test_async_create_guide_task_rejects_missing_destination_goal_pose():
             if "FROM visitor" in self._last_query:
                 return {
                     "visitor_id": 1,
+                    "visitor_name": "김민수",
+                    "relation_name": "아들",
                     "member_id": 7,
                     "member_name": "김영수",
                     "room_no": "306",
