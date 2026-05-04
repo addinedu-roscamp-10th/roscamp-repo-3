@@ -1752,12 +1752,17 @@ class KioskRobotGuidanceProgressPage(QWidget):
             **(self.current_session or {}),
             "task_status": task_status or (self.current_session or {}).get("task_status"),
             "phase": phase or (self.current_session or {}).get("phase"),
+            "task_outcome": (payload or {}).get("task_outcome"),
+            "reason_code": (payload or {}).get("reason_code"),
+            "latest_reason_code": (payload or {}).get("latest_reason_code"),
+            "result_message": (payload or {}).get("result_message"),
             "assigned_robot_id": (
                 (payload or {}).get("assigned_robot_id")
                 or (self.current_session or {}).get("assigned_robot_id")
             ),
         }
         self._update_guide_progress_display(phase, task_status)
+        self._apply_latest_result_warning()
         if self._is_terminal_task_status(task_status):
             self._set_status_polling_enabled(False)
         return True
@@ -1797,15 +1802,20 @@ class KioskRobotGuidanceProgressPage(QWidget):
             or ""
         ).strip()
         tracking_seq = (payload or {}).get("tracking_result_seq")
+        warning_message = self._latest_result_warning_message()
 
         if ok and tracking_status:
             if tracking_status == "TRACKING":
                 if self._current_session_phase() == "GUIDANCE_RUNNING":
                     self.robot_state_chip.setText("안내 중")
-                    self.distance_label.setText("로봇 안내가 진행 중입니다.")
+                    if not warning_message:
+                        self.distance_label.setText("로봇 안내가 진행 중입니다.")
                 else:
                     self.robot_state_chip.setText("대상 확인 완료")
-                    self.distance_label.setText("안내 대상을 확인했습니다. 주행을 시작할 수 있습니다.")
+                    if not warning_message:
+                        self.distance_label.setText(
+                            "안내 대상을 확인했습니다. 주행을 시작할 수 있습니다."
+                        )
                 if target_track_id:
                     self.detected_target_track_id = target_track_id
                     self.start_driving_button.setEnabled(
@@ -1813,12 +1823,15 @@ class KioskRobotGuidanceProgressPage(QWidget):
                     )
             else:
                 self.robot_state_chip.setText(tracking_status)
-                self.distance_label.setText(f"현재 상태: {tracking_status}")
+                if not warning_message:
+                    self.distance_label.setText(f"현재 상태: {tracking_status}")
 
         if tracking_seq is not None and self.selected_patient:
             self.request_id_label.setText(
                 f"안내 대상: {self.selected_patient.get('name', '-')} / 추적 순번: {tracking_seq}"
             )
+        if warning_message:
+            self.distance_label.setText(warning_message)
         return bool(tracking_status)
 
     def start_guidance_driving(self):
@@ -1845,6 +1858,15 @@ class KioskRobotGuidanceProgressPage(QWidget):
             return
 
         if not success:
+            failure_response = response or {}
+            self.current_session = {
+                **(self.current_session or {}),
+                "command_response": failure_response,
+                "task_outcome": failure_response.get("result_code") or "REJECTED",
+                "reason_code": failure_response.get("reason_code"),
+                "latest_reason_code": failure_response.get("reason_code"),
+                "result_message": failure_response.get("result_message") or message,
+            }
             self.distance_label.setText(message or "안내 주행 시작이 거부되었습니다.")
             return
 
@@ -1852,6 +1874,10 @@ class KioskRobotGuidanceProgressPage(QWidget):
             **(self.current_session or {}),
             "target_track_id": target_track_id,
             "command_response": response or {},
+            "task_outcome": None,
+            "reason_code": None,
+            "latest_reason_code": None,
+            "result_message": None,
         }
         self.start_driving_button.setEnabled(False)
         self._apply_session_status()
@@ -1878,6 +1904,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         self._update_guide_progress_display(phase, task_status)
         self._apply_command_warning()
+        self._apply_latest_result_warning()
 
         if self.selected_patient:
             name = str(self.selected_patient.get("name", "-")).strip() or "-"
@@ -1898,6 +1925,65 @@ class KioskRobotGuidanceProgressPage(QWidget):
             message or "로봇 호출 명령을 보낼 수 없습니다. 직원에게 문의해 주세요."
         )
         self.start_driving_button.setEnabled(False)
+
+    def _apply_latest_result_warning(self):
+        message = self._latest_result_warning_message()
+        if not message:
+            return False
+        self.distance_label.setText(message)
+        return True
+
+    def _latest_result_warning_message(self):
+        session = self.current_session or {}
+        command_response = session.get("command_response") or {}
+        phase = self._current_session_phase()
+        task_status = str(session.get("task_status") or "").strip().upper()
+        if self._is_terminal_task_status(task_status) or phase == "GUIDANCE_RUNNING":
+            return ""
+        if phase and phase not in {
+            "WAIT_GUIDE_START_CONFIRM",
+            "WAIT_TARGET_TRACKING",
+            "WAIT_REIDENTIFY",
+        }:
+            return ""
+
+        outcome = str(
+            session.get("task_outcome")
+            or command_response.get("result_code")
+            or ""
+        ).strip().upper()
+        reason_code = str(
+            session.get("latest_reason_code")
+            or session.get("reason_code")
+            or command_response.get("reason_code")
+            or ""
+        ).strip().upper()
+        if outcome not in {"REJECTED", "FAILED", "INVALID_REQUEST", "ERROR"} and not reason_code:
+            return ""
+
+        message = str(
+            session.get("result_message")
+            or command_response.get("result_message")
+            or ""
+        ).strip()
+        if message:
+            return message
+
+        return self._guide_warning_message_for_reason(reason_code)
+
+    @staticmethod
+    def _guide_warning_message_for_reason(reason_code):
+        messages = {
+            "GUIDE_RUNTIME_NOT_READY": "안내 ROS 런타임이 준비되지 않았습니다.",
+            "GUIDE_COMMAND_TRANSPORT_ERROR": (
+                "로봇 안내 명령을 보낼 수 없습니다. 직원에게 문의해 주세요."
+            ),
+            "GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR": (
+                "안내 목적지 이동을 시작할 수 없습니다. 직원에게 문의해 주세요."
+            ),
+            "NAV_CONTEXT_NOT_READY": "안내 이동 준비가 아직 완료되지 않았습니다.",
+        }
+        return messages.get(reason_code, "안내 주행 시작이 거부되었습니다.")
 
     def _update_guide_progress_display(self, phase, task_status):
         self.robot_state_chip.setText(self._guide_status_label(phase, task_status))
