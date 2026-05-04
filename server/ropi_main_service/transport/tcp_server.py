@@ -23,8 +23,9 @@ from server.ropi_main_service.application.guide_tracking_runtime import (
 from server.ropi_main_service.application.fall_evidence_image import (
     FallEvidenceImageService,
 )
-from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
-from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
+from server.ropi_main_service.application.guide_navigation_runtime import (
+    GuideNavigationRuntimeStarter,
+)
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
@@ -72,7 +73,6 @@ load_dotenv(PROJECT_ROOT / ".env")
 CONTROL_SERVER_HOST = os.getenv("CONTROL_SERVER_HOST", "127.0.0.1")
 CONTROL_SERVER_PORT = int(os.getenv("CONTROL_SERVER_PORT", "5050"))
 AI_HEALTH_CONNECT_TIMEOUT_SEC = float(os.getenv("AI_HEALTH_CONNECT_TIMEOUT_SEC", "0.5"))
-GUIDE_RUNTIME_READINESS_TIMEOUT_SEC = 1.0
 logger = logging.getLogger(__name__)
 
 
@@ -280,6 +280,9 @@ class ControlServiceServer:
         self._server = None
         self.db_writer = get_default_background_db_writer()
         self.delivery_workflow_task_manager = get_default_workflow_task_manager()
+        self.guide_navigation_runtime_starter = GuideNavigationRuntimeStarter(
+            workflow_task_manager=self.delivery_workflow_task_manager,
+        )
         self.task_event_stream_hub = TaskEventStreamHub()
         self.fall_inference_stream_task = None
         self.guide_tracking_stream_task = None
@@ -749,142 +752,11 @@ class ControlServiceServer:
     def _build_runtime_service(self, service_name, factory):
         if service_name == "visit_guide" and factory is VisitGuideService:
             return VisitGuideService(
-                guide_navigation_starter=self._start_guide_navigation_background,
+                guide_navigation_starter=(
+                    self.guide_navigation_runtime_starter.start_destination_navigation
+                ),
             )
         return factory()
-
-    def _get_guide_runtime_readiness_status(self, *, pinky_id):
-        try:
-            return RosRuntimeReadinessService(
-                runtime_config=DeliveryRuntimeConfig(pinky_id=pinky_id),
-                arm_ids=[],
-                include_guide=True,
-                readiness_timeout_sec=GUIDE_RUNTIME_READINESS_TIMEOUT_SEC,
-            ).get_status()
-        except Exception as exc:
-            return {
-                "ready": False,
-                "checks": [],
-                "error": str(exc),
-            }
-
-    @staticmethod
-    def _guide_runtime_ready(runtime_status, *, pinky_id):
-        if not isinstance(runtime_status, dict):
-            return False
-
-        checks = runtime_status.get("checks")
-        if not isinstance(checks, list):
-            return False
-
-        required_endpoints = {
-            f"/ropi/control/{pinky_id}/navigate_to_goal",
-            f"/ropi/control/{pinky_id}/guide_command",
-        }
-        readiness_by_endpoint = {}
-        for check in checks:
-            if not isinstance(check, dict):
-                continue
-            endpoint = check.get("action_name") or check.get("service_name")
-            if endpoint in required_endpoints:
-                readiness_by_endpoint[endpoint] = check.get("ready") is True
-
-        return all(readiness_by_endpoint.get(endpoint) is True for endpoint in required_endpoints)
-
-    @staticmethod
-    def _build_guide_runtime_not_ready_response(*, task_id, pinky_id, runtime_status):
-        error = ""
-        if isinstance(runtime_status, dict):
-            error = str(runtime_status.get("error") or "").strip()
-        result_message = "안내 ROS 런타임이 준비되지 않았습니다."
-        if error:
-            result_message = f"{result_message} ({error})"
-
-        return {
-            "result_code": "REJECTED",
-            "result_message": result_message,
-            "reason_code": "GUIDE_RUNTIME_NOT_READY",
-            "navigation_started": False,
-            "task_id": task_id,
-            "pinky_id": pinky_id,
-            "nav_phase": "GUIDE_DESTINATION",
-            "runtime_status": runtime_status,
-        }
-
-    def _start_guide_navigation_background(
-        self,
-        *,
-        task_id,
-        pinky_id,
-        goal_pose,
-        timeout_sec,
-    ):
-        target_pinky_id = str(pinky_id or "").strip() or "pinky1"
-        runtime_status = self._get_guide_runtime_readiness_status(pinky_id=target_pinky_id)
-        if not self._guide_runtime_ready(runtime_status, pinky_id=target_pinky_id):
-            return self._build_guide_runtime_not_ready_response(
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                runtime_status=runtime_status,
-            )
-
-        loop = asyncio.get_running_loop()
-        navigation_service = GoalPoseNavigationService(
-            runtime_config=DeliveryRuntimeConfig(pinky_id=target_pinky_id),
-        )
-        background_task = self.delivery_workflow_task_manager.create_task(
-            navigation_service.async_navigate(
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                nav_phase="GUIDE_DESTINATION",
-                goal_pose=goal_pose,
-                timeout_sec=timeout_sec,
-            ),
-            name=f"guide_destination_navigation_{task_id}",
-            loop=loop,
-            cancel_on_shutdown=True,
-        )
-        background_task.add_done_callback(
-            lambda task: self._handle_guide_navigation_done(task, task_id=task_id)
-        )
-        return {
-            "result_code": "ACCEPTED",
-            "result_message": "안내 목적지 이동을 시작했습니다.",
-            "navigation_started": True,
-            "task_id": task_id,
-            "pinky_id": target_pinky_id,
-            "nav_phase": "GUIDE_DESTINATION",
-        }
-
-    @staticmethod
-    def _handle_guide_navigation_done(task, *, task_id):
-        try:
-            result = task.result()
-        except asyncio.CancelledError:
-            log_event(
-                logger,
-                logging.WARNING,
-                "guide_destination_navigation_cancelled",
-                task_id=task_id,
-                reason_code="GUIDE_NAVIGATION_TASK_CANCELLED",
-            )
-            return
-        except Exception as exc:
-            logger.exception(
-                "guide destination navigation failed",
-                extra={"task_id": task_id, "error": str(exc)},
-            )
-            return
-
-        log_event(
-            logger,
-            logging.INFO,
-            "guide_destination_navigation_finished",
-            task_id=task_id,
-            result_code=(result or {}).get("result_code"),
-            result_message=(result or {}).get("result_message"),
-            reason_code=(result or {}).get("reason_code"),
-        )
 
     async def start(self):
         self.db_writer.start()
