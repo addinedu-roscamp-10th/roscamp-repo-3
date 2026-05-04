@@ -62,6 +62,9 @@ from server.ropi_main_service.transport.tcp_protocol import (
     read_frame_from_stream,
 )
 from server.ropi_main_service.transport.rpc_dispatcher import ControlRpcDispatcher
+from server.ropi_main_service.transport.task_event_subscription_handler import (
+    TaskEventSubscriptionHandler,
+)
 from server.ropi_main_service.transport.task_event_stream import TaskEventStreamHub
 from server.ropi_main_service.transport.task_update_event_publisher import (
     TaskUpdateEventPublisher,
@@ -287,6 +290,9 @@ class ControlServiceServer:
             workflow_task_manager=self.delivery_workflow_task_manager,
         )
         self.task_event_stream_hub = TaskEventStreamHub()
+        self.task_event_subscription_handler = TaskEventSubscriptionHandler(
+            stream_hub=self.task_event_stream_hub,
+        )
         self.task_update_event_publisher = TaskUpdateEventPublisher(
             publish_event=(
                 lambda event_type, payload: self.task_event_stream_hub.publish(
@@ -771,20 +777,17 @@ class ControlServiceServer:
         frame: TCPFrame,
         writer: asyncio.StreamWriter,
     ) -> TCPFrame:
-        payload = frame.payload or {}
-        ack = await self.task_event_stream_hub.subscribe(
-            consumer_id=payload.get("consumer_id"),
-            last_seq=payload.get("last_seq", 0),
+        result = await self.task_event_subscription_handler.subscribe(
+            frame.payload or {},
             writer=writer,
-            replay=False,
         )
-        if ack.get("result_code") != "ACCEPTED":
+        if not result.accepted:
             return self._error_response(
                 frame,
-                "TASK_EVENT_SUBSCRIBE_ERROR",
-                ack.get("result_message") or "task event 구독 요청이 거부되었습니다.",
+                result.error_code,
+                result.error_message,
             )
-        return self._success_response(frame, ack)
+        return self._success_response(frame, result.payload)
 
     async def _replay_task_events_after_subscribe(
         self,
@@ -794,10 +797,9 @@ class ControlServiceServer:
         if response_frame.is_error:
             return
 
-        payload = frame.payload or {}
-        await self.task_event_stream_hub.replay(
-            consumer_id=payload.get("consumer_id"),
-            last_seq=payload.get("last_seq", 0),
+        await self.task_event_subscription_handler.replay_after_subscribe(
+            frame.payload or {},
+            subscribe_accepted=True,
         )
 
     async def _build_response_frame(self, frame: TCPFrame):
