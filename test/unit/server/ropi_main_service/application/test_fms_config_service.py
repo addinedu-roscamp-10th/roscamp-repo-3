@@ -60,8 +60,39 @@ class FakeFmsConfigRepository:
                 "updated_at": datetime(2026, 5, 4, 10, 4, 0),
             }
         ]
+        self.routes = [
+            {
+                "route_id": "route_corridor_01_02",
+                "map_id": "map_0504",
+                "route_name": "복도 1-2",
+                "route_scope": "COMMON",
+                "revision": 1,
+                "waypoint_sequence": [
+                    {
+                        "sequence_no": 1,
+                        "waypoint_id": "corridor_01",
+                        "yaw_policy": "AUTO_NEXT",
+                        "fixed_pose_yaw": None,
+                        "stop_required": True,
+                        "dwell_sec": None,
+                    },
+                    {
+                        "sequence_no": 2,
+                        "waypoint_id": "corridor_02",
+                        "yaw_policy": "FIXED",
+                        "fixed_pose_yaw": "0.0",
+                        "stop_required": False,
+                        "dwell_sec": "1.5",
+                    },
+                ],
+                "is_enabled": 1,
+                "created_at": datetime(2026, 5, 4, 10, 6, 0),
+                "updated_at": datetime(2026, 5, 4, 10, 7, 0),
+            }
+        ]
         self.upsert_result = None
         self.edge_upsert_result = None
+        self.route_upsert_result = None
 
     def get_active_map_profile(self):
         self.calls.append(("get_active_map_profile",))
@@ -86,6 +117,14 @@ class FakeFmsConfigRepository:
     async def async_get_edges(self, *, map_id, include_disabled=True):
         self.calls.append(("async_get_edges", map_id, include_disabled))
         return self.edges
+
+    def get_routes(self, *, map_id, include_disabled=True):
+        self.calls.append(("get_routes", map_id, include_disabled))
+        return self.routes
+
+    async def async_get_routes(self, *, map_id, include_disabled=True):
+        self.calls.append(("async_get_routes", map_id, include_disabled))
+        return self.routes
 
     def upsert_waypoint(self, *, map_id, **kwargs):
         self.calls.append(
@@ -181,6 +220,52 @@ class FakeFmsConfigRepository:
             },
         }
 
+    def upsert_route(self, *, map_id, **kwargs):
+        self.calls.append(
+            (
+                "upsert_route",
+                map_id,
+                kwargs["route_id"],
+                kwargs["expected_revision"],
+                kwargs["route_name"],
+                kwargs["route_scope"],
+                kwargs["waypoint_sequence"],
+                kwargs["is_enabled"],
+            )
+        )
+        return self.route_upsert_result or {
+            "status": "UPSERTED",
+            "route": {
+                **self.routes[0],
+                **kwargs,
+                "map_id": map_id,
+                "revision": 2 if kwargs["expected_revision"] else 1,
+                "created_at": datetime(2026, 5, 4, 10, 6, 0),
+                "updated_at": datetime(2026, 5, 4, 10, 8, 0),
+            },
+        }
+
+    async def async_upsert_route(self, *, map_id, **kwargs):
+        self.calls.append(
+            (
+                "async_upsert_route",
+                map_id,
+                kwargs["route_id"],
+                kwargs["expected_revision"],
+            )
+        )
+        return self.route_upsert_result or {
+            "status": "UPSERTED",
+            "route": {
+                **self.routes[0],
+                **kwargs,
+                "map_id": map_id,
+                "revision": 2 if kwargs["expected_revision"] else 1,
+                "created_at": datetime(2026, 5, 4, 10, 6, 0),
+                "updated_at": datetime(2026, 5, 4, 10, 8, 0),
+            },
+        }
+
 
 def _service(repository):
     return FmsConfigService(
@@ -248,12 +333,42 @@ def test_fms_graph_bundle_formats_active_waypoint_foundation():
             "updated_at": "2026-05-04T10:04:00",
         }
     ]
-    assert response["routes"] == []
+    assert response["routes"] == [
+        {
+            "route_id": "route_corridor_01_02",
+            "map_id": "map_0504",
+            "route_name": "복도 1-2",
+            "route_scope": "COMMON",
+            "revision": 1,
+            "waypoint_sequence": [
+                {
+                    "sequence_no": 1,
+                    "waypoint_id": "corridor_01",
+                    "yaw_policy": "AUTO_NEXT",
+                    "fixed_pose_yaw": None,
+                    "stop_required": True,
+                    "dwell_sec": None,
+                },
+                {
+                    "sequence_no": 2,
+                    "waypoint_id": "corridor_02",
+                    "yaw_policy": "FIXED",
+                    "fixed_pose_yaw": 0.0,
+                    "stop_required": False,
+                    "dwell_sec": 1.5,
+                },
+            ],
+            "is_enabled": True,
+            "created_at": "2026-05-04T10:06:00",
+            "updated_at": "2026-05-04T10:07:00",
+        }
+    ]
     assert response["reservations"] == []
     assert repository.calls == [
         ("get_active_map_profile",),
         ("get_waypoints", "map_0504", False),
         ("get_edges", "map_0504", False),
+        ("get_routes", "map_0504", False),
     ]
 
 
@@ -483,6 +598,188 @@ def test_fms_upsert_edge_async_uses_async_repository_method():
         ("async_get_active_map_profile",),
         ("async_get_waypoints", "map_0504", True),
         ("async_upsert_edge", "map_0504", "edge_corridor_01_02", None),
+    ]
+
+
+def test_fms_upsert_route_creates_or_updates_active_map_route():
+    repository = FakeFmsConfigRepository()
+
+    response = _service(repository).upsert_route(
+        route_id="route_corridor_01_02",
+        expected_revision=1,
+        route_name="복도 1-2",
+        route_scope="common",
+        waypoint_sequence=[
+            {"waypoint_id": "corridor_01", "yaw_policy": "AUTO_NEXT"},
+            {
+                "waypoint_id": "corridor_02",
+                "yaw_policy": "fixed",
+                "fixed_pose_yaw": "0.0",
+                "stop_required": False,
+                "dwell_sec": "1.5",
+            },
+        ],
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "OK"
+    assert response["reason_code"] is None
+    assert response["route"] == {
+        "route_id": "route_corridor_01_02",
+        "map_id": "map_0504",
+        "route_name": "복도 1-2",
+        "route_scope": "COMMON",
+        "revision": 2,
+        "waypoint_sequence": [
+            {
+                "sequence_no": 1,
+                "waypoint_id": "corridor_01",
+                "yaw_policy": "AUTO_NEXT",
+                "fixed_pose_yaw": None,
+                "stop_required": True,
+                "dwell_sec": None,
+            },
+            {
+                "sequence_no": 2,
+                "waypoint_id": "corridor_02",
+                "yaw_policy": "FIXED",
+                "fixed_pose_yaw": 0.0,
+                "stop_required": False,
+                "dwell_sec": 1.5,
+            },
+        ],
+        "is_enabled": True,
+        "created_at": "2026-05-04T10:06:00",
+        "updated_at": "2026-05-04T10:08:00",
+    }
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        ("get_waypoints", "map_0504", True),
+        ("get_edges", "map_0504", True),
+        (
+            "upsert_route",
+            "map_0504",
+            "route_corridor_01_02",
+            1,
+            "복도 1-2",
+            "COMMON",
+            [
+                {
+                    "sequence_no": 1,
+                    "waypoint_id": "corridor_01",
+                    "yaw_policy": "AUTO_NEXT",
+                    "fixed_pose_yaw": None,
+                    "stop_required": True,
+                    "dwell_sec": None,
+                },
+                {
+                    "sequence_no": 2,
+                    "waypoint_id": "corridor_02",
+                    "yaw_policy": "FIXED",
+                    "fixed_pose_yaw": 0.0,
+                    "stop_required": False,
+                    "dwell_sec": 1.5,
+                },
+            ],
+            True,
+        ),
+    ]
+
+
+def test_fms_upsert_route_reports_stale_conflict():
+    repository = FakeFmsConfigRepository()
+    repository.route_upsert_result = {
+        "status": "STALE",
+        "route": repository.routes[0],
+    }
+
+    response = _service(repository).upsert_route(
+        route_id="route_corridor_01_02",
+        expected_revision=0,
+        route_name="복도 1-2",
+        route_scope="COMMON",
+        waypoint_sequence=[
+            {"waypoint_id": "corridor_01"},
+            {"waypoint_id": "corridor_02"},
+        ],
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "CONFLICT"
+    assert response["reason_code"] == "ROUTE_STALE"
+    assert response["route"]["route_id"] == "route_corridor_01_02"
+
+
+def test_fms_upsert_route_rejects_missing_waypoint():
+    repository = FakeFmsConfigRepository()
+
+    response = _service(repository).upsert_route(
+        route_id="route_missing",
+        route_name="누락 경로",
+        route_scope="COMMON",
+        waypoint_sequence=[
+            {"waypoint_id": "corridor_01"},
+            {"waypoint_id": "missing_waypoint"},
+        ],
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "ROUTE_WAYPOINT_NOT_FOUND"
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        ("get_waypoints", "map_0504", True),
+    ]
+
+
+def test_fms_upsert_route_rejects_missing_enabled_edge_for_enabled_route():
+    repository = FakeFmsConfigRepository()
+    repository.edges = []
+
+    response = _service(repository).upsert_route(
+        route_id="route_disconnected",
+        route_name="끊긴 경로",
+        route_scope="COMMON",
+        waypoint_sequence=[
+            {"waypoint_id": "corridor_01"},
+            {"waypoint_id": "corridor_02"},
+        ],
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "ROUTE_EDGE_NOT_CONNECTED"
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        ("get_waypoints", "map_0504", True),
+        ("get_edges", "map_0504", True),
+    ]
+
+
+def test_fms_upsert_route_async_uses_async_repository_method():
+    repository = FakeFmsConfigRepository()
+
+    async def scenario():
+        return await _service(repository).async_upsert_route(
+            route_id="route_corridor_01_02",
+            expected_revision=1,
+            route_name="복도 1-2",
+            route_scope="COMMON",
+            waypoint_sequence=[
+                {"waypoint_id": "corridor_01"},
+                {"waypoint_id": "corridor_02"},
+            ],
+            is_enabled=True,
+        )
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "OK"
+    assert repository.calls == [
+        ("async_get_active_map_profile",),
+        ("async_get_waypoints", "map_0504", True),
+        ("async_get_edges", "map_0504", True),
+        ("async_upsert_route", "map_0504", "route_corridor_01_02", 1),
     ]
 
 

@@ -3,14 +3,17 @@ from datetime import datetime, timezone
 
 from server.ropi_main_service.application.fms_config_formatters import (
     format_fms_edge,
+    format_fms_route,
     format_fms_waypoint,
     format_map_profile,
     generated_at,
 )
 from server.ropi_main_service.application.fms_config_validators import (
     fms_edge_error,
+    fms_route_error,
     fms_waypoint_error,
     normalize_edge_input,
+    normalize_route_input,
     normalize_waypoint_input,
 )
 from server.ropi_main_service.application.formatting import bool_value
@@ -51,11 +54,20 @@ class FmsConfigService:
             if bool_value(include_edges)
             else []
         )
+        routes = (
+            self.repository.get_routes(
+                map_id=map_profile["map_id"],
+                include_disabled=include_disabled,
+            )
+            if bool_value(include_routes)
+            else []
+        )
 
         return self._ok_bundle_response(
             map_profile=map_profile,
             waypoints=waypoints,
             edges=edges,
+            routes=routes,
             include_edges=include_edges,
             include_routes=include_routes,
             include_reservations=include_reservations,
@@ -95,11 +107,22 @@ class FmsConfigService:
             if bool_value(include_edges)
             else []
         )
+        routes = (
+            await self._call_async_or_thread(
+                "async_get_routes",
+                "get_routes",
+                map_id=map_profile["map_id"],
+                include_disabled=include_disabled,
+            )
+            if bool_value(include_routes)
+            else []
+        )
 
         return self._ok_bundle_response(
             map_profile=map_profile,
             waypoints=waypoints,
             edges=edges,
+            routes=routes,
             include_edges=include_edges,
             include_routes=include_routes,
             include_reservations=include_reservations,
@@ -208,6 +231,62 @@ class FmsConfigService:
 
         return self._format_edge_upsert_result(result)
 
+    def upsert_route(
+        self,
+        *,
+        route_id,
+        route_name,
+        route_scope,
+        waypoint_sequence,
+        is_enabled,
+        expected_revision=None,
+    ):
+        active_map, error = self._resolve_active_map_for_route()
+        if error:
+            return error
+
+        normalized, error = normalize_route_input(
+            route_id=route_id,
+            expected_revision=expected_revision,
+            route_name=route_name,
+            route_scope=route_scope,
+            waypoint_sequence=waypoint_sequence,
+            is_enabled=is_enabled,
+        )
+        if error:
+            return self._with_generated_at(error)
+
+        _waypoints, error = self._get_route_waypoints(
+            map_id=active_map["map_id"],
+            waypoint_sequence=normalized["waypoint_sequence"],
+        )
+        if error:
+            return error
+
+        if normalized["is_enabled"]:
+            _edges, error = self._get_route_edges(
+                map_id=active_map["map_id"],
+                waypoint_sequence=normalized["waypoint_sequence"],
+            )
+            if error:
+                return error
+
+        try:
+            result = self.repository.upsert_route(
+                map_id=active_map["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return self._with_generated_at(
+                fms_route_error(
+                    result_code="UNAVAILABLE",
+                    reason_code="CONFIG_WRITE_FAILED",
+                    result_message="FMS route 저장 중 DB 쓰기에 실패했습니다.",
+                )
+            )
+
+        return self._format_route_upsert_result(result)
+
     async def async_upsert_waypoint(
         self,
         *,
@@ -315,6 +394,64 @@ class FmsConfigService:
 
         return self._format_edge_upsert_result(result)
 
+    async def async_upsert_route(
+        self,
+        *,
+        route_id,
+        route_name,
+        route_scope,
+        waypoint_sequence,
+        is_enabled,
+        expected_revision=None,
+    ):
+        active_map, error = await self._async_resolve_active_map_for_route()
+        if error:
+            return error
+
+        normalized, error = normalize_route_input(
+            route_id=route_id,
+            expected_revision=expected_revision,
+            route_name=route_name,
+            route_scope=route_scope,
+            waypoint_sequence=waypoint_sequence,
+            is_enabled=is_enabled,
+        )
+        if error:
+            return self._with_generated_at(error)
+
+        _waypoints, error = await self._async_get_route_waypoints(
+            map_id=active_map["map_id"],
+            waypoint_sequence=normalized["waypoint_sequence"],
+        )
+        if error:
+            return error
+
+        if normalized["is_enabled"]:
+            _edges, error = await self._async_get_route_edges(
+                map_id=active_map["map_id"],
+                waypoint_sequence=normalized["waypoint_sequence"],
+            )
+            if error:
+                return error
+
+        try:
+            result = await self._call_async_or_thread(
+                "async_upsert_route",
+                "upsert_route",
+                map_id=active_map["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return self._with_generated_at(
+                fms_route_error(
+                    result_code="UNAVAILABLE",
+                    reason_code="CONFIG_WRITE_FAILED",
+                    result_message="FMS route 저장 중 DB 쓰기에 실패했습니다.",
+                )
+            )
+
+        return self._format_route_upsert_result(result)
+
     def _resolve_active_map(self):
         active_map = self.repository.get_active_map_profile()
         if not active_map:
@@ -325,6 +462,12 @@ class FmsConfigService:
         active_map = self.repository.get_active_map_profile()
         if not active_map:
             return None, self._not_found_edge_response()
+        return format_map_profile(active_map), None
+
+    def _resolve_active_map_for_route(self):
+        active_map = self.repository.get_active_map_profile()
+        if not active_map:
+            return None, self._not_found_route_response()
         return format_map_profile(active_map), None
 
     async def _async_resolve_active_map(self):
@@ -343,6 +486,15 @@ class FmsConfigService:
         )
         if not active_map:
             return None, self._not_found_edge_response()
+        return format_map_profile(active_map), None
+
+    async def _async_resolve_active_map_for_route(self):
+        active_map = await self._call_async_or_thread(
+            "async_get_active_map_profile",
+            "get_active_map_profile",
+        )
+        if not active_map:
+            return None, self._not_found_route_response()
         return format_map_profile(active_map), None
 
     async def _call_async_or_thread(self, async_name, sync_name, **kwargs):
@@ -421,12 +573,131 @@ class FmsConfigService:
             )
         )
 
+    def _get_route_waypoints(self, *, map_id, waypoint_sequence):
+        try:
+            waypoints = self.repository.get_waypoints(
+                map_id=map_id,
+                include_disabled=True,
+            )
+        except Exception:
+            return None, self._with_generated_at(
+                fms_route_error(
+                    result_code="UNAVAILABLE",
+                    reason_code="CONFIG_READ_FAILED",
+                    result_message="FMS waypoint 조회에 실패했습니다.",
+                )
+            )
+        return waypoints, self._route_waypoint_error(waypoints, waypoint_sequence)
+
+    async def _async_get_route_waypoints(self, *, map_id, waypoint_sequence):
+        try:
+            waypoints = await self._call_async_or_thread(
+                "async_get_waypoints",
+                "get_waypoints",
+                map_id=map_id,
+                include_disabled=True,
+            )
+        except Exception:
+            return None, self._with_generated_at(
+                fms_route_error(
+                    result_code="UNAVAILABLE",
+                    reason_code="CONFIG_READ_FAILED",
+                    result_message="FMS waypoint 조회에 실패했습니다.",
+                )
+            )
+        return waypoints, self._route_waypoint_error(waypoints, waypoint_sequence)
+
+    def _get_route_edges(self, *, map_id, waypoint_sequence):
+        try:
+            edges = self.repository.get_edges(
+                map_id=map_id,
+                include_disabled=True,
+            )
+        except Exception:
+            return None, self._with_generated_at(
+                fms_route_error(
+                    result_code="UNAVAILABLE",
+                    reason_code="CONFIG_READ_FAILED",
+                    result_message="FMS edge 조회에 실패했습니다.",
+                )
+            )
+        return edges, self._route_edge_error(edges, waypoint_sequence)
+
+    async def _async_get_route_edges(self, *, map_id, waypoint_sequence):
+        try:
+            edges = await self._call_async_or_thread(
+                "async_get_edges",
+                "get_edges",
+                map_id=map_id,
+                include_disabled=True,
+            )
+        except Exception:
+            return None, self._with_generated_at(
+                fms_route_error(
+                    result_code="UNAVAILABLE",
+                    reason_code="CONFIG_READ_FAILED",
+                    result_message="FMS edge 조회에 실패했습니다.",
+                )
+            )
+        return edges, self._route_edge_error(edges, waypoint_sequence)
+
+    def _route_waypoint_error(self, waypoints, waypoint_sequence):
+        waypoint_ids = {str(row.get("waypoint_id")) for row in waypoints or []}
+        route_waypoint_ids = [
+            str(row.get("waypoint_id")) for row in waypoint_sequence or []
+        ]
+        if all(waypoint_id in waypoint_ids for waypoint_id in route_waypoint_ids):
+            return None
+        return self._with_generated_at(
+            fms_route_error(
+                result_code="INVALID_REQUEST",
+                reason_code="ROUTE_WAYPOINT_NOT_FOUND",
+                result_message="FMS route waypoint를 찾을 수 없습니다.",
+            )
+        )
+
+    def _route_edge_error(self, edges, waypoint_sequence):
+        for index in range(len(waypoint_sequence or []) - 1):
+            from_waypoint_id = waypoint_sequence[index].get("waypoint_id")
+            to_waypoint_id = waypoint_sequence[index + 1].get("waypoint_id")
+            if not self._has_enabled_edge(
+                edges,
+                from_waypoint_id=from_waypoint_id,
+                to_waypoint_id=to_waypoint_id,
+            ):
+                return self._with_generated_at(
+                    fms_route_error(
+                        result_code="INVALID_REQUEST",
+                        reason_code="ROUTE_EDGE_NOT_CONNECTED",
+                        result_message="FMS route waypoint 사이의 enabled edge가 없습니다.",
+                    )
+                )
+        return None
+
+    @staticmethod
+    def _has_enabled_edge(edges, *, from_waypoint_id, to_waypoint_id):
+        for edge in edges or []:
+            if not bool_value(edge.get("is_enabled")):
+                continue
+            edge_from = edge.get("from_waypoint_id")
+            edge_to = edge.get("to_waypoint_id")
+            if edge_from == from_waypoint_id and edge_to == to_waypoint_id:
+                return True
+            if (
+                bool_value(edge.get("is_bidirectional"))
+                and edge_from == to_waypoint_id
+                and edge_to == from_waypoint_id
+            ):
+                return True
+        return False
+
     def _ok_bundle_response(
         self,
         *,
         map_profile,
         waypoints,
         edges,
+        routes,
         include_edges,
         include_routes,
         include_reservations,
@@ -441,7 +712,9 @@ class FmsConfigService:
             "edges": [format_fms_edge(row) for row in edges or []]
             if bool_value(include_edges)
             else [],
-            "routes": [] if bool_value(include_routes) else [],
+            "routes": [format_fms_route(row) for row in routes or []]
+            if bool_value(include_routes)
+            else [],
             "reservations": [] if bool_value(include_reservations) else [],
         }
 
@@ -474,6 +747,15 @@ class FmsConfigService:
             "reason_code": "ACTIVE_MAP_NOT_FOUND",
             "generated_at": generated_at(self._clock),
             "edge": None,
+        }
+
+    def _not_found_route_response(self):
+        return {
+            "result_code": "NOT_FOUND",
+            "result_message": "active map이 설정되어 있지 않습니다.",
+            "reason_code": "ACTIVE_MAP_NOT_FOUND",
+            "generated_at": generated_at(self._clock),
+            "route": None,
         }
 
     def _format_waypoint_upsert_result(self, result):
@@ -563,6 +845,51 @@ class FmsConfigService:
                 result_code="UNAVAILABLE",
                 reason_code="CONFIG_WRITE_FAILED",
                 result_message="FMS edge 저장 결과를 해석할 수 없습니다.",
+            )
+        )
+
+    def _format_route_upsert_result(self, result):
+        status = (result or {}).get("status")
+        route = (result or {}).get("route")
+
+        if status == "UPSERTED":
+            return {
+                "result_code": "OK",
+                "result_message": None,
+                "reason_code": None,
+                "generated_at": generated_at(self._clock),
+                "route": format_fms_route(route),
+            }
+        if status == "STALE":
+            return {
+                "result_code": "CONFLICT",
+                "result_message": "FMS route가 다른 작업에 의해 먼저 변경되었습니다.",
+                "reason_code": "ROUTE_STALE",
+                "generated_at": generated_at(self._clock),
+                "route": format_fms_route(route) if route else None,
+            }
+        if status == "NOT_FOUND":
+            return {
+                "result_code": "NOT_FOUND",
+                "result_message": "FMS route를 찾을 수 없습니다.",
+                "reason_code": "ROUTE_NOT_FOUND",
+                "generated_at": generated_at(self._clock),
+                "route": None,
+            }
+        if status == "MAP_MISMATCH":
+            return {
+                "result_code": "CONFLICT",
+                "result_message": "route_id가 다른 map에 이미 연결되어 있습니다.",
+                "reason_code": "ROUTE_MAP_MISMATCH",
+                "generated_at": generated_at(self._clock),
+                "route": format_fms_route(route) if route else None,
+            }
+
+        return self._with_generated_at(
+            fms_route_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="FMS route 저장 결과를 해석할 수 없습니다.",
             )
         )
 

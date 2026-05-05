@@ -175,3 +175,33 @@ def test_fms_edge_schema_is_available_for_config_repository():
     ):
         assert f"`{column_name}`" in init_sql
     assert "FROM fms_edge" in combined_source
+
+
+def test_fms_route_schema_is_available_for_config_repository():
+    init_sql = (REPO_ROOT / "server" / "ropi_db" / "init_tables.sql").read_text(
+        encoding="utf-8"
+    )
+    combined_source = _combined_persistence_source()
+
+    assert "CREATE TABLE `fms_route`" in init_sql
+    assert "CREATE TABLE `fms_route_waypoint`" in init_sql
+    for column_name in (
+        "route_id",
+        "map_id",
+        "route_name",
+        "route_scope",
+        "revision",
+        "is_enabled",
+    ):
+        assert f"`{column_name}`" in init_sql
+    for column_name in (
+        "sequence_no",
+        "waypoint_id",
+        "yaw_policy",
+        "fixed_pose_yaw",
+        "stop_required",
+        "dwell_sec",
+    ):
+        assert f"`{column_name}`" in init_sql
+    assert "FROM fms_route" in combined_source
+    assert "FROM fms_route_waypoint" in combined_source

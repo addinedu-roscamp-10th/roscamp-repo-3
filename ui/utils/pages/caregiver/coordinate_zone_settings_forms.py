@@ -26,6 +26,8 @@ FMS_WAYPOINT_TYPES = [
     "ELEVATOR_ENTRY",
     "OTHER",
 ]
+FMS_ROUTE_SCOPES = ["COMMON", "DELIVERY", "PATROL", "GUIDE"]
+FMS_ROUTE_YAW_POLICIES = ["AUTO_NEXT", "FIXED", "KEEP_WAYPOINT"]
 OPERATION_ZONE_TYPES = [
     "ROOM",
     "ENTRANCE",
@@ -380,6 +382,136 @@ def build_fms_edge_form(page):
     return form
 
 
+def build_fms_route_form(page):
+    form = QFrame()
+    form.setObjectName("fmsRouteEditForm")
+    layout = QGridLayout(form)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setHorizontalSpacing(10)
+    layout.setVerticalSpacing(10)
+
+    page.fms_route_id_input = QLineEdit()
+    page.fms_route_id_input.setObjectName("fmsRouteIdEdit")
+    page.fms_route_name_input = QLineEdit()
+    page.fms_route_name_input.setObjectName("fmsRouteNameEdit")
+    page.fms_route_scope_combo = QComboBox()
+    page.fms_route_scope_combo.setObjectName("fmsRouteScopeCombo")
+    page.fms_route_scope_combo.addItems(FMS_ROUTE_SCOPES)
+    page.fms_route_revision_label = readonly_value_label("fmsRouteRevisionLabel")
+    page.fms_route_enabled_check = QCheckBox("활성")
+    page.fms_route_enabled_check.setObjectName("fmsRouteEnabledCheck")
+
+    _add_grid_rows(
+        layout,
+        [
+            ("route ID", page.fms_route_id_input),
+            ("route 이름", page.fms_route_name_input),
+            ("scope", page.fms_route_scope_combo),
+            ("revision", page.fms_route_revision_label),
+            ("사용 여부", page.fms_route_enabled_check),
+        ],
+    )
+
+    table_row = 5
+    page.fms_route_waypoint_table = QTableWidget(0, 5)
+    page.fms_route_waypoint_table.setObjectName("fmsRouteWaypointTable")
+    page.fms_route_waypoint_table.setHorizontalHeaderLabels(
+        ["#", "waypoint", "stop", "yaw_policy", "dwell"]
+    )
+    page.fms_route_waypoint_table.horizontalHeader().setStretchLastSection(True)
+    page.fms_route_waypoint_table.cellClicked.connect(
+        lambda row, _column: page.select_fms_route_waypoint(row)
+    )
+    layout.addWidget(QLabel("waypoint sequence"), table_row, 0)
+    layout.addWidget(page.fms_route_waypoint_table, table_row, 1)
+
+    page.fms_route_waypoint_combo = QComboBox()
+    page.fms_route_waypoint_combo.setObjectName("fmsRouteWaypointCombo")
+    page.fms_route_yaw_policy_combo = QComboBox()
+    page.fms_route_yaw_policy_combo.setObjectName("fmsRouteYawPolicyCombo")
+    page.fms_route_yaw_policy_combo.addItems(FMS_ROUTE_YAW_POLICIES)
+    page.fms_route_fixed_yaw_spin = coordinate_spin("fmsRouteFixedYawSpin")
+    page.fms_route_stop_required_check = QCheckBox("정차")
+    page.fms_route_stop_required_check.setObjectName("fmsRouteStopRequiredCheck")
+    page.fms_route_dwell_sec_spin = QDoubleSpinBox()
+    page.fms_route_dwell_sec_spin.setObjectName("fmsRouteDwellSecSpin")
+    page.fms_route_dwell_sec_spin.setRange(0.0, 3600.0)
+    page.fms_route_dwell_sec_spin.setDecimals(2)
+    page.fms_route_dwell_sec_spin.setSingleStep(0.5)
+
+    for row_offset, (label_text, widget) in enumerate(
+        [
+            ("waypoint", page.fms_route_waypoint_combo),
+            ("yaw_policy", page.fms_route_yaw_policy_combo),
+            ("fixed yaw(rad)", page.fms_route_fixed_yaw_spin),
+            ("stop", page.fms_route_stop_required_check),
+            ("dwell(sec)", page.fms_route_dwell_sec_spin),
+        ],
+        start=6,
+    ):
+        label = QLabel(label_text)
+        label.setObjectName("fieldLabel")
+        layout.addWidget(label, row_offset, 0)
+        layout.addWidget(widget, row_offset, 1)
+
+    button_row = QHBoxLayout()
+    button_row.setSpacing(8)
+    page.fms_route_waypoint_add_button = QPushButton("waypoint 추가")
+    page.fms_route_waypoint_add_button.setObjectName("fmsRouteWaypointAddButton")
+    page.fms_route_waypoint_delete_button = QPushButton("waypoint 삭제")
+    page.fms_route_waypoint_delete_button.setObjectName("fmsRouteWaypointDeleteButton")
+    page.fms_route_waypoint_up_button = QPushButton("위로")
+    page.fms_route_waypoint_up_button.setObjectName("fmsRouteWaypointUpButton")
+    page.fms_route_waypoint_down_button = QPushButton("아래로")
+    page.fms_route_waypoint_down_button.setObjectName("fmsRouteWaypointDownButton")
+    page.fms_route_waypoint_add_button.clicked.connect(page.add_fms_route_waypoint)
+    page.fms_route_waypoint_delete_button.clicked.connect(
+        page.delete_selected_fms_route_waypoint
+    )
+    page.fms_route_waypoint_up_button.clicked.connect(
+        lambda: page.move_selected_fms_route_waypoint(-1)
+    )
+    page.fms_route_waypoint_down_button.clicked.connect(
+        lambda: page.move_selected_fms_route_waypoint(1)
+    )
+    button_row.addWidget(page.fms_route_waypoint_add_button)
+    button_row.addWidget(page.fms_route_waypoint_delete_button)
+    button_row.addWidget(page.fms_route_waypoint_up_button)
+    button_row.addWidget(page.fms_route_waypoint_down_button)
+    layout.addLayout(button_row, 11, 1)
+
+    page.fms_route_id_input.textChanged.connect(
+        lambda _value: page._mark_fms_route_dirty()
+    )
+    page.fms_route_name_input.textChanged.connect(
+        lambda _value: page._mark_fms_route_dirty()
+    )
+    page.fms_route_scope_combo.currentIndexChanged.connect(
+        lambda _index: page._mark_fms_route_dirty()
+    )
+    page.fms_route_enabled_check.toggled.connect(
+        lambda _checked: page._mark_fms_route_dirty()
+    )
+    for widget in [
+        page.fms_route_waypoint_combo,
+        page.fms_route_yaw_policy_combo,
+    ]:
+        widget.currentIndexChanged.connect(
+            lambda _index: page._update_selected_fms_route_waypoint_from_form()
+        )
+    page.fms_route_fixed_yaw_spin.valueChanged.connect(
+        lambda _value: page._update_selected_fms_route_waypoint_from_form()
+    )
+    page.fms_route_stop_required_check.toggled.connect(
+        lambda _checked: page._update_selected_fms_route_waypoint_from_form()
+    )
+    page.fms_route_dwell_sec_spin.valueChanged.connect(
+        lambda _value: page._update_selected_fms_route_waypoint_from_form()
+    )
+
+    return form
+
+
 def readonly_value_label(object_name):
     label = QLabel("-")
     label.setObjectName(object_name)
@@ -437,8 +569,11 @@ def _connect_fms_waypoint_dirty_signal(page, widget):
 
 
 __all__ = [
+    "FMS_ROUTE_SCOPES",
+    "FMS_ROUTE_YAW_POLICIES",
     "FMS_WAYPOINT_TYPES",
     "build_fms_edge_form",
+    "build_fms_route_form",
     "build_fms_waypoint_form",
     "build_goal_pose_form",
     "build_operation_zone_form",

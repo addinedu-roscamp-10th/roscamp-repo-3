@@ -135,6 +135,35 @@ def _sample_bundle():
                 "updated_at": "2026-05-04T10:04:00Z",
             }
         ],
+        "fms_routes": [
+            {
+                "route_id": "route_corridor_01_02",
+                "map_id": "map_test",
+                "route_name": "복도 1-2",
+                "route_scope": "COMMON",
+                "revision": 1,
+                "waypoint_sequence": [
+                    {
+                        "sequence_no": 1,
+                        "waypoint_id": "corridor_01",
+                        "yaw_policy": "AUTO_NEXT",
+                        "fixed_pose_yaw": None,
+                        "stop_required": True,
+                        "dwell_sec": None,
+                    },
+                    {
+                        "sequence_no": 2,
+                        "waypoint_id": "corridor_02",
+                        "yaw_policy": "FIXED",
+                        "fixed_pose_yaw": 0.0,
+                        "stop_required": False,
+                        "dwell_sec": 1.5,
+                    },
+                ],
+                "is_enabled": True,
+                "updated_at": "2026-05-04T10:07:00Z",
+            }
+        ],
     }
 
 
@@ -182,6 +211,8 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert new_waypoint_button.text() == "새 FMS waypoint"
         new_edge_button = page.findChild(QPushButton, "fmsEdgeNewButton")
         assert new_edge_button.text() == "새 FMS edge"
+        new_route_button = page.findChild(QPushButton, "fmsRouteNewButton")
+        assert new_route_button.text() == "새 FMS route"
         assert page.findChild(QLabel, "coordinateEditModeLabel") is not None
 
         map_canvas = page.findChild(MapCanvasWidget, "coordinateZoneMapCanvas")
@@ -194,6 +225,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert page.findChild(QTableWidget, "patrolAreaTable") is not None
         assert page.findChild(QTableWidget, "fmsWaypointTable") is not None
         assert page.findChild(QTableWidget, "fmsEdgeTable") is not None
+        assert page.findChild(QTableWidget, "fmsRouteTable") is not None
         assert page.findChild(QTableWidget, "operationZoneBoundaryTable") is not None
 
         labels = _label_texts(page)
@@ -203,6 +235,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert "patrol_area.path_json" in labels
         assert "FMS waypoint" in labels
         assert "FMS edge" in labels
+        assert "FMS route" in labels
         assert "Validation" in labels
         assert "맵이 로드되기 전에는 좌표를 저장할 수 없습니다." in labels
     finally:
@@ -273,7 +306,7 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
                 "result_code": "OK",
                 "waypoints": _sample_bundle()["fms_waypoints"],
                 "edges": _sample_bundle()["fms_edges"],
-                "routes": [],
+                "routes": _sample_bundle()["fms_routes"],
                 "reservations": [],
             }
 
@@ -288,7 +321,7 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
 
     assert calls == [
         ("get_active_map_bundle", True, True, True),
-        ("get_active_graph_bundle", True, True, False, False),
+        ("get_active_graph_bundle", True, True, True, False),
         ("get_map_asset", "YAML", "map_test", "TEXT"),
         ("get_map_asset", "PGM", "map_test", "BASE64"),
     ]
@@ -296,6 +329,9 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
     assert emitted[0][1]["bundle"]["map_profile"]["map_id"] == "map_test"
     assert emitted[0][1]["bundle"]["fms_waypoints"][0]["waypoint_id"] == "corridor_01"
     assert emitted[0][1]["bundle"]["fms_edges"][0]["edge_id"] == "edge_corridor_01_02"
+    assert (
+        emitted[0][1]["bundle"]["fms_routes"][0]["route_id"] == "route_corridor_01_02"
+    )
     assert emitted[0][1]["pgm_bytes"] == pgm_bytes
     assert emitted[0][1]["yaml_sha256"] == "yaml-sha"
 
@@ -326,6 +362,7 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         patrol_table = page.findChild(QTableWidget, "patrolAreaTable")
         waypoint_table = page.findChild(QTableWidget, "fmsWaypointTable")
         edge_table = page.findChild(QTableWidget, "fmsEdgeTable")
+        route_table = page.findChild(QTableWidget, "fmsRouteTable")
 
         assert zone_table.rowCount() == 1
         assert zone_table.item(0, 0).text() == "room_301"
@@ -340,6 +377,9 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         assert edge_table.item(0, 0).text() == "edge_corridor_01_02"
         assert edge_table.item(0, 1).text() == "corridor_01"
         assert edge_table.item(0, 3).text() == "양방향"
+        assert route_table.item(0, 0).text() == "route_corridor_01_02"
+        assert route_table.item(0, 1).text() == "복도 1-2"
+        assert route_table.item(0, 3).text() == "2"
         assert page.validation_message_label.text() == "맵과 좌표 설정을 불러왔습니다."
         assert page.save_button.isEnabled() is False
     finally:
@@ -1628,6 +1668,155 @@ def test_fms_edge_save_worker_sends_if_fms_003_payload():
     assert calls == [payload]
     assert emitted[0][0] is True
     assert emitted[0][1]["edge"]["updated_at"] == "2026-05-04T10:30:00Z"
+
+
+def test_coordinate_zone_settings_page_selects_fms_route_into_edit_form():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_route(0)
+
+        assert page.selected_edit_type == "fms_route"
+        assert page.findChild(QLineEdit, "fmsRouteIdEdit").text() == (
+            "route_corridor_01_02"
+        )
+        assert page.findChild(QLineEdit, "fmsRouteNameEdit").text() == "복도 1-2"
+        assert page.findChild(QComboBox, "fmsRouteScopeCombo").currentText() == (
+            "COMMON"
+        )
+        assert page.findChild(QLabel, "fmsRouteRevisionLabel").text() == "1"
+        assert page.findChild(QCheckBox, "fmsRouteEnabledCheck").isChecked() is True
+
+        route_waypoint_table = page.findChild(QTableWidget, "fmsRouteWaypointTable")
+        assert route_waypoint_table.rowCount() == 2
+        assert route_waypoint_table.item(0, 1).text() == "corridor_01"
+        assert route_waypoint_table.item(1, 3).text() == "FIXED"
+        assert len(page.map_canvas.fms_route_pixel_points) == 2
+        assert page.map_canvas.fms_route_labels == ["복도1", "복도2"]
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_fms_route_dirty_and_save_success():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_route(0)
+        page.findChild(QLineEdit, "fmsRouteNameEdit").setText("복도 경로 수정")
+
+        assert page.fms_route_dirty is True
+        assert page.save_button.isEnabled() is True
+
+        page._handle_fms_route_save_finished(
+            True,
+            {
+                "result_code": "OK",
+                "route": {
+                    "route_id": "route_corridor_01_02",
+                    "map_id": "map_test",
+                    "route_name": "복도 경로 수정",
+                    "route_scope": "COMMON",
+                    "revision": 2,
+                    "waypoint_sequence": _sample_bundle()["fms_routes"][0][
+                        "waypoint_sequence"
+                    ],
+                    "is_enabled": True,
+                    "updated_at": "2026-05-04T10:40:00Z",
+                },
+            },
+        )
+
+        route_table = page.findChild(QTableWidget, "fmsRouteTable")
+        assert route_table.item(0, 1).text() == "복도 경로 수정"
+        assert route_table.item(0, 3).text() == "2"
+        assert page.selected_fms_route["revision"] == 2
+        assert page.fms_route_dirty is False
+        assert page.save_button.isEnabled() is False
+        assert page.validation_message_label.text() == "FMS route를 저장했습니다."
+    finally:
+        page.close()
+
+
+def test_fms_route_save_worker_sends_if_fms_004_payload():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        FmsRouteSaveWorker,
+    )
+
+    calls = []
+
+    class FakeFmsService:
+        def upsert_route(self, **payload):
+            calls.append(payload)
+            return {
+                "result_code": "OK",
+                "route": {
+                    **payload,
+                    "map_id": "map_test",
+                    "revision": payload["expected_revision"] + 1,
+                    "updated_at": "2026-05-04T10:40:00Z",
+                },
+            }
+
+    payload = {
+        "route_id": "route_corridor_01_02",
+        "expected_revision": 1,
+        "route_name": "복도 1-2",
+        "route_scope": "COMMON",
+        "waypoint_sequence": [
+            {
+                "waypoint_id": "corridor_01",
+                "yaw_policy": "AUTO_NEXT",
+                "fixed_pose_yaw": None,
+                "stop_required": True,
+                "dwell_sec": None,
+            },
+            {
+                "waypoint_id": "corridor_02",
+                "yaw_policy": "FIXED",
+                "fixed_pose_yaw": 0.0,
+                "stop_required": False,
+                "dwell_sec": 1.5,
+            },
+        ],
+        "is_enabled": True,
+    }
+    emitted = []
+    worker = FmsRouteSaveWorker(
+        payload=payload,
+        service_factory=FakeFmsService,
+    )
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["route"]["revision"] == 2
 
 
 def test_patrol_area_path_save_worker_sends_if_loc_005_payload():

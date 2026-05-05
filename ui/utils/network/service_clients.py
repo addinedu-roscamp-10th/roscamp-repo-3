@@ -388,6 +388,26 @@ class FmsConfigRemoteService:
             is_enabled=is_enabled,
         )
 
+    def upsert_route(
+        self,
+        *,
+        route_id,
+        expected_revision=None,
+        route_name,
+        route_scope,
+        waypoint_sequence,
+        is_enabled,
+    ):
+        return self._rpc(
+            "upsert_route",
+            route_id=route_id,
+            expected_revision=expected_revision,
+            route_name=route_name,
+            route_scope=route_scope,
+            waypoint_sequence=waypoint_sequence,
+            is_enabled=is_enabled,
+        )
+
 
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"

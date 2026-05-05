@@ -39,6 +39,12 @@ from ui.utils.pages.caregiver.coordinate_fms_edge_editing import (
     fms_edge_from_save_response,
     fms_edge_row_from_form,
 )
+from ui.utils.pages.caregiver.coordinate_fms_route_editing import (
+    build_fms_route_payload,
+    fms_route_from_save_response,
+    fms_route_row_from_form,
+    fms_route_waypoint_table_rows,
+)
 from ui.utils.pages.caregiver.coordinate_operation_zone_editing import (
     build_operation_zone_boundary_save_payload,
     build_operation_zone_save_payload,
@@ -66,6 +72,7 @@ from ui.utils.pages.caregiver.coordinate_waypoint_editing import (
 )
 from ui.utils.pages.caregiver.coordinate_zone_settings_forms import (
     build_fms_edge_form,
+    build_fms_route_form,
     build_fms_waypoint_form,
     build_goal_pose_form,
     build_operation_zone_form,
@@ -73,6 +80,7 @@ from ui.utils.pages.caregiver.coordinate_zone_settings_forms import (
 )
 from ui.utils.pages.caregiver.coordinate_zone_settings_bundle import (
     FMS_EDGE_TABLE_COLUMNS,
+    FMS_ROUTE_TABLE_COLUMNS,
     FMS_WAYPOINT_TABLE_COLUMNS,
     GOAL_POSE_TABLE_COLUMNS,
     OPERATION_ZONE_TABLE_COLUMNS,
@@ -89,6 +97,7 @@ from ui.utils.pages.caregiver.coordinate_zone_settings_edit_state import (
 from ui.utils.pages.caregiver.coordinate_zone_settings_workers import (
     CoordinateConfigLoadWorker,
     FmsEdgeSaveWorker,
+    FmsRouteSaveWorker,
     FmsWaypointSaveWorker,
     GoalPoseSaveWorker,
     OperationZoneBoundarySaveWorker,
@@ -126,6 +135,8 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_waypoint_save_worker = None
         self.fms_edge_save_thread = None
         self.fms_edge_save_worker = None
+        self.fms_route_save_thread = None
+        self.fms_route_save_worker = None
         self._worker_stop_wait_ms = 1500
         self.current_bundle = {}
         self.operation_zone_rows = []
@@ -133,7 +144,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_rows = []
         self.fms_waypoint_rows = []
         self.fms_edge_rows = []
+        self.fms_route_rows = []
         self.patrol_waypoint_rows = []
+        self.fms_route_waypoint_rows = []
         self.selected_edit_type = None
         self.operation_zone_mode = None
         self.selected_operation_zone = None
@@ -163,6 +176,13 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_edge_mode = None
         self.fms_edge_dirty = False
         self._syncing_fms_edge_form = False
+        self.selected_fms_route = None
+        self.selected_fms_route_index = None
+        self.selected_fms_route_waypoint_index = None
+        self.fms_route_mode = None
+        self.fms_route_dirty = False
+        self._syncing_fms_route_form = False
+        self._syncing_fms_route_waypoint_form = False
         self._build_ui()
 
     def _build_ui(self):
@@ -297,6 +317,13 @@ class CoordinateZoneSettingsPage(QWidget):
                 ["edge_id", "from", "to", "direction", "enabled"],
             )
         )
+        table_row.addWidget(
+            self._build_table_card(
+                "FMS route",
+                "fmsRouteTable",
+                ["route_id", "name", "scope", "waypoints", "enabled"],
+            )
+        )
 
         column.addWidget(map_card)
         column.addLayout(table_row)
@@ -330,6 +357,8 @@ class CoordinateZoneSettingsPage(QWidget):
             )
         if object_name == "fmsEdgeTable":
             table.cellClicked.connect(lambda row, _column: self.select_fms_edge(row))
+        if object_name == "fmsRouteTable":
+            table.cellClicked.connect(lambda row, _column: self.select_fms_route(row))
 
         layout.addWidget(title)
         layout.addWidget(table)
@@ -368,6 +397,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_edge_new_button = QPushButton("새 FMS edge")
         self.fms_edge_new_button.setObjectName("fmsEdgeNewButton")
         self.fms_edge_new_button.clicked.connect(self.start_fms_edge_create)
+        self.fms_route_new_button = QPushButton("새 FMS route")
+        self.fms_route_new_button.setObjectName("fmsRouteNewButton")
+        self.fms_route_new_button.clicked.connect(self.start_fms_route_create)
         self.operation_zone_form = build_operation_zone_form(self)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form = build_goal_pose_form(self)
@@ -378,18 +410,22 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_waypoint_form.setHidden(True)
         self.fms_edge_form = build_fms_edge_form(self)
         self.fms_edge_form.setHidden(True)
+        self.fms_route_form = build_fms_route_form(self)
+        self.fms_route_form.setHidden(True)
 
         self.edit_panel_layout.addWidget(title)
         self.edit_panel_layout.addWidget(self.edit_mode_label)
         self.edit_panel_layout.addWidget(self.operation_zone_new_button)
         self.edit_panel_layout.addWidget(self.fms_waypoint_new_button)
         self.edit_panel_layout.addWidget(self.fms_edge_new_button)
+        self.edit_panel_layout.addWidget(self.fms_route_new_button)
         self.edit_panel_layout.addWidget(self.edit_placeholder_label)
         self.edit_panel_layout.addWidget(self.operation_zone_form)
         self.edit_panel_layout.addWidget(self.goal_pose_form)
         self.edit_panel_layout.addWidget(self.patrol_area_form)
         self.edit_panel_layout.addWidget(self.fms_waypoint_form)
         self.edit_panel_layout.addWidget(self.fms_edge_form)
+        self.edit_panel_layout.addWidget(self.fms_route_form)
         self.edit_panel_layout.addStretch(1)
         return panel
 
@@ -469,9 +505,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_rows = normalized.patrol_areas
         self.fms_waypoint_rows = normalized.fms_waypoints
         self.fms_edge_rows = normalized.fms_edges
+        self.fms_route_rows = normalized.fms_routes
         self.apply_active_map(normalized.map_profile)
         self._populate_goal_pose_form_options()
         self._populate_fms_edge_form_options()
+        self._populate_fms_route_waypoint_options()
         self._refresh_bundle_tables()
         self._restore_selected_bundle_selection(selected)
 
@@ -501,6 +539,11 @@ class CoordinateZoneSettingsPage(QWidget):
             self.fms_edge_rows,
             FMS_EDGE_TABLE_COLUMNS,
         )
+        set_table_rows(
+            self.tables["fmsRouteTable"],
+            self.fms_route_rows,
+            FMS_ROUTE_TABLE_COLUMNS,
+        )
 
     def _capture_selected_bundle_selection(self):
         if (
@@ -521,6 +564,8 @@ class CoordinateZoneSettingsPage(QWidget):
             return ("fms_waypoint", self.selected_fms_waypoint.get("waypoint_id"))
         if self.selected_edit_type == "fms_edge" and self.selected_fms_edge:
             return ("fms_edge", self.selected_fms_edge.get("edge_id"))
+        if self.selected_edit_type == "fms_route" and self.selected_fms_route:
+            return ("fms_route", self.selected_fms_route.get("route_id"))
         return None
 
     def _restore_selected_bundle_selection(self, selected):
@@ -572,6 +617,15 @@ class CoordinateZoneSettingsPage(QWidget):
             if row_index is not None:
                 self.select_fms_edge(row_index)
                 return
+        elif edit_type == "fms_route":
+            row_index = find_row_index_by_value(
+                self.fms_route_rows,
+                "route_id",
+                row_id,
+            )
+            if row_index is not None:
+                self.select_fms_route(row_index)
+                return
         self._clear_current_edit_selection()
 
     def _clear_current_edit_selection(self):
@@ -599,6 +653,12 @@ class CoordinateZoneSettingsPage(QWidget):
         self.selected_fms_edge_index = None
         self.fms_edge_mode = None
         self.fms_edge_dirty = False
+        self.selected_fms_route = None
+        self.selected_fms_route_index = None
+        self.fms_route_mode = None
+        self.fms_route_dirty = False
+        self.fms_route_waypoint_rows = []
+        self.selected_fms_route_waypoint_index = None
         self.edit_mode_label.setText("선택 모드")
         self.edit_placeholder_label.setHidden(False)
         self.operation_zone_form.setHidden(True)
@@ -606,6 +666,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(True)
         self.fms_waypoint_form.setHidden(True)
         self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(True)
         self.map_canvas.clear_configuration_overlay()
         self.save_button.setEnabled(False)
         self.discard_button.setEnabled(False)
@@ -633,6 +694,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(True)
         self.fms_waypoint_form.setHidden(True)
         self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("구역 boundary 편집 모드")
         self._clear_patrol_overlay()
         self._set_operation_zone_form(operation_zone, mode="edit")
@@ -650,6 +712,8 @@ class CoordinateZoneSettingsPage(QWidget):
         self.goal_pose_form.setHidden(True)
         self.patrol_area_form.setHidden(True)
         self.fms_waypoint_form.setHidden(True)
+        self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("구역 생성 모드")
         self._clear_patrol_overlay()
         self._set_operation_zone_form(
@@ -682,6 +746,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(True)
         self.fms_waypoint_form.setHidden(True)
         self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("목표 좌표 편집 모드")
         self._clear_patrol_overlay()
         self._set_goal_pose_form(goal_pose)
@@ -704,6 +769,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(False)
         self.fms_waypoint_form.setHidden(True)
         self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("순찰 경로 편집 모드")
         self._set_patrol_area_form(patrol_area)
         self.patrol_area_dirty = False
@@ -726,6 +792,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(True)
         self.fms_waypoint_form.setHidden(False)
         self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("FMS waypoint 편집 모드")
         self._set_fms_waypoint_form(waypoint, mode="edit")
         self.fms_waypoint_dirty = False
@@ -766,6 +833,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(True)
         self.fms_waypoint_form.setHidden(False)
         self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("FMS waypoint 생성 모드")
         self._set_fms_waypoint_form(waypoint, mode="create")
         self.fms_waypoint_dirty = True
@@ -791,6 +859,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(True)
         self.fms_waypoint_form.setHidden(True)
         self.fms_edge_form.setHidden(False)
+        self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("FMS edge 편집 모드")
         self._set_fms_edge_form(edge, mode="edit")
         self.fms_edge_dirty = False
@@ -831,6 +900,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_area_form.setHidden(True)
         self.fms_waypoint_form.setHidden(True)
         self.fms_edge_form.setHidden(False)
+        self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("FMS edge 생성 모드")
         self._set_fms_edge_form(edge, mode="create")
         self.fms_edge_dirty = True
@@ -838,6 +908,79 @@ class CoordinateZoneSettingsPage(QWidget):
             "FMS edge의 시작/도착 waypoint를 선택하세요."
         )
         self._sync_fms_edge_save_state()
+
+    def select_fms_route(self, row_index):
+        try:
+            row_index = int(row_index)
+            route = self.fms_route_rows[row_index]
+        except (IndexError, TypeError, ValueError):
+            return
+
+        self.selected_edit_type = "fms_route"
+        self.fms_route_mode = "edit"
+        self.selected_fms_route_index = row_index
+        self.selected_fms_route = dict(route)
+        self.edit_placeholder_label.setHidden(True)
+        self.operation_zone_form.setHidden(True)
+        self.goal_pose_form.setHidden(True)
+        self.patrol_area_form.setHidden(True)
+        self.fms_waypoint_form.setHidden(True)
+        self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(False)
+        self.edit_mode_label.setText("FMS route 편집 모드")
+        self._set_fms_route_form(route, mode="edit")
+        self.fms_route_dirty = False
+        self._sync_fms_route_save_state()
+
+    def start_fms_route_create(self):
+        next_index = len(self.fms_route_rows) + 1
+        route_id = f"route_{next_index:02d}"
+        existing_ids = {
+            str(row.get("route_id") or "")
+            for row in self.fms_route_rows
+            if isinstance(row, dict)
+        }
+        while route_id in existing_ids:
+            next_index += 1
+            route_id = f"route_{next_index:02d}"
+
+        sequence = [
+            {
+                "sequence_no": index + 1,
+                "waypoint_id": row.get("waypoint_id"),
+                "yaw_policy": "AUTO_NEXT",
+                "fixed_pose_yaw": None,
+                "stop_required": True,
+                "dwell_sec": None,
+            }
+            for index, row in enumerate(self.fms_waypoint_rows[:2])
+            if isinstance(row, dict) and row.get("waypoint_id")
+        ]
+        route = {
+            "route_id": route_id,
+            "route_name": "새 route",
+            "route_scope": "COMMON",
+            "revision": None,
+            "waypoint_sequence": sequence,
+            "is_enabled": True,
+        }
+
+        self.selected_edit_type = "fms_route"
+        self.fms_route_mode = "create"
+        self.selected_fms_route_index = None
+        self.selected_fms_route = dict(route)
+        self.edit_placeholder_label.setHidden(True)
+        self.operation_zone_form.setHidden(True)
+        self.goal_pose_form.setHidden(True)
+        self.patrol_area_form.setHidden(True)
+        self.fms_waypoint_form.setHidden(True)
+        self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(False)
+        self.edit_mode_label.setText("FMS route 생성 모드")
+        self._set_fms_route_form(route, mode="create")
+        self.fms_route_dirty = True
+        self.validation_message_label.setText("FMS route waypoint 순서를 설정하세요.")
+        self._sync_fms_route_save_state()
 
     def handle_map_click(self, world_pose):
         if self.selected_edit_type == "operation_zone":
@@ -957,6 +1100,8 @@ class CoordinateZoneSettingsPage(QWidget):
             self.save_selected_fms_waypoint()
         elif self.selected_edit_type == "fms_edge":
             self.save_selected_fms_edge()
+        elif self.selected_edit_type == "fms_route":
+            self.save_selected_fms_route()
 
     def discard_current_edit(self):
         if self.selected_edit_type == "operation_zone":
@@ -1020,6 +1165,20 @@ class CoordinateZoneSettingsPage(QWidget):
             self.fms_edge_dirty = False
             self.validation_message_label.setText("FMS edge 변경을 취소했습니다.")
             self._sync_fms_edge_save_state()
+        elif self.selected_edit_type == "fms_route" and self.selected_fms_route:
+            if self.fms_route_mode == "create":
+                self._clear_current_edit_selection()
+                self.validation_message_label.setText(
+                    "새 FMS route 입력을 취소했습니다."
+                )
+                return
+            self._set_fms_route_form(
+                self.selected_fms_route,
+                mode=self.fms_route_mode or "edit",
+            )
+            self.fms_route_dirty = False
+            self.validation_message_label.setText("FMS route 변경을 취소했습니다.")
+            self._sync_fms_route_save_state()
 
     def save_selected_operation_zone(self):
         if self.operation_zone_save_thread is not None:
@@ -1752,6 +1911,32 @@ class CoordinateZoneSettingsPage(QWidget):
             selected_edge_pixel_pair=selected_pair,
         )
 
+    def _sync_fms_route_overlay(self):
+        waypoint_by_id = {
+            row.get("waypoint_id"): row
+            for row in self.fms_waypoint_rows
+            if isinstance(row, dict) and row.get("waypoint_id")
+        }
+        route_pixel_points = []
+        route_labels = []
+        for waypoint in self.fms_route_waypoint_rows:
+            waypoint_row = waypoint_by_id.get(waypoint.get("waypoint_id"))
+            if not waypoint_row:
+                continue
+            pixel = self.map_canvas.world_to_pixel(
+                {"x": waypoint_row.get("pose_x"), "y": waypoint_row.get("pose_y")}
+            )
+            if pixel is None:
+                continue
+            route_pixel_points.append(pixel)
+            route_labels.append(_display(waypoint_row.get("display_name")))
+
+        self.map_canvas.show_fms_route_editor(
+            route_pixel_points=route_pixel_points,
+            route_labels=route_labels,
+            selected_route_index=self.selected_fms_route_waypoint_index,
+        )
+
     @staticmethod
     def _fms_edge_pixel_pair(edge, *, waypoint_pixels):
         if not isinstance(edge, dict):
@@ -2056,6 +2241,9 @@ class CoordinateZoneSettingsPage(QWidget):
         )
         self._sync_fms_waypoint_overlay()
         self._populate_fms_edge_form_options()
+        self._populate_fms_route_waypoint_options()
+        if self.selected_edit_type == "fms_route":
+            self._sync_fms_route_overlay()
 
     def save_selected_fms_edge(self):
         if self.fms_edge_save_thread is not None:
@@ -2227,6 +2415,336 @@ class CoordinateZoneSettingsPage(QWidget):
         )
         self._sync_fms_edge_overlay()
 
+    def save_selected_fms_route(self):
+        if self.fms_route_save_thread is not None:
+            return
+        if not self.fms_route_dirty or not self.selected_fms_route:
+            return
+
+        payload = self._build_fms_route_save_payload()
+        if not payload["route_id"] or not payload["route_name"]:
+            self.validation_message_label.setText(
+                "FMS route ID와 이름을 입력해야 합니다."
+            )
+            return
+        if len(payload["waypoint_sequence"]) < 2:
+            self.validation_message_label.setText(
+                "FMS route는 최소 2개 waypoint가 필요합니다."
+            )
+            return
+        if self.fms_route_mode == "create":
+            existing_ids = {
+                str(row.get("route_id") or "")
+                for row in self.fms_route_rows
+                if isinstance(row, dict)
+            }
+            if payload["route_id"] in existing_ids:
+                self.validation_message_label.setText(
+                    "이미 존재하는 FMS route ID입니다."
+                )
+                return
+
+        self.save_button.setEnabled(False)
+        self.discard_button.setEnabled(False)
+        self.validation_message_label.setText("FMS route를 저장하는 중입니다.")
+        self.fms_route_save_thread, self.fms_route_save_worker = start_worker_thread(
+            self,
+            worker=FmsRouteSaveWorker(payload=payload),
+            finished_handler=self._handle_fms_route_save_finished,
+            clear_handler=self._clear_fms_route_save_thread,
+        )
+
+    def _set_fms_route_form(self, route, *, mode):
+        route = route if isinstance(route, dict) else {}
+        self._syncing_fms_route_form = True
+        try:
+            self.fms_route_mode = mode
+            self.fms_route_id_input.setReadOnly(mode != "create")
+            self.fms_route_id_input.setText(_display_empty(route.get("route_id")))
+            self.fms_route_name_input.setText(_display_empty(route.get("route_name")))
+            self._set_combo_text(
+                self.fms_route_scope_combo,
+                _display_empty(route.get("route_scope")) or "COMMON",
+            )
+            self.fms_route_revision_label.setText(_display(route.get("revision")))
+            self.fms_route_enabled_check.setChecked(bool(route.get("is_enabled", True)))
+            self.fms_route_waypoint_rows = [
+                dict(row)
+                for row in route.get("waypoint_sequence") or []
+                if isinstance(row, dict)
+            ]
+            self.selected_fms_route_waypoint_index = (
+                0 if self.fms_route_waypoint_rows else None
+            )
+        finally:
+            self._syncing_fms_route_form = False
+        self._populate_fms_route_waypoint_options()
+        self._populate_fms_route_waypoint_table()
+        self._set_fms_route_waypoint_form(self.selected_fms_route_waypoint_index)
+        self._sync_fms_route_overlay()
+
+    def _populate_fms_route_waypoint_options(self):
+        if not hasattr(self, "fms_route_waypoint_combo"):
+            return
+        current_waypoint_id = self.fms_route_waypoint_combo.currentData()
+        self.fms_route_waypoint_combo.blockSignals(True)
+        try:
+            self.fms_route_waypoint_combo.clear()
+            for waypoint in self.fms_waypoint_rows:
+                waypoint_id = waypoint.get("waypoint_id")
+                if not waypoint_id:
+                    continue
+                display_name = waypoint.get("display_name") or waypoint_id
+                self.fms_route_waypoint_combo.addItem(
+                    f"{display_name} ({waypoint_id})",
+                    waypoint_id,
+                )
+            self._set_combo_data(self.fms_route_waypoint_combo, current_waypoint_id)
+        finally:
+            self.fms_route_waypoint_combo.blockSignals(False)
+
+    def _populate_fms_route_waypoint_table(self):
+        table_rows = fms_route_waypoint_table_rows(self.fms_route_waypoint_rows)
+        self.fms_route_waypoint_table.setRowCount(len(table_rows))
+        columns = [
+            "sequence_no",
+            "waypoint_id",
+            "stop_required",
+            "yaw_policy",
+            "dwell_sec",
+        ]
+        for row_index, row in enumerate(table_rows):
+            for column_index, column in enumerate(columns):
+                self.fms_route_waypoint_table.setItem(
+                    row_index,
+                    column_index,
+                    QTableWidgetItem(str(row.get(column) or "")),
+                )
+
+    def select_fms_route_waypoint(self, row_index):
+        try:
+            row_index = int(row_index)
+        except (TypeError, ValueError):
+            return
+        if not 0 <= row_index < len(self.fms_route_waypoint_rows):
+            return
+        self.selected_fms_route_waypoint_index = row_index
+        self._set_fms_route_waypoint_form(row_index)
+        self._sync_fms_route_overlay()
+
+    def _set_fms_route_waypoint_form(self, row_index):
+        enabled = row_index is not None and 0 <= row_index < len(
+            self.fms_route_waypoint_rows
+        )
+        row = self.fms_route_waypoint_rows[row_index] if enabled else {}
+        self._syncing_fms_route_waypoint_form = True
+        try:
+            for widget in [
+                self.fms_route_waypoint_combo,
+                self.fms_route_yaw_policy_combo,
+                self.fms_route_fixed_yaw_spin,
+                self.fms_route_stop_required_check,
+                self.fms_route_dwell_sec_spin,
+            ]:
+                widget.setEnabled(enabled)
+            if enabled:
+                self._set_combo_data(
+                    self.fms_route_waypoint_combo,
+                    row.get("waypoint_id"),
+                )
+                self._set_combo_text(
+                    self.fms_route_yaw_policy_combo,
+                    str(row.get("yaw_policy") or "AUTO_NEXT"),
+                )
+                self.fms_route_fixed_yaw_spin.setValue(
+                    _float_or_default(row.get("fixed_pose_yaw"))
+                )
+                self.fms_route_stop_required_check.setChecked(
+                    bool(row.get("stop_required", True))
+                )
+                self.fms_route_dwell_sec_spin.setValue(
+                    _float_or_default(row.get("dwell_sec"))
+                )
+            else:
+                self._set_combo_data(self.fms_route_waypoint_combo, None)
+                self._set_combo_text(self.fms_route_yaw_policy_combo, "AUTO_NEXT")
+                self.fms_route_fixed_yaw_spin.setValue(0.0)
+                self.fms_route_stop_required_check.setChecked(True)
+                self.fms_route_dwell_sec_spin.setValue(0.0)
+        finally:
+            self._syncing_fms_route_waypoint_form = False
+        self._sync_fms_route_waypoint_buttons()
+
+    def _update_selected_fms_route_waypoint_from_form(self):
+        if (
+            self._syncing_fms_route_waypoint_form
+            or self.selected_edit_type != "fms_route"
+        ):
+            return
+        index = self.selected_fms_route_waypoint_index
+        if index is None or not 0 <= index < len(self.fms_route_waypoint_rows):
+            return
+        yaw_policy = self.fms_route_yaw_policy_combo.currentText().strip().upper()
+        fixed_yaw = (
+            self.fms_route_fixed_yaw_spin.value() if yaw_policy == "FIXED" else None
+        )
+        self.fms_route_waypoint_rows[index] = {
+            "sequence_no": index + 1,
+            "waypoint_id": self.fms_route_waypoint_combo.currentData(),
+            "yaw_policy": yaw_policy,
+            "fixed_pose_yaw": fixed_yaw,
+            "stop_required": self.fms_route_stop_required_check.isChecked(),
+            "dwell_sec": self.fms_route_dwell_sec_spin.value(),
+        }
+        self._populate_fms_route_waypoint_table()
+        self._mark_fms_route_dirty()
+        self._sync_fms_route_overlay()
+
+    def add_fms_route_waypoint(self):
+        waypoint_id = self.fms_route_waypoint_combo.currentData()
+        if not waypoint_id:
+            return
+        self.fms_route_waypoint_rows.append(
+            {
+                "sequence_no": len(self.fms_route_waypoint_rows) + 1,
+                "waypoint_id": waypoint_id,
+                "yaw_policy": self.fms_route_yaw_policy_combo.currentText().strip()
+                or "AUTO_NEXT",
+                "fixed_pose_yaw": None,
+                "stop_required": True,
+                "dwell_sec": None,
+            }
+        )
+        self.selected_fms_route_waypoint_index = len(self.fms_route_waypoint_rows) - 1
+        self._renumber_fms_route_waypoints()
+        self._populate_fms_route_waypoint_table()
+        self._set_fms_route_waypoint_form(self.selected_fms_route_waypoint_index)
+        self._mark_fms_route_dirty()
+        self._sync_fms_route_overlay()
+
+    def delete_selected_fms_route_waypoint(self):
+        index = self.selected_fms_route_waypoint_index
+        if index is None or not 0 <= index < len(self.fms_route_waypoint_rows):
+            return
+        del self.fms_route_waypoint_rows[index]
+        self.selected_fms_route_waypoint_index = (
+            min(index, len(self.fms_route_waypoint_rows) - 1)
+            if self.fms_route_waypoint_rows
+            else None
+        )
+        self._renumber_fms_route_waypoints()
+        self._populate_fms_route_waypoint_table()
+        self._set_fms_route_waypoint_form(self.selected_fms_route_waypoint_index)
+        self._mark_fms_route_dirty()
+        self._sync_fms_route_overlay()
+
+    def move_selected_fms_route_waypoint(self, offset):
+        index = self.selected_fms_route_waypoint_index
+        if index is None or not 0 <= index < len(self.fms_route_waypoint_rows):
+            return
+        next_index = index + int(offset)
+        if not 0 <= next_index < len(self.fms_route_waypoint_rows):
+            return
+        rows = self.fms_route_waypoint_rows
+        rows[index], rows[next_index] = rows[next_index], rows[index]
+        self.selected_fms_route_waypoint_index = next_index
+        self._renumber_fms_route_waypoints()
+        self._populate_fms_route_waypoint_table()
+        self._set_fms_route_waypoint_form(next_index)
+        self._mark_fms_route_dirty()
+        self._sync_fms_route_overlay()
+
+    def _renumber_fms_route_waypoints(self):
+        for index, row in enumerate(self.fms_route_waypoint_rows, start=1):
+            if isinstance(row, dict):
+                row["sequence_no"] = index
+
+    def _sync_fms_route_waypoint_buttons(self):
+        index = self.selected_fms_route_waypoint_index
+        count = len(self.fms_route_waypoint_rows)
+        selected = index is not None and 0 <= index < count
+        self.fms_route_waypoint_delete_button.setEnabled(selected)
+        self.fms_route_waypoint_up_button.setEnabled(selected and index > 0)
+        self.fms_route_waypoint_down_button.setEnabled(selected and index < count - 1)
+
+    def _mark_fms_route_dirty(self):
+        if self._syncing_fms_route_form:
+            return
+        if self.selected_edit_type != "fms_route":
+            return
+        self.fms_route_dirty = True
+        self.validation_message_label.setText("FMS route 변경 사항이 저장 전입니다.")
+        self._sync_fms_route_save_state()
+        self._sync_fms_route_overlay()
+
+    def _sync_fms_route_save_state(self):
+        self.save_button.setEnabled(
+            edit_save_enabled(
+                selected_edit_type=self.selected_edit_type,
+                expected_edit_type="fms_route",
+                dirty=self.fms_route_dirty,
+                map_loaded=self.map_canvas.map_loaded,
+                save_thread=self.fms_route_save_thread,
+            )
+        )
+        self.discard_button.setEnabled(
+            edit_discard_enabled(
+                selected_edit_type=self.selected_edit_type,
+                expected_edit_type="fms_route",
+                dirty=self.fms_route_dirty,
+            )
+        )
+
+    def _build_fms_route_save_payload(self):
+        expected_revision = None
+        if self.fms_route_mode != "create" and self.selected_fms_route:
+            expected_revision = self.selected_fms_route.get("revision")
+        return build_fms_route_payload(
+            fms_route_row_from_form(self),
+            expected_revision=expected_revision,
+        )
+
+    def _handle_fms_route_save_finished(self, ok, response):
+        if not ok:
+            self.validation_message_label.setText(str(response))
+            self.fms_route_dirty = True
+            self._sync_fms_route_save_state()
+            return
+
+        updated_route = fms_route_from_save_response(response)
+        if updated_route is None:
+            self.validation_message_label.setText(
+                "FMS route 저장 결과가 비어 있습니다."
+            )
+            self.fms_route_dirty = True
+            self._sync_fms_route_save_state()
+            return
+
+        self._replace_fms_route_row(updated_route)
+        self.selected_fms_route = dict(updated_route)
+        self._set_fms_route_form(updated_route, mode="edit")
+        self.fms_route_dirty = False
+        self.fms_route_mode = "edit"
+        self.validation_message_label.setText("FMS route를 저장했습니다.")
+        self._sync_fms_route_save_state()
+
+    def _replace_fms_route_row(self, updated_route):
+        replacement = replace_row_by_key(
+            self.fms_route_rows,
+            updated_route,
+            "route_id",
+        )
+        self.fms_route_rows = replacement.rows
+        self.selected_fms_route_index = replacement.selected_index
+
+        self.current_bundle["fms_routes"] = self.fms_route_rows
+        set_table_rows(
+            self.tables["fmsRouteTable"],
+            self.fms_route_rows,
+            FMS_ROUTE_TABLE_COLUMNS,
+        )
+        self._sync_fms_route_overlay()
+
     @staticmethod
     def _set_combo_data(combo, value):
         for index in range(combo.count()):
@@ -2267,6 +2785,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_edge_save_worker = None
         self._sync_fms_edge_save_state()
 
+    def _clear_fms_route_save_thread(self):
+        self.fms_route_save_thread = None
+        self.fms_route_save_worker = None
+        self._sync_fms_route_save_state()
+
     def _clear_operation_zone_save_thread(self):
         self.operation_zone_save_thread = None
         self.operation_zone_save_worker = None
@@ -2291,6 +2814,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self._stop_patrol_area_save_thread()
         self._stop_fms_waypoint_save_thread()
         self._stop_fms_edge_save_thread()
+        self._stop_fms_route_save_thread()
 
     def closeEvent(self, event):
         self.shutdown()
@@ -2315,6 +2839,13 @@ class CoordinateZoneSettingsPage(QWidget):
             self.fms_edge_save_thread,
             wait_ms=self._worker_stop_wait_ms,
             clear_handler=self._clear_fms_edge_save_thread,
+        )
+
+    def _stop_fms_route_save_thread(self):
+        return stop_worker_thread(
+            self.fms_route_save_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_fms_route_save_thread,
         )
 
     def _stop_operation_zone_save_thread(self):
@@ -2375,6 +2906,7 @@ __all__ = [
     "CoordinateConfigLoadWorker",
     "CoordinateZoneSettingsPage",
     "FmsEdgeSaveWorker",
+    "FmsRouteSaveWorker",
     "FmsWaypointSaveWorker",
     "GoalPoseSaveWorker",
     "OperationZoneBoundarySaveWorker",

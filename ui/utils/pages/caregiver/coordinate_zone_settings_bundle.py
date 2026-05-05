@@ -12,6 +12,7 @@ class CoordinateConfigBundle:
     patrol_areas: list
     fms_waypoints: list
     fms_edges: list
+    fms_routes: list
 
 
 def normalize_coordinate_config_bundle(bundle):
@@ -25,6 +26,7 @@ def normalize_coordinate_config_bundle(bundle):
         patrol_areas=_dict_rows(source.get("patrol_areas")),
         fms_waypoints=_dict_rows(source.get("fms_waypoints", source.get("waypoints"))),
         fms_edges=_dict_rows(source.get("fms_edges", source.get("edges"))),
+        fms_routes=_dict_rows(source.get("fms_routes", source.get("routes"))),
     )
 
 
@@ -94,6 +96,11 @@ def _edge_direction_text(_row, value):
     return "양방향" if bool(value) else "단방향"
 
 
+def _route_waypoint_count_text(row, _value):
+    sequence = row.get("waypoint_sequence")
+    return str(len(sequence)) if isinstance(sequence, list) else "0"
+
+
 OPERATION_ZONE_TABLE_COLUMNS = [
     "zone_id",
     "zone_name",
@@ -126,11 +133,19 @@ FMS_EDGE_TABLE_COLUMNS = [
     ("is_bidirectional", _edge_direction_text),
     ("is_enabled", _enabled_text),
 ]
+FMS_ROUTE_TABLE_COLUMNS = [
+    "route_id",
+    "route_name",
+    "route_scope",
+    ("waypoint_sequence", _route_waypoint_count_text),
+    ("is_enabled", _enabled_text),
+]
 
 
 __all__ = [
     "CoordinateConfigBundle",
     "FMS_EDGE_TABLE_COLUMNS",
+    "FMS_ROUTE_TABLE_COLUMNS",
     "FMS_WAYPOINT_TABLE_COLUMNS",
     "GOAL_POSE_TABLE_COLUMNS",
     "OPERATION_ZONE_TABLE_COLUMNS",

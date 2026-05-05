@@ -637,6 +637,20 @@ def test_fms_config_remote_service_exposes_waypoint_bundle_and_upsert(monkeypatc
         )["result_code"]
         == "OK"
     )
+    assert (
+        service.upsert_route(
+            route_id="route_corridor_01_02",
+            expected_revision=1,
+            route_name="복도 1-2",
+            route_scope="COMMON",
+            waypoint_sequence=[
+                {"waypoint_id": "corridor_01"},
+                {"waypoint_id": "corridor_02"},
+            ],
+            is_enabled=True,
+        )["result_code"]
+        == "OK"
+    )
 
     assert calls == [
         (
@@ -676,6 +690,21 @@ def test_fms_config_remote_service_exposes_waypoint_bundle_and_upsert(monkeypatc
                 "is_bidirectional": True,
                 "traversal_cost": 1.5,
                 "priority": 10,
+                "is_enabled": True,
+            },
+        ),
+        (
+            "fms_config",
+            "upsert_route",
+            {
+                "route_id": "route_corridor_01_02",
+                "expected_revision": 1,
+                "route_name": "복도 1-2",
+                "route_scope": "COMMON",
+                "waypoint_sequence": [
+                    {"waypoint_id": "corridor_01"},
+                    {"waypoint_id": "corridor_02"},
+                ],
                 "is_enabled": True,
             },
         ),

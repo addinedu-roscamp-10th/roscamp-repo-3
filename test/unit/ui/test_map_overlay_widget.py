@@ -140,3 +140,30 @@ def test_map_overlay_tracks_fms_edge_pairs_and_clears_them():
         assert overlay.selected_fms_edge_pixel_pair is None
     finally:
         overlay.close()
+
+
+def test_map_overlay_tracks_fms_route_points_and_clears_them():
+    _app()
+
+    from ui.utils.widgets.map_overlay import OperationalMapOverlay
+
+    overlay = OperationalMapOverlay()
+
+    try:
+        overlay.show_fms_route_editor(
+            route_pixel_points=[(10, 20), (30, 40), (50, 60)],
+            route_labels=["복도1", "복도2", "로비"],
+            selected_route_index=1,
+        )
+
+        assert overlay.fms_route_pixel_points == [(10, 20), (30, 40), (50, 60)]
+        assert overlay.fms_route_labels == ["복도1", "복도2", "로비"]
+        assert overlay.selected_fms_route_index == 1
+
+        overlay.clear_configuration_overlay()
+
+        assert overlay.fms_route_pixel_points == []
+        assert overlay.fms_route_labels == []
+        assert overlay.selected_fms_route_index is None
+    finally:
+        overlay.close()

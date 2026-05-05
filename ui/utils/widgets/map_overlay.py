@@ -28,6 +28,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_fms_waypoint_heading_yaw = None
         self.fms_edge_pixel_pairs = []
         self.selected_fms_edge_pixel_pair = None
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
         self.status_text = "순찰 맵 미수신"
 
     def render(self, task):
@@ -67,6 +70,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_fms_waypoint_heading_yaw = None
         self.fms_edge_pixel_pairs = []
         self.selected_fms_edge_pixel_pair = None
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
 
         path = (
             task.get("patrol_path") if isinstance(task.get("patrol_path"), dict) else {}
@@ -126,6 +132,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_fms_waypoint_heading_yaw = None
         self.fms_edge_pixel_pairs = []
         self.selected_fms_edge_pixel_pair = None
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
         self.clear_map(status_text)
 
     def show_zone_boundary_editor(self, *, vertex_pixel_points, selected_index=None):
@@ -142,6 +151,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_fms_waypoint_heading_yaw = None
         self.fms_edge_pixel_pairs = []
         self.selected_fms_edge_pixel_pair = None
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
         self.route_pixel_points = []
         self.route_heading_yaws = []
         self.current_waypoint_index = None
@@ -173,6 +185,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_fms_waypoint_heading_yaw = None
         self.fms_edge_pixel_pairs = []
         self.selected_fms_edge_pixel_pair = None
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
         self.route_pixel_points = []
         self.route_heading_yaws = []
         self.current_waypoint_index = None
@@ -206,6 +221,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_fms_waypoint_heading_yaw = None
         self.fms_edge_pixel_pairs = []
         self.selected_fms_edge_pixel_pair = None
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
         self.update()
@@ -232,6 +250,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_fms_waypoint_heading_yaw = self._optional_float(selected_yaw)
         self.fms_edge_pixel_pairs = []
         self.selected_fms_edge_pixel_pair = None
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
         self.goal_pose_pixel_points = []
@@ -270,6 +291,42 @@ class OperationalMapOverlay(MapCanvasWidget):
             if isinstance(pair, (list, tuple)) and len(pair) == 2
         ]
         self.selected_fms_edge_pixel_pair = selected_edge_pixel_pair
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
+        self.zone_boundary_pixel_points = []
+        self.selected_zone_boundary_vertex_index = None
+        self.goal_pose_pixel_points = []
+        self.goal_pose_heading_yaws = []
+        self.selected_goal_pose_pixel_point = None
+        self.selected_goal_pose_heading_yaw = None
+        self.route_pixel_points = []
+        self.route_heading_yaws = []
+        self.current_waypoint_index = None
+        self.robot_pixel_point = None
+        self.fall_alert_pixel_point = None
+        self.update()
+
+    def show_fms_route_editor(
+        self,
+        *,
+        route_pixel_points,
+        route_labels=None,
+        selected_route_index=None,
+    ):
+        self.fms_route_pixel_points = list(route_pixel_points or [])
+        self.fms_route_labels = self._normalized_labels(
+            route_labels,
+            len(self.fms_route_pixel_points),
+        )
+        self.selected_fms_route_index = selected_route_index
+        self.fms_waypoint_pixel_points = []
+        self.fms_waypoint_labels = []
+        self.fms_waypoint_heading_yaws = []
+        self.selected_fms_waypoint_pixel_point = None
+        self.selected_fms_waypoint_heading_yaw = None
+        self.fms_edge_pixel_pairs = []
+        self.selected_fms_edge_pixel_pair = None
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
         self.goal_pose_pixel_points = []
@@ -302,6 +359,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_fms_waypoint_heading_yaw = None
         self.fms_edge_pixel_pairs = []
         self.selected_fms_edge_pixel_pair = None
+        self.fms_route_pixel_points = []
+        self.fms_route_labels = []
+        self.selected_fms_route_index = None
         self.update()
 
     def draw_overlay(self, painter, target):
@@ -309,6 +369,7 @@ class OperationalMapOverlay(MapCanvasWidget):
         self._draw_goal_poses(painter, target)
         self._draw_fms_edges(painter, target)
         self._draw_fms_waypoints(painter, target)
+        self._draw_fms_route(painter, target)
         self._draw_route(painter, target)
         self._draw_robot(painter, target)
         self._draw_fall_alert(painter, target)
@@ -478,6 +539,37 @@ class OperationalMapOverlay(MapCanvasWidget):
             length=18.0,
             width=3,
         )
+
+    def _draw_fms_route(self, painter, target):
+        points = [
+            point
+            for point in (
+                self.to_view_point(pixel, target)
+                for pixel in self.fms_route_pixel_points
+            )
+            if point is not None
+        ]
+        if not points:
+            return
+
+        if len(points) >= 2:
+            path = QPainterPath(points[0])
+            for point in points[1:]:
+                path.lineTo(point)
+            pen = QPen(QColor("#14B8A6"))
+            pen.setWidth(4)
+            painter.setPen(pen)
+            painter.drawPath(path)
+
+        labels = self._normalized_labels(self.fms_route_labels, len(points))
+        for index, point in enumerate(points):
+            selected = index == self.selected_fms_route_index
+            painter.setPen(QPen(QColor("#134E4A"), 2))
+            painter.setBrush(QColor("#5EEAD4" if selected else "#CCFBF1"))
+            painter.drawEllipse(point, 7 if selected else 5, 7 if selected else 5)
+            if labels[index]:
+                painter.setPen(QPen(QColor("#111827"), 1))
+                painter.drawText(point + QPointF(8, -8), labels[index])
 
     def _draw_robot(self, painter, target):
         point = self.to_view_point(self.robot_pixel_point, target)
