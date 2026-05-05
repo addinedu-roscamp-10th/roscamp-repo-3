@@ -21,8 +21,7 @@ def _combined_persistence_source() -> str:
         for path in sorted(REPOSITORY_ROOT.glob("*.py"))
     ]
     sources.extend(
-        path.read_text(encoding="utf-8")
-        for path in sorted(SQL_ROOT.rglob("*.sql"))
+        path.read_text(encoding="utf-8") for path in sorted(SQL_ROOT.rglob("*.sql"))
     )
     return "\n".join(sources)
 
@@ -127,7 +126,9 @@ def test_caregiver_repository_uses_task_and_runtime_status_tables():
     assert "last_seen_age_sec" in source
     assert "TIMESTAMPDIFF" in source
     assert "r.ip_address" not in _sql_source("caregiver/robot_board.sql")
-    assert "CASE WHEN t.task_status IN" in _sql_source("caregiver/flow_board_events.sql")
+    assert "CASE WHEN t.task_status IN" in _sql_source(
+        "caregiver/flow_board_events.sql"
+    )
     assert "source_component" in source
     assert "event_type" in source
 
@@ -153,3 +154,24 @@ def test_fms_waypoint_schema_is_available_for_config_repository():
     ):
         assert f"`{column_name}`" in init_sql
     assert "FROM fms_waypoint" in combined_source
+
+
+def test_fms_edge_schema_is_available_for_config_repository():
+    init_sql = (REPO_ROOT / "server" / "ropi_db" / "init_tables.sql").read_text(
+        encoding="utf-8"
+    )
+    combined_source = _combined_persistence_source()
+
+    assert "CREATE TABLE `fms_edge`" in init_sql
+    for column_name in (
+        "edge_id",
+        "map_id",
+        "from_waypoint_id",
+        "to_waypoint_id",
+        "is_bidirectional",
+        "traversal_cost",
+        "priority",
+        "is_enabled",
+    ):
+        assert f"`{column_name}`" in init_sql
+    assert "FROM fms_edge" in combined_source

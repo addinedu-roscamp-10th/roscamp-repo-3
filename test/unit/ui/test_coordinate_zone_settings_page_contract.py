@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSpinBox,
     QTableWidget,
 )
 
@@ -106,6 +107,32 @@ def _sample_bundle():
                 "snap_group": "main_corridor",
                 "is_enabled": True,
                 "updated_at": "2026-05-04T10:01:00Z",
+            },
+            {
+                "waypoint_id": "corridor_02",
+                "map_id": "map_test",
+                "display_name": "복도2",
+                "waypoint_type": "CORRIDOR",
+                "pose_x": 0.7,
+                "pose_y": 0.8,
+                "pose_yaw": 0.0,
+                "frame_id": "map",
+                "snap_group": "main_corridor",
+                "is_enabled": True,
+                "updated_at": "2026-05-04T10:02:00Z",
+            },
+        ],
+        "fms_edges": [
+            {
+                "edge_id": "edge_corridor_01_02",
+                "map_id": "map_test",
+                "from_waypoint_id": "corridor_01",
+                "to_waypoint_id": "corridor_02",
+                "is_bidirectional": True,
+                "traversal_cost": 1.5,
+                "priority": 10,
+                "is_enabled": True,
+                "updated_at": "2026-05-04T10:04:00Z",
             }
         ],
     }
@@ -153,6 +180,8 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert new_zone_button.parent() is not page.operation_zone_form
         new_waypoint_button = page.findChild(QPushButton, "fmsWaypointNewButton")
         assert new_waypoint_button.text() == "새 FMS waypoint"
+        new_edge_button = page.findChild(QPushButton, "fmsEdgeNewButton")
+        assert new_edge_button.text() == "새 FMS edge"
         assert page.findChild(QLabel, "coordinateEditModeLabel") is not None
 
         map_canvas = page.findChild(MapCanvasWidget, "coordinateZoneMapCanvas")
@@ -164,6 +193,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert page.findChild(QTableWidget, "goalPoseTable") is not None
         assert page.findChild(QTableWidget, "patrolAreaTable") is not None
         assert page.findChild(QTableWidget, "fmsWaypointTable") is not None
+        assert page.findChild(QTableWidget, "fmsEdgeTable") is not None
         assert page.findChild(QTableWidget, "operationZoneBoundaryTable") is not None
 
         labels = _label_texts(page)
@@ -172,6 +202,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert "goal_pose" in labels
         assert "patrol_area.path_json" in labels
         assert "FMS waypoint" in labels
+        assert "FMS edge" in labels
         assert "Validation" in labels
         assert "맵이 로드되기 전에는 좌표를 저장할 수 없습니다." in labels
     finally:
@@ -241,7 +272,7 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
             return {
                 "result_code": "OK",
                 "waypoints": _sample_bundle()["fms_waypoints"],
-                "edges": [],
+                "edges": _sample_bundle()["fms_edges"],
                 "routes": [],
                 "reservations": [],
             }
@@ -257,13 +288,14 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
 
     assert calls == [
         ("get_active_map_bundle", True, True, True),
-        ("get_active_graph_bundle", True, False, False, False),
+        ("get_active_graph_bundle", True, True, False, False),
         ("get_map_asset", "YAML", "map_test", "TEXT"),
         ("get_map_asset", "PGM", "map_test", "BASE64"),
     ]
     assert emitted[0][0] is True
     assert emitted[0][1]["bundle"]["map_profile"]["map_id"] == "map_test"
     assert emitted[0][1]["bundle"]["fms_waypoints"][0]["waypoint_id"] == "corridor_01"
+    assert emitted[0][1]["bundle"]["fms_edges"][0]["edge_id"] == "edge_corridor_01_02"
     assert emitted[0][1]["pgm_bytes"] == pgm_bytes
     assert emitted[0][1]["yaml_sha256"] == "yaml-sha"
 
@@ -293,6 +325,7 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         goal_table = page.findChild(QTableWidget, "goalPoseTable")
         patrol_table = page.findChild(QTableWidget, "patrolAreaTable")
         waypoint_table = page.findChild(QTableWidget, "fmsWaypointTable")
+        edge_table = page.findChild(QTableWidget, "fmsEdgeTable")
 
         assert zone_table.rowCount() == 1
         assert zone_table.item(0, 0).text() == "room_301"
@@ -304,6 +337,9 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         assert waypoint_table.item(0, 0).text() == "corridor_01"
         assert waypoint_table.item(0, 1).text() == "복도1"
         assert waypoint_table.item(0, 3).text() == "x=0.20, y=0.40, yaw=1.57"
+        assert edge_table.item(0, 0).text() == "edge_corridor_01_02"
+        assert edge_table.item(0, 1).text() == "corridor_01"
+        assert edge_table.item(0, 3).text() == "양방향"
         assert page.validation_message_label.text() == "맵과 좌표 설정을 불러왔습니다."
         assert page.save_button.isEnabled() is False
     finally:
@@ -455,10 +491,11 @@ def test_coordinate_zone_settings_page_selects_operation_zone_into_edit_form():
         assert page.findChild(QLineEdit, "operationZoneIdInput").isReadOnly() is True
         assert page.findChild(QLineEdit, "operationZoneNameInput").text() == "301호"
         assert (
-            page.findChild(QComboBox, "operationZoneTypeCombo").currentText()
-            == "ROOM"
+            page.findChild(QComboBox, "operationZoneTypeCombo").currentText() == "ROOM"
         )
-        assert page.findChild(QCheckBox, "operationZoneEnabledCheck").isChecked() is True
+        assert (
+            page.findChild(QCheckBox, "operationZoneEnabledCheck").isChecked() is True
+        )
         boundary_table = page.findChild(QTableWidget, "operationZoneBoundaryTable")
         assert boundary_table.rowCount() == 3
         assert boundary_table.item(2, 2).text() == "1.0000"
@@ -729,9 +766,10 @@ def test_coordinate_zone_settings_page_applies_operation_zone_save_success():
 
         assert zone_table.rowCount() == 2
         assert zone_table.item(1, 0).text() == "caregiver_room"
-        assert page.findChild(QComboBox, "goalPoseZoneCombo").findData(
-            "caregiver_room"
-        ) >= 0
+        assert (
+            page.findChild(QComboBox, "goalPoseZoneCombo").findData("caregiver_room")
+            >= 0
+        )
     finally:
         page.close()
 
@@ -758,7 +796,9 @@ def test_coordinate_zone_settings_page_discards_unsaved_boundary_after_zone_save
 
         assert page.operation_zone_dirty is True
         assert page.operation_zone_boundary_dirty is True
-        assert page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 4
+        assert (
+            page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 4
+        )
 
         page._handle_operation_zone_save_finished(
             True,
@@ -787,12 +827,16 @@ def test_coordinate_zone_settings_page_discards_unsaved_boundary_after_zone_save
 
         assert page.operation_zone_dirty is False
         assert page.operation_zone_boundary_dirty is True
-        assert page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 4
+        assert (
+            page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 4
+        )
 
         page.discard_current_edit()
 
         assert page.operation_zone_boundary_dirty is False
-        assert page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 3
+        assert (
+            page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 3
+        )
         assert page.operation_zone_boundary_vertices == [
             {"x": 0.0, "y": 0.0},
             {"x": 1.0, "y": 0.0},
@@ -849,8 +893,12 @@ def test_coordinate_zone_settings_page_applies_operation_zone_boundary_save_succ
 
         assert page.selected_operation_zone["revision"] == 2
         assert page.operation_zone_boundary_dirty is False
-        assert page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 4
-        assert page.validation_message_label.text() == "운영 구역 boundary를 저장했습니다."
+        assert (
+            page.findChild(QTableWidget, "operationZoneBoundaryTable").rowCount() == 4
+        )
+        assert (
+            page.validation_message_label.text() == "운영 구역 boundary를 저장했습니다."
+        )
     finally:
         page.close()
 
@@ -879,7 +927,9 @@ def test_coordinate_zone_settings_page_keeps_operation_zone_dirty_on_failure():
             "ZONE_REVISION_CONFLICT: 다른 사용자가 먼저 구역을 수정했습니다.",
         )
 
-        assert page.findChild(QLineEdit, "operationZoneNameInput").text() == "301호-수정"
+        assert (
+            page.findChild(QLineEdit, "operationZoneNameInput").text() == "301호-수정"
+        )
         assert page.operation_zone_dirty is True
         assert page.save_button.isEnabled() is True
         assert "ZONE_REVISION_CONFLICT" in page.validation_message_label.text()
@@ -909,8 +959,7 @@ def test_coordinate_zone_settings_page_selects_goal_pose_into_edit_form():
         assert page.selected_goal_pose["goal_pose_id"] == "delivery_room_301"
         assert page.findChild(QLabel, "goalPoseIdLabel").text() == "delivery_room_301"
         assert (
-            page.findChild(QComboBox, "goalPoseZoneCombo").currentData()
-            == "room_301"
+            page.findChild(QComboBox, "goalPoseZoneCombo").currentData() == "room_301"
         )
         assert (
             page.findChild(QComboBox, "goalPosePurposeCombo").currentText()
@@ -1131,8 +1180,7 @@ def test_coordinate_zone_settings_page_selects_patrol_area_into_waypoint_form():
         assert page.selected_edit_type == "patrol_area"
         assert page.selected_patrol_area["patrol_area_id"] == "patrol_ward_night_01"
         assert (
-            page.findChild(QLabel, "patrolAreaIdLabel").text()
-            == "patrol_ward_night_01"
+            page.findChild(QLabel, "patrolAreaIdLabel").text() == "patrol_ward_night_01"
         )
         assert page.findChild(QLabel, "patrolAreaRevisionLabel").text() == "7"
 
@@ -1274,12 +1322,18 @@ def test_coordinate_zone_settings_page_selects_fms_waypoint_into_edit_form():
         assert page.selected_edit_type == "fms_waypoint"
         assert page.findChild(QLineEdit, "fmsWaypointIdEdit").text() == "corridor_01"
         assert page.findChild(QLineEdit, "fmsWaypointNameEdit").text() == "복도1"
-        assert page.findChild(QComboBox, "fmsWaypointTypeCombo").currentText() == "CORRIDOR"
+        assert (
+            page.findChild(QComboBox, "fmsWaypointTypeCombo").currentText()
+            == "CORRIDOR"
+        )
         assert page.findChild(QDoubleSpinBox, "fmsWaypointXSpin").value() == 0.2
         assert page.findChild(QDoubleSpinBox, "fmsWaypointYSpin").value() == 0.4
         assert page.findChild(QDoubleSpinBox, "fmsWaypointYawSpin").value() == 1.57
-        assert page.findChild(QLineEdit, "fmsWaypointSnapGroupEdit").text() == "main_corridor"
-        assert page.map_canvas.fms_waypoint_labels == ["복도1"]
+        assert (
+            page.findChild(QLineEdit, "fmsWaypointSnapGroupEdit").text()
+            == "main_corridor"
+        )
+        assert page.map_canvas.fms_waypoint_labels == ["복도1", "복도2"]
         assert page.map_canvas.selected_fms_waypoint_heading_yaw == 1.57
         assert page.save_button.isEnabled() is False
     finally:
@@ -1337,7 +1391,11 @@ def test_coordinate_zone_settings_page_creates_fms_waypoint_draft_from_map_click
 
         assert page.selected_edit_type == "fms_waypoint"
         assert page.fms_waypoint_mode == "create"
-        assert page.findChild(QLineEdit, "fmsWaypointIdEdit").text().startswith("waypoint_")
+        assert (
+            page.findChild(QLineEdit, "fmsWaypointIdEdit")
+            .text()
+            .startswith("waypoint_")
+        )
         assert page.findChild(QLineEdit, "fmsWaypointNameEdit").text() == "새 waypoint"
         assert page.findChild(QDoubleSpinBox, "fmsWaypointXSpin").value() == 0.7
         assert page.findChild(QDoubleSpinBox, "fmsWaypointYSpin").value() == 0.8
@@ -1437,6 +1495,139 @@ def test_coordinate_zone_settings_page_applies_fms_waypoint_save_success():
         assert page.validation_message_label.text() == "FMS waypoint를 저장했습니다."
     finally:
         page.close()
+
+
+def test_coordinate_zone_settings_page_selects_fms_edge_into_edit_form():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_edge(0)
+
+        assert page.selected_edit_type == "fms_edge"
+        assert page.findChild(QLineEdit, "fmsEdgeIdEdit").text() == (
+            "edge_corridor_01_02"
+        )
+        assert page.findChild(QComboBox, "fmsEdgeFromWaypointCombo").currentData() == (
+            "corridor_01"
+        )
+        assert page.findChild(QComboBox, "fmsEdgeToWaypointCombo").currentData() == (
+            "corridor_02"
+        )
+        assert (
+            page.findChild(QCheckBox, "fmsEdgeBidirectionalCheck").isChecked() is True
+        )
+        assert page.findChild(QDoubleSpinBox, "fmsEdgeTraversalCostSpin").value() == 1.5
+        assert page.findChild(QSpinBox, "fmsEdgePrioritySpin").value() == 10
+        assert page.map_canvas.fms_edge_pixel_pairs
+        assert page.map_canvas.selected_fms_edge_pixel_pair is not None
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_fms_edge_dirty_and_save_success():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_edge(0)
+        page.findChild(QCheckBox, "fmsEdgeBidirectionalCheck").setChecked(False)
+
+        assert page.fms_edge_dirty is True
+        assert page.save_button.isEnabled() is True
+
+        page._handle_fms_edge_save_finished(
+            True,
+            {
+                "result_code": "OK",
+                "edge": {
+                    "edge_id": "edge_corridor_01_02",
+                    "map_id": "map_test",
+                    "from_waypoint_id": "corridor_01",
+                    "to_waypoint_id": "corridor_02",
+                    "is_bidirectional": False,
+                    "traversal_cost": 2.0,
+                    "priority": 5,
+                    "is_enabled": True,
+                    "updated_at": "2026-05-04T10:30:00Z",
+                },
+            },
+        )
+
+        edge_table = page.findChild(QTableWidget, "fmsEdgeTable")
+        assert edge_table.item(0, 3).text() == "단방향"
+        assert page.selected_fms_edge["updated_at"] == "2026-05-04T10:30:00Z"
+        assert page.fms_edge_dirty is False
+        assert page.save_button.isEnabled() is False
+        assert page.validation_message_label.text() == "FMS edge를 저장했습니다."
+    finally:
+        page.close()
+
+
+def test_fms_edge_save_worker_sends_if_fms_003_payload():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        FmsEdgeSaveWorker,
+    )
+
+    calls = []
+
+    class FakeFmsService:
+        def upsert_edge(self, **payload):
+            calls.append(payload)
+            return {
+                "result_code": "OK",
+                "edge": {
+                    **payload,
+                    "map_id": "map_test",
+                    "updated_at": "2026-05-04T10:30:00Z",
+                },
+            }
+
+    payload = {
+        "edge_id": "edge_corridor_01_02",
+        "expected_updated_at": "2026-05-04T10:04:00Z",
+        "from_waypoint_id": "corridor_01",
+        "to_waypoint_id": "corridor_02",
+        "is_bidirectional": True,
+        "traversal_cost": 1.5,
+        "priority": 10,
+        "is_enabled": True,
+    }
+    emitted = []
+    worker = FmsEdgeSaveWorker(
+        payload=payload,
+        service_factory=FakeFmsService,
+    )
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["edge"]["updated_at"] == "2026-05-04T10:30:00Z"
 
 
 def test_patrol_area_path_save_worker_sends_if_loc_005_payload():
@@ -1609,7 +1800,9 @@ def test_coordinate_zone_settings_page_shows_map_asset_error_without_save():
     page = CoordinateZoneSettingsPage()
 
     try:
-        page.apply_load_error("MAP_ASSET_UNAVAILABLE: 맵 asset 파일을 읽을 수 없습니다.")
+        page.apply_load_error(
+            "MAP_ASSET_UNAVAILABLE: 맵 asset 파일을 읽을 수 없습니다."
+        )
 
         assert page.map_canvas.map_loaded is False
         assert page.save_button.isEnabled() is False
@@ -1680,9 +1873,6 @@ def test_coordinate_zone_settings_page_accepts_active_map_summary():
         assert page.active_map_labels["map_id"].text() == "map_test11_0423"
         assert page.active_map_labels["map_revision"].text() == "1"
         assert page.active_map_labels["frame_id"].text() == "map"
-        assert (
-            page.active_map_labels["yaml_path"].text()
-            == "maps/map_test11_0423.yaml"
-        )
+        assert page.active_map_labels["yaml_path"].text() == "maps/map_test11_0423.yaml"
     finally:
         page.close()

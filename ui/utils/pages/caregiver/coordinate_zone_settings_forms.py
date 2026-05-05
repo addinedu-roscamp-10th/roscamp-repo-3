@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QVBoxLayout,
 )
@@ -85,12 +86,8 @@ def build_operation_zone_form(page):
     layout.addWidget(boundary_title, len(rows), 0)
     layout.addWidget(page.operation_zone_boundary_table, len(rows), 1)
 
-    page.operation_zone_boundary_x_spin = coordinate_spin(
-        "operationZoneBoundaryXSpin"
-    )
-    page.operation_zone_boundary_y_spin = coordinate_spin(
-        "operationZoneBoundaryYSpin"
-    )
+    page.operation_zone_boundary_x_spin = coordinate_spin("operationZoneBoundaryXSpin")
+    page.operation_zone_boundary_y_spin = coordinate_spin("operationZoneBoundaryYSpin")
     layout.addWidget(QLabel("vertex x"), len(rows) + 1, 0)
     layout.addWidget(page.operation_zone_boundary_x_spin, len(rows) + 1, 1)
     layout.addWidget(QLabel("vertex y"), len(rows) + 2, 0)
@@ -121,7 +118,9 @@ def build_operation_zone_form(page):
         page.operation_zone_boundary_y_spin,
     ]:
         widget.valueChanged.connect(
-            lambda _value: page._update_selected_operation_zone_boundary_vertex_from_form()
+            lambda _value: (
+                page._update_selected_operation_zone_boundary_vertex_from_form()
+            )
         )
 
     return form
@@ -318,6 +317,69 @@ def build_fms_waypoint_form(page):
     return form
 
 
+def build_fms_edge_form(page):
+    form = QFrame()
+    form.setObjectName("fmsEdgeEditForm")
+    layout = QGridLayout(form)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setHorizontalSpacing(10)
+    layout.setVerticalSpacing(10)
+
+    page.fms_edge_id_input = QLineEdit()
+    page.fms_edge_id_input.setObjectName("fmsEdgeIdEdit")
+    page.fms_edge_from_waypoint_combo = QComboBox()
+    page.fms_edge_from_waypoint_combo.setObjectName("fmsEdgeFromWaypointCombo")
+    page.fms_edge_to_waypoint_combo = QComboBox()
+    page.fms_edge_to_waypoint_combo.setObjectName("fmsEdgeToWaypointCombo")
+    page.fms_edge_bidirectional_check = QCheckBox("양방향")
+    page.fms_edge_bidirectional_check.setObjectName("fmsEdgeBidirectionalCheck")
+    page.fms_edge_traversal_cost_spin = QDoubleSpinBox()
+    page.fms_edge_traversal_cost_spin.setObjectName("fmsEdgeTraversalCostSpin")
+    page.fms_edge_traversal_cost_spin.setRange(0.0, 100000.0)
+    page.fms_edge_traversal_cost_spin.setDecimals(4)
+    page.fms_edge_traversal_cost_spin.setSingleStep(0.1)
+    page.fms_edge_priority_spin = QSpinBox()
+    page.fms_edge_priority_spin.setObjectName("fmsEdgePrioritySpin")
+    page.fms_edge_priority_spin.setRange(-100000, 100000)
+    page.fms_edge_enabled_check = QCheckBox("활성")
+    page.fms_edge_enabled_check.setObjectName("fmsEdgeEnabledCheck")
+
+    _add_grid_rows(
+        layout,
+        [
+            ("edge ID", page.fms_edge_id_input),
+            ("from waypoint", page.fms_edge_from_waypoint_combo),
+            ("to waypoint", page.fms_edge_to_waypoint_combo),
+            ("방향", page.fms_edge_bidirectional_check),
+            ("traversal cost", page.fms_edge_traversal_cost_spin),
+            ("priority", page.fms_edge_priority_spin),
+            ("사용 여부", page.fms_edge_enabled_check),
+        ],
+    )
+
+    page.fms_edge_id_input.textChanged.connect(
+        lambda _value: page._mark_fms_edge_dirty()
+    )
+    for widget in [
+        page.fms_edge_from_waypoint_combo,
+        page.fms_edge_to_waypoint_combo,
+    ]:
+        widget.currentIndexChanged.connect(lambda _value: page._mark_fms_edge_dirty())
+    for widget in [
+        page.fms_edge_bidirectional_check,
+        page.fms_edge_enabled_check,
+    ]:
+        widget.toggled.connect(lambda _checked: page._mark_fms_edge_dirty())
+    page.fms_edge_traversal_cost_spin.valueChanged.connect(
+        lambda _value: page._mark_fms_edge_dirty()
+    )
+    page.fms_edge_priority_spin.valueChanged.connect(
+        lambda _value: page._mark_fms_edge_dirty()
+    )
+
+    return form
+
+
 def readonly_value_label(object_name):
     label = QLabel("-")
     label.setObjectName(object_name)
@@ -367,13 +429,16 @@ def _connect_fms_waypoint_dirty_signal(page, widget):
     if isinstance(widget, QDoubleSpinBox):
         widget.valueChanged.connect(lambda _value: page._mark_fms_waypoint_dirty())
     elif isinstance(widget, QComboBox):
-        widget.currentIndexChanged.connect(lambda _index: page._mark_fms_waypoint_dirty())
+        widget.currentIndexChanged.connect(
+            lambda _index: page._mark_fms_waypoint_dirty()
+        )
     elif isinstance(widget, QCheckBox):
         widget.toggled.connect(lambda _checked: page._mark_fms_waypoint_dirty())
 
 
 __all__ = [
     "FMS_WAYPOINT_TYPES",
+    "build_fms_edge_form",
     "build_fms_waypoint_form",
     "build_goal_pose_form",
     "build_operation_zone_form",

@@ -600,24 +600,43 @@ def test_fms_config_remote_service_exposes_waypoint_bundle_and_upsert(monkeypatc
 
     service = FmsConfigRemoteService()
 
-    assert service.get_active_graph_bundle(
-        include_disabled=False,
-        include_edges=False,
-        include_routes=False,
-        include_reservations=True,
-    )["result_code"] == "OK"
-    assert service.upsert_waypoint(
-        waypoint_id="corridor_01",
-        expected_updated_at=None,
-        display_name="복도1",
-        waypoint_type="CORRIDOR",
-        pose_x=0.1,
-        pose_y=-0.2,
-        pose_yaw=1.57,
-        frame_id="map",
-        snap_group="main_corridor",
-        is_enabled=True,
-    )["result_code"] == "OK"
+    assert (
+        service.get_active_graph_bundle(
+            include_disabled=False,
+            include_edges=False,
+            include_routes=False,
+            include_reservations=True,
+        )["result_code"]
+        == "OK"
+    )
+    assert (
+        service.upsert_waypoint(
+            waypoint_id="corridor_01",
+            expected_updated_at=None,
+            display_name="복도1",
+            waypoint_type="CORRIDOR",
+            pose_x=0.1,
+            pose_y=-0.2,
+            pose_yaw=1.57,
+            frame_id="map",
+            snap_group="main_corridor",
+            is_enabled=True,
+        )["result_code"]
+        == "OK"
+    )
+    assert (
+        service.upsert_edge(
+            edge_id="edge_corridor_01_02",
+            expected_updated_at="2026-05-04T10:04:00Z",
+            from_waypoint_id="corridor_01",
+            to_waypoint_id="corridor_02",
+            is_bidirectional=True,
+            traversal_cost=1.5,
+            priority=10,
+            is_enabled=True,
+        )["result_code"]
+        == "OK"
+    )
 
     assert calls == [
         (
@@ -643,6 +662,20 @@ def test_fms_config_remote_service_exposes_waypoint_bundle_and_upsert(monkeypatc
                 "pose_yaw": 1.57,
                 "frame_id": "map",
                 "snap_group": "main_corridor",
+                "is_enabled": True,
+            },
+        ),
+        (
+            "fms_config",
+            "upsert_edge",
+            {
+                "edge_id": "edge_corridor_01_02",
+                "expected_updated_at": "2026-05-04T10:04:00Z",
+                "from_waypoint_id": "corridor_01",
+                "to_waypoint_id": "corridor_02",
+                "is_bidirectional": True,
+                "traversal_cost": 1.5,
+                "priority": 10,
                 "is_enabled": True,
             },
         ),

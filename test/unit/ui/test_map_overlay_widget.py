@@ -44,8 +44,16 @@ def test_patrol_map_overlay_loads_pgm_yaml_and_converts_world_coordinates():
                     "waypoint_count": 3,
                     "current_waypoint_index": 1,
                     "poses": [
-                        {"x": 0.1665755137108074, "y": -0.4496830900440016, "yaw": 1.57},
-                        {"x": 1.6946025435218914, "y": 0.0043433854992070454, "yaw": 0.0},
+                        {
+                            "x": 0.1665755137108074,
+                            "y": -0.4496830900440016,
+                            "yaw": 1.57,
+                        },
+                        {
+                            "x": 1.6946025435218914,
+                            "y": 0.0043433854992070454,
+                            "yaw": 0.0,
+                        },
                     ],
                 },
                 "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
@@ -102,5 +110,33 @@ def test_map_overlay_tracks_fms_waypoint_labels_and_yaws():
         assert overlay.fms_waypoint_labels == []
         assert overlay.fms_waypoint_heading_yaws == []
         assert overlay.selected_fms_waypoint_pixel_point is None
+    finally:
+        overlay.close()
+
+
+def test_map_overlay_tracks_fms_edge_pairs_and_clears_them():
+    _app()
+
+    from ui.utils.widgets.map_overlay import OperationalMapOverlay
+
+    overlay = OperationalMapOverlay()
+
+    try:
+        overlay.show_fms_edge_editor(
+            fms_waypoint_pixel_points=[(10, 20), (30, 40)],
+            fms_waypoint_labels=["복도1", "복도2"],
+            fms_edge_pixel_pairs=[((10, 20), (30, 40))],
+            selected_edge_pixel_pair=((10, 20), (30, 40)),
+        )
+
+        assert overlay.fms_waypoint_pixel_points == [(10, 20), (30, 40)]
+        assert overlay.fms_waypoint_labels == ["복도1", "복도2"]
+        assert overlay.fms_edge_pixel_pairs == [((10, 20), (30, 40))]
+        assert overlay.selected_fms_edge_pixel_pair == ((10, 20), (30, 40))
+
+        overlay.clear_configuration_overlay()
+
+        assert overlay.fms_edge_pixel_pairs == []
+        assert overlay.selected_fms_edge_pixel_pair is None
     finally:
         overlay.close()

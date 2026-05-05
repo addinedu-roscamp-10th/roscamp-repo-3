@@ -69,6 +69,10 @@ def test_fms_config_repository_fetches_active_map_and_waypoints(monkeypatch):
         map_id="map_0504",
         include_disabled=False,
     ) == [{"waypoint_id": "corridor_01"}]
+    assert repository.get_edges(
+        map_id="map_0504",
+        include_disabled=True,
+    ) == [{"waypoint_id": "corridor_01"}]
 
     assert calls == [
         ("one", fms_config_repository.ACTIVE_MAP_PROFILE_SQL, None),
@@ -77,8 +81,14 @@ def test_fms_config_repository_fetches_active_map_and_waypoints(monkeypatch):
             fms_config_repository.LIST_WAYPOINTS_SQL,
             ("map_0504", False),
         ),
+        (
+            "all",
+            fms_config_repository.LIST_EDGES_SQL,
+            ("map_0504", True),
+        ),
     ]
     assert "FROM fms_waypoint" in fms_config_repository.LIST_WAYPOINTS_SQL
+    assert "FROM fms_edge" in fms_config_repository.LIST_EDGES_SQL
 
 
 def test_fms_config_repository_inserts_missing_waypoint(monkeypatch):
@@ -202,6 +212,117 @@ def test_fms_config_repository_reports_waypoint_stale_conflict(monkeypatch):
     assert len(cursor.calls) == 1
 
 
+def test_fms_config_repository_inserts_missing_edge(monkeypatch):
+    inserted_row = {
+        "edge_id": "edge_corridor_01_02",
+        "map_id": "map_0504",
+    }
+    cursor = FakeCursor(rows=[None, inserted_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(fms_config_repository, "get_connection", lambda: connection)
+
+    result = fms_config_repository.FmsConfigRepository().upsert_edge(
+        map_id="map_0504",
+        edge_id="edge_corridor_01_02",
+        expected_updated_at=None,
+        from_waypoint_id="corridor_01",
+        to_waypoint_id="corridor_02",
+        is_bidirectional=True,
+        traversal_cost=1.5,
+        priority=10,
+        is_enabled=True,
+    )
+
+    assert result == {"status": "UPSERTED", "edge": inserted_row}
+    assert connection.began is True
+    assert connection.committed is True
+    lock_query, lock_params = cursor.calls[0]
+    insert_query, insert_params = cursor.calls[1]
+    select_query, select_params = cursor.calls[2]
+    assert lock_query == fms_config_repository.LOCK_EDGE_SQL
+    assert lock_params == ("edge_corridor_01_02",)
+    assert "INSERT INTO fms_edge" in insert_query
+    assert insert_params == (
+        "edge_corridor_01_02",
+        "map_0504",
+        "corridor_01",
+        "corridor_02",
+        True,
+        1.5,
+        10,
+        True,
+    )
+    assert select_query == fms_config_repository.FIND_EDGE_SQL
+    assert select_params == ("edge_corridor_01_02",)
+
+
+def test_fms_config_repository_updates_existing_edge_with_stale_check(monkeypatch):
+    locked_row = {
+        "edge_id": "edge_corridor_01_02",
+        "map_id": "map_0504",
+        "updated_at": "2026-05-04T10:04:00",
+    }
+    updated_row = {
+        "edge_id": "edge_corridor_01_02",
+        "map_id": "map_0504",
+    }
+    cursor = FakeCursor(rows=[locked_row, updated_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(fms_config_repository, "get_connection", lambda: connection)
+
+    result = fms_config_repository.FmsConfigRepository().upsert_edge(
+        map_id="map_0504",
+        edge_id="edge_corridor_01_02",
+        expected_updated_at="2026-05-04T10:04:00",
+        from_waypoint_id="corridor_01",
+        to_waypoint_id="corridor_02",
+        is_bidirectional=False,
+        traversal_cost=None,
+        priority=None,
+        is_enabled=False,
+    )
+
+    assert result == {"status": "UPSERTED", "edge": updated_row}
+    update_query, update_params = cursor.calls[1]
+    assert "UPDATE fms_edge" in update_query
+    assert update_params == (
+        "corridor_01",
+        "corridor_02",
+        False,
+        None,
+        None,
+        False,
+        "edge_corridor_01_02",
+        "map_0504",
+    )
+
+
+def test_fms_config_repository_reports_edge_stale_conflict(monkeypatch):
+    locked_row = {
+        "edge_id": "edge_corridor_01_02",
+        "map_id": "map_0504",
+        "updated_at": "2026-05-04T10:04:00",
+    }
+    cursor = FakeCursor(rows=[locked_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(fms_config_repository, "get_connection", lambda: connection)
+
+    result = fms_config_repository.FmsConfigRepository().upsert_edge(
+        map_id="map_0504",
+        edge_id="edge_corridor_01_02",
+        expected_updated_at="2026-05-04T10:00:00",
+        from_waypoint_id="corridor_01",
+        to_waypoint_id="corridor_02",
+        is_bidirectional=True,
+        traversal_cost=1.5,
+        priority=10,
+        is_enabled=True,
+    )
+
+    assert result == {"status": "STALE", "edge": locked_row}
+    assert len(cursor.calls) == 1
+
+
 def test_fms_config_repository_exposes_async_methods(monkeypatch):
     calls = []
 
@@ -231,15 +352,21 @@ def test_fms_config_repository_exposes_async_methods(monkeypatch):
             map_id="map_0504",
             include_disabled=True,
         )
-        return active_map, waypoints
+        edges = await repository.async_get_edges(
+            map_id="map_0504",
+            include_disabled=False,
+        )
+        return active_map, waypoints, edges
 
-    active_map, waypoints = asyncio.run(scenario())
+    active_map, waypoints, edges = asyncio.run(scenario())
 
     assert active_map == {"map_id": "map_0504"}
     assert waypoints == [{"waypoint_id": "corridor_01"}]
+    assert edges == [{"waypoint_id": "corridor_01"}]
     assert calls == [
         ("one", fms_config_repository.ACTIVE_MAP_PROFILE_SQL, None),
         ("all", fms_config_repository.LIST_WAYPOINTS_SQL, ("map_0504", True)),
+        ("all", fms_config_repository.LIST_EDGES_SQL, ("map_0504", False)),
     ]
 
 
@@ -294,3 +421,57 @@ def test_fms_config_repository_async_upsert_waypoint(monkeypatch):
     assert calls[0] == (fms_config_repository.LOCK_WAYPOINT_SQL, ("corridor_02",))
     assert "INSERT INTO fms_waypoint" in calls[1][0]
     assert calls[2] == (fms_config_repository.FIND_WAYPOINT_SQL, ("corridor_02",))
+
+
+def test_fms_config_repository_async_upsert_edge(monkeypatch):
+    locked_row = None
+    inserted_row = {
+        "edge_id": "edge_corridor_01_02",
+        "map_id": "map_0504",
+    }
+    calls = []
+
+    class AsyncCursor:
+        def __init__(self):
+            self.rows = [locked_row, inserted_row]
+
+        async def execute(self, query, params=None):
+            calls.append((query, params))
+
+        async def fetchone(self):
+            if not self.rows:
+                return None
+            return self.rows.pop(0)
+
+    @asynccontextmanager
+    async def fake_async_transaction():
+        yield AsyncCursor()
+
+    monkeypatch.setattr(
+        fms_config_repository,
+        "async_transaction",
+        fake_async_transaction,
+    )
+
+    async def scenario():
+        return await fms_config_repository.FmsConfigRepository().async_upsert_edge(
+            map_id="map_0504",
+            edge_id="edge_corridor_01_02",
+            expected_updated_at=None,
+            from_waypoint_id="corridor_01",
+            to_waypoint_id="corridor_02",
+            is_bidirectional=True,
+            traversal_cost=1.5,
+            priority=10,
+            is_enabled=True,
+        )
+
+    result = asyncio.run(scenario())
+
+    assert result == {"status": "UPSERTED", "edge": inserted_row}
+    assert calls[0] == (
+        fms_config_repository.LOCK_EDGE_SQL,
+        ("edge_corridor_01_02",),
+    )
+    assert "INSERT INTO fms_edge" in calls[1][0]
+    assert calls[2] == (fms_config_repository.FIND_EDGE_SQL, ("edge_corridor_01_02",))

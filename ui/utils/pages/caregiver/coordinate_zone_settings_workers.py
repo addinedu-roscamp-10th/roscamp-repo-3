@@ -36,7 +36,7 @@ class CoordinateConfigLoadWorker(QObject):
 
             fms_bundle = self.fms_service_factory().get_active_graph_bundle(
                 include_disabled=True,
-                include_edges=False,
+                include_edges=True,
                 include_routes=False,
                 include_reservations=False,
             )
@@ -199,6 +199,25 @@ class FmsWaypointSaveWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class FmsEdgeSaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, *, payload, service_factory=FmsConfigRemoteService):
+        super().__init__()
+        self.payload = dict(payload or {})
+        self.service_factory = service_factory
+
+    def run(self):
+        try:
+            response = self.service_factory().upsert_edge(**self.payload)
+            if isinstance(response, dict) and response.get("result_code") == "OK":
+                self.finished.emit(True, response)
+                return
+            self.finished.emit(False, _format_result_error(response))
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
 def _is_ok_response(response):
     return isinstance(response, dict) and response.get("result_code") == "OK"
 
@@ -227,6 +246,7 @@ def _decode_base64_asset(value):
 
 __all__ = [
     "CoordinateConfigLoadWorker",
+    "FmsEdgeSaveWorker",
     "FmsWaypointSaveWorker",
     "GoalPoseSaveWorker",
     "OperationZoneBoundarySaveWorker",

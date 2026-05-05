@@ -26,7 +26,9 @@ def _rpc(service: str, method: str, **kwargs):
     )
 
     if not response.get("ok"):
-        raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+        raise RemoteServiceError(
+            str(response.get("error", "서버 요청 처리에 실패했습니다."))
+        )
 
     return response.get("payload")
 
@@ -80,7 +82,9 @@ class CaregiverRemoteService:
 
 
 class PatientRemoteService:
-    def search_patient_candidates(self, name: str = "", room_no: str = "", limit: int = 10):
+    def search_patient_candidates(
+        self, name: str = "", room_no: str = "", limit: int = 10
+    ):
         return _rpc(
             "patient",
             "search_patient_candidates",
@@ -104,7 +108,9 @@ class InventoryRemoteService:
         return _rpc("inventory", "get_inventory_bundle")
 
     def add_inventory(self, item_name, quantity):
-        return _rpc("inventory", "add_inventory", item_name=item_name, quantity=quantity)
+        return _rpc(
+            "inventory", "add_inventory", item_name=item_name, quantity=quantity
+        )
 
     def add_item_quantity(self, *, item_id, quantity_delta):
         return _rpc(
@@ -145,7 +151,9 @@ class DeliveryRequestRemoteService:
         response = send_request(MESSAGE_CODE_DELIVERY_CREATE_TASK, payload)
 
         if not response.get("ok"):
-            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
 
         return response.get("payload")
 
@@ -153,7 +161,9 @@ class DeliveryRequestRemoteService:
         response = send_request(MESSAGE_CODE_PATROL_CREATE_TASK, payload)
 
         if not response.get("ok"):
-            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
 
         return response.get("payload")
 
@@ -161,7 +171,9 @@ class DeliveryRequestRemoteService:
         response = send_request(MESSAGE_CODE_PATROL_RESUME_TASK, payload)
 
         if not response.get("ok"):
-            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
 
         return response.get("payload")
 
@@ -352,6 +364,30 @@ class FmsConfigRemoteService:
             is_enabled=is_enabled,
         )
 
+    def upsert_edge(
+        self,
+        *,
+        edge_id,
+        expected_updated_at=None,
+        from_waypoint_id,
+        to_waypoint_id,
+        is_bidirectional,
+        traversal_cost=None,
+        priority=None,
+        is_enabled,
+    ):
+        return self._rpc(
+            "upsert_edge",
+            edge_id=edge_id,
+            expected_updated_at=expected_updated_at,
+            from_waypoint_id=from_waypoint_id,
+            to_waypoint_id=to_waypoint_id,
+            is_bidirectional=is_bidirectional,
+            traversal_cost=traversal_cost,
+            priority=priority,
+            is_enabled=is_enabled,
+        )
+
 
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"
@@ -443,7 +479,9 @@ class VisitGuideRemoteService:
         response = send_request(MESSAGE_CODE_GUIDE_CREATE_TASK, payload)
 
         if not response.get("ok"):
-            raise RemoteServiceError(str(response.get("error", "서버 요청 처리에 실패했습니다.")))
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
 
         return response.get("payload")
 
@@ -451,7 +489,9 @@ class VisitGuideRemoteService:
         return _rpc("visit_guide", "search_patient", keyword=keyword)
 
     def start_robot_guide(self, patient: dict, member_id=None):
-        return _rpc("visit_guide", "start_robot_guide", patient=patient, member_id=member_id)
+        return _rpc(
+            "visit_guide", "start_robot_guide", patient=patient, member_id=member_id
+        )
 
     def begin_guide_session(
         self,
