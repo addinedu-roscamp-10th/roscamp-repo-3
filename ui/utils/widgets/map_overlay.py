@@ -1,3 +1,5 @@
+import math
+
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QColor, QPainterPath, QPen
 
@@ -9,13 +11,16 @@ class OperationalMapOverlay(MapCanvasWidget):
         super().__init__(parent)
         self.setObjectName("patrolMapOverlay")
         self.route_pixel_points = []
+        self.route_heading_yaws = []
         self.current_waypoint_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
         self.goal_pose_pixel_points = []
+        self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
+        self.selected_goal_pose_heading_yaw = None
         self.status_text = "순찰 맵 미수신"
 
     def render(self, task):
@@ -45,7 +50,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
         self.goal_pose_pixel_points = []
+        self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
+        self.selected_goal_pose_heading_yaw = None
 
         path = (
             task.get("patrol_path")
@@ -56,11 +63,14 @@ class OperationalMapOverlay(MapCanvasWidget):
         if not isinstance(poses, list):
             poses = []
 
-        self.route_pixel_points = [
-            pixel
-            for pixel in (self.world_to_pixel(pose) for pose in poses)
-            if pixel is not None
-        ]
+        self.route_pixel_points = []
+        self.route_heading_yaws = []
+        for pose in poses:
+            pixel = self.world_to_pixel(pose)
+            if pixel is None:
+                continue
+            self.route_pixel_points.append(pixel)
+            self.route_heading_yaws.append(self._pose_yaw(pose))
         self.current_waypoint_index = self._optional_int(
             path.get("current_waypoint_index") if isinstance(path, dict) else None
         )
@@ -79,62 +89,97 @@ class OperationalMapOverlay(MapCanvasWidget):
 
         if not self.map_loaded:
             self.route_pixel_points = []
+            self.route_heading_yaws = []
             self.robot_pixel_point = None
             self.fall_alert_pixel_point = None
 
     def _clear_overlay(self, status_text):
         self.route_pixel_points = []
+        self.route_heading_yaws = []
         self.current_waypoint_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
         self.goal_pose_pixel_points = []
+        self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
+        self.selected_goal_pose_heading_yaw = None
         self.clear_map(status_text)
 
     def show_zone_boundary_editor(self, *, vertex_pixel_points, selected_index=None):
         self.zone_boundary_pixel_points = list(vertex_pixel_points or [])
         self.selected_zone_boundary_vertex_index = selected_index
         self.goal_pose_pixel_points = []
+        self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
+        self.selected_goal_pose_heading_yaw = None
         self.route_pixel_points = []
+        self.route_heading_yaws = []
         self.current_waypoint_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
         self.update()
 
-    def show_goal_pose_editor(self, *, goal_pose_pixel_points, selected_pixel_point=None):
+    def show_goal_pose_editor(
+        self,
+        *,
+        goal_pose_pixel_points,
+        goal_pose_yaws=None,
+        selected_pixel_point=None,
+        selected_yaw=None,
+    ):
         self.goal_pose_pixel_points = list(goal_pose_pixel_points or [])
+        self.goal_pose_heading_yaws = self._normalized_yaws(
+            goal_pose_yaws,
+            len(self.goal_pose_pixel_points),
+        )
         self.selected_goal_pose_pixel_point = selected_pixel_point
+        self.selected_goal_pose_heading_yaw = self._optional_float(selected_yaw)
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
         self.route_pixel_points = []
+        self.route_heading_yaws = []
         self.current_waypoint_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
         self.update()
 
-    def show_patrol_path_editor(self, *, route_pixel_points, selected_waypoint_index=None):
+    def show_patrol_path_editor(
+        self,
+        *,
+        route_pixel_points,
+        route_yaws=None,
+        selected_waypoint_index=None,
+    ):
         self.route_pixel_points = list(route_pixel_points or [])
+        self.route_heading_yaws = self._normalized_yaws(
+            route_yaws,
+            len(self.route_pixel_points),
+        )
         self.current_waypoint_index = selected_waypoint_index
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
         self.goal_pose_pixel_points = []
+        self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
+        self.selected_goal_pose_heading_yaw = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
         self.update()
 
     def clear_configuration_overlay(self):
         self.route_pixel_points = []
+        self.route_heading_yaws = []
         self.current_waypoint_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
         self.goal_pose_pixel_points = []
+        self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
+        self.selected_goal_pose_heading_yaw = None
         self.update()
 
     def draw_overlay(self, painter, target):
@@ -178,14 +223,23 @@ class OperationalMapOverlay(MapCanvasWidget):
             painter.drawEllipse(point, 6 if selected else 4, 6 if selected else 4)
 
     def _draw_goal_poses(self, painter, target):
-        for point in (
-            self.to_view_point(pixel, target) for pixel in self.goal_pose_pixel_points
+        for point, yaw in zip(
+            (self.to_view_point(pixel, target) for pixel in self.goal_pose_pixel_points),
+            self.goal_pose_heading_yaws,
         ):
             if point is None:
                 continue
             painter.setPen(QPen(QColor("#0F172A"), 2))
             painter.setBrush(QColor("#22C55E"))
             painter.drawEllipse(point, 5, 5)
+            self._draw_heading_arrow(
+                painter,
+                point,
+                yaw,
+                QColor("#15803D"),
+                length=14.0,
+                width=2,
+            )
 
         selected = self.to_view_point(self.selected_goal_pose_pixel_point, target)
         if selected is None:
@@ -193,16 +247,28 @@ class OperationalMapOverlay(MapCanvasWidget):
         painter.setPen(QPen(QColor("#052E16"), 2))
         painter.setBrush(QColor("#86EFAC"))
         painter.drawEllipse(selected, 7, 7)
+        self._draw_heading_arrow(
+            painter,
+            selected,
+            self.selected_goal_pose_heading_yaw,
+            QColor("#052E16"),
+            length=18.0,
+            width=3,
+        )
 
     def _draw_route(self, painter, target):
-        points = [
-            point
-            for point in (
-                self.to_view_point(pixel, target)
-                for pixel in self.route_pixel_points
-            )
-            if point is not None
-        ]
+        points = []
+        yaws = []
+        route_yaws = self._normalized_yaws(
+            self.route_heading_yaws,
+            len(self.route_pixel_points),
+        )
+        for pixel, yaw in zip(self.route_pixel_points, route_yaws):
+            point = self.to_view_point(pixel, target)
+            if point is None:
+                continue
+            points.append(point)
+            yaws.append(yaw)
         if not points:
             return
 
@@ -226,6 +292,18 @@ class OperationalMapOverlay(MapCanvasWidget):
                 )
             )
             painter.drawEllipse(point, radius, radius)
+            self._draw_heading_arrow(
+                painter,
+                point,
+                yaws[index],
+                QColor(
+                    "#A16207"
+                    if index == self.current_waypoint_index
+                    else "#0369A1"
+                ),
+                length=15.0 if index == self.current_waypoint_index else 11.0,
+                width=2,
+            )
 
     def _draw_robot(self, painter, target):
         point = self.to_view_point(self.robot_pixel_point, target)
@@ -261,6 +339,53 @@ class OperationalMapOverlay(MapCanvasWidget):
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    @classmethod
+    def _normalized_yaws(cls, values, length):
+        yaws = [cls._optional_float(value) for value in values or []]
+        if len(yaws) < length:
+            yaws.extend([None] * (length - len(yaws)))
+        return yaws[:length]
+
+    @classmethod
+    def _pose_yaw(cls, pose):
+        if not isinstance(pose, dict):
+            return None
+        return cls._optional_float(pose.get("yaw", pose.get("pose_yaw")))
+
+    @staticmethod
+    def _optional_float(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _draw_heading_arrow(cls, painter, point, yaw, color, *, length, width):
+        yaw = cls._optional_float(yaw)
+        if point is None or yaw is None:
+            return
+
+        end = cls._heading_endpoint(point, yaw, length)
+        head_left = cls._heading_endpoint(end, yaw + math.pi - 0.55, 5.0)
+        head_right = cls._heading_endpoint(end, yaw + math.pi + 0.55, 5.0)
+
+        pen = QPen(color)
+        pen.setWidth(width)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(point, end)
+        painter.drawLine(end, head_left)
+        painter.drawLine(end, head_right)
+
+    @staticmethod
+    def _heading_endpoint(point, yaw, length):
+        return QPointF(
+            point.x() + (math.cos(yaw) * length),
+            point.y() - (math.sin(yaw) * length),
+        )
 
 
 PatrolMapOverlay = OperationalMapOverlay

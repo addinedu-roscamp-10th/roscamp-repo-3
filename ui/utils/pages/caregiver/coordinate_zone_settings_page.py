@@ -1350,37 +1350,40 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _sync_goal_pose_overlay(self):
-        goal_pose_pixel_points = [
-            pixel
-            for pixel in (
-                self.map_canvas.world_to_pixel(
-                    {"x": row.get("pose_x"), "y": row.get("pose_y")}
-                )
-                for row in self.goal_pose_rows
+        goal_pose_pixel_points = []
+        goal_pose_yaws = []
+        for row in self.goal_pose_rows:
+            pixel = self.map_canvas.world_to_pixel(
+                {"x": row.get("pose_x"), "y": row.get("pose_y")}
             )
-            if pixel is not None
-        ]
+            if pixel is None:
+                continue
+            goal_pose_pixel_points.append(pixel)
+            goal_pose_yaws.append(_float_or_default(row.get("pose_yaw")))
         self.map_canvas.show_goal_pose_editor(
             goal_pose_pixel_points=goal_pose_pixel_points,
+            goal_pose_yaws=goal_pose_yaws,
             selected_pixel_point=self.map_canvas.world_to_pixel(
                 {
                     "x": self.goal_pose_x_spin.value(),
                     "y": self.goal_pose_y_spin.value(),
                 }
             ),
+            selected_yaw=self.goal_pose_yaw_spin.value(),
         )
 
     def _sync_patrol_overlay(self):
-        route_pixel_points = [
-            pixel
-            for pixel in (
-                self.map_canvas.world_to_pixel(pose)
-                for pose in self.patrol_waypoint_rows
-            )
-            if pixel is not None
-        ]
+        route_pixel_points = []
+        route_yaws = []
+        for pose in self.patrol_waypoint_rows:
+            pixel = self.map_canvas.world_to_pixel(pose)
+            if pixel is None:
+                continue
+            route_pixel_points.append(pixel)
+            route_yaws.append(_float_or_default(pose.get("yaw")))
         self.map_canvas.show_patrol_path_editor(
             route_pixel_points=route_pixel_points,
+            route_yaws=route_yaws,
             selected_waypoint_index=self.selected_patrol_waypoint_index,
         )
 

@@ -906,6 +906,35 @@ def test_coordinate_zone_settings_page_goal_pose_dirty_and_map_click_preview():
         page.close()
 
 
+def test_coordinate_zone_settings_page_goal_pose_overlay_tracks_yaw_preview():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+
+        page.findChild(QDoubleSpinBox, "goalPoseYawSpin").setValue(1.57)
+
+        assert page.map_canvas.selected_goal_pose_heading_yaw == 1.57
+
+        page.handle_map_click_for_goal_pose({"x": 0.02, "y": 0.04})
+
+        assert page.map_canvas.selected_goal_pose_heading_yaw == 1.57
+    finally:
+        page.close()
+
+
 def test_goal_pose_save_worker_sends_if_loc_004_payload():
     from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
         GoalPoseSaveWorker,
@@ -1134,6 +1163,38 @@ def test_coordinate_zone_settings_page_patrol_waypoint_click_selects_and_drag_mo
         assert waypoint_table.item(0, 2).text() == "0.6000"
         assert page.patrol_waypoint_rows[0]["yaw"] == 0.0
         assert page.patrol_area_dirty is True
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_patrol_overlay_tracks_waypoint_yaws():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+
+        assert page.map_canvas.route_heading_yaws == [0.0, 1.57]
+
+        page.select_patrol_waypoint(1)
+        page.move_selected_patrol_waypoint_to_world({"x": 0.4, "y": 0.6})
+
+        assert page.map_canvas.route_heading_yaws == [0.0, 1.57]
+
+        page.findChild(QDoubleSpinBox, "patrolWaypointYawSpin").setValue(3.14)
+
+        assert page.map_canvas.route_heading_yaws == [0.0, 3.14]
     finally:
         page.close()
 
