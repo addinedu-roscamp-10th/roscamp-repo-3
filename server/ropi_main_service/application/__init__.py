@@ -12,6 +12,7 @@ _EXPORTS = {
     "DeliveryWorkflowTaskManager": ("delivery_workflow_task_manager", "DeliveryWorkflowTaskManager"),
     "FixedGoalPoseResolver": ("goal_pose_resolvers", "FixedGoalPoseResolver"),
     "FallEvidenceImageService": ("fall_evidence_image", "FallEvidenceImageService"),
+    "FmsConfigService": ("fms_config", "FmsConfigService"),
     "FallResponseCommandService": ("fall_response_command", "FallResponseCommandService"),
     "GuideCommandService": ("guide_command", "GuideCommandService"),
     "GuideRuntimeService": ("guide_runtime", "GuideRuntimeService"),

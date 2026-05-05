@@ -215,6 +215,29 @@ CREATE TABLE `goal_pose` (
     KEY `idx_goal_pose_map_purpose` (`map_id`, `purpose`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `fms_waypoint` (
+    `waypoint_id` VARCHAR(100) NOT NULL,
+    `map_id` VARCHAR(100) NOT NULL,
+    `display_name` VARCHAR(100) NOT NULL,
+    `waypoint_type` VARCHAR(50) NOT NULL,
+    `pose_x` DOUBLE NOT NULL,
+    `pose_y` DOUBLE NOT NULL,
+    `pose_yaw` DOUBLE NOT NULL,
+    `frame_id` VARCHAR(50) NOT NULL DEFAULT 'map',
+    `snap_group` VARCHAR(100) NULL,
+    `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_fms_waypoint` PRIMARY KEY (`waypoint_id`),
+    CONSTRAINT `fk_fms_waypoint_map_profile`
+        FOREIGN KEY (`map_id`)
+        REFERENCES `map_profile` (`map_id`),
+    KEY `idx_fms_waypoint_map_enabled_name`
+        (`map_id`, `is_enabled`, `display_name`),
+    KEY `idx_fms_waypoint_map_type`
+        (`map_id`, `waypoint_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `task` (
     `task_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `task_type` VARCHAR(20) NOT NULL,
