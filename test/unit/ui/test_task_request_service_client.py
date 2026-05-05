@@ -8,6 +8,7 @@ from ui.utils.network.service_clients import (
     CaregiverRemoteService,
     CoordinateConfigRemoteService,
     DeliveryRequestRemoteService,
+    FmsConfigRemoteService,
     InventoryRemoteService,
     KioskVisitorRemoteService,
     StaffCallRemoteService,
@@ -585,6 +586,66 @@ def test_coordinate_config_remote_service_exposes_map_asset_rpc(monkeypatch):
                 "encoding": "TEXT",
             },
         )
+    ]
+
+
+def test_fms_config_remote_service_exposes_waypoint_bundle_and_upsert(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "OK", "waypoints": []}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    service = FmsConfigRemoteService()
+
+    assert service.get_active_graph_bundle(
+        include_disabled=False,
+        include_edges=False,
+        include_routes=False,
+        include_reservations=True,
+    )["result_code"] == "OK"
+    assert service.upsert_waypoint(
+        waypoint_id="corridor_01",
+        expected_updated_at=None,
+        display_name="복도1",
+        waypoint_type="CORRIDOR",
+        pose_x=0.1,
+        pose_y=-0.2,
+        pose_yaw=1.57,
+        frame_id="map",
+        snap_group="main_corridor",
+        is_enabled=True,
+    )["result_code"] == "OK"
+
+    assert calls == [
+        (
+            "fms_config",
+            "get_active_graph_bundle",
+            {
+                "include_disabled": False,
+                "include_edges": False,
+                "include_routes": False,
+                "include_reservations": True,
+            },
+        ),
+        (
+            "fms_config",
+            "upsert_waypoint",
+            {
+                "waypoint_id": "corridor_01",
+                "expected_updated_at": None,
+                "display_name": "복도1",
+                "waypoint_type": "CORRIDOR",
+                "pose_x": 0.1,
+                "pose_y": -0.2,
+                "pose_yaw": 1.57,
+                "frame_id": "map",
+                "snap_group": "main_corridor",
+                "is_enabled": True,
+            },
+        ),
     ]
 
 

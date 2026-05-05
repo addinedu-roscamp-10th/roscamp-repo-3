@@ -93,6 +93,21 @@ def _sample_bundle():
                 "is_enabled": False,
             }
         ],
+        "fms_waypoints": [
+            {
+                "waypoint_id": "corridor_01",
+                "map_id": "map_test",
+                "display_name": "복도1",
+                "waypoint_type": "CORRIDOR",
+                "pose_x": 0.2,
+                "pose_y": 0.4,
+                "pose_yaw": 1.57,
+                "frame_id": "map",
+                "snap_group": "main_corridor",
+                "is_enabled": True,
+                "updated_at": "2026-05-04T10:01:00Z",
+            }
+        ],
     }
 
 
@@ -136,6 +151,8 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         new_zone_button = page.findChild(QPushButton, "operationZoneNewButton")
         assert new_zone_button.text() == "새 구역"
         assert new_zone_button.parent() is not page.operation_zone_form
+        new_waypoint_button = page.findChild(QPushButton, "fmsWaypointNewButton")
+        assert new_waypoint_button.text() == "새 FMS waypoint"
         assert page.findChild(QLabel, "coordinateEditModeLabel") is not None
 
         map_canvas = page.findChild(MapCanvasWidget, "coordinateZoneMapCanvas")
@@ -146,6 +163,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert page.findChild(QTableWidget, "operationZoneTable") is not None
         assert page.findChild(QTableWidget, "goalPoseTable") is not None
         assert page.findChild(QTableWidget, "patrolAreaTable") is not None
+        assert page.findChild(QTableWidget, "fmsWaypointTable") is not None
         assert page.findChild(QTableWidget, "operationZoneBoundaryTable") is not None
 
         labels = _label_texts(page)
@@ -153,6 +171,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert "operation_zone" in labels
         assert "goal_pose" in labels
         assert "patrol_area.path_json" in labels
+        assert "FMS waypoint" in labels
         assert "Validation" in labels
         assert "맵이 로드되기 전에는 좌표를 저장할 수 없습니다." in labels
     finally:
@@ -201,19 +220,50 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
                 "sha256": "pgm-sha",
             }
 
+    class FakeFmsService:
+        def get_active_graph_bundle(
+            self,
+            *,
+            include_disabled,
+            include_edges,
+            include_routes,
+            include_reservations,
+        ):
+            calls.append(
+                (
+                    "get_active_graph_bundle",
+                    include_disabled,
+                    include_edges,
+                    include_routes,
+                    include_reservations,
+                )
+            )
+            return {
+                "result_code": "OK",
+                "waypoints": _sample_bundle()["fms_waypoints"],
+                "edges": [],
+                "routes": [],
+                "reservations": [],
+            }
+
     emitted = []
-    worker = CoordinateConfigLoadWorker(service_factory=FakeCoordinateService)
+    worker = CoordinateConfigLoadWorker(
+        service_factory=FakeCoordinateService,
+        fms_service_factory=FakeFmsService,
+    )
     worker.finished.connect(lambda ok, payload: emitted.append((ok, payload)))
 
     worker.run()
 
     assert calls == [
         ("get_active_map_bundle", True, True, True),
+        ("get_active_graph_bundle", True, False, False, False),
         ("get_map_asset", "YAML", "map_test", "TEXT"),
         ("get_map_asset", "PGM", "map_test", "BASE64"),
     ]
     assert emitted[0][0] is True
     assert emitted[0][1]["bundle"]["map_profile"]["map_id"] == "map_test"
+    assert emitted[0][1]["bundle"]["fms_waypoints"][0]["waypoint_id"] == "corridor_01"
     assert emitted[0][1]["pgm_bytes"] == pgm_bytes
     assert emitted[0][1]["yaml_sha256"] == "yaml-sha"
 
@@ -242,6 +292,7 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         zone_table = page.findChild(QTableWidget, "operationZoneTable")
         goal_table = page.findChild(QTableWidget, "goalPoseTable")
         patrol_table = page.findChild(QTableWidget, "patrolAreaTable")
+        waypoint_table = page.findChild(QTableWidget, "fmsWaypointTable")
 
         assert zone_table.rowCount() == 1
         assert zone_table.item(0, 0).text() == "room_301"
@@ -250,6 +301,9 @@ def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
         assert goal_table.item(0, 3).text() == "x=1.70, y=0.02, yaw=0.00"
         assert patrol_table.item(0, 0).text() == "patrol_ward_night_01"
         assert patrol_table.item(0, 3).text() == "비활성"
+        assert waypoint_table.item(0, 0).text() == "corridor_01"
+        assert waypoint_table.item(0, 1).text() == "복도1"
+        assert waypoint_table.item(0, 3).text() == "x=0.20, y=0.40, yaw=1.57"
         assert page.validation_message_label.text() == "맵과 좌표 설정을 불러왔습니다."
         assert page.save_button.isEnabled() is False
     finally:
@@ -1195,6 +1249,192 @@ def test_coordinate_zone_settings_page_patrol_overlay_tracks_waypoint_yaws():
         page.findChild(QDoubleSpinBox, "patrolWaypointYawSpin").setValue(3.14)
 
         assert page.map_canvas.route_heading_yaws == [0.0, 3.14]
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_selects_fms_waypoint_into_edit_form():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_waypoint(0)
+
+        assert page.selected_edit_type == "fms_waypoint"
+        assert page.findChild(QLineEdit, "fmsWaypointIdEdit").text() == "corridor_01"
+        assert page.findChild(QLineEdit, "fmsWaypointNameEdit").text() == "복도1"
+        assert page.findChild(QComboBox, "fmsWaypointTypeCombo").currentText() == "CORRIDOR"
+        assert page.findChild(QDoubleSpinBox, "fmsWaypointXSpin").value() == 0.2
+        assert page.findChild(QDoubleSpinBox, "fmsWaypointYSpin").value() == 0.4
+        assert page.findChild(QDoubleSpinBox, "fmsWaypointYawSpin").value() == 1.57
+        assert page.findChild(QLineEdit, "fmsWaypointSnapGroupEdit").text() == "main_corridor"
+        assert page.map_canvas.fms_waypoint_labels == ["복도1"]
+        assert page.map_canvas.selected_fms_waypoint_heading_yaw == 1.57
+        assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_fms_waypoint_map_click_dirty_and_preview():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_waypoint(0)
+
+        page.handle_map_click_for_fms_waypoint({"x": 0.5, "y": 0.6})
+
+        assert page.findChild(QDoubleSpinBox, "fmsWaypointXSpin").value() == 0.5
+        assert page.findChild(QDoubleSpinBox, "fmsWaypointYSpin").value() == 0.6
+        assert page.fms_waypoint_dirty is True
+        assert page.save_button.isEnabled() is True
+        assert page.map_canvas.selected_fms_waypoint_pixel_point is not None
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_creates_fms_waypoint_draft_from_map_click():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+
+        page.start_fms_waypoint_create()
+        page.handle_map_click_for_fms_waypoint({"x": 0.7, "y": 0.8})
+
+        assert page.selected_edit_type == "fms_waypoint"
+        assert page.fms_waypoint_mode == "create"
+        assert page.findChild(QLineEdit, "fmsWaypointIdEdit").text().startswith("waypoint_")
+        assert page.findChild(QLineEdit, "fmsWaypointNameEdit").text() == "새 waypoint"
+        assert page.findChild(QDoubleSpinBox, "fmsWaypointXSpin").value() == 0.7
+        assert page.findChild(QDoubleSpinBox, "fmsWaypointYSpin").value() == 0.8
+        assert page.save_button.isEnabled() is True
+    finally:
+        page.close()
+
+
+def test_fms_waypoint_save_worker_sends_if_fms_002_payload():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        FmsWaypointSaveWorker,
+    )
+
+    calls = []
+
+    class FakeFmsService:
+        def upsert_waypoint(self, **payload):
+            calls.append(payload)
+            return {
+                "result_code": "OK",
+                "waypoint": {
+                    **payload,
+                    "map_id": "map_test",
+                    "updated_at": "2026-05-04T10:30:00Z",
+                },
+            }
+
+    payload = {
+        "waypoint_id": "corridor_01",
+        "expected_updated_at": "2026-05-04T10:01:00Z",
+        "display_name": "복도1",
+        "waypoint_type": "CORRIDOR",
+        "pose_x": 0.5,
+        "pose_y": 0.6,
+        "pose_yaw": 1.57,
+        "frame_id": "map",
+        "snap_group": "main_corridor",
+        "is_enabled": True,
+    }
+    emitted = []
+    worker = FmsWaypointSaveWorker(
+        payload=payload,
+        service_factory=FakeFmsService,
+    )
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["waypoint"]["updated_at"] == "2026-05-04T10:30:00Z"
+
+
+def test_coordinate_zone_settings_page_applies_fms_waypoint_save_success():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_waypoint(0)
+        page._handle_fms_waypoint_save_finished(
+            True,
+            {
+                "result_code": "OK",
+                "waypoint": {
+                    "waypoint_id": "corridor_01",
+                    "map_id": "map_test",
+                    "display_name": "복도1 수정",
+                    "waypoint_type": "CORRIDOR",
+                    "pose_x": 0.5,
+                    "pose_y": 0.6,
+                    "pose_yaw": 0.0,
+                    "frame_id": "map",
+                    "snap_group": "main_corridor",
+                    "is_enabled": True,
+                    "updated_at": "2026-05-04T10:30:00Z",
+                },
+            },
+        )
+
+        waypoint_table = page.findChild(QTableWidget, "fmsWaypointTable")
+        assert waypoint_table.item(0, 1).text() == "복도1 수정"
+        assert waypoint_table.item(0, 3).text() == "x=0.50, y=0.60, yaw=0.00"
+        assert page.selected_fms_waypoint["updated_at"] == "2026-05-04T10:30:00Z"
+        assert page.fms_waypoint_dirty is False
+        assert page.save_button.isEnabled() is False
+        assert page.validation_message_label.text() == "FMS waypoint를 저장했습니다."
     finally:
         page.close()
 

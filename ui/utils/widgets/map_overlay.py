@@ -21,6 +21,11 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
         self.selected_goal_pose_heading_yaw = None
+        self.fms_waypoint_pixel_points = []
+        self.fms_waypoint_labels = []
+        self.fms_waypoint_heading_yaws = []
+        self.selected_fms_waypoint_pixel_point = None
+        self.selected_fms_waypoint_heading_yaw = None
         self.status_text = "순찰 맵 미수신"
 
     def render(self, task):
@@ -53,6 +58,11 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
         self.selected_goal_pose_heading_yaw = None
+        self.fms_waypoint_pixel_points = []
+        self.fms_waypoint_labels = []
+        self.fms_waypoint_heading_yaws = []
+        self.selected_fms_waypoint_pixel_point = None
+        self.selected_fms_waypoint_heading_yaw = None
 
         path = (
             task.get("patrol_path")
@@ -105,6 +115,11 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
         self.selected_goal_pose_heading_yaw = None
+        self.fms_waypoint_pixel_points = []
+        self.fms_waypoint_labels = []
+        self.fms_waypoint_heading_yaws = []
+        self.selected_fms_waypoint_pixel_point = None
+        self.selected_fms_waypoint_heading_yaw = None
         self.clear_map(status_text)
 
     def show_zone_boundary_editor(self, *, vertex_pixel_points, selected_index=None):
@@ -114,6 +129,11 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
         self.selected_goal_pose_heading_yaw = None
+        self.fms_waypoint_pixel_points = []
+        self.fms_waypoint_labels = []
+        self.fms_waypoint_heading_yaws = []
+        self.selected_fms_waypoint_pixel_point = None
+        self.selected_fms_waypoint_heading_yaw = None
         self.route_pixel_points = []
         self.route_heading_yaws = []
         self.current_waypoint_index = None
@@ -138,6 +158,11 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.selected_goal_pose_heading_yaw = self._optional_float(selected_yaw)
         self.zone_boundary_pixel_points = []
         self.selected_zone_boundary_vertex_index = None
+        self.fms_waypoint_pixel_points = []
+        self.fms_waypoint_labels = []
+        self.fms_waypoint_heading_yaws = []
+        self.selected_fms_waypoint_pixel_point = None
+        self.selected_fms_waypoint_heading_yaw = None
         self.route_pixel_points = []
         self.route_heading_yaws = []
         self.current_waypoint_index = None
@@ -164,6 +189,44 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
         self.selected_goal_pose_heading_yaw = None
+        self.fms_waypoint_pixel_points = []
+        self.fms_waypoint_labels = []
+        self.fms_waypoint_heading_yaws = []
+        self.selected_fms_waypoint_pixel_point = None
+        self.selected_fms_waypoint_heading_yaw = None
+        self.robot_pixel_point = None
+        self.fall_alert_pixel_point = None
+        self.update()
+
+    def show_fms_waypoint_editor(
+        self,
+        *,
+        fms_waypoint_pixel_points,
+        fms_waypoint_labels=None,
+        fms_waypoint_yaws=None,
+        selected_pixel_point=None,
+        selected_yaw=None,
+    ):
+        self.fms_waypoint_pixel_points = list(fms_waypoint_pixel_points or [])
+        self.fms_waypoint_labels = self._normalized_labels(
+            fms_waypoint_labels,
+            len(self.fms_waypoint_pixel_points),
+        )
+        self.fms_waypoint_heading_yaws = self._normalized_yaws(
+            fms_waypoint_yaws,
+            len(self.fms_waypoint_pixel_points),
+        )
+        self.selected_fms_waypoint_pixel_point = selected_pixel_point
+        self.selected_fms_waypoint_heading_yaw = self._optional_float(selected_yaw)
+        self.zone_boundary_pixel_points = []
+        self.selected_zone_boundary_vertex_index = None
+        self.goal_pose_pixel_points = []
+        self.goal_pose_heading_yaws = []
+        self.selected_goal_pose_pixel_point = None
+        self.selected_goal_pose_heading_yaw = None
+        self.route_pixel_points = []
+        self.route_heading_yaws = []
+        self.current_waypoint_index = None
         self.robot_pixel_point = None
         self.fall_alert_pixel_point = None
         self.update()
@@ -180,11 +243,17 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.goal_pose_heading_yaws = []
         self.selected_goal_pose_pixel_point = None
         self.selected_goal_pose_heading_yaw = None
+        self.fms_waypoint_pixel_points = []
+        self.fms_waypoint_labels = []
+        self.fms_waypoint_heading_yaws = []
+        self.selected_fms_waypoint_pixel_point = None
+        self.selected_fms_waypoint_heading_yaw = None
         self.update()
 
     def draw_overlay(self, painter, target):
         self._draw_zone_boundary(painter, target)
         self._draw_goal_poses(painter, target)
+        self._draw_fms_waypoints(painter, target)
         self._draw_route(painter, target)
         self._draw_robot(painter, target)
         self._draw_fall_alert(painter, target)
@@ -305,6 +374,45 @@ class OperationalMapOverlay(MapCanvasWidget):
                 width=2,
             )
 
+    def _draw_fms_waypoints(self, painter, target):
+        for pixel, label, yaw in zip(
+            self.fms_waypoint_pixel_points,
+            self.fms_waypoint_labels,
+            self.fms_waypoint_heading_yaws,
+        ):
+            point = self.to_view_point(pixel, target)
+            if point is None:
+                continue
+            painter.setPen(QPen(QColor("#312E81"), 2))
+            painter.setBrush(QColor("#A5B4FC"))
+            painter.drawEllipse(point, 5, 5)
+            self._draw_heading_arrow(
+                painter,
+                point,
+                yaw,
+                QColor("#4338CA"),
+                length=14.0,
+                width=2,
+            )
+            if label:
+                painter.setPen(QPen(QColor("#111827"), 1))
+                painter.drawText(point + QPointF(8, -8), str(label))
+
+        selected = self.to_view_point(self.selected_fms_waypoint_pixel_point, target)
+        if selected is None:
+            return
+        painter.setPen(QPen(QColor("#1E1B4B"), 2))
+        painter.setBrush(QColor("#C7D2FE"))
+        painter.drawEllipse(selected, 7, 7)
+        self._draw_heading_arrow(
+            painter,
+            selected,
+            self.selected_fms_waypoint_heading_yaw,
+            QColor("#1E1B4B"),
+            length=18.0,
+            width=3,
+        )
+
     def _draw_robot(self, painter, target):
         point = self.to_view_point(self.robot_pixel_point, target)
         if point is None:
@@ -346,6 +454,13 @@ class OperationalMapOverlay(MapCanvasWidget):
         if len(yaws) < length:
             yaws.extend([None] * (length - len(yaws)))
         return yaws[:length]
+
+    @staticmethod
+    def _normalized_labels(values, length):
+        labels = [str(value or "") for value in values or []]
+        if len(labels) < length:
+            labels.extend([""] * (length - len(labels)))
+        return labels[:length]
 
     @classmethod
     def _pose_yaw(cls, pose):

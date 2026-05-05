@@ -72,3 +72,35 @@ def test_patrol_map_overlay_loads_pgm_yaml_and_converts_world_coordinates():
         assert overlay.route_heading_yaws == []
     finally:
         overlay.close()
+
+
+def test_map_overlay_tracks_fms_waypoint_labels_and_yaws():
+    _app()
+
+    from ui.utils.widgets.map_overlay import OperationalMapOverlay
+
+    overlay = OperationalMapOverlay()
+
+    try:
+        overlay.show_fms_waypoint_editor(
+            fms_waypoint_pixel_points=[(10, 20), (30, 40)],
+            fms_waypoint_labels=["복도1", "301호앞"],
+            fms_waypoint_yaws=[1.57, 0.0],
+            selected_pixel_point=(10, 20),
+            selected_yaw=1.57,
+        )
+
+        assert overlay.fms_waypoint_pixel_points == [(10, 20), (30, 40)]
+        assert overlay.fms_waypoint_labels == ["복도1", "301호앞"]
+        assert overlay.fms_waypoint_heading_yaws == [1.57, 0.0]
+        assert overlay.selected_fms_waypoint_pixel_point == (10, 20)
+        assert overlay.selected_fms_waypoint_heading_yaw == 1.57
+
+        overlay.clear_configuration_overlay()
+
+        assert overlay.fms_waypoint_pixel_points == []
+        assert overlay.fms_waypoint_labels == []
+        assert overlay.fms_waypoint_heading_yaws == []
+        assert overlay.selected_fms_waypoint_pixel_point is None
+    finally:
+        overlay.close()

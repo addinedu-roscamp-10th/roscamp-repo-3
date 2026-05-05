@@ -302,6 +302,57 @@ class CoordinateConfigRemoteService:
         )
 
 
+class FmsConfigRemoteService:
+    _SERVICE_NAME = "fms_config"
+
+    def _rpc(self, method: str, **kwargs):
+        return _rpc(self._SERVICE_NAME, method, **kwargs)
+
+    def get_active_graph_bundle(
+        self,
+        *,
+        include_disabled=True,
+        include_edges=True,
+        include_routes=True,
+        include_reservations=False,
+    ):
+        return self._rpc(
+            "get_active_graph_bundle",
+            include_disabled=include_disabled,
+            include_edges=include_edges,
+            include_routes=include_routes,
+            include_reservations=include_reservations,
+        )
+
+    def upsert_waypoint(
+        self,
+        *,
+        waypoint_id,
+        expected_updated_at=None,
+        display_name,
+        waypoint_type,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        snap_group=None,
+        is_enabled,
+    ):
+        return self._rpc(
+            "upsert_waypoint",
+            waypoint_id=waypoint_id,
+            expected_updated_at=expected_updated_at,
+            display_name=display_name,
+            waypoint_type=waypoint_type,
+            pose_x=pose_x,
+            pose_y=pose_y,
+            pose_yaw=pose_yaw,
+            frame_id=frame_id,
+            snap_group=snap_group,
+            is_enabled=is_enabled,
+        )
+
+
 class TaskMonitorRemoteService:
     _SERVICE_NAME = "task_monitor"
 

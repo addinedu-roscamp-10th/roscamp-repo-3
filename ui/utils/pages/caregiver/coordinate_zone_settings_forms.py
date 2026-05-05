@@ -15,6 +15,16 @@ from PyQt6.QtWidgets import (
 
 
 GOAL_POSE_PURPOSES = ["PICKUP", "DESTINATION", "DOCK"]
+FMS_WAYPOINT_TYPES = [
+    "CORRIDOR",
+    "ROOM_ENTRY",
+    "DOCK_ENTRY",
+    "SUPPLY_ENTRY",
+    "WAIT_POINT",
+    "INTERSECTION",
+    "ELEVATOR_ENTRY",
+    "OTHER",
+]
 OPERATION_ZONE_TYPES = [
     "ROOM",
     "ENTRANCE",
@@ -250,6 +260,64 @@ def build_patrol_area_form(page):
     return form
 
 
+def build_fms_waypoint_form(page):
+    form = QFrame()
+    form.setObjectName("fmsWaypointEditForm")
+    layout = QGridLayout(form)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setHorizontalSpacing(10)
+    layout.setVerticalSpacing(10)
+
+    page.fms_waypoint_id_input = QLineEdit()
+    page.fms_waypoint_id_input.setObjectName("fmsWaypointIdEdit")
+    page.fms_waypoint_name_input = QLineEdit()
+    page.fms_waypoint_name_input.setObjectName("fmsWaypointNameEdit")
+    page.fms_waypoint_type_combo = QComboBox()
+    page.fms_waypoint_type_combo.setObjectName("fmsWaypointTypeCombo")
+    page.fms_waypoint_type_combo.addItems(FMS_WAYPOINT_TYPES)
+    page.fms_waypoint_x_spin = coordinate_spin("fmsWaypointXSpin")
+    page.fms_waypoint_y_spin = coordinate_spin("fmsWaypointYSpin")
+    page.fms_waypoint_yaw_spin = coordinate_spin("fmsWaypointYawSpin")
+    page.fms_waypoint_frame_id_label = readonly_value_label("fmsWaypointFrameIdLabel")
+    page.fms_waypoint_snap_group_input = QLineEdit()
+    page.fms_waypoint_snap_group_input.setObjectName("fmsWaypointSnapGroupEdit")
+    page.fms_waypoint_enabled_check = QCheckBox("활성")
+    page.fms_waypoint_enabled_check.setObjectName("fmsWaypointEnabledCheck")
+
+    _add_grid_rows(
+        layout,
+        [
+            ("waypoint ID", page.fms_waypoint_id_input),
+            ("표시 이름", page.fms_waypoint_name_input),
+            ("유형", page.fms_waypoint_type_combo),
+            ("x", page.fms_waypoint_x_spin),
+            ("y", page.fms_waypoint_y_spin),
+            ("yaw(rad)", page.fms_waypoint_yaw_spin),
+            ("frame_id", page.fms_waypoint_frame_id_label),
+            ("snap group", page.fms_waypoint_snap_group_input),
+            ("사용 여부", page.fms_waypoint_enabled_check),
+        ],
+    )
+
+    for widget in [
+        page.fms_waypoint_id_input,
+        page.fms_waypoint_name_input,
+        page.fms_waypoint_snap_group_input,
+    ]:
+        widget.textChanged.connect(lambda _value: page._mark_fms_waypoint_dirty())
+
+    for widget in [
+        page.fms_waypoint_type_combo,
+        page.fms_waypoint_x_spin,
+        page.fms_waypoint_y_spin,
+        page.fms_waypoint_yaw_spin,
+        page.fms_waypoint_enabled_check,
+    ]:
+        _connect_fms_waypoint_dirty_signal(page, widget)
+
+    return form
+
+
 def readonly_value_label(object_name):
     label = QLabel("-")
     label.setObjectName(object_name)
@@ -295,7 +363,18 @@ def _connect_operation_zone_dirty_signal(page, widget):
         widget.toggled.connect(lambda _checked: page._mark_operation_zone_dirty())
 
 
+def _connect_fms_waypoint_dirty_signal(page, widget):
+    if isinstance(widget, QDoubleSpinBox):
+        widget.valueChanged.connect(lambda _value: page._mark_fms_waypoint_dirty())
+    elif isinstance(widget, QComboBox):
+        widget.currentIndexChanged.connect(lambda _index: page._mark_fms_waypoint_dirty())
+    elif isinstance(widget, QCheckBox):
+        widget.toggled.connect(lambda _checked: page._mark_fms_waypoint_dirty())
+
+
 __all__ = [
+    "FMS_WAYPOINT_TYPES",
+    "build_fms_waypoint_form",
     "build_goal_pose_form",
     "build_operation_zone_form",
     "build_patrol_area_form",

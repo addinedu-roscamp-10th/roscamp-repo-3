@@ -10,6 +10,7 @@ class CoordinateConfigBundle:
     operation_zones: list
     goal_poses: list
     patrol_areas: list
+    fms_waypoints: list
 
 
 def normalize_coordinate_config_bundle(bundle):
@@ -21,6 +22,9 @@ def normalize_coordinate_config_bundle(bundle):
         operation_zones=_dict_rows(source.get("operation_zones")),
         goal_poses=_dict_rows(source.get("goal_poses")),
         patrol_areas=_dict_rows(source.get("patrol_areas")),
+        fms_waypoints=_dict_rows(
+            source.get("fms_waypoints", source.get("waypoints"))
+        ),
     )
 
 
@@ -104,10 +108,18 @@ PATROL_AREA_TABLE_COLUMNS = [
     ("waypoint_count", _waypoint_count_text),
     ("is_enabled", _enabled_text),
 ]
+FMS_WAYPOINT_TABLE_COLUMNS = [
+    "waypoint_id",
+    "display_name",
+    "waypoint_type",
+    ("pose_x", _goal_pose_text),
+    ("is_enabled", _enabled_text),
+]
 
 
 __all__ = [
     "CoordinateConfigBundle",
+    "FMS_WAYPOINT_TABLE_COLUMNS",
     "GOAL_POSE_TABLE_COLUMNS",
     "OPERATION_ZONE_TABLE_COLUMNS",
     "PATROL_AREA_TABLE_COLUMNS",

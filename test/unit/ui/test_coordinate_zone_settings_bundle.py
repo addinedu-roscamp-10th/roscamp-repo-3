@@ -9,6 +9,7 @@ def test_coordinate_config_bundle_normalizes_only_dict_rows():
             "operation_zones": [{"zone_id": "room_301"}, "invalid"],
             "goal_poses": [None, {"goal_pose_id": "delivery_room_301"}],
             "patrol_areas": [{"patrol_area_id": "patrol_ward_night_01"}, 42],
+            "fms_waypoints": [{"waypoint_id": "corridor_01"}, ""],
         }
     )
 
@@ -17,6 +18,7 @@ def test_coordinate_config_bundle_normalizes_only_dict_rows():
     assert normalized.operation_zones == [{"zone_id": "room_301"}]
     assert normalized.goal_poses == [{"goal_pose_id": "delivery_room_301"}]
     assert normalized.patrol_areas == [{"patrol_area_id": "patrol_ward_night_01"}]
+    assert normalized.fms_waypoints == [{"waypoint_id": "corridor_01"}]
 
 
 def test_coordinate_config_bundle_handles_non_dict_payload():
@@ -31,3 +33,4 @@ def test_coordinate_config_bundle_handles_non_dict_payload():
     assert normalized.operation_zones == []
     assert normalized.goal_poses == []
     assert normalized.patrol_areas == []
+    assert normalized.fms_waypoints == []
