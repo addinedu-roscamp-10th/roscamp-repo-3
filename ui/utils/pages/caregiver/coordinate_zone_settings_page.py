@@ -164,12 +164,57 @@ DRAFT_STATUS_TABLE_OBJECT_NAMES = {
     config["object_name"] for config in DRAFT_STATUS_TABLES.values()
 }
 
+TABLE_CARD_ACTIONS = {
+    "operationZoneTable": {
+        "table_name": "operation_zone",
+        "create_object_name": "operationZoneNewRowButton",
+        "create_handler": "start_operation_zone_create",
+        "deactivate_object_name": "operationZoneDeactivateRowButton",
+        "revert_object_name": "operationZoneRevertRowButton",
+    },
+    "goalPoseTable": {
+        "table_name": "goal_pose",
+        "deactivate_object_name": "goalPoseDeactivateRowButton",
+        "revert_object_name": "goalPoseRevertRowButton",
+    },
+    "fmsWaypointTable": {
+        "table_name": "fms_waypoint",
+        "create_object_name": "fmsWaypointNewRowButton",
+        "create_handler": "start_fms_waypoint_create",
+        "deactivate_object_name": "fmsWaypointDeactivateRowButton",
+        "revert_object_name": "fmsWaypointRevertRowButton",
+    },
+    "fmsEdgeTable": {
+        "table_name": "fms_edge",
+        "create_object_name": "fmsEdgeNewRowButton",
+        "create_handler": "start_fms_edge_create",
+        "deactivate_object_name": "fmsEdgeDeactivateRowButton",
+        "revert_object_name": "fmsEdgeRevertRowButton",
+    },
+    "fmsRouteTable": {
+        "table_name": "fms_route",
+        "create_object_name": "fmsRouteNewRowButton",
+        "create_handler": "start_fms_route_create",
+        "deactivate_object_name": "fmsRouteDeactivateRowButton",
+        "revert_object_name": "fmsRouteRevertRowButton",
+    },
+}
+
+DEACTIVATABLE_TABLES = {
+    "operation_zone",
+    "goal_pose",
+    "fms_waypoint",
+    "fms_edge",
+    "fms_route",
+}
+
 
 class CoordinateZoneSettingsPage(QWidget):
     def __init__(self):
         super().__init__()
         self.active_map_labels = {}
         self.tables = {}
+        self.table_action_buttons = {}
         self.load_thread = None
         self.load_worker = None
         self.coordinate_batch_save_thread = None
@@ -393,8 +438,13 @@ class CoordinateZoneSettingsPage(QWidget):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(8)
 
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
         title = QLabel(title_text)
         title.setObjectName("sectionTitle")
+        header_row.addWidget(title)
+        header_row.addStretch(1)
+        self._add_table_card_action_buttons(header_row, object_name)
         table_headers = list(headers)
         if object_name in DRAFT_STATUS_TABLE_OBJECT_NAMES:
             table_headers.append("상태")
@@ -420,9 +470,38 @@ class CoordinateZoneSettingsPage(QWidget):
         if object_name == "fmsRouteTable":
             table.cellClicked.connect(lambda row, _column: self.select_fms_route(row))
 
-        layout.addWidget(title)
+        layout.addLayout(header_row)
         layout.addWidget(table)
         return card
+
+    def _add_table_card_action_buttons(self, header_row, object_name):
+        config = TABLE_CARD_ACTIONS.get(object_name)
+        if not config:
+            return
+        table_name = config["table_name"]
+        buttons = {}
+        create_object_name = config.get("create_object_name")
+        if create_object_name:
+            create_button = QPushButton("+ 새 row")
+            create_button.setObjectName(create_object_name)
+            create_button.clicked.connect(getattr(self, config["create_handler"]))
+            buttons["create"] = create_button
+            header_row.addWidget(create_button)
+
+        deactivate_button = QPushButton("비활성화")
+        deactivate_button.setObjectName(config["deactivate_object_name"])
+        deactivate_button.setEnabled(False)
+        deactivate_button.clicked.connect(self.deactivate_selected_row)
+        buttons["deactivate"] = deactivate_button
+        header_row.addWidget(deactivate_button)
+
+        revert_button = QPushButton("되돌리기")
+        revert_button.setObjectName(config["revert_object_name"])
+        revert_button.setEnabled(False)
+        revert_button.clicked.connect(self.revert_selected_row)
+        buttons["revert"] = revert_button
+        header_row.addWidget(revert_button)
+        self.table_action_buttons[table_name] = buttons
 
     def _build_right_column(self):
         column = QVBoxLayout()
@@ -451,26 +530,6 @@ class CoordinateZoneSettingsPage(QWidget):
         )
         self.edit_placeholder_label.setObjectName("mutedText")
         self.edit_placeholder_label.setWordWrap(True)
-        self.operation_zone_new_button = QPushButton("새 구역")
-        self.operation_zone_new_button.setObjectName("operationZoneNewButton")
-        self.operation_zone_new_button.clicked.connect(self.start_operation_zone_create)
-        self.fms_waypoint_new_button = QPushButton("새 FMS waypoint")
-        self.fms_waypoint_new_button.setObjectName("fmsWaypointNewButton")
-        self.fms_waypoint_new_button.clicked.connect(self.start_fms_waypoint_create)
-        self.fms_edge_new_button = QPushButton("새 FMS edge")
-        self.fms_edge_new_button.setObjectName("fmsEdgeNewButton")
-        self.fms_edge_new_button.clicked.connect(self.start_fms_edge_create)
-        self.fms_route_new_button = QPushButton("새 FMS route")
-        self.fms_route_new_button.setObjectName("fmsRouteNewButton")
-        self.fms_route_new_button.clicked.connect(self.start_fms_route_create)
-        self.deactivate_row_button = QPushButton("선택 row 비활성화")
-        self.deactivate_row_button.setObjectName("coordinateDeactivateRowButton")
-        self.deactivate_row_button.setEnabled(False)
-        self.deactivate_row_button.clicked.connect(self.deactivate_selected_row)
-        self.revert_row_button = QPushButton("선택 row 되돌리기")
-        self.revert_row_button.setObjectName("coordinateRevertRowButton")
-        self.revert_row_button.setEnabled(False)
-        self.revert_row_button.clicked.connect(self.revert_selected_row)
         self.operation_zone_form = build_operation_zone_form(self)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form = build_goal_pose_form(self)
@@ -487,12 +546,6 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_panel_layout.addWidget(title)
         self.edit_panel_layout.addWidget(self.edit_mode_label)
         self.edit_panel_layout.addWidget(self.change_summary_label)
-        self.edit_panel_layout.addWidget(self.operation_zone_new_button)
-        self.edit_panel_layout.addWidget(self.fms_waypoint_new_button)
-        self.edit_panel_layout.addWidget(self.fms_edge_new_button)
-        self.edit_panel_layout.addWidget(self.fms_route_new_button)
-        self.edit_panel_layout.addWidget(self.deactivate_row_button)
-        self.edit_panel_layout.addWidget(self.revert_row_button)
         self.edit_panel_layout.addWidget(self.edit_placeholder_label)
         self.edit_panel_layout.addWidget(self.operation_zone_form)
         self.edit_panel_layout.addWidget(self.goal_pose_form)
@@ -805,11 +858,12 @@ class CoordinateZoneSettingsPage(QWidget):
         self.change_summary_label.setText(text)
 
     def _sync_revert_row_button(self):
-        if not hasattr(self, "revert_row_button"):
-            return
+        for buttons in self.table_action_buttons.values():
+            revert_button = buttons.get("revert")
+            if revert_button is not None:
+                revert_button.setEnabled(False)
         selected_identity = self._selected_draft_row_identity()
         if not selected_identity:
-            self.revert_row_button.setEnabled(False)
             return
         table_name, row_id = selected_identity
         can_revert = (
@@ -819,7 +873,9 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             or (table_name, row_id) in self.failed_coordinate_row_errors
         )
-        self.revert_row_button.setEnabled(can_revert)
+        revert_button = self.table_action_buttons.get(table_name, {}).get("revert")
+        if revert_button is not None:
+            revert_button.setEnabled(can_revert)
 
     def _clear_failed_coordinate_row_error(self, table_name, row_id):
         self.failed_coordinate_row_errors.pop((table_name, row_id), None)
@@ -1068,18 +1124,14 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _sync_deactivate_row_button(self):
-        if not hasattr(self, "deactivate_row_button"):
-            return
-        self.deactivate_row_button.setEnabled(
-            self.selected_edit_type
-            in {
-                "operation_zone",
-                "goal_pose",
-                "fms_waypoint",
-                "fms_edge",
-                "fms_route",
-            }
-        )
+        for table_name, buttons in self.table_action_buttons.items():
+            deactivate_button = buttons.get("deactivate")
+            if deactivate_button is None:
+                continue
+            deactivate_button.setEnabled(
+                table_name == self.selected_edit_type
+                and table_name in DEACTIVATABLE_TABLES
+            )
 
     def _capture_current_form_to_draft(self):
         if self._suppress_draft_capture:

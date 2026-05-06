@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFrame,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -204,23 +205,38 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert discard_button.text() == "변경 취소"
         assert save_button.isEnabled() is False
         assert discard_button.isEnabled() is False
-        deactivate_button = page.findChild(QPushButton, "coordinateDeactivateRowButton")
-        assert deactivate_button.text() == "선택 row 비활성화"
-        assert deactivate_button.isEnabled() is False
-        revert_button = page.findChild(QPushButton, "coordinateRevertRowButton")
-        assert revert_button.text() == "선택 row 되돌리기"
-        assert revert_button.isEnabled() is False
+        assert page.findChild(QPushButton, "coordinateDeactivateRowButton") is None
+        assert page.findChild(QPushButton, "coordinateRevertRowButton") is None
         change_summary = page.findChild(QLabel, "coordinateChangeSummaryLabel")
         assert change_summary.text() == "미저장 변경 없음"
-        new_zone_button = page.findChild(QPushButton, "operationZoneNewButton")
-        assert new_zone_button.text() == "새 구역"
-        assert new_zone_button.parent() is not page.operation_zone_form
-        new_waypoint_button = page.findChild(QPushButton, "fmsWaypointNewButton")
-        assert new_waypoint_button.text() == "새 FMS waypoint"
-        new_edge_button = page.findChild(QPushButton, "fmsEdgeNewButton")
-        assert new_edge_button.text() == "새 FMS edge"
-        new_route_button = page.findChild(QPushButton, "fmsRouteNewButton")
-        assert new_route_button.text() == "새 FMS route"
+        edit_panel = page.findChild(QFrame, "coordinateEditPanel")
+        assert edit_panel.findChild(QPushButton, "operationZoneNewRowButton") is None
+        assert edit_panel.findChild(QPushButton, "fmsWaypointNewRowButton") is None
+        new_zone_button = page.findChild(QPushButton, "operationZoneNewRowButton")
+        assert new_zone_button.text() == "+ 새 row"
+        assert page.findChild(QPushButton, "goalPoseNewRowButton") is None
+        new_waypoint_button = page.findChild(QPushButton, "fmsWaypointNewRowButton")
+        assert new_waypoint_button.text() == "+ 새 row"
+        new_edge_button = page.findChild(QPushButton, "fmsEdgeNewRowButton")
+        assert new_edge_button.text() == "+ 새 row"
+        new_route_button = page.findChild(QPushButton, "fmsRouteNewRowButton")
+        assert new_route_button.text() == "+ 새 row"
+        assert (
+            page.findChild(QPushButton, "operationZoneDeactivateRowButton").isEnabled()
+            is False
+        )
+        assert (
+            page.findChild(QPushButton, "operationZoneRevertRowButton").isEnabled()
+            is False
+        )
+        assert (
+            page.findChild(QPushButton, "fmsWaypointDeactivateRowButton").isEnabled()
+            is False
+        )
+        assert (
+            page.findChild(QPushButton, "fmsWaypointRevertRowButton").isEnabled()
+            is False
+        )
         assert page.findChild(QLabel, "coordinateEditModeLabel") is not None
 
         map_canvas = page.findChild(MapCanvasWidget, "coordinateZoneMapCanvas")
@@ -1391,10 +1407,12 @@ def test_coordinate_zone_settings_page_deactivates_selected_fms_waypoint_as_draf
         )
         page.select_fms_waypoint(0)
 
-        deactivate_button = page.findChild(QPushButton, "coordinateDeactivateRowButton")
+        deactivate_button = page.findChild(
+            QPushButton, "fmsWaypointDeactivateRowButton"
+        )
         assert deactivate_button.isEnabled() is True
 
-        page.deactivate_selected_row()
+        deactivate_button.click()
 
         assert page.findChild(QCheckBox, "fmsWaypointEnabledCheck").isChecked() is False
         assert page.fms_waypoint_rows[0]["is_enabled"] is False
@@ -1704,7 +1722,7 @@ def test_coordinate_zone_settings_page_marks_dirty_row_status_and_summary():
         assert "goal_pose 1" in summary_label.text()
 
         page.select_goal_pose(0)
-        revert_button = page.findChild(QPushButton, "coordinateRevertRowButton")
+        revert_button = page.findChild(QPushButton, "goalPoseRevertRowButton")
         assert revert_button.isEnabled() is True
     finally:
         page.close()
@@ -1739,7 +1757,7 @@ def test_coordinate_zone_settings_page_reverts_selected_dirty_fms_waypoint():
             in page.findChild(QLabel, "coordinateChangeSummaryLabel").text()
         )
 
-        page.revert_selected_row()
+        page.findChild(QPushButton, "fmsWaypointRevertRowButton").click()
 
         assert page.fms_waypoint_rows[0]["is_enabled"] is True
         assert page.fms_waypoint_dirty_row_ids == set()
@@ -1750,7 +1768,7 @@ def test_coordinate_zone_settings_page_reverts_selected_dirty_fms_waypoint():
             == "미저장 변경 없음"
         )
         assert (
-            page.findChild(QPushButton, "coordinateRevertRowButton").isEnabled()
+            page.findChild(QPushButton, "fmsWaypointRevertRowButton").isEnabled()
             is False
         )
     finally:
