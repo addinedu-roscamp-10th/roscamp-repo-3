@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QTableWidgetItem
 
 
@@ -46,7 +47,9 @@ def set_table_rows(table, rows, columns):
         row = row if isinstance(row, dict) else {}
         for column_index, column in enumerate(columns):
             value = _column_value(row, column)
-            table.setItem(row_index, column_index, QTableWidgetItem(value))
+            item = QTableWidgetItem(value)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            table.setItem(row_index, column_index, item)
 
 
 def _dict_rows(rows):

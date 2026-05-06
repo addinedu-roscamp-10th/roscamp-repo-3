@@ -694,7 +694,10 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def _selected_draft_row_is_dirty(self):
         if self.selected_edit_type == "operation_zone":
-            return self.operation_zone_mode != "create" and self.operation_zone_dirty
+            return self.operation_zone_mode != "create" and (
+                self.operation_zone_dirty
+                or self._operation_zone_form_has_metadata_change()
+            )
         if self.selected_edit_type == "goal_pose":
             return self.goal_pose_dirty
         if self.selected_edit_type == "fms_waypoint":
@@ -1048,6 +1051,22 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_deactivate_row_button()
         self._update_coordinate_draft_status_views()
 
+    def _operation_zone_form_has_metadata_change(self):
+        if (
+            self.selected_edit_type != "operation_zone"
+            or self.operation_zone_mode == "create"
+            or not self.selected_operation_zone
+        ):
+            return False
+        payload = self._build_operation_zone_save_payload()
+        selected = self.selected_operation_zone
+        return (
+            payload.get("zone_id") != str(selected.get("zone_id") or "").strip()
+            or payload.get("zone_name") != str(selected.get("zone_name") or "").strip()
+            or payload.get("zone_type") != str(selected.get("zone_type") or "").strip()
+            or bool(payload.get("is_enabled")) != bool(selected.get("is_enabled"))
+        )
+
     def _sync_deactivate_row_button(self):
         if not hasattr(self, "deactivate_row_button"):
             return
@@ -1079,7 +1098,11 @@ class CoordinateZoneSettingsPage(QWidget):
     def _capture_operation_zone_form_to_draft(self):
         if (
             not self.operation_zone_dirty
-            or self.operation_zone_mode == "create"
+            and not self._operation_zone_form_has_metadata_change()
+        ):
+            return
+        if (
+            self.operation_zone_mode == "create"
             or self.selected_operation_zone_index is None
             or not self.selected_operation_zone
         ):
@@ -2157,7 +2180,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_operation_zone_save_state()
 
     def _sync_operation_zone_save_state(self):
-        dirty = self.operation_zone_dirty or self.operation_zone_boundary_dirty
+        dirty = (
+            self.operation_zone_dirty
+            or self.operation_zone_boundary_dirty
+            or self._operation_zone_form_has_metadata_change()
+        )
         self._sync_page_save_state(
             expected_edit_type="operation_zone",
             dirty=dirty,

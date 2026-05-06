@@ -1485,6 +1485,78 @@ def test_coordinate_zone_settings_page_batch_zone_save_preserves_boundary_draft(
         page.close()
 
 
+def test_coordinate_zone_settings_page_saves_operation_zone_form_diff_without_dirty_signal():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    saved_operations = []
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        page.findChild(QLineEdit, "operationZoneNameInput").setText("301호 수정")
+        page.operation_zone_dirty = False
+        page._sync_operation_zone_save_state()
+        page._save_coordinate_batch_operations = lambda operations: (
+            saved_operations.extend(operations)
+        )
+
+        assert page.save_button.isEnabled() is True
+
+        page.save_button.click()
+
+        assert saved_operations == [
+            {
+                "table": "operation_zone",
+                "row_id": "room_301",
+                "method": "update_operation_zone",
+                "payload": {
+                    "zone_id": "room_301",
+                    "expected_revision": 1,
+                    "zone_name": "301호 수정",
+                    "zone_type": "ROOM",
+                    "is_enabled": True,
+                },
+            }
+        ]
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_list_tables_are_read_only_selection_surfaces():
+    _app()
+
+    from PyQt6.QtCore import Qt
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+
+        table = page.findChild(QTableWidget, "operationZoneTable")
+        assert not (table.item(0, 1).flags() & Qt.ItemFlag.ItemIsEditable)
+    finally:
+        page.close()
+
+
 def test_coordinate_zone_settings_page_marks_dirty_row_status_and_summary():
     _app()
 
