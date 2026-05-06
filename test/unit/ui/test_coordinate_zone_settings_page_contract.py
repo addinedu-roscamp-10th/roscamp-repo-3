@@ -207,6 +207,11 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         deactivate_button = page.findChild(QPushButton, "coordinateDeactivateRowButton")
         assert deactivate_button.text() == "선택 row 비활성화"
         assert deactivate_button.isEnabled() is False
+        revert_button = page.findChild(QPushButton, "coordinateRevertRowButton")
+        assert revert_button.text() == "선택 row 되돌리기"
+        assert revert_button.isEnabled() is False
+        change_summary = page.findChild(QLabel, "coordinateChangeSummaryLabel")
+        assert change_summary.text() == "미저장 변경 없음"
         new_zone_button = page.findChild(QPushButton, "operationZoneNewButton")
         assert new_zone_button.text() == "새 구역"
         assert new_zone_button.parent() is not page.operation_zone_form
@@ -1400,6 +1405,134 @@ def test_coordinate_zone_settings_page_deactivates_selected_fms_waypoint_as_draf
         assert operations[0]["table"] == "fms_waypoint"
         assert operations[0]["payload"]["waypoint_id"] == "corridor_01"
         assert operations[0]["payload"]["is_enabled"] is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_marks_dirty_row_status_and_summary():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        page.findChild(QDoubleSpinBox, "goalPoseXSpin").setValue(1.8)
+
+        page.select_fms_waypoint(0)
+
+        goal_table = page.findChild(QTableWidget, "goalPoseTable")
+        assert goal_table.item(0, goal_table.columnCount() - 1).text() == "변경됨"
+        summary_label = page.findChild(QLabel, "coordinateChangeSummaryLabel")
+        assert "미저장 변경 1개" in summary_label.text()
+        assert "goal_pose 1" in summary_label.text()
+
+        page.select_goal_pose(0)
+        revert_button = page.findChild(QPushButton, "coordinateRevertRowButton")
+        assert revert_button.isEnabled() is True
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_reverts_selected_dirty_fms_waypoint():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_waypoint(0)
+        page.deactivate_selected_row()
+
+        waypoint_table = page.findChild(QTableWidget, "fmsWaypointTable")
+        assert (
+            waypoint_table.item(0, waypoint_table.columnCount() - 1).text()
+            == "비활성화 예정"
+        )
+        assert (
+            "FMS waypoint 1"
+            in page.findChild(QLabel, "coordinateChangeSummaryLabel").text()
+        )
+
+        page.revert_selected_row()
+
+        assert page.fms_waypoint_rows[0]["is_enabled"] is True
+        assert page.fms_waypoint_dirty_row_ids == set()
+        assert page.findChild(QCheckBox, "fmsWaypointEnabledCheck").isChecked() is True
+        assert waypoint_table.item(0, waypoint_table.columnCount() - 1).text() == "-"
+        assert (
+            page.findChild(QLabel, "coordinateChangeSummaryLabel").text()
+            == "미저장 변경 없음"
+        )
+        assert (
+            page.findChild(QPushButton, "coordinateRevertRowButton").isEnabled()
+            is False
+        )
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_marks_batch_save_failure_row():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_waypoint(0)
+        page.deactivate_selected_row()
+
+        page._handle_coordinate_batch_save_finished(
+            True,
+            {
+                "successes": [],
+                "failures": [
+                    {
+                        "table": "fms_waypoint",
+                        "row_id": "corridor_01",
+                        "error": "WAYPOINT_STALE: updated_at mismatch",
+                    }
+                ],
+            },
+        )
+
+        waypoint_table = page.findChild(QTableWidget, "fmsWaypointTable")
+        assert (
+            waypoint_table.item(0, waypoint_table.columnCount() - 1).text()
+            == "저장 실패"
+        )
+        assert page.fms_waypoint_dirty_row_ids == {"corridor_01"}
+        assert (
+            "저장 실패 1개"
+            in page.findChild(QLabel, "coordinateChangeSummaryLabel").text()
+        )
     finally:
         page.close()
 

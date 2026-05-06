@@ -118,6 +118,52 @@ ACTIVE_MAP_FIELDS = [
     ("pgm_path", "pgm_path"),
 ]
 
+DRAFT_STATUS_TABLES = {
+    "operation_zone": {
+        "object_name": "operationZoneTable",
+        "rows_attr": "operation_zone_rows",
+        "dirty_attr": "operation_zone_dirty_row_ids",
+        "snapshot_key": "operation_zones",
+        "row_key": "zone_id",
+        "label": "operation_zone",
+    },
+    "goal_pose": {
+        "object_name": "goalPoseTable",
+        "rows_attr": "goal_pose_rows",
+        "dirty_attr": "goal_pose_dirty_row_ids",
+        "snapshot_key": "goal_poses",
+        "row_key": "goal_pose_id",
+        "label": "goal_pose",
+    },
+    "fms_waypoint": {
+        "object_name": "fmsWaypointTable",
+        "rows_attr": "fms_waypoint_rows",
+        "dirty_attr": "fms_waypoint_dirty_row_ids",
+        "snapshot_key": "fms_waypoints",
+        "row_key": "waypoint_id",
+        "label": "FMS waypoint",
+    },
+    "fms_edge": {
+        "object_name": "fmsEdgeTable",
+        "rows_attr": "fms_edge_rows",
+        "dirty_attr": "fms_edge_dirty_row_ids",
+        "snapshot_key": "fms_edges",
+        "row_key": "edge_id",
+        "label": "FMS edge",
+    },
+    "fms_route": {
+        "object_name": "fmsRouteTable",
+        "rows_attr": "fms_route_rows",
+        "dirty_attr": "fms_route_dirty_row_ids",
+        "snapshot_key": "fms_routes",
+        "row_key": "route_id",
+        "label": "FMS route",
+    },
+}
+DRAFT_STATUS_TABLE_OBJECT_NAMES = {
+    config["object_name"] for config in DRAFT_STATUS_TABLES.values()
+}
+
 
 class CoordinateZoneSettingsPage(QWidget):
     def __init__(self):
@@ -145,6 +191,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_waypoint_dirty_row_ids = set()
         self.fms_edge_dirty_row_ids = set()
         self.fms_route_dirty_row_ids = set()
+        self.failed_coordinate_row_errors = {}
         self._worker_stop_wait_ms = 1500
         self.current_bundle = {}
         self.server_bundle_snapshot = {}
@@ -348,9 +395,12 @@ class CoordinateZoneSettingsPage(QWidget):
 
         title = QLabel(title_text)
         title.setObjectName("sectionTitle")
-        table = QTableWidget(0, len(headers))
+        table_headers = list(headers)
+        if object_name in DRAFT_STATUS_TABLE_OBJECT_NAMES:
+            table_headers.append("상태")
+        table = QTableWidget(0, len(table_headers))
         table.setObjectName(object_name)
-        table.setHorizontalHeaderLabels(headers)
+        table.setHorizontalHeaderLabels(table_headers)
         table.horizontalHeader().setStretchLastSection(True)
         self.tables[object_name] = table
         if object_name == "goalPoseTable":
@@ -392,6 +442,9 @@ class CoordinateZoneSettingsPage(QWidget):
         title.setObjectName("sectionTitle")
         self.edit_mode_label = QLabel("선택 모드")
         self.edit_mode_label.setObjectName("coordinateEditModeLabel")
+        self.change_summary_label = QLabel("미저장 변경 없음")
+        self.change_summary_label.setObjectName("coordinateChangeSummaryLabel")
+        self.change_summary_label.setWordWrap(True)
         self.edit_placeholder_label = QLabel(
             "목록 또는 맵 marker를 선택하면 구역, 목표 좌표, 순찰 waypoint "
             "편집 폼이 여기에 표시됩니다."
@@ -414,6 +467,10 @@ class CoordinateZoneSettingsPage(QWidget):
         self.deactivate_row_button.setObjectName("coordinateDeactivateRowButton")
         self.deactivate_row_button.setEnabled(False)
         self.deactivate_row_button.clicked.connect(self.deactivate_selected_row)
+        self.revert_row_button = QPushButton("선택 row 되돌리기")
+        self.revert_row_button.setObjectName("coordinateRevertRowButton")
+        self.revert_row_button.setEnabled(False)
+        self.revert_row_button.clicked.connect(self.revert_selected_row)
         self.operation_zone_form = build_operation_zone_form(self)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form = build_goal_pose_form(self)
@@ -429,11 +486,13 @@ class CoordinateZoneSettingsPage(QWidget):
 
         self.edit_panel_layout.addWidget(title)
         self.edit_panel_layout.addWidget(self.edit_mode_label)
+        self.edit_panel_layout.addWidget(self.change_summary_label)
         self.edit_panel_layout.addWidget(self.operation_zone_new_button)
         self.edit_panel_layout.addWidget(self.fms_waypoint_new_button)
         self.edit_panel_layout.addWidget(self.fms_edge_new_button)
         self.edit_panel_layout.addWidget(self.fms_route_new_button)
         self.edit_panel_layout.addWidget(self.deactivate_row_button)
+        self.edit_panel_layout.addWidget(self.revert_row_button)
         self.edit_panel_layout.addWidget(self.edit_placeholder_label)
         self.edit_panel_layout.addWidget(self.operation_zone_form)
         self.edit_panel_layout.addWidget(self.goal_pose_form)
@@ -533,6 +592,7 @@ class CoordinateZoneSettingsPage(QWidget):
             self._restore_selected_bundle_selection(selected)
         finally:
             self._suppress_draft_capture = False
+        self._update_coordinate_draft_status_views()
 
     def _refresh_bundle_tables(self):
         set_table_rows(
@@ -565,6 +625,201 @@ class CoordinateZoneSettingsPage(QWidget):
             self.fms_route_rows,
             FMS_ROUTE_TABLE_COLUMNS,
         )
+        self._update_coordinate_draft_status_views()
+
+    def _draft_status_config(self, table_name):
+        return DRAFT_STATUS_TABLES.get(table_name)
+
+    def _dirty_row_ids_for_table(self, table_name):
+        config = self._draft_status_config(table_name)
+        if not config:
+            return set()
+        return getattr(self, config["dirty_attr"])
+
+    def _rows_for_draft_table(self, table_name):
+        config = self._draft_status_config(table_name)
+        if not config:
+            return []
+        rows = getattr(self, config["rows_attr"])
+        return rows if isinstance(rows, list) else []
+
+    def _server_row_by_id(self, table_name, row_id):
+        config = self._draft_status_config(table_name)
+        if not config:
+            return None
+        rows = self.server_bundle_snapshot.get(config["snapshot_key"])
+        if not isinstance(rows, list):
+            return None
+        return self._find_row_by_id(rows, config["row_key"], row_id)
+
+    def _replace_server_snapshot_row(self, table_name, row):
+        config = self._draft_status_config(table_name)
+        if not config:
+            return
+        rows = self.server_bundle_snapshot.get(config["snapshot_key"])
+        replacement = replace_row_by_key(rows, row, config["row_key"])
+        self.server_bundle_snapshot[config["snapshot_key"]] = replacement.rows
+
+    def _selected_draft_row_identity(self):
+        if self.selected_edit_type == "operation_zone":
+            if self.operation_zone_mode == "create" or not self.selected_operation_zone:
+                return None
+            return ("operation_zone", self.selected_operation_zone.get("zone_id"))
+        if self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
+            return ("goal_pose", self.selected_goal_pose.get("goal_pose_id"))
+        if self.selected_edit_type == "fms_waypoint":
+            if self.fms_waypoint_mode == "create" or not self.selected_fms_waypoint:
+                return None
+            return ("fms_waypoint", self.selected_fms_waypoint.get("waypoint_id"))
+        if self.selected_edit_type == "fms_edge":
+            if self.fms_edge_mode == "create" or not self.selected_fms_edge:
+                return None
+            return ("fms_edge", self.selected_fms_edge.get("edge_id"))
+        if self.selected_edit_type == "fms_route":
+            if self.fms_route_mode == "create" or not self.selected_fms_route:
+                return None
+            return ("fms_route", self.selected_fms_route.get("route_id"))
+        return None
+
+    def _selected_draft_row_is_dirty(self):
+        if self.selected_edit_type == "operation_zone":
+            return self.operation_zone_mode != "create" and self.operation_zone_dirty
+        if self.selected_edit_type == "goal_pose":
+            return self.goal_pose_dirty
+        if self.selected_edit_type == "fms_waypoint":
+            return self.fms_waypoint_mode != "create" and self.fms_waypoint_dirty
+        if self.selected_edit_type == "fms_edge":
+            return self.fms_edge_mode != "create" and self.fms_edge_dirty
+        if self.selected_edit_type == "fms_route":
+            return self.fms_route_mode != "create" and self.fms_route_dirty
+        return False
+
+    def _draft_row_has_local_change(self, table_name, row_id):
+        dirty_row_ids = self._dirty_row_ids_for_table(table_name)
+        if row_id in dirty_row_ids:
+            return True
+        selected_identity = self._selected_draft_row_identity()
+        return (
+            selected_identity == (table_name, row_id)
+            and self._selected_draft_row_is_dirty()
+        )
+
+    def _selected_enabled_value_for_table(self, table_name):
+        selected_identity = self._selected_draft_row_identity()
+        if not selected_identity or selected_identity[0] != table_name:
+            return None
+        if table_name == "operation_zone":
+            return self.operation_zone_enabled_check.isChecked()
+        if table_name == "goal_pose":
+            return self.goal_pose_enabled_check.isChecked()
+        if table_name == "fms_waypoint":
+            return self.fms_waypoint_enabled_check.isChecked()
+        if table_name == "fms_edge":
+            return self.fms_edge_enabled_check.isChecked()
+        if table_name == "fms_route":
+            return self.fms_route_enabled_check.isChecked()
+        return None
+
+    def _draft_enabled_value(self, table_name, row):
+        selected_enabled = self._selected_enabled_value_for_table(table_name)
+        if selected_enabled is not None:
+            config = self._draft_status_config(table_name)
+            row_id = row.get(config["row_key"]) if config else None
+            selected_identity = self._selected_draft_row_identity()
+            if selected_identity == (table_name, row_id):
+                return selected_enabled
+        return row.get("is_enabled")
+
+    def _draft_row_status_text(self, table_name, row):
+        row = row if isinstance(row, dict) else {}
+        config = self._draft_status_config(table_name)
+        if not config:
+            return "-"
+        row_id = row.get(config["row_key"])
+        if (table_name, row_id) in self.failed_coordinate_row_errors:
+            return "저장 실패"
+        if not self._draft_row_has_local_change(table_name, row_id):
+            return "-"
+        original_row = self._server_row_by_id(table_name, row_id) or {}
+        draft_enabled = self._draft_enabled_value(table_name, row)
+        if bool(original_row.get("is_enabled")) and draft_enabled is False:
+            return "비활성화 예정"
+        return "변경됨"
+
+    def _pending_draft_counts_by_table(self):
+        counts = {}
+        for table_name in DRAFT_STATUS_TABLES:
+            counts[table_name] = len(self._dirty_row_ids_for_table(table_name))
+        selected_identity = self._selected_draft_row_identity()
+        if selected_identity and self._selected_draft_row_is_dirty():
+            table_name, row_id = selected_identity
+            if row_id not in self._dirty_row_ids_for_table(table_name):
+                counts[table_name] = counts.get(table_name, 0) + 1
+        return counts
+
+    def _update_change_summary(self):
+        if not hasattr(self, "change_summary_label"):
+            return
+        counts = self._pending_draft_counts_by_table()
+        total_count = sum(counts.values())
+        failure_count = len(self.failed_coordinate_row_errors)
+        if total_count == 0 and failure_count == 0:
+            self.change_summary_label.setText("미저장 변경 없음")
+            return
+        parts = []
+        for table_name, config in DRAFT_STATUS_TABLES.items():
+            count = counts.get(table_name, 0)
+            if count:
+                parts.append(f"{config['label']} {count}")
+        text = f"미저장 변경 {total_count}개"
+        if parts:
+            text = f"{text} - {', '.join(parts)}"
+        if failure_count:
+            text = f"{text} / 저장 실패 {failure_count}개"
+        self.change_summary_label.setText(text)
+
+    def _sync_revert_row_button(self):
+        if not hasattr(self, "revert_row_button"):
+            return
+        selected_identity = self._selected_draft_row_identity()
+        if not selected_identity:
+            self.revert_row_button.setEnabled(False)
+            return
+        table_name, row_id = selected_identity
+        can_revert = (
+            self._draft_row_has_local_change(
+                table_name,
+                row_id,
+            )
+            or (table_name, row_id) in self.failed_coordinate_row_errors
+        )
+        self.revert_row_button.setEnabled(can_revert)
+
+    def _clear_failed_coordinate_row_error(self, table_name, row_id):
+        self.failed_coordinate_row_errors.pop((table_name, row_id), None)
+
+    def _clear_failed_coordinate_error_for_selected_row(self):
+        selected_identity = self._selected_draft_row_identity()
+        if selected_identity:
+            self._clear_failed_coordinate_row_error(*selected_identity)
+
+    def _update_coordinate_draft_status_views(self):
+        for table_name, config in DRAFT_STATUS_TABLES.items():
+            table = self.tables.get(config["object_name"])
+            if table is None or table.columnCount() == 0:
+                continue
+            status_column = table.columnCount() - 1
+            for row_index, row in enumerate(self._rows_for_draft_table(table_name)):
+                if row_index >= table.rowCount():
+                    continue
+                status_text = self._draft_row_status_text(table_name, row)
+                table.setItem(
+                    row_index,
+                    status_column,
+                    QTableWidgetItem(status_text),
+                )
+        self._update_change_summary()
+        self._sync_revert_row_button()
 
     def _capture_selected_bundle_selection(self):
         if (
@@ -692,6 +947,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.save_button.setEnabled(False)
         self.discard_button.setEnabled(False)
         self._sync_deactivate_row_button()
+        self._sync_revert_row_button()
 
     def _clear_dirty_row_sets(self):
         self.operation_zone_dirty_row_ids.clear()
@@ -699,6 +955,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_waypoint_dirty_row_ids.clear()
         self.fms_edge_dirty_row_ids.clear()
         self.fms_route_dirty_row_ids.clear()
+        self.failed_coordinate_row_errors.clear()
 
     def _has_pending_draft_changes(self):
         return any(
@@ -736,6 +993,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.save_button.setEnabled(can_save)
         self.discard_button.setEnabled(selected_dirty or pending_dirty)
         self._sync_deactivate_row_button()
+        self._update_coordinate_draft_status_views()
 
     def _sync_deactivate_row_button(self):
         if not hasattr(self, "deactivate_row_button"):
@@ -784,12 +1042,14 @@ class CoordinateZoneSettingsPage(QWidget):
         self.operation_zone_rows[self.selected_operation_zone_index] = row
         self.selected_operation_zone = dict(row)
         self.operation_zone_dirty_row_ids.add(row["zone_id"])
+        self._clear_failed_coordinate_row_error("operation_zone", row["zone_id"])
         self.current_bundle["operation_zones"] = self.operation_zone_rows
         set_table_rows(
             self.tables["operationZoneTable"],
             self.operation_zone_rows,
             OPERATION_ZONE_TABLE_COLUMNS,
         )
+        self._update_coordinate_draft_status_views()
 
     def _capture_goal_pose_form_to_draft(self):
         if (
@@ -814,12 +1074,14 @@ class CoordinateZoneSettingsPage(QWidget):
         self.goal_pose_rows[self.selected_goal_pose_index] = row
         self.selected_goal_pose = dict(row)
         self.goal_pose_dirty_row_ids.add(row["goal_pose_id"])
+        self._clear_failed_coordinate_row_error("goal_pose", row["goal_pose_id"])
         self.current_bundle["goal_poses"] = self.goal_pose_rows
         set_table_rows(
             self.tables["goalPoseTable"],
             self.goal_pose_rows,
             GOAL_POSE_TABLE_COLUMNS,
         )
+        self._update_coordinate_draft_status_views()
 
     def _capture_fms_waypoint_form_to_draft(self):
         if (
@@ -836,12 +1098,14 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_waypoint_rows[self.selected_fms_waypoint_index] = row
         self.selected_fms_waypoint = dict(row)
         self.fms_waypoint_dirty_row_ids.add(row["waypoint_id"])
+        self._clear_failed_coordinate_row_error("fms_waypoint", row["waypoint_id"])
         self.current_bundle["fms_waypoints"] = self.fms_waypoint_rows
         set_table_rows(
             self.tables["fmsWaypointTable"],
             self.fms_waypoint_rows,
             FMS_WAYPOINT_TABLE_COLUMNS,
         )
+        self._update_coordinate_draft_status_views()
         self._populate_fms_edge_form_options()
         self._populate_fms_route_waypoint_options()
 
@@ -860,12 +1124,14 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_edge_rows[self.selected_fms_edge_index] = row
         self.selected_fms_edge = dict(row)
         self.fms_edge_dirty_row_ids.add(row["edge_id"])
+        self._clear_failed_coordinate_row_error("fms_edge", row["edge_id"])
         self.current_bundle["fms_edges"] = self.fms_edge_rows
         set_table_rows(
             self.tables["fmsEdgeTable"],
             self.fms_edge_rows,
             FMS_EDGE_TABLE_COLUMNS,
         )
+        self._update_coordinate_draft_status_views()
 
     def _capture_fms_route_form_to_draft(self):
         if (
@@ -882,12 +1148,14 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_route_rows[self.selected_fms_route_index] = row
         self.selected_fms_route = dict(row)
         self.fms_route_dirty_row_ids.add(row["route_id"])
+        self._clear_failed_coordinate_row_error("fms_route", row["route_id"])
         self.current_bundle["fms_routes"] = self.fms_route_rows
         set_table_rows(
             self.tables["fmsRouteTable"],
             self.fms_route_rows,
             FMS_ROUTE_TABLE_COLUMNS,
         )
+        self._update_coordinate_draft_status_views()
 
     def _zone_name_for_id(self, zone_id):
         for zone in self.operation_zone_rows:
@@ -1355,6 +1623,51 @@ class CoordinateZoneSettingsPage(QWidget):
             self._mark_fms_route_dirty()
             self._capture_fms_route_form_to_draft()
 
+    def revert_selected_row(self):
+        selected_identity = self._selected_draft_row_identity()
+        if not selected_identity:
+            return
+        table_name, row_id = selected_identity
+        original_row = self._server_row_by_id(table_name, row_id)
+        if original_row is None:
+            self.validation_message_label.setText(
+                "선택 row를 서버 snapshot에서 찾을 수 없습니다."
+            )
+            return
+
+        original_row = copy.deepcopy(original_row)
+        self._dirty_row_ids_for_table(table_name).discard(row_id)
+        self._clear_failed_coordinate_row_error(table_name, row_id)
+
+        if table_name == "operation_zone":
+            self._replace_operation_zone_row(original_row)
+            self.selected_operation_zone = dict(original_row)
+            self.operation_zone_dirty = False
+            self._set_operation_zone_form(original_row, mode="edit")
+        elif table_name == "goal_pose":
+            self._replace_goal_pose_row(original_row)
+            self.selected_goal_pose = dict(original_row)
+            self.goal_pose_dirty = False
+            self._set_goal_pose_form(original_row)
+        elif table_name == "fms_waypoint":
+            self._replace_fms_waypoint_row(original_row)
+            self.selected_fms_waypoint = dict(original_row)
+            self.fms_waypoint_dirty = False
+            self._set_fms_waypoint_form(original_row, mode="edit")
+        elif table_name == "fms_edge":
+            self._replace_fms_edge_row(original_row)
+            self.selected_fms_edge = dict(original_row)
+            self.fms_edge_dirty = False
+            self._set_fms_edge_form(original_row, mode="edit")
+        elif table_name == "fms_route":
+            self._replace_fms_route_row(original_row)
+            self.selected_fms_route = dict(original_row)
+            self.fms_route_dirty = False
+            self._set_fms_route_form(original_row, mode="edit")
+
+        self.validation_message_label.setText("선택 row 변경을 되돌렸습니다.")
+        self._sync_current_edit_save_state()
+
     def save_current_edit(self):
         self._capture_current_form_to_draft()
         operations = self._build_coordinate_batch_save_operations()
@@ -1637,6 +1950,7 @@ class CoordinateZoneSettingsPage(QWidget):
         ):
             return
         self.operation_zone_dirty = True
+        self._clear_failed_coordinate_error_for_selected_row()
         self.validation_message_label.setText("운영 구역 변경 사항이 저장 전입니다.")
         self._sync_operation_zone_save_state()
 
@@ -2391,6 +2705,7 @@ class CoordinateZoneSettingsPage(QWidget):
         if self._syncing_goal_pose_form or self.selected_edit_type != "goal_pose":
             return
         self.goal_pose_dirty = True
+        self._clear_failed_coordinate_error_for_selected_row()
         self.validation_message_label.setText("목표 좌표 변경 사항이 저장 전입니다.")
         self._sync_goal_pose_overlay()
         self._sync_goal_pose_save_state()
@@ -2533,6 +2848,7 @@ class CoordinateZoneSettingsPage(QWidget):
         if self.selected_edit_type != "fms_waypoint":
             return
         self.fms_waypoint_dirty = True
+        self._clear_failed_coordinate_error_for_selected_row()
         self._sync_fms_waypoint_save_state()
         self._sync_fms_waypoint_overlay()
 
@@ -2696,6 +3012,7 @@ class CoordinateZoneSettingsPage(QWidget):
         if self.selected_edit_type != "fms_edge":
             return
         self.fms_edge_dirty = True
+        self._clear_failed_coordinate_error_for_selected_row()
         self.validation_message_label.setText("FMS edge 변경 사항이 저장 전입니다.")
         self._sync_fms_edge_save_state()
         self._sync_fms_edge_overlay()
@@ -3012,6 +3329,7 @@ class CoordinateZoneSettingsPage(QWidget):
         if self.selected_edit_type != "fms_route":
             return
         self.fms_route_dirty = True
+        self._clear_failed_coordinate_error_for_selected_row()
         self.validation_message_label.setText("FMS route 변경 사항이 저장 전입니다.")
         self._sync_fms_route_save_state()
         self._sync_fms_route_overlay()
@@ -3076,6 +3394,7 @@ class CoordinateZoneSettingsPage(QWidget):
         if not ok:
             self.validation_message_label.setText(str(response))
             self._sync_current_edit_save_state()
+            self._update_coordinate_draft_status_views()
             return
 
         response = response if isinstance(response, dict) else {}
@@ -3084,6 +3403,14 @@ class CoordinateZoneSettingsPage(QWidget):
 
         for success in successes:
             self._apply_batch_save_success(success)
+
+        for failure in failures:
+            table = failure.get("table")
+            row_id = failure.get("row_id")
+            if table and row_id:
+                self.failed_coordinate_row_errors[(table, row_id)] = (
+                    failure.get("error") or failure.get("reason_code") or "저장 실패"
+                )
 
         if failures:
             self.validation_message_label.setText(
@@ -3100,11 +3427,13 @@ class CoordinateZoneSettingsPage(QWidget):
         table = success.get("table")
         row_id = success.get("row_id")
         response = success.get("response")
+        self._clear_failed_coordinate_row_error(table, row_id)
 
         if table == "operation_zone":
             row = operation_zone_from_save_response(response)
             if row is not None:
                 self._replace_operation_zone_row(row)
+                self._replace_server_snapshot_row(table, row)
                 self.operation_zone_dirty_row_ids.discard(row_id)
                 if self.selected_operation_zone and (
                     self.selected_operation_zone.get("zone_id") == row_id
@@ -3116,6 +3445,7 @@ class CoordinateZoneSettingsPage(QWidget):
             row = goal_pose_from_save_response(response)
             if row is not None:
                 self._replace_goal_pose_row(row)
+                self._replace_server_snapshot_row(table, row)
                 self.goal_pose_dirty_row_ids.discard(row_id)
                 if self.selected_goal_pose and (
                     self.selected_goal_pose.get("goal_pose_id") == row_id
@@ -3127,6 +3457,7 @@ class CoordinateZoneSettingsPage(QWidget):
             row = fms_waypoint_from_save_response(response)
             if row is not None:
                 self._replace_fms_waypoint_row(row)
+                self._replace_server_snapshot_row(table, row)
                 self.fms_waypoint_dirty_row_ids.discard(row_id)
                 if self.selected_fms_waypoint and (
                     self.selected_fms_waypoint.get("waypoint_id") == row_id
@@ -3138,6 +3469,7 @@ class CoordinateZoneSettingsPage(QWidget):
             row = fms_edge_from_save_response(response)
             if row is not None:
                 self._replace_fms_edge_row(row)
+                self._replace_server_snapshot_row(table, row)
                 self.fms_edge_dirty_row_ids.discard(row_id)
                 if self.selected_fms_edge and (
                     self.selected_fms_edge.get("edge_id") == row_id
@@ -3149,6 +3481,7 @@ class CoordinateZoneSettingsPage(QWidget):
             row = fms_route_from_save_response(response)
             if row is not None:
                 self._replace_fms_route_row(row)
+                self._replace_server_snapshot_row(table, row)
                 self.fms_route_dirty_row_ids.discard(row_id)
                 if self.selected_fms_route and (
                     self.selected_fms_route.get("route_id") == row_id
@@ -3178,6 +3511,7 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             self.discard_button.setEnabled(self._has_pending_draft_changes())
             self._sync_deactivate_row_button()
+            self._update_coordinate_draft_status_views()
 
     @staticmethod
     def _set_combo_data(combo, value):
