@@ -2,6 +2,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 
@@ -60,6 +62,45 @@ def test_map_canvas_uses_compact_image_gutter():
 
         assert target.left() <= 4.0
         assert target.top() <= 4.0
+    finally:
+        canvas.close()
+
+
+def test_map_canvas_emits_single_edit_transaction_for_left_drag():
+    _app()
+
+    from ui.utils.widgets.map_canvas import MapCanvasWidget
+
+    canvas = MapCanvasWidget()
+    events = []
+
+    try:
+        canvas.resize(200, 200)
+        canvas.load_map_from_assets(
+            yaml_text="image: map.pgm\nresolution: 1.0\norigin: [0.0, 0.0, 0.0]\n",
+            pgm_bytes=b"P5\n4 4\n255\n" + (b"\x00" * 16),
+            cache_key=("drag-signals", "yaml-sha", "pgm-sha"),
+        )
+        canvas.map_drag_started.connect(lambda: events.append("start"))
+        canvas.map_dragged.connect(lambda _pose: events.append("drag"))
+        canvas.map_drag_finished.connect(lambda: events.append("finish"))
+        canvas.show()
+        QApplication.processEvents()
+
+        target = canvas.image_target_rect()
+        start = canvas.to_view_point(
+            canvas.world_to_pixel({"x": 1.0, "y": 1.0}), target
+        )
+        end = canvas.to_view_point(canvas.world_to_pixel({"x": 2.0, "y": 1.0}), target)
+
+        QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=start.toPoint())
+        QTest.mouseMove(canvas, end.toPoint())
+        QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=end.toPoint())
+
+        assert events.count("start") == 1
+        assert events.count("finish") == 1
+        assert "drag" in events
+        assert events.index("start") < events.index("drag") < events.index("finish")
     finally:
         canvas.close()
 

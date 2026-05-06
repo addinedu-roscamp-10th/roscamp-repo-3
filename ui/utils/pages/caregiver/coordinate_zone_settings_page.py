@@ -297,6 +297,8 @@ class CoordinateZoneSettingsPage(QWidget):
         self.redo_shortcut = None
         self._app_shortcut_filter_installed = False
         self._pending_shortcut_override = None
+        self._edit_history_recording_suspended = False
+        self._map_drag_edit_active = False
         self._build_ui()
         self._build_shortcuts()
         self._install_shortcut_event_filters()
@@ -551,7 +553,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self.map_canvas.clear_map("좌표 설정 맵 미수신")
         self.map_canvas.setMinimumHeight(180)
         self.map_canvas.map_clicked.connect(self.handle_map_click)
+        self.map_canvas.map_drag_started.connect(self.begin_map_drag_edit)
         self.map_canvas.map_dragged.connect(self.handle_map_drag)
+        self.map_canvas.map_drag_finished.connect(self.finish_map_drag_edit)
         self.map_canvas.map_heading_dragged.connect(self.handle_map_heading_drag)
 
         map_layout.addWidget(self.map_canvas)
@@ -1820,6 +1824,21 @@ class CoordinateZoneSettingsPage(QWidget):
             self.move_selected_patrol_waypoint_to_world(world_pose)
         elif self.selected_edit_type == "fms_waypoint":
             self.handle_map_click_for_fms_waypoint(world_pose)
+
+    def begin_map_drag_edit(self):
+        if self._map_drag_edit_active:
+            return
+        self._capture_current_form_to_draft()
+        self._record_edit_history_snapshot()
+        self._map_drag_edit_active = True
+        self._edit_history_recording_suspended = True
+
+    def finish_map_drag_edit(self):
+        if not self._map_drag_edit_active:
+            return
+        self._map_drag_edit_active = False
+        self._edit_history_recording_suspended = False
+        self._record_edit_history_snapshot()
 
     def handle_map_heading_drag(self, payload):
         yaw = self._heading_drag_yaw(payload)
@@ -3918,6 +3937,9 @@ class CoordinateZoneSettingsPage(QWidget):
         if self._restoring_edit_history:
             self._sync_shortcuts_enabled_state()
             return
+        if self._edit_history_recording_suspended:
+            self._sync_shortcuts_enabled_state()
+            return
 
         snapshot = self._capture_edit_history_snapshot()
         if snapshot is None:
@@ -4028,6 +4050,19 @@ class CoordinateZoneSettingsPage(QWidget):
         return None
 
     def _capture_current_edit_form_values(self):
+        if self.selected_edit_type == "operation_zone":
+            return {
+                "zone_id": self.operation_zone_id_input.text(),
+                "zone_name": self.operation_zone_name_input.text(),
+                "zone_type": self.operation_zone_type_combo.currentText(),
+                "is_enabled": self.operation_zone_enabled_check.isChecked(),
+                "selected_boundary_vertex_index": (
+                    self.selected_operation_zone_boundary_vertex_index
+                ),
+                "boundary_vertices": copy.deepcopy(
+                    self.operation_zone_boundary_vertices
+                ),
+            }
         if self.selected_edit_type == "goal_pose":
             return {
                 "zone_id": self.goal_pose_zone_combo.currentData(),
@@ -4183,7 +4218,43 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_mode_label.setText(labels.get(edit_type, "선택 모드"))
 
     def _restore_current_edit_form_values(self, form):
-        if self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
+        if self.selected_edit_type == "operation_zone" and self.selected_operation_zone:
+            self._syncing_operation_zone_form = True
+            try:
+                self.operation_zone_id_input.setReadOnly(
+                    self.operation_zone_mode != "create"
+                )
+                self.operation_zone_id_input.setText(
+                    _display_empty(form.get("zone_id"))
+                )
+                self.operation_zone_name_input.setText(
+                    _display_empty(form.get("zone_name"))
+                )
+                self._set_combo_text(
+                    self.operation_zone_type_combo,
+                    _display_empty(form.get("zone_type")) or "ROOM",
+                )
+                self.operation_zone_enabled_check.setChecked(
+                    bool(form.get("is_enabled", True))
+                )
+            finally:
+                self._syncing_operation_zone_form = False
+            self.operation_zone_boundary_vertices = copy.deepcopy(
+                form.get(
+                    "boundary_vertices",
+                    self.operation_zone_boundary_vertices,
+                )
+            )
+            self.selected_operation_zone_boundary_vertex_index = form.get(
+                "selected_boundary_vertex_index",
+                self.selected_operation_zone_boundary_vertex_index,
+            )
+            self._populate_operation_zone_boundary_table()
+            self._set_operation_zone_boundary_vertex_form(
+                self.selected_operation_zone_boundary_vertex_index
+            )
+            self._sync_operation_zone_overlay()
+        elif self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
             self._set_goal_pose_form(self.selected_goal_pose)
             self._syncing_goal_pose_form = True
             try:

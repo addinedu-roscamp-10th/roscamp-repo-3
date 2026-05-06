@@ -566,6 +566,103 @@ def test_coordinate_zone_settings_page_shortcut_override_uses_page_undo_history(
         page.close()
 
 
+def test_coordinate_zone_settings_page_operation_zone_undo_restores_visible_form():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        name_input = page.findChild(QLineEdit, "operationZoneNameInput")
+        boundary_table = page.findChild(QTableWidget, "operationZoneBoundaryTable")
+
+        name_input.setText("301호 수정")
+
+        assert page._can_undo_edit() is True
+        assert name_input.text() == "301호 수정"
+
+        page.undo_local_edit()
+
+        assert name_input.text() == "301호"
+        assert boundary_table.rowCount() == 3
+
+        page.redo_local_edit()
+
+        assert name_input.text() == "301호 수정"
+        assert boundary_table.rowCount() == 3
+        assert page.operation_zone_boundary_vertices == [
+            {"x": 0.0, "y": 0.0},
+            {"x": 1.0, "y": 0.0},
+            {"x": 1.0, "y": 1.0},
+        ]
+
+        page.handle_map_click_for_operation_zone({"x": 0.5, "y": 1.5})
+        assert boundary_table.rowCount() == 4
+
+        page.undo_local_edit()
+
+        assert name_input.text() == "301호 수정"
+        assert boundary_table.rowCount() == 3
+
+        page.redo_local_edit()
+
+        assert name_input.text() == "301호 수정"
+        assert boundary_table.rowCount() == 4
+        assert page.operation_zone_boundary_vertices[-1] == {"x": 0.5, "y": 1.5}
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_coordinate_zone_settings_page_map_drag_records_single_undo_step_on_finish():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        initial_history_len = len(page._edit_history)
+
+        page.begin_map_drag_edit()
+        page.handle_map_drag({"x": 0.2, "y": 0.2})
+        page.handle_map_drag({"x": 0.3, "y": 0.3})
+        page.handle_map_drag({"x": 0.4, "y": 0.4})
+
+        assert len(page._edit_history) == initial_history_len
+
+        page.finish_map_drag_edit()
+
+        assert len(page._edit_history) == initial_history_len + 1
+        assert page.operation_zone_boundary_vertices[0] == {"x": 0.4, "y": 0.4}
+
+        page.undo_local_edit()
+
+        assert page.operation_zone_boundary_vertices[0] == {"x": 0.0, "y": 0.0}
+    finally:
+        page.shutdown()
+        page.close()
+
+
 def test_coordinate_config_load_worker_fetches_bundle_and_assets():
     from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
         CoordinateConfigLoadWorker,

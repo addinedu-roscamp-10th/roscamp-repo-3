@@ -104,6 +104,8 @@ def parse_map_yaml_text(yaml_text):
 class MapCanvasWidget(QFrame):
     map_clicked = pyqtSignal(object)
     map_dragged = pyqtSignal(object)
+    map_drag_started = pyqtSignal()
+    map_drag_finished = pyqtSignal()
     map_heading_dragged = pyqtSignal(object)
 
     def __init__(self, parent=None):
@@ -116,6 +118,7 @@ class MapCanvasWidget(QFrame):
         self._map_image = QImage()
         self._map_transform = None
         self._map_cache_key = None
+        self._left_drag_started = False
 
     def load_map_from_paths(self, *, yaml_path, pgm_path=None, cache_key=None):
         resolved_yaml_path = resolve_map_path(yaml_path)
@@ -252,6 +255,8 @@ class MapCanvasWidget(QFrame):
         if event.button() == Qt.MouseButton.LeftButton:
             world_pose = self.view_to_world(event.position())
             if world_pose is not None:
+                self._left_drag_started = True
+                self.map_drag_started.emit()
                 self.map_clicked.emit(world_pose)
         super().mousePressEvent(event)
 
@@ -261,6 +266,12 @@ class MapCanvasWidget(QFrame):
             if world_pose is not None:
                 self.map_dragged.emit(world_pose)
         super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._left_drag_started:
+            self._left_drag_started = False
+            self.map_drag_finished.emit()
+        super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
         super().paintEvent(event)

@@ -382,6 +382,7 @@ class OperationalMapOverlay(MapCanvasWidget):
             event.position()
         ):
             self._heading_drag_active = True
+            self.map_drag_started.emit()
             event.accept()
             return
 
@@ -402,6 +403,7 @@ class OperationalMapOverlay(MapCanvasWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._heading_drag_active:
             self._heading_drag_active = False
+            self.map_drag_finished.emit()
             event.accept()
             return
 
