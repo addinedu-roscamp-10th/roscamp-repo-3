@@ -4,7 +4,9 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -245,7 +247,14 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert map_canvas is not None
         assert map_canvas.map_loaded is False
         assert map_canvas.status_text == "좌표 설정 맵 미수신"
-        assert map_canvas.minimumHeight() <= 240
+        assert map_canvas.minimumHeight() <= 185
+        root_margins = page.layout().contentsMargins()
+        assert root_margins.top() <= 8
+        assert root_margins.bottom() <= 8
+        map_layout = map_canvas.parentWidget().layout()
+        assert map_layout.contentsMargins().top() <= 6
+        assert map_layout.contentsMargins().bottom() <= 6
+        assert map_layout.spacing() <= 4
 
         table_tabs = page.findChild(QTabWidget, "coordinateTableTabs")
         assert table_tabs is not None
@@ -266,6 +275,12 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert page.findChild(QTableWidget, "fmsEdgeTable") is not None
         assert page.findChild(QTableWidget, "fmsRouteTable") is not None
         assert page.findChild(QTableWidget, "operationZoneBoundaryTable") is not None
+        goal_table = page.findChild(QTableWidget, "goalPoseTable")
+        table_layout = goal_table.parentWidget().layout()
+        assert table_layout.contentsMargins().top() <= 6
+        assert table_layout.contentsMargins().bottom() <= 6
+        assert table_layout.spacing() <= 4
+        assert goal_table.maximumHeight() <= 145
 
         labels = _label_texts(page)
         assert "Active Map" in labels
@@ -376,6 +391,53 @@ def test_coordinate_zone_settings_page_undo_redo_shortcuts_restore_goal_pose_sna
         assert page.goal_pose_dirty is True
         assert page.save_button.isEnabled() is True
     finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_keyboard_events_override_focused_spinbox_undo():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    x_spin = None
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        x_spin = page.findChild(QDoubleSpinBox, "goalPoseXSpin")
+        x_spin.setValue(1.9)
+        page.show()
+        x_spin.setFocus()
+        QApplication.processEvents()
+
+        QTest.keyClick(x_spin, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+
+        assert x_spin.value() == 1.7
+        assert page.goal_pose_dirty is False
+        assert page.findChild(QShortcut, "coordinateRedoShortcut").isEnabled() is True
+
+        QTest.keyClick(
+            x_spin,
+            Qt.Key.Key_Z,
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+        )
+
+        assert x_spin.value() == 1.9
+        assert page.goal_pose_dirty is True
+        assert page.save_button.isEnabled() is True
+    finally:
+        if x_spin is not None:
+            QTest.keyRelease(x_spin, Qt.Key.Key_Shift)
+            QTest.keyRelease(x_spin, Qt.Key.Key_Control)
+            QApplication.processEvents()
         page.close()
 
 

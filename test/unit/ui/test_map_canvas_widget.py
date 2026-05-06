@@ -23,11 +23,7 @@ def test_map_canvas_loads_server_assets_and_converts_coordinates():
 
     try:
         canvas.load_map_from_assets(
-            yaml_text=(
-                "image: map.pgm\n"
-                "resolution: 0.02\n"
-                "origin: [-0.2, -0.7, 0.0]\n"
-            ),
+            yaml_text=("image: map.pgm\nresolution: 0.02\norigin: [-0.2, -0.7, 0.0]\n"),
             pgm_bytes=b"P5\n2 2\n255\n\x00\x80\xc0\xff",
             cache_key=("map_test", "yaml-sha", "pgm-sha"),
         )
@@ -41,6 +37,29 @@ def test_map_canvas_loads_server_assets_and_converts_coordinates():
         assert canvas.contains_world_pose({"x": -0.18, "y": -0.68}) is True
         assert canvas.contains_world_pose({"x": -0.201, "y": -0.68}) is False
         assert canvas.contains_world_pose({"x": -0.24, "y": -0.68}) is False
+    finally:
+        canvas.close()
+
+
+def test_map_canvas_uses_compact_image_gutter():
+    _app()
+
+    from ui.utils.widgets.map_canvas import MapCanvasWidget
+
+    canvas = MapCanvasWidget()
+
+    try:
+        canvas.resize(200, 200)
+        canvas.load_map_from_assets(
+            yaml_text="image: map.pgm\nresolution: 1.0\norigin: [0.0, 0.0, 0.0]\n",
+            pgm_bytes=b"P5\n2 2\n255\n\x00\x80\xc0\xff",
+            cache_key=("compact-gutter", "yaml-sha", "pgm-sha"),
+        )
+
+        target = canvas.image_target_rect()
+
+        assert target.left() <= 4.0
+        assert target.top() <= 4.0
     finally:
         canvas.close()
 

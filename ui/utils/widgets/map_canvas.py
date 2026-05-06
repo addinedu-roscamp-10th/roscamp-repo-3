@@ -212,7 +212,7 @@ class MapCanvasWidget(QFrame):
         self.update()
 
     def image_target_rect(self):
-        margin = 10.0
+        margin = 4.0
         available = self.rect().adjusted(
             int(margin),
             int(margin),

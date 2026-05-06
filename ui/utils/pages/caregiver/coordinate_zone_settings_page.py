@@ -1,6 +1,6 @@
 import copy
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QFrame,
@@ -296,15 +296,16 @@ class CoordinateZoneSettingsPage(QWidget):
         self.redo_shortcut = None
         self._build_ui()
         self._build_shortcuts()
+        self._install_shortcut_event_filters()
         self._sync_shortcuts_enabled_state()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(18)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
 
         header_row = QHBoxLayout()
-        header_row.setSpacing(16)
+        header_row.setSpacing(8)
         header_row.addWidget(
             PageHeader(
                 "좌표/구역 설정",
@@ -360,6 +361,49 @@ class CoordinateZoneSettingsPage(QWidget):
         shortcut.activated.connect(slot)
         return shortcut
 
+    def _install_shortcut_event_filters(self):
+        self.installEventFilter(self)
+        for widget in self.findChildren(QWidget):
+            widget.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.KeyPress:
+            action = self._shortcut_action_for_key_event(event)
+            if action is not None:
+                self._handle_shortcut_action(action)
+                event.accept()
+                return True
+        return super().eventFilter(watched, event)
+
+    @staticmethod
+    def _shortcut_action_for_key_event(event):
+        modifiers = event.modifiers()
+        if not bool(modifiers & Qt.KeyboardModifier.ControlModifier):
+            return None
+        if bool(
+            modifiers
+            & (Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier)
+        ):
+            return None
+
+        shift_pressed = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        key = event.key()
+        if key == Qt.Key.Key_S and not shift_pressed:
+            return "save"
+        if key == Qt.Key.Key_Z and shift_pressed:
+            return "redo"
+        if key == Qt.Key.Key_Z:
+            return "undo"
+        return None
+
+    def _handle_shortcut_action(self, action):
+        if action == "save":
+            self._activate_save_shortcut()
+        elif action == "undo":
+            self._activate_undo_shortcut()
+        elif action == "redo":
+            self._activate_redo_shortcut()
+
     def _activate_save_shortcut(self):
         if self.save_button.isEnabled():
             self.save_current_edit()
@@ -374,9 +418,9 @@ class CoordinateZoneSettingsPage(QWidget):
         panel = QFrame()
         panel.setObjectName("coordinateActiveMapBar")
         layout = QGridLayout(panel)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setHorizontalSpacing(18)
-        layout.setVerticalSpacing(8)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(3)
 
         title = QLabel("Active Map")
         title.setObjectName("sectionTitle")
@@ -400,32 +444,29 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def _build_content_row(self):
         row = QHBoxLayout()
-        row.setSpacing(18)
+        row.setSpacing(8)
         row.addLayout(self._build_left_column(), 2)
         row.addLayout(self._build_right_column(), 1)
         return row
 
     def _build_left_column(self):
         column = QVBoxLayout()
-        column.setSpacing(14)
+        column.setSpacing(6)
 
         map_card = QFrame()
         map_card.setObjectName("card")
         map_layout = QVBoxLayout(map_card)
-        map_layout.setContentsMargins(18, 18, 18, 18)
-        map_layout.setSpacing(10)
+        map_layout.setContentsMargins(6, 6, 6, 6)
+        map_layout.setSpacing(4)
 
-        map_title = QLabel("Map Canvas")
-        map_title.setObjectName("sectionTitle")
         self.map_canvas = OperationalMapOverlay()
         self.map_canvas.setObjectName("coordinateZoneMapCanvas")
         self.map_canvas.clear_map("좌표 설정 맵 미수신")
-        self.map_canvas.setMinimumHeight(240)
+        self.map_canvas.setMinimumHeight(180)
         self.map_canvas.map_clicked.connect(self.handle_map_click)
         self.map_canvas.map_dragged.connect(self.handle_map_drag)
         self.map_canvas.map_heading_dragged.connect(self.handle_map_heading_drag)
 
-        map_layout.addWidget(map_title)
         map_layout.addWidget(self.map_canvas)
 
         column.addWidget(map_card, 3)
@@ -489,11 +530,11 @@ class CoordinateZoneSettingsPage(QWidget):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(4)
 
         header_row = QHBoxLayout()
-        header_row.setSpacing(8)
+        header_row.setSpacing(4)
         title = QLabel(title_text)
         title.setObjectName("sectionTitle")
         header_row.addWidget(title)
@@ -504,8 +545,8 @@ class CoordinateZoneSettingsPage(QWidget):
             table_headers.append("상태")
         table = QTableWidget(0, len(table_headers))
         table.setObjectName(object_name)
-        table.setMinimumHeight(150)
-        table.setMaximumHeight(230)
+        table.setMinimumHeight(100)
+        table.setMaximumHeight(140)
         table.setHorizontalHeaderLabels(table_headers)
         table.horizontalHeader().setStretchLastSection(True)
         self.tables[object_name] = table
@@ -561,7 +602,7 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def _build_right_column(self):
         column = QVBoxLayout()
-        column.setSpacing(14)
+        column.setSpacing(6)
         column.addWidget(self._build_edit_panel(), 2)
         column.addWidget(self._build_validation_panel())
         return column
@@ -570,8 +611,8 @@ class CoordinateZoneSettingsPage(QWidget):
         panel = QFrame()
         panel.setObjectName("coordinateEditPanel")
         self.edit_panel_layout = QVBoxLayout(panel)
-        self.edit_panel_layout.setContentsMargins(18, 18, 18, 18)
-        self.edit_panel_layout.setSpacing(10)
+        self.edit_panel_layout.setContentsMargins(8, 8, 8, 8)
+        self.edit_panel_layout.setSpacing(4)
 
         title = QLabel("Edit Panel")
         title.setObjectName("sectionTitle")
@@ -616,8 +657,8 @@ class CoordinateZoneSettingsPage(QWidget):
         panel = QFrame()
         panel.setObjectName("coordinateValidationPanel")
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
 
         title = QLabel("Validation")
         title.setObjectName("sectionTitle")
