@@ -1766,6 +1766,9 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def _save_coordinate_batch_operations(self, operations):
         if self.coordinate_batch_save_thread is not None:
+            self.validation_message_label.setText(
+                "이전 좌표 설정 저장 요청을 처리하는 중입니다."
+            )
             return
         self.save_button.setEnabled(False)
         self.discard_button.setEnabled(False)
@@ -1970,11 +1973,17 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def save_selected_operation_zone(self):
         if self.operation_zone_save_thread is not None:
+            self.validation_message_label.setText(
+                "이전 운영 구역 저장 요청을 처리하는 중입니다."
+            )
             return
         if self.operation_zone_boundary_dirty and not self.operation_zone_dirty:
             self.save_selected_operation_zone_boundary()
             return
         if not self.operation_zone_dirty:
+            self.validation_message_label.setText(
+                "저장할 운영 구역 변경 사항이 없습니다."
+            )
             return
 
         payload = self._build_operation_zone_save_payload()
@@ -2203,6 +2212,9 @@ class CoordinateZoneSettingsPage(QWidget):
 
     def save_selected_operation_zone_boundary(self):
         if self.operation_zone_save_thread is not None:
+            self.validation_message_label.setText(
+                "이전 운영 구역 저장 요청을 처리하는 중입니다."
+            )
             return
         if (
             not self.operation_zone_boundary_dirty

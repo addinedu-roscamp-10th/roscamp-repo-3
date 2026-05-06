@@ -1557,6 +1557,64 @@ def test_coordinate_zone_settings_page_list_tables_are_read_only_selection_surfa
         page.close()
 
 
+def test_coordinate_zone_settings_page_reports_operation_zone_save_noop_reason():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+
+        page.save_current_edit()
+
+        assert (
+            page.validation_message_label.text()
+            == "저장할 운영 구역 변경 사항이 없습니다."
+        )
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_reports_busy_batch_save_reason():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        page.findChild(QLineEdit, "operationZoneNameInput").setText("301호 수정")
+        page.coordinate_batch_save_thread = object()
+
+        page.save_current_edit()
+
+        assert page.validation_message_label.text() == (
+            "이전 좌표 설정 저장 요청을 처리하는 중입니다."
+        )
+    finally:
+        page.coordinate_batch_save_thread = None
+        page.close()
+
+
 def test_coordinate_zone_settings_page_marks_dirty_row_status_and_summary():
     _app()
 
