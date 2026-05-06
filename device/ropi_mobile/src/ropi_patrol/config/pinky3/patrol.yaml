@@ -25,9 +25,9 @@ fallen_detection_client:
 
 ropi_camera:
   ros__parameters:
-    server_ip: "192.168.0.89"
+    server_ip: "192.168.0.76"
     udp_port: 5005
-    stream_name: "pinky03_cam"
+    stream_name: "pinky3_cam"
     udp_packet_size: 1200
     udp_send_buffer_size: 4194304
     session_id: 0

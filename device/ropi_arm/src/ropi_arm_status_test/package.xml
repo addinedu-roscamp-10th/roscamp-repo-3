@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>ropi_arm_control</name>
+  <name>ropi_arm_status</name>
   <version>0.1.0</version>
   <description>ROPI Jetcobot arm test publisher package.</description>
 
