@@ -216,6 +216,7 @@ def test_task_monitor_page_shows_result_reason_and_message_prominently():
     _app()
 
     from ui.utils.pages.caregiver.task_monitor_detail_panels import (
+        GuideRuntimePanel,
         PatrolRuntimePanel,
         TaskResultInfoPanel,
     )
@@ -225,6 +226,7 @@ def test_task_monitor_page_shows_result_reason_and_message_prominently():
 
     try:
         assert isinstance(page.result_info_panel, TaskResultInfoPanel)
+        assert isinstance(page.guide_runtime_section, GuideRuntimePanel)
         assert isinstance(page.patrol_runtime_section, PatrolRuntimePanel)
 
         page.apply_stream_event(
@@ -270,6 +272,43 @@ def test_task_monitor_page_shows_result_reason_and_message_prominently():
         assert page.detail_result_message_label.text() == "-"
         assert page.result_info_panel.objectName() == "taskResultPanel"
         assert page.patrol_runtime_section.isHidden() is False
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "3003",
+                    "task_type": "GUIDE",
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_TARGET_TRACKING",
+                    "assigned_robot_id": "pinky1",
+                    "latest_reason_code": "GUIDE_RUNTIME_NOT_READY",
+                    "guide_detail": {
+                        "guide_phase": "WAIT_TARGET_TRACKING",
+                        "target_track_id": "track_17",
+                        "visitor_id": 4,
+                        "visitor_name": "김민수",
+                        "relation_name": "아들",
+                        "member_id": 1,
+                        "resident_name": "김영수",
+                        "room_no": "301",
+                        "destination_id": "delivery_room_301",
+                        "destination_zone_id": "room_301",
+                        "destination_zone_name": "301호",
+                    },
+                },
+            }
+        )
+        page._select_task("3003")
+
+        assert page.detail_reason_code_label.text() == "GUIDE_RUNTIME_NOT_READY"
+        assert page.guide_runtime_section.isHidden() is False
+        assert page.guide_phase_label.text() == "WAIT_TARGET_TRACKING"
+        assert page.target_track_id_label.text() == "track_17"
+        assert "김민수" in page.guide_visitor_label.text()
+        assert "김영수" in page.guide_resident_label.text()
+        assert "delivery_room_301" in page.guide_destination_label.text()
+        assert page.patrol_runtime_section.isHidden() is True
     finally:
         page.shutdown()
         page.close()

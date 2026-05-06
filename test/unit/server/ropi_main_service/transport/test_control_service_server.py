@@ -6,6 +6,9 @@ from unittest.mock import patch
 import pytest
 
 from server.ropi_main_service.transport import tcp_server
+from server.ropi_main_service.application.caregiver_rpc_facade import (
+    CaregiverRpcFacade,
+)
 from server.ropi_main_service.application.coordinate_config import (
     CoordinateConfigService,
 )
@@ -245,6 +248,10 @@ def test_coordinate_config_rpc_service_is_registered():
     assert tcp_server.SERVICE_REGISTRY["coordinate_config"].__name__ == (
         "CoordinateConfigService"
     )
+
+
+def test_caregiver_rpc_service_is_registered_with_application_facade():
+    assert tcp_server.SERVICE_REGISTRY["caregiver"] is CaregiverRpcFacade
 
 
 def test_coordinate_config_bundle_rpc_smoke_routes_through_internal_rpc(
@@ -703,13 +710,13 @@ def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
             }
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        "server.ropi_main_service.application.caregiver_rpc_facade.CaregiverService",
         FakeCaregiverService,
     ), patch(
-        "server.ropi_main_service.transport.tcp_server.RosActionFeedbackService",
+        "server.ropi_main_service.application.caregiver_rpc_facade.RosActionFeedbackService",
         FakeActionFeedbackService,
     ):
-        bundle = tcp_server.CaregiverFacade().get_dashboard_bundle()
+        bundle = CaregiverRpcFacade().get_dashboard_bundle()
 
     task = bundle["flow_data"]["IN_PROGRESS"][0]
     assert task["feedback"]["feedback_type"] == "NAVIGATION_FEEDBACK"
@@ -726,10 +733,10 @@ def test_caregiver_facade_exposes_robot_status_bundle():
             }
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        "server.ropi_main_service.application.caregiver_rpc_facade.CaregiverService",
         FakeCaregiverService,
     ):
-        bundle = tcp_server.CaregiverFacade().get_robot_status_bundle()
+        bundle = CaregiverRpcFacade().get_robot_status_bundle()
 
     assert bundle == {
         "summary": {"total_robot_count": 1},
@@ -748,10 +755,10 @@ def test_caregiver_facade_exposes_alert_log_bundle():
             }
 
     with patch(
-        "server.ropi_main_service.transport.tcp_server.CaregiverService",
+        "server.ropi_main_service.application.caregiver_rpc_facade.CaregiverService",
         FakeCaregiverService,
     ):
-        bundle = tcp_server.CaregiverFacade().get_alert_log_bundle(
+        bundle = CaregiverRpcFacade().get_alert_log_bundle(
             period="LAST_24_HOURS",
             severity="ERROR",
         )
@@ -901,9 +908,17 @@ def test_async_guide_create_task_uses_native_async_service(control_service_serve
                 "task_status": "WAITING_DISPATCH",
                 "phase": "WAIT_GUIDE_START_CONFIRM",
                 "assigned_robot_id": "pinky1",
+                "visitor_id": 1,
+                "visitor_name": "김민수",
+                "relation_name": "아들",
+                "member_id": 1,
                 "resident_name": "김*수",
                 "room_no": "301",
                 "destination_id": "delivery_room_301",
+                "destination_map_id": "map_test11_0423",
+                "destination_zone_id": "room_301",
+                "destination_zone_name": "301호",
+                "destination_purpose": "DESTINATION",
             }
 
     async def scenario():
@@ -1070,9 +1085,17 @@ def test_async_guide_create_task_publishes_task_update(control_service_server):
                 "task_status": "WAITING_DISPATCH",
                 "phase": "WAIT_GUIDE_START_CONFIRM",
                 "assigned_robot_id": "pinky1",
+                "visitor_id": 1,
+                "visitor_name": "김민수",
+                "relation_name": "아들",
+                "member_id": 1,
                 "resident_name": "김*수",
                 "room_no": "301",
                 "destination_id": "delivery_room_301",
+                "destination_map_id": "map_test11_0423",
+                "destination_zone_id": "room_301",
+                "destination_zone_name": "301호",
+                "destination_purpose": "DESTINATION",
             }
 
     class FakeTaskEventStreamHub:
@@ -1105,6 +1128,21 @@ def test_async_guide_create_task_publishes_task_update(control_service_server):
                 "result_message": "안내 요청이 접수되었습니다.",
                 "cancel_requested": None,
                 "cancellable": False,
+                "guide_detail": {
+                    "guide_phase": "WAIT_GUIDE_START_CONFIRM",
+                    "target_track_id": None,
+                    "visitor_id": 1,
+                    "visitor_name": "김민수",
+                    "relation_name": "아들",
+                    "member_id": 1,
+                    "resident_name": "김*수",
+                    "room_no": "301",
+                    "destination_id": "delivery_room_301",
+                    "destination_map_id": "map_test11_0423",
+                    "destination_zone_id": "room_301",
+                    "destination_zone_name": "301호",
+                    "destination_purpose": "DESTINATION",
+                },
             },
         )
     ]
@@ -1244,6 +1282,20 @@ def test_async_guide_start_driving_rpc_publishes_task_update(control_service_ser
     assert published_events[0][1]["source"] == "GUIDE_COMMAND"
     assert published_events[0][1]["task_status"] == "RUNNING"
     assert published_events[0][1]["phase"] == "GUIDANCE_RUNNING"
+
+
+def test_visit_guide_runtime_service_uses_guide_navigation_runtime_starter(
+    control_service_server,
+):
+    service = control_service_server._build_runtime_service(
+        "visit_guide",
+        tcp_server.VisitGuideService,
+    )
+
+    starter = service.guide_driving_orchestrator.guide_navigation_starter
+
+    assert starter.__self__ is control_service_server.guide_navigation_runtime_starter
+    assert starter.__func__.__name__ == "start_destination_navigation"
 
 
 def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_update(

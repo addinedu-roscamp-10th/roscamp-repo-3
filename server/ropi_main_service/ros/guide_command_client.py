@@ -10,8 +10,8 @@ class RclpyGuideCommandClient:
         node,
         service_type_loader=None,
         service_client_factory=None,
-        server_wait_timeout_sec=5.0,
-        response_wait_timeout_sec=5.0,
+        server_wait_timeout_sec=1.0,
+        response_wait_timeout_sec=1.0,
     ):
         self.node = node
         self.service_type_loader = service_type_loader or self._load_default_service_type

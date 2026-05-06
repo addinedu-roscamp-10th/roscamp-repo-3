@@ -93,15 +93,37 @@ def ros_service_stub(tmp_path_factory):
                             requests.append(request)
 
                         if request.get("command") == "get_runtime_status":
+                            payload = request.get("payload") or {}
+                            pinky_id = str(payload.get("pinky_id") or "pinky2")
+                            arm_ids = payload.get("arm_ids") or []
+                            checks = [
+                                {
+                                    "name": f"{pinky_id}.navigate_to_goal",
+                                    "ready": True,
+                                    "action_name": f"/ropi/control/{pinky_id}/navigate_to_goal",
+                                }
+                            ]
+                            for arm_id in arm_ids:
+                                checks.append(
+                                    {
+                                        "name": f"{arm_id}.execute_manipulation",
+                                        "ready": True,
+                                        "action_name": f"/ropi/arm/{arm_id}/execute_manipulation",
+                                    }
+                                )
+                            if payload.get("include_guide"):
+                                checks.append(
+                                    {
+                                        "name": f"{pinky_id}.guide_command",
+                                        "ready": True,
+                                        "service_name": f"/ropi/control/{pinky_id}/guide_command",
+                                    }
+                                )
                             response = {
                                 "ok": True,
                                 "payload": {
                                     "ready": True,
-                                    "checks": [
-                                        {"name": "pinky2.navigate_to_goal", "ready": True},
-                                        {"name": "arm1.execute_manipulation", "ready": True},
-                                        {"name": "arm2.execute_manipulation", "ready": True},
-                                    ],
+                                    "checks": checks,
                                 },
                             }
                         elif request.get("command") == "cancel_action":

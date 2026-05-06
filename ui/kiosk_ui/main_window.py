@@ -24,8 +24,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from ui.utils.core.styles import load_stylesheet
-from ui.utils.network.service_clients import (
+from ui.kiosk_ui.guide_progress_state import (  # noqa: E402
+    build_guide_progress_view_state,
+    guide_warning_message_for_reason,
+)
+from ui.utils.core.styles import load_stylesheet  # noqa: E402
+from ui.utils.network.service_clients import (  # noqa: E402
     KioskVisitorRemoteService,
     StaffCallRemoteService,
     VisitGuideRemoteService,
@@ -759,7 +763,7 @@ class KioskVisitorRegistrationPage(QWidget):
 
         self.resident_name_label = QLabel("선택된 어르신이 없습니다")
         self.resident_name_label.setObjectName("kioskResidentName")
-        self.resident_name_label.setMinimumHeight(44)
+        self.resident_name_label.setMinimumHeight(48)
         self.resident_name_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
@@ -1752,12 +1756,17 @@ class KioskRobotGuidanceProgressPage(QWidget):
             **(self.current_session or {}),
             "task_status": task_status or (self.current_session or {}).get("task_status"),
             "phase": phase or (self.current_session or {}).get("phase"),
+            "task_outcome": (payload or {}).get("task_outcome"),
+            "reason_code": (payload or {}).get("reason_code"),
+            "latest_reason_code": (payload or {}).get("latest_reason_code"),
+            "result_message": (payload or {}).get("result_message"),
             "assigned_robot_id": (
                 (payload or {}).get("assigned_robot_id")
                 or (self.current_session or {}).get("assigned_robot_id")
             ),
         }
         self._update_guide_progress_display(phase, task_status)
+        self._apply_latest_result_warning()
         if self._is_terminal_task_status(task_status):
             self._set_status_polling_enabled(False)
         return True
@@ -1797,15 +1806,20 @@ class KioskRobotGuidanceProgressPage(QWidget):
             or ""
         ).strip()
         tracking_seq = (payload or {}).get("tracking_result_seq")
+        warning_message = self._latest_result_warning_message()
 
         if ok and tracking_status:
             if tracking_status == "TRACKING":
                 if self._current_session_phase() == "GUIDANCE_RUNNING":
                     self.robot_state_chip.setText("안내 중")
-                    self.distance_label.setText("로봇 안내가 진행 중입니다.")
+                    if not warning_message:
+                        self.distance_label.setText("로봇 안내가 진행 중입니다.")
                 else:
                     self.robot_state_chip.setText("대상 확인 완료")
-                    self.distance_label.setText("안내 대상을 확인했습니다. 주행을 시작할 수 있습니다.")
+                    if not warning_message:
+                        self.distance_label.setText(
+                            "안내 대상을 확인했습니다. 주행을 시작할 수 있습니다."
+                        )
                 if target_track_id:
                     self.detected_target_track_id = target_track_id
                     self.start_driving_button.setEnabled(
@@ -1813,12 +1827,15 @@ class KioskRobotGuidanceProgressPage(QWidget):
                     )
             else:
                 self.robot_state_chip.setText(tracking_status)
-                self.distance_label.setText(f"현재 상태: {tracking_status}")
+                if not warning_message:
+                    self.distance_label.setText(f"현재 상태: {tracking_status}")
 
         if tracking_seq is not None and self.selected_patient:
             self.request_id_label.setText(
                 f"안내 대상: {self.selected_patient.get('name', '-')} / 추적 순번: {tracking_seq}"
             )
+        if warning_message:
+            self.distance_label.setText(warning_message)
         return bool(tracking_status)
 
     def start_guidance_driving(self):
@@ -1845,6 +1862,15 @@ class KioskRobotGuidanceProgressPage(QWidget):
             return
 
         if not success:
+            failure_response = response or {}
+            self.current_session = {
+                **(self.current_session or {}),
+                "command_response": failure_response,
+                "task_outcome": failure_response.get("result_code") or "REJECTED",
+                "reason_code": failure_response.get("reason_code"),
+                "latest_reason_code": failure_response.get("reason_code"),
+                "result_message": failure_response.get("result_message") or message,
+            }
             self.distance_label.setText(message or "안내 주행 시작이 거부되었습니다.")
             return
 
@@ -1852,6 +1878,10 @@ class KioskRobotGuidanceProgressPage(QWidget):
             **(self.current_session or {}),
             "target_track_id": target_track_id,
             "command_response": response or {},
+            "task_outcome": None,
+            "reason_code": None,
+            "latest_reason_code": None,
+            "result_message": None,
         }
         self.start_driving_button.setEnabled(False)
         self._apply_session_status()
@@ -1878,6 +1908,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         self._update_guide_progress_display(phase, task_status)
         self._apply_command_warning()
+        self._apply_latest_result_warning()
 
         if self.selected_patient:
             name = str(self.selected_patient.get("name", "-")).strip() or "-"
@@ -1899,91 +1930,72 @@ class KioskRobotGuidanceProgressPage(QWidget):
         )
         self.start_driving_button.setEnabled(False)
 
-    def _update_guide_progress_display(self, phase, task_status):
-        self.robot_state_chip.setText(self._guide_status_label(phase, task_status))
-        self.distance_label.setText(self._guide_status_message(phase, task_status))
-        title, subtitle = self._guide_header_text(phase, task_status)
-        self.progress_title_label.setText(title)
-        self.progress_subtitle_label.setText(subtitle)
-        self._apply_progress_stage_states(phase, task_status)
-        if self._is_terminal_task_status(task_status):
-            self.start_driving_button.setEnabled(False)
-            self.cancel_button.setEnabled(False)
-        elif self._is_guidance_running(phase, task_status):
-            self.start_driving_button.setEnabled(False)
+    def _apply_latest_result_warning(self):
+        message = self._latest_result_warning_message()
+        if not message:
+            return False
+        self.distance_label.setText(message)
+        return True
 
-    @staticmethod
-    def _guide_status_label(phase, task_status):
-        normalized_phase = str(phase or "").strip().upper()
-        normalized_status = str(task_status or "").strip().upper()
-        if normalized_status == "CANCELLED":
-            return "안내 취소"
-        if normalized_status == "COMPLETED":
-            return "안내 완료"
-        if normalized_status == "FAILED":
-            return "안내 실패"
-        if normalized_phase == "WAIT_TARGET_TRACKING":
-            return "대상 확인 중"
-        if normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
-            return "안내 중"
-        if normalized_phase == "WAIT_REIDENTIFY":
-            return "재확인 중"
-        return "안내 준비"
-
-    @staticmethod
-    def _guide_status_message(phase, task_status):
-        normalized_phase = str(phase or "").strip().upper()
-        normalized_status = str(task_status or "").strip().upper()
-        if normalized_status == "CANCELLED":
-            return "안내가 취소되었습니다."
-        if normalized_status == "COMPLETED":
-            return "안내가 완료되었습니다."
-        if normalized_status == "FAILED":
-            return "안내를 시작하지 못했습니다. 직원에게 도움을 요청해주세요."
-        if normalized_phase == "WAIT_TARGET_TRACKING":
-            return "로봇이 안내 대상을 확인하고 있습니다."
-        if normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
-            return "로봇을 따라 이동해주세요."
-        if normalized_phase == "WAIT_REIDENTIFY":
-            return "대상을 다시 확인하고 있습니다."
-        return "안내 요청 상태를 확인하고 있습니다."
-
-    @staticmethod
-    def _guide_header_text(phase, task_status):
-        normalized_phase = str(phase or "").strip().upper()
-        normalized_status = str(task_status or "").strip().upper()
-        if normalized_status == "COMPLETED":
-            return "목적지에 도착했습니다", "방문 안내가 완료되었습니다."
-        if normalized_status == "CANCELLED":
-            return "안내가 중단되었습니다", "필요하면 직원에게 도움을 요청해 주세요."
-        if normalized_status == "FAILED":
-            return "안내를 시작하지 못했습니다", "직원에게 도움을 요청해 주세요."
-        if normalized_phase == "WAIT_TARGET_TRACKING":
-            return "안내를 준비하고 있습니다", "로봇이 안내 대상을 확인하는 중입니다."
-        if normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
-            return "로봇을 따라 이동해 주세요", "목적지까지 안전하게 안내해 드립니다."
-        return "안내 요청을 확인하고 있습니다", "잠시만 기다려 주세요."
-
-    def _apply_progress_stage_states(self, phase, task_status):
-        normalized_phase = str(phase or "").strip().upper()
-        normalized_status = str(task_status or "").strip().upper()
-        active_index = 0
-
-        if normalized_status in {"WAITING", "WAITING_DISPATCH"}:
-            active_index = 0
-        elif normalized_status in {"READY", "ASSIGNED"}:
-            active_index = 1
-        elif normalized_status in {"COMPLETED", "CANCELLED", "FAILED"}:
-            active_index = 4
-        elif normalized_phase in {
+    def _latest_result_warning_message(self):
+        session = self.current_session or {}
+        command_response = session.get("command_response") or {}
+        phase = self._current_session_phase()
+        task_status = str(session.get("task_status") or "").strip().upper()
+        if self._is_terminal_task_status(task_status) or phase == "GUIDANCE_RUNNING":
+            return ""
+        if phase and phase not in {
             "WAIT_GUIDE_START_CONFIRM",
             "WAIT_TARGET_TRACKING",
             "WAIT_REIDENTIFY",
         }:
-            active_index = 2
-        elif normalized_phase == "GUIDANCE_RUNNING" or normalized_status == "RUNNING":
-            active_index = 3
+            return ""
 
+        outcome = str(
+            session.get("task_outcome")
+            or command_response.get("result_code")
+            or ""
+        ).strip().upper()
+        reason_code = str(
+            session.get("latest_reason_code")
+            or session.get("reason_code")
+            or command_response.get("reason_code")
+            or ""
+        ).strip().upper()
+        if outcome not in {"REJECTED", "FAILED", "INVALID_REQUEST", "ERROR"} and not reason_code:
+            return ""
+
+        message = str(
+            session.get("result_message")
+            or command_response.get("result_message")
+            or ""
+        ).strip()
+        if message:
+            return message
+
+        return self._guide_warning_message_for_reason(reason_code)
+
+    @staticmethod
+    def _guide_warning_message_for_reason(reason_code):
+        return guide_warning_message_for_reason(reason_code)
+
+    def _update_guide_progress_display(self, phase, task_status):
+        state = build_guide_progress_view_state(
+            phase=phase,
+            task_status=task_status,
+        )
+        self.robot_state_chip.setText(state.robot_state_label)
+        self.distance_label.setText(state.status_message)
+        self.progress_title_label.setText(state.header_title)
+        self.progress_subtitle_label.setText(state.header_subtitle)
+        self._apply_progress_stage_states(state.active_stage_index)
+        self.progress_bar_fill.setFixedWidth(state.progress_fill_width)
+        if state.start_driving_enabled is not None:
+            self.start_driving_button.setEnabled(state.start_driving_enabled)
+        if state.cancel_enabled is not None:
+            self.cancel_button.setEnabled(state.cancel_enabled)
+
+    def _apply_progress_stage_states(self, active_index):
         for index, stage in enumerate(self.progress_stages):
             if index < active_index:
                 stage.set_state("done")
@@ -1991,19 +2003,6 @@ class KioskRobotGuidanceProgressPage(QWidget):
                 stage.set_state("active")
             else:
                 stage.set_state("pending")
-
-        fill_widths = [90, 170, 260, 420, 520]
-        self.progress_bar_fill.setFixedWidth(
-            fill_widths[min(active_index, len(fill_widths) - 1)]
-        )
-
-    @staticmethod
-    def _is_guidance_running(phase, task_status):
-        normalized_phase = str(phase or "").strip().upper()
-        normalized_status = str(task_status or "").strip().upper()
-        if normalized_phase:
-            return normalized_phase == "GUIDANCE_RUNNING"
-        return normalized_status == "RUNNING"
 
     @staticmethod
     def _is_terminal_task_status(task_status):

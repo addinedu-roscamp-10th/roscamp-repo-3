@@ -210,6 +210,19 @@ def test_task_monitor_get_task_status_formats_single_task():
         "task_status": "RUNNING",
         "phase": "GUIDANCE_RUNNING",
         "assigned_robot_id": "pinky1",
+        "guide_phase": "WAIT_TARGET_TRACKING",
+        "guide_target_track_id": "track_17",
+        "guide_visitor_id": 4,
+        "guide_visitor_name": "김민수",
+        "guide_relation_name": "아들",
+        "guide_member_id": 1,
+        "guide_resident_name": "김영수",
+        "guide_room_no": "301",
+        "guide_destination_id": "delivery_room_301",
+        "guide_destination_map_id": "map_test11_0423",
+        "guide_destination_zone_id": "room_301",
+        "guide_destination_zone_name": "301호",
+        "guide_destination_purpose": "GUIDE_DESTINATION",
         "updated_at": datetime(2026, 5, 4, 15, 10, 0),
     }
     service = TaskMonitorService(repository=repository)
@@ -222,6 +235,21 @@ def test_task_monitor_get_task_status_formats_single_task():
     assert response["task_status"] == "RUNNING"
     assert response["phase"] == "GUIDANCE_RUNNING"
     assert response["assigned_robot_id"] == "pinky1"
+    assert response["guide_detail"] == {
+        "guide_phase": "WAIT_TARGET_TRACKING",
+        "target_track_id": "track_17",
+        "visitor_id": 4,
+        "visitor_name": "김민수",
+        "relation_name": "아들",
+        "member_id": 1,
+        "resident_name": "김영수",
+        "room_no": "301",
+        "destination_id": "delivery_room_301",
+        "destination_map_id": "map_test11_0423",
+        "destination_zone_id": "room_301",
+        "destination_zone_name": "301호",
+        "destination_purpose": "GUIDE_DESTINATION",
+    }
     assert response["updated_at"] == "2026-05-04T15:10:00"
     assert repository.calls[-1] == {"task_id": 3001}
 

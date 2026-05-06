@@ -145,6 +145,45 @@ def test_record_command_rejection_keeps_current_phase_and_writes_event_only():
     assert len(connection.cursor_instance.calls) == 3
 
 
+def test_record_pre_driving_finish_transport_rejection_finalizes_user_cancelled_task():
+    connection = FakeConnection()
+    repository = GuideTaskLifecycleRepository(connection_factory=lambda: connection)
+
+    response = repository.record_command_result(
+        task_id=3001,
+        pinky_id="pinky1",
+        command_type="FINISH_GUIDANCE",
+        finish_reason="USER_CANCELLED",
+        command_response={
+            "accepted": False,
+            "result_code": "REJECTED",
+            "result_message": "/ropi/control/pinky1/guide_command service is not available.",
+            "reason_code": "GUIDE_COMMAND_TRANSPORT_ERROR",
+            "message": "/ropi/control/pinky1/guide_command service is not available.",
+        },
+    )
+
+    assert response["accepted"] is True
+    assert response["result_code"] == "ACCEPTED"
+    assert response["reason_code"] == "USER_CANCELLED"
+    assert response["result_message"] == "안내 시작 전 취소가 접수되었습니다."
+    assert response["task_status"] == "CANCELLED"
+    assert response["phase"] == "GUIDANCE_CANCELLED"
+    assert response["guide_phase"] == "CANCELLED"
+    assert "UPDATE task" in connection.cursor_instance.calls[1][0]
+    assert connection.cursor_instance.calls[1][1][:4] == (
+        "CANCELLED",
+        "GUIDANCE_CANCELLED",
+        "USER_CANCELLED",
+        "ACCEPTED",
+    )
+    assert "UPDATE guide_task_detail" in connection.cursor_instance.calls[2][0]
+    assert "INSERT INTO task_state_history" in connection.cursor_instance.calls[3][0]
+    assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[4][0]
+    event_payload = connection.cursor_instance.calls[4][1][-1]
+    assert "GUIDE_COMMAND_TRANSPORT_ERROR" in event_payload
+
+
 def test_async_record_finish_user_cancel_finalizes_cancelled_task():
     transaction = FakeAsyncTransaction()
     repository = GuideTaskLifecycleRepository(

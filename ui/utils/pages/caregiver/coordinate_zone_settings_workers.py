@@ -3,15 +3,24 @@ import binascii
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from ui.utils.network.service_clients import CoordinateConfigRemoteService
+from ui.utils.network.service_clients import (
+    CoordinateConfigRemoteService,
+    FmsConfigRemoteService,
+)
 
 
 class CoordinateConfigLoadWorker(QObject):
     finished = pyqtSignal(object, object)
 
-    def __init__(self, *, service_factory=CoordinateConfigRemoteService):
+    def __init__(
+        self,
+        *,
+        service_factory=CoordinateConfigRemoteService,
+        fms_service_factory=FmsConfigRemoteService,
+    ):
         super().__init__()
         self.service_factory = service_factory
+        self.fms_service_factory = fms_service_factory
 
     def run(self):
         try:
@@ -24,6 +33,24 @@ class CoordinateConfigLoadWorker(QObject):
             if not _is_ok_response(bundle):
                 self.finished.emit(False, _format_result_error(bundle))
                 return
+
+            fms_bundle = self.fms_service_factory().get_active_graph_bundle(
+                include_disabled=True,
+                include_edges=True,
+                include_routes=True,
+                include_reservations=False,
+            )
+            if not _is_ok_response(fms_bundle):
+                self.finished.emit(False, _format_result_error(fms_bundle))
+                return
+
+            bundle = {
+                **bundle,
+                "fms_waypoints": fms_bundle.get("waypoints") or [],
+                "fms_edges": fms_bundle.get("edges") or [],
+                "fms_routes": fms_bundle.get("routes") or [],
+                "fms_reservations": fms_bundle.get("reservations") or [],
+            }
 
             map_profile = bundle.get("map_profile") or {}
             map_id = map_profile.get("map_id")
@@ -61,6 +88,59 @@ class CoordinateConfigLoadWorker(QObject):
                     "pgm_sha256": pgm_asset.get("sha256"),
                 },
             )
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
+class CoordinateConfigBatchSaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(
+        self,
+        *,
+        operations,
+        coordinate_service_factory=CoordinateConfigRemoteService,
+        fms_service_factory=FmsConfigRemoteService,
+    ):
+        super().__init__()
+        self.operations = [dict(operation) for operation in operations or []]
+        self.coordinate_service_factory = coordinate_service_factory
+        self.fms_service_factory = fms_service_factory
+
+    def run(self):
+        try:
+            coordinate_service = self.coordinate_service_factory()
+            fms_service = self.fms_service_factory()
+            successes = []
+            failures = []
+
+            for operation in self.operations:
+                table = operation.get("table")
+                method_name = operation.get("method")
+                payload = dict(operation.get("payload") or {})
+                service = (
+                    fms_service
+                    if str(table or "").startswith("fms_")
+                    else coordinate_service
+                )
+                try:
+                    response = getattr(service, method_name)(**payload)
+                except Exception as exc:
+                    failures.append({**operation, "error": str(exc)})
+                    continue
+
+                if _operation_response_ok(table, response):
+                    successes.append({**operation, "response": response})
+                else:
+                    failures.append(
+                        {
+                            **operation,
+                            "response": response,
+                            "error": _format_result_error(response),
+                        }
+                    )
+
+            self.finished.emit(True, {"successes": successes, "failures": failures})
         except Exception as exc:
             self.finished.emit(False, str(exc))
 
@@ -153,6 +233,63 @@ class PatrolAreaPathSaveWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class FmsWaypointSaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, *, payload, service_factory=FmsConfigRemoteService):
+        super().__init__()
+        self.payload = dict(payload or {})
+        self.service_factory = service_factory
+
+    def run(self):
+        try:
+            response = self.service_factory().upsert_waypoint(**self.payload)
+            if isinstance(response, dict) and response.get("result_code") == "OK":
+                self.finished.emit(True, response)
+                return
+            self.finished.emit(False, _format_result_error(response))
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
+class FmsEdgeSaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, *, payload, service_factory=FmsConfigRemoteService):
+        super().__init__()
+        self.payload = dict(payload or {})
+        self.service_factory = service_factory
+
+    def run(self):
+        try:
+            response = self.service_factory().upsert_edge(**self.payload)
+            if isinstance(response, dict) and response.get("result_code") == "OK":
+                self.finished.emit(True, response)
+                return
+            self.finished.emit(False, _format_result_error(response))
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
+class FmsRouteSaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, *, payload, service_factory=FmsConfigRemoteService):
+        super().__init__()
+        self.payload = dict(payload or {})
+        self.service_factory = service_factory
+
+    def run(self):
+        try:
+            response = self.service_factory().upsert_route(**self.payload)
+            if isinstance(response, dict) and response.get("result_code") == "OK":
+                self.finished.emit(True, response)
+                return
+            self.finished.emit(False, _format_result_error(response))
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
 def _is_ok_response(response):
     return isinstance(response, dict) and response.get("result_code") == "OK"
 
@@ -172,6 +309,14 @@ def _format_result_error(response):
     return str(result_code or "좌표 설정 요청에 실패했습니다.")
 
 
+def _operation_response_ok(table, response):
+    if not isinstance(response, dict):
+        return False
+    if str(table or "").startswith("fms_"):
+        return response.get("result_code") == "OK"
+    return response.get("result_code") in {"OK", "UPDATED", "CREATED"}
+
+
 def _decode_base64_asset(value):
     try:
         return base64.b64decode(str(value or ""), validate=True)
@@ -180,7 +325,11 @@ def _decode_base64_asset(value):
 
 
 __all__ = [
+    "CoordinateConfigBatchSaveWorker",
     "CoordinateConfigLoadWorker",
+    "FmsEdgeSaveWorker",
+    "FmsRouteSaveWorker",
+    "FmsWaypointSaveWorker",
     "GoalPoseSaveWorker",
     "OperationZoneBoundarySaveWorker",
     "OperationZoneSaveWorker",

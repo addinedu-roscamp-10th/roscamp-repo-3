@@ -107,7 +107,9 @@ class PinkyStatusSubscriber(Node):
             "IF-COM-005 status received: "
             f"id={view.pinky_id}, state={view.pinky_state}, "
             f"task={view.active_task_id or '-'}, charging={view.charging_state}, "
-            f"docked={view.docked}, fail={view.fail_code or '-'}"
+            f"docked={view.docked}, battery={view.battery_percent:.1f}%/"
+            f"{view.battery_voltage:.2f}V, pose=({view.x:.2f}, {view.y:.2f}, "
+            f"{view.theta_deg:.1f}deg), fail={view.fail_code or '-'}"
         )
 
     def _check_stale(self):

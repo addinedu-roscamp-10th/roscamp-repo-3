@@ -117,3 +117,54 @@ def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
         assert panel.patrol_map_overlay.fall_alert_pixel_point is None
     finally:
         panel.close()
+
+
+def test_guide_runtime_panel_renders_connection_destination_and_hidden_state():
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_detail_panels import GuideRuntimePanel
+
+    panel = GuideRuntimePanel()
+
+    try:
+        panel.render(
+            {
+                "task_id": "3001",
+                "task_type": "GUIDE",
+                "phase": "WAIT_TARGET_TRACKING",
+                "guide_detail": {
+                    "guide_phase": "WAIT_TARGET_TRACKING",
+                    "target_track_id": "track_17",
+                    "visitor_id": 4,
+                    "visitor_name": "김민수",
+                    "relation_name": "아들",
+                    "member_id": 1,
+                    "resident_name": "김영수",
+                    "room_no": "301",
+                    "destination_id": "delivery_room_301",
+                    "destination_zone_id": "room_301",
+                    "destination_zone_name": "301호",
+                },
+            }
+        )
+
+        assert panel.isHidden() is False
+        assert panel.guide_phase_label.text() == "WAIT_TARGET_TRACKING"
+        assert panel.target_track_id_label.text() == "track_17"
+        assert "김민수" in panel.visitor_label.text()
+        assert "아들" in panel.visitor_label.text()
+        assert "김영수" in panel.resident_label.text()
+        assert "301호" in panel.resident_label.text()
+        assert "delivery_room_301" in panel.destination_label.text()
+        assert "room_301" in panel.destination_label.text()
+
+        panel.render({"task_id": "2001", "task_type": "PATROL"})
+
+        assert panel.isHidden() is True
+        assert panel.guide_phase_label.text() == "-"
+        assert panel.target_track_id_label.text() == "-"
+        assert panel.visitor_label.text() == "-"
+        assert panel.resident_label.text() == "-"
+        assert panel.destination_label.text() == "-"
+    finally:
+        panel.close()

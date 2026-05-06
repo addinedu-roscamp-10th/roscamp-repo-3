@@ -457,9 +457,17 @@ class GuideTaskRepository:
             task_status="WAITING_DISPATCH",
             phase=GUIDE_INITIAL_PHASE,
             assigned_robot_id=self.default_pinky_id,
+            visitor_id=context.get("visitor_id"),
+            visitor_name=context.get("visitor_name"),
+            relation_name=context.get("relation_name"),
+            member_id=context.get("member_id"),
             resident_name=context.get("member_name") or "-",
             room_no=context.get("room_no") or "-",
             destination_id=destination["goal_pose_id"],
+            destination_map_id=destination.get("map_id"),
+            destination_zone_id=destination.get("zone_id"),
+            destination_zone_name=destination.get("zone_name"),
+            destination_purpose=destination.get("purpose"),
         )
 
     @staticmethod
@@ -512,9 +520,17 @@ class GuideTaskRepository:
         task_status=None,
         phase=None,
         assigned_robot_id=None,
+        visitor_id=None,
+        visitor_name=None,
+        relation_name=None,
+        member_id=None,
         resident_name=None,
         room_no=None,
         destination_id=None,
+        destination_map_id=None,
+        destination_zone_id=None,
+        destination_zone_name=None,
+        destination_purpose=None,
     ):
         return {
             "result_code": result_code,
@@ -524,9 +540,17 @@ class GuideTaskRepository:
             "task_status": task_status,
             "phase": phase,
             "assigned_robot_id": assigned_robot_id,
+            "visitor_id": visitor_id,
+            "visitor_name": visitor_name,
+            "relation_name": relation_name,
+            "member_id": member_id,
             "resident_name": resident_name,
             "room_no": room_no,
             "destination_id": destination_id,
+            "destination_map_id": destination_map_id,
+            "destination_zone_id": destination_zone_id,
+            "destination_zone_name": destination_zone_name,
+            "destination_purpose": destination_purpose,
         }
 
 

@@ -16,13 +16,13 @@ class GuideCommandService:
         *,
         command_client=None,
         command_execution_recorder=None,
-        timeout_sec=5.0,
+        timeout_sec=None,
     ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
         self.command_execution_recorder = (
             command_execution_recorder or CommandExecutionRecorder()
         )
-        self.timeout_sec = float(timeout_sec)
+        self.timeout_sec = None if timeout_sec is None else float(timeout_sec)
 
     def send(
         self,

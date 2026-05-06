@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QTableWidgetItem
 
 
@@ -10,6 +11,9 @@ class CoordinateConfigBundle:
     operation_zones: list
     goal_poses: list
     patrol_areas: list
+    fms_waypoints: list
+    fms_edges: list
+    fms_routes: list
 
 
 def normalize_coordinate_config_bundle(bundle):
@@ -21,6 +25,9 @@ def normalize_coordinate_config_bundle(bundle):
         operation_zones=_dict_rows(source.get("operation_zones")),
         goal_poses=_dict_rows(source.get("goal_poses")),
         patrol_areas=_dict_rows(source.get("patrol_areas")),
+        fms_waypoints=_dict_rows(source.get("fms_waypoints", source.get("waypoints"))),
+        fms_edges=_dict_rows(source.get("fms_edges", source.get("edges"))),
+        fms_routes=_dict_rows(source.get("fms_routes", source.get("routes"))),
     )
 
 
@@ -40,7 +47,9 @@ def set_table_rows(table, rows, columns):
         row = row if isinstance(row, dict) else {}
         for column_index, column in enumerate(columns):
             value = _column_value(row, column)
-            table.setItem(row_index, column_index, QTableWidgetItem(value))
+            item = QTableWidgetItem(value)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            table.setItem(row_index, column_index, item)
 
 
 def _dict_rows(rows):
@@ -86,6 +95,15 @@ def _waypoint_count_text(row, value):
     return str(len(poses)) if isinstance(poses, list) else "0"
 
 
+def _edge_direction_text(_row, value):
+    return "양방향" if bool(value) else "단방향"
+
+
+def _route_waypoint_count_text(row, _value):
+    sequence = row.get("waypoint_sequence")
+    return str(len(sequence)) if isinstance(sequence, list) else "0"
+
+
 OPERATION_ZONE_TABLE_COLUMNS = [
     "zone_id",
     "zone_name",
@@ -104,10 +122,34 @@ PATROL_AREA_TABLE_COLUMNS = [
     ("waypoint_count", _waypoint_count_text),
     ("is_enabled", _enabled_text),
 ]
+FMS_WAYPOINT_TABLE_COLUMNS = [
+    "waypoint_id",
+    "display_name",
+    "waypoint_type",
+    ("pose_x", _goal_pose_text),
+    ("is_enabled", _enabled_text),
+]
+FMS_EDGE_TABLE_COLUMNS = [
+    "edge_id",
+    "from_waypoint_id",
+    "to_waypoint_id",
+    ("is_bidirectional", _edge_direction_text),
+    ("is_enabled", _enabled_text),
+]
+FMS_ROUTE_TABLE_COLUMNS = [
+    "route_id",
+    "route_name",
+    "route_scope",
+    ("waypoint_sequence", _route_waypoint_count_text),
+    ("is_enabled", _enabled_text),
+]
 
 
 __all__ = [
     "CoordinateConfigBundle",
+    "FMS_EDGE_TABLE_COLUMNS",
+    "FMS_ROUTE_TABLE_COLUMNS",
+    "FMS_WAYPOINT_TABLE_COLUMNS",
     "GOAL_POSE_TABLE_COLUMNS",
     "OPERATION_ZONE_TABLE_COLUMNS",
     "PATROL_AREA_TABLE_COLUMNS",

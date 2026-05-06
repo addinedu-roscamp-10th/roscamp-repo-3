@@ -4,13 +4,13 @@ from server.ropi_main_service.persistence.repositories.task_request_repository i
     DeliveryRequestRepository,
     TaskRequestRepository,
 )
-from server.ropi_main_service.transport import tcp_server
+from server.ropi_main_service.application.rpc_service_registry import SERVICE_REGISTRY
 
 
 def test_task_request_service_is_canonical_name_with_delivery_alias():
     assert TaskRequestService.__name__ == "TaskRequestService"
     assert DeliveryRequestService is TaskRequestService
-    assert tcp_server.SERVICE_REGISTRY["task_request"] is TaskRequestService
+    assert SERVICE_REGISTRY["task_request"] is TaskRequestService
 
 
 def test_task_request_repository_is_canonical_name_with_delivery_alias():

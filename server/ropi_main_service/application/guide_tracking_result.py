@@ -195,6 +195,11 @@ class GuideTrackingResultProcessor:
         if self.task_event_publisher is None:
             return
 
+        phase = (
+            "GUIDANCE_RUNNING"
+            if update.get("tracking_status") == "TRACKING"
+            else "WAIT_REIDENTIFY"
+        )
         await self.task_event_publisher.publish(
             "TASK_UPDATED",
             {
@@ -202,17 +207,17 @@ class GuideTrackingResultProcessor:
                 "task_id": update.get("task_id"),
                 "task_type": "GUIDE",
                 "task_status": "RUNNING",
-                "phase": (
-                    "GUIDANCE_RUNNING"
-                    if update.get("tracking_status") == "TRACKING"
-                    else "WAIT_REIDENTIFY"
-                ),
+                "phase": phase,
                 "assigned_robot_id": update.get("pinky_id"),
                 "latest_reason_code": f"GUIDE_TRACKING_{update.get('tracking_status')}",
                 "result_code": "ACCEPTED",
                 "result_message": "안내 tracking 갱신을 전달했습니다.",
                 "cancel_requested": None,
                 "cancellable": True,
+                "guide_detail": {
+                    "guide_phase": phase,
+                    "target_track_id": update.get("target_track_id"),
+                },
             },
         )
 

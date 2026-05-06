@@ -15,6 +15,10 @@ DROP TABLE IF EXISTS `patrol_task_detail`;
 DROP TABLE IF EXISTS `delivery_task_item`;
 DROP TABLE IF EXISTS `delivery_task_detail`;
 DROP TABLE IF EXISTS `task`;
+DROP TABLE IF EXISTS `fms_route_waypoint`;
+DROP TABLE IF EXISTS `fms_route`;
+DROP TABLE IF EXISTS `fms_edge`;
+DROP TABLE IF EXISTS `fms_waypoint`;
 DROP TABLE IF EXISTS `goal_pose`;
 DROP TABLE IF EXISTS `operation_zone`;
 DROP TABLE IF EXISTS `patrol_area`;
@@ -213,6 +217,94 @@ CREATE TABLE `goal_pose` (
         FOREIGN KEY (`zone_id`)
         REFERENCES `operation_zone` (`zone_id`),
     KEY `idx_goal_pose_map_purpose` (`map_id`, `purpose`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `fms_waypoint` (
+    `waypoint_id` VARCHAR(100) NOT NULL,
+    `map_id` VARCHAR(100) NOT NULL,
+    `display_name` VARCHAR(100) NOT NULL,
+    `waypoint_type` VARCHAR(50) NOT NULL,
+    `pose_x` DOUBLE NOT NULL,
+    `pose_y` DOUBLE NOT NULL,
+    `pose_yaw` DOUBLE NOT NULL,
+    `frame_id` VARCHAR(50) NOT NULL DEFAULT 'map',
+    `snap_group` VARCHAR(100) NULL,
+    `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_fms_waypoint` PRIMARY KEY (`waypoint_id`),
+    CONSTRAINT `fk_fms_waypoint_map_profile`
+        FOREIGN KEY (`map_id`)
+        REFERENCES `map_profile` (`map_id`),
+    KEY `idx_fms_waypoint_map_enabled_name`
+        (`map_id`, `is_enabled`, `display_name`),
+    KEY `idx_fms_waypoint_map_type`
+        (`map_id`, `waypoint_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `fms_edge` (
+    `edge_id` VARCHAR(100) NOT NULL,
+    `map_id` VARCHAR(100) NOT NULL,
+    `from_waypoint_id` VARCHAR(100) NOT NULL,
+    `to_waypoint_id` VARCHAR(100) NOT NULL,
+    `is_bidirectional` BOOLEAN NOT NULL DEFAULT TRUE,
+    `traversal_cost` DOUBLE NULL,
+    `priority` INT NULL,
+    `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_fms_edge` PRIMARY KEY (`edge_id`),
+    CONSTRAINT `fk_fms_edge_map_profile`
+        FOREIGN KEY (`map_id`)
+        REFERENCES `map_profile` (`map_id`),
+    CONSTRAINT `fk_fms_edge_from_waypoint`
+        FOREIGN KEY (`from_waypoint_id`)
+        REFERENCES `fms_waypoint` (`waypoint_id`),
+    CONSTRAINT `fk_fms_edge_to_waypoint`
+        FOREIGN KEY (`to_waypoint_id`)
+        REFERENCES `fms_waypoint` (`waypoint_id`),
+    KEY `idx_fms_edge_map_enabled`
+        (`map_id`, `is_enabled`),
+    KEY `idx_fms_edge_from_to`
+        (`from_waypoint_id`, `to_waypoint_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `fms_route` (
+    `route_id` VARCHAR(100) NOT NULL,
+    `map_id` VARCHAR(100) NOT NULL,
+    `route_name` VARCHAR(100) NOT NULL,
+    `route_scope` VARCHAR(20) NOT NULL,
+    `revision` INT UNSIGNED NOT NULL DEFAULT 1,
+    `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_fms_route` PRIMARY KEY (`route_id`),
+    CONSTRAINT `fk_fms_route_map_profile`
+        FOREIGN KEY (`map_id`)
+        REFERENCES `map_profile` (`map_id`),
+    KEY `idx_fms_route_map_scope_enabled_name`
+        (`map_id`, `route_scope`, `is_enabled`, `route_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `fms_route_waypoint` (
+    `route_id` VARCHAR(100) NOT NULL,
+    `sequence_no` INT UNSIGNED NOT NULL,
+    `waypoint_id` VARCHAR(100) NOT NULL,
+    `yaw_policy` VARCHAR(20) NOT NULL DEFAULT 'AUTO_NEXT',
+    `fixed_pose_yaw` DOUBLE NULL,
+    `stop_required` BOOLEAN NOT NULL DEFAULT TRUE,
+    `dwell_sec` DOUBLE NULL,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_fms_route_waypoint` PRIMARY KEY (`route_id`, `sequence_no`),
+    CONSTRAINT `fk_fms_route_waypoint_route`
+        FOREIGN KEY (`route_id`)
+        REFERENCES `fms_route` (`route_id`)
+        ON DELETE CASCADE,
+    CONSTRAINT `fk_fms_route_waypoint_waypoint`
+        FOREIGN KEY (`waypoint_id`)
+        REFERENCES `fms_waypoint` (`waypoint_id`),
+    KEY `idx_fms_route_waypoint_waypoint` (`waypoint_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `task` (
