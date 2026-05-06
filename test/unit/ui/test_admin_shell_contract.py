@@ -148,6 +148,35 @@ def test_caregiver_common_shell_routes_placeholder_pages():
         window.close()
 
 
+def test_caregiver_coordinate_settings_page_autoloads_on_first_entry(monkeypatch):
+    _app()
+
+    from ui.admin_ui.main_window import CaregiverMainWindow
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    load_calls = []
+
+    def fake_load_coordinate_bundle(self):
+        load_calls.append(self)
+
+    monkeypatch.setattr(
+        CoordinateZoneSettingsPage,
+        "load_coordinate_bundle",
+        fake_load_coordinate_bundle,
+    )
+
+    window = CaregiverMainWindow()
+
+    try:
+        window.coordinate_settings_btn.click()
+
+        assert load_calls == [window.coordinate_settings_page]
+    finally:
+        window.close()
+
+
 def test_caregiver_shell_pages_use_common_page_header():
     _app()
 

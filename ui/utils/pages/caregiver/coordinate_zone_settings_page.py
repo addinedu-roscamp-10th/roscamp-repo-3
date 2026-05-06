@@ -544,6 +544,17 @@ class CoordinateZoneSettingsPage(QWidget):
             clear_handler=self._clear_load_thread,
         )
 
+    def reset_page(self):
+        if self.load_thread is not None:
+            return
+        if self.map_canvas.map_loaded:
+            return
+        if self._has_pending_draft_changes() or self._has_local_form_dirty_state():
+            return
+        if self.operation_zone_boundary_dirty or self.patrol_area_dirty:
+            return
+        self.load_coordinate_bundle()
+
     def apply_loaded_coordinate_config(self, payload):
         payload = payload if isinstance(payload, dict) else {}
         bundle = (
@@ -694,6 +705,18 @@ class CoordinateZoneSettingsPage(QWidget):
             return self.fms_route_mode != "create" and self.fms_route_dirty
         return False
 
+    def _has_local_form_dirty_state(self):
+        return any(
+            [
+                self.operation_zone_dirty,
+                self.goal_pose_dirty,
+                self.patrol_area_dirty,
+                self.fms_waypoint_dirty,
+                self.fms_edge_dirty,
+                self.fms_route_dirty,
+            ]
+        )
+
     def _draft_row_has_local_change(self, table_name, row_id):
         dirty_row_ids = self._dirty_row_ids_for_table(table_name)
         if row_id in dirty_row_ids:
@@ -820,6 +843,36 @@ class CoordinateZoneSettingsPage(QWidget):
                 )
         self._update_change_summary()
         self._sync_revert_row_button()
+
+    def _selected_operation_zone_boundary_draft_snapshot(self, row_id):
+        if (
+            not self.operation_zone_boundary_dirty
+            or not self.selected_operation_zone
+            or self.selected_operation_zone.get("zone_id") != row_id
+        ):
+            return None
+        return {
+            "vertices": [
+                dict(vertex) for vertex in self.operation_zone_boundary_vertices
+            ],
+            "selected_index": self.selected_operation_zone_boundary_vertex_index,
+        }
+
+    def _restore_operation_zone_boundary_draft_snapshot(self, snapshot):
+        if not snapshot:
+            return
+        self.operation_zone_boundary_vertices = [
+            dict(vertex) for vertex in snapshot.get("vertices") or []
+        ]
+        self.selected_operation_zone_boundary_vertex_index = snapshot.get(
+            "selected_index"
+        )
+        self.operation_zone_boundary_dirty = True
+        self._populate_operation_zone_boundary_table()
+        self._set_operation_zone_boundary_vertex_form(
+            self.selected_operation_zone_boundary_vertex_index
+        )
+        self._sync_operation_zone_overlay()
 
     def _capture_selected_bundle_selection(self):
         if (
@@ -3421,7 +3474,13 @@ class CoordinateZoneSettingsPage(QWidget):
             self.server_bundle_snapshot = copy.deepcopy(self.current_bundle)
             self.validation_message_label.setText("변경 사항을 저장했습니다.")
 
+        continue_boundary_save = self._should_continue_operation_zone_boundary_save(
+            successes,
+            failures,
+        )
         self._sync_current_edit_save_state()
+        if continue_boundary_save:
+            self.save_selected_operation_zone_boundary()
 
     def _apply_batch_save_success(self, success):
         table = success.get("table")
@@ -3432,6 +3491,9 @@ class CoordinateZoneSettingsPage(QWidget):
         if table == "operation_zone":
             row = operation_zone_from_save_response(response)
             if row is not None:
+                boundary_snapshot = (
+                    self._selected_operation_zone_boundary_draft_snapshot(row_id)
+                )
                 self._replace_operation_zone_row(row)
                 self._replace_server_snapshot_row(table, row)
                 self.operation_zone_dirty_row_ids.discard(row_id)
@@ -3441,6 +3503,9 @@ class CoordinateZoneSettingsPage(QWidget):
                     self.selected_operation_zone = dict(row)
                     self.operation_zone_dirty = False
                     self._set_operation_zone_form(row, mode="edit")
+                    self._restore_operation_zone_boundary_draft_snapshot(
+                        boundary_snapshot
+                    )
         elif table == "goal_pose":
             row = goal_pose_from_save_response(response)
             if row is not None:
@@ -3489,6 +3554,29 @@ class CoordinateZoneSettingsPage(QWidget):
                     self.selected_fms_route = dict(row)
                     self.fms_route_dirty = False
                     self._set_fms_route_form(row, mode="edit")
+
+    def _should_continue_operation_zone_boundary_save(self, successes, failures):
+        if (
+            self.selected_edit_type != "operation_zone"
+            or self.operation_zone_dirty
+            or not self.operation_zone_boundary_dirty
+            or not self.selected_operation_zone
+        ):
+            return False
+        selected_zone_id = self.selected_operation_zone.get("zone_id")
+        if not selected_zone_id:
+            return False
+        for failure in failures:
+            if (
+                failure.get("table") == "operation_zone"
+                and failure.get("row_id") == selected_zone_id
+            ):
+                return False
+        return any(
+            success.get("table") == "operation_zone"
+            and success.get("row_id") == selected_zone_id
+            for success in successes
+        )
 
     def _sync_current_edit_save_state(self):
         if self.selected_edit_type == "operation_zone":

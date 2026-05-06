@@ -1409,6 +1409,82 @@ def test_coordinate_zone_settings_page_deactivates_selected_fms_waypoint_as_draf
         page.close()
 
 
+def test_coordinate_zone_settings_page_batch_zone_save_preserves_boundary_draft():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    boundary_save_calls = []
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        page.findChild(QLineEdit, "operationZoneNameInput").setText("301호 수정")
+        page.handle_map_click_for_operation_zone({"x": 0.5, "y": 1.5})
+        page.save_selected_operation_zone_boundary = lambda: boundary_save_calls.append(
+            [dict(vertex) for vertex in page.operation_zone_boundary_vertices]
+        )
+
+        page._handle_coordinate_batch_save_finished(
+            True,
+            {
+                "successes": [
+                    {
+                        "table": "operation_zone",
+                        "row_id": "room_301",
+                        "response": {
+                            "result_code": "UPDATED",
+                            "operation_zone": {
+                                "zone_id": "room_301",
+                                "zone_name": "301호 수정",
+                                "zone_type": "ROOM",
+                                "revision": 2,
+                                "boundary_json": {
+                                    "type": "POLYGON",
+                                    "header": {"frame_id": "map"},
+                                    "vertices": [
+                                        {"x": 0.0, "y": 0.0},
+                                        {"x": 1.0, "y": 0.0},
+                                        {"x": 1.0, "y": 1.0},
+                                    ],
+                                },
+                                "boundary_vertex_count": 3,
+                                "boundary_frame_id": "map",
+                                "is_enabled": True,
+                            },
+                        },
+                    }
+                ],
+                "failures": [],
+            },
+        )
+
+        boundary_table = page.findChild(QTableWidget, "operationZoneBoundaryTable")
+        assert page.operation_zone_dirty is False
+        assert page.operation_zone_boundary_dirty is True
+        assert boundary_table.rowCount() == 4
+        assert page.operation_zone_boundary_vertices[3] == {"x": 0.5, "y": 1.5}
+        assert page.selected_operation_zone["revision"] == 2
+        assert boundary_save_calls == [
+            [
+                {"x": 0.0, "y": 0.0},
+                {"x": 1.0, "y": 0.0},
+                {"x": 1.0, "y": 1.0},
+                {"x": 0.5, "y": 1.5},
+            ]
+        ]
+    finally:
+        page.close()
+
+
 def test_coordinate_zone_settings_page_marks_dirty_row_status_and_summary():
     _app()
 
