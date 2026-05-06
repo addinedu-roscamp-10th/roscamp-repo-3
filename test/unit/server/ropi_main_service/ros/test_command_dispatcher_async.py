@@ -518,6 +518,45 @@ def test_async_dispatch_runtime_status_checks_patrol_only_when_requested():
     }
 
 
+def test_async_dispatch_runtime_status_can_skip_navigation_for_arm_only_checks():
+    goal_client = FakeAsyncGoalPoseActionClient()
+    manipulation_client = FakeAsyncManipulationActionClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=goal_client,
+        manipulation_action_client=manipulation_client,
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "get_runtime_status",
+                {
+                    "include_navigation": False,
+                    "arm_ids": ["arm1"],
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["ready"] is True
+    assert goal_client.ready_calls == []
+    assert manipulation_client.ready_calls == [
+        {
+            "action_name": "/ropi/arm/arm1/execute_manipulation",
+            "wait_timeout_sec": 0.0,
+        }
+    ]
+    assert response["checks"] == [
+        {
+            "name": "arm1.execute_manipulation",
+            "ready": True,
+            "action_name": "/ropi/arm/arm1/execute_manipulation",
+        }
+    ]
+
+
 def test_async_dispatch_cancel_action_cancels_matching_goal_by_task_id():
     goal_client = FakeAsyncGoalPoseActionClient()
     manipulation_client = FakeAsyncManipulationActionClient()

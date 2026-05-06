@@ -126,6 +126,14 @@ uv run ropi-ros-service
 ROPI ROS Service listening on /tmp/ropi_control_ros_service.sock
 ```
 
+개별 로봇 테스트가 필요하면 Control Service 전체 운반 요청을 만들지 않고 ROS 브릿지에 단일 action만 보낼 수 있다. 이 명령은 요청한 Pinky 또는 arm 엔드포인트만 확인/실행하므로 다른 로봇 노드가 떠 있지 않아도 분리 테스트가 가능하다.
+
+```bash
+uv run ropi-ros-action-test status --pinky-id pinky2
+uv run ropi-ros-action-test nav --pinky-id pinky2 --task-id manual_nav_001 --nav-phase DELIVERY_PICKUP --pose "1.0,2.0,0.0"
+uv run ropi-ros-action-test arm --arm-id arm1 --task-id manual_arm_001 --transfer-direction TO_ROBOT --item-id 1 --quantity 1 --robot-slot-id robot_slot_a1
+```
+
 ### 2. Control Service
 
 ```bash

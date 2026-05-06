@@ -477,23 +477,26 @@ class RosServiceCommandDispatcher:
     def _dispatch_get_runtime_status(self, payload: dict) -> dict:
         default_pinky_id = self.runtime_config.pinky_id
         pinky_id = str(payload.get("pinky_id") or default_pinky_id).strip() or default_pinky_id
+        include_navigation = payload.get("include_navigation")
+        include_navigation = True if include_navigation is None else bool(include_navigation)
         include_patrol = bool(payload.get("include_patrol"))
         include_guide = bool(payload.get("include_guide"))
         patrol_pinky_id = str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
         arm_ids = payload.get("arm_ids") or []
         checks = []
 
-        navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
-        checks.append(
-            {
-                "name": f"{pinky_id}.navigate_to_goal",
-                "ready": self.goal_pose_action_client.is_server_ready(
-                    action_name=navigate_action_name,
-                    wait_timeout_sec=0.0,
-                ),
-                "action_name": navigate_action_name,
-            }
-        )
+        if include_navigation:
+            navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
+            checks.append(
+                {
+                    "name": f"{pinky_id}.navigate_to_goal",
+                    "ready": self.goal_pose_action_client.is_server_ready(
+                        action_name=navigate_action_name,
+                        wait_timeout_sec=0.0,
+                    ),
+                    "action_name": navigate_action_name,
+                }
+            )
 
         if include_patrol and self.patrol_path_action_client is not None:
             patrol_action_name = f"/ropi/control/{patrol_pinky_id}/execute_patrol_path"
@@ -590,24 +593,27 @@ class RosServiceCommandDispatcher:
     async def _async_dispatch_get_runtime_status(self, payload: dict) -> dict:
         default_pinky_id = self.runtime_config.pinky_id
         pinky_id = str(payload.get("pinky_id") or default_pinky_id).strip() or default_pinky_id
+        include_navigation = payload.get("include_navigation")
+        include_navigation = True if include_navigation is None else bool(include_navigation)
         include_patrol = bool(payload.get("include_patrol"))
         include_guide = bool(payload.get("include_guide"))
         patrol_pinky_id = str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
         arm_ids = payload.get("arm_ids") or []
         checks = []
 
-        navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
-        checks.append(
-            {
-                "name": f"{pinky_id}.navigate_to_goal",
-                "ready": await self._async_is_server_ready(
-                    self.goal_pose_action_client,
-                    action_name=navigate_action_name,
-                    wait_timeout_sec=0.0,
-                ),
-                "action_name": navigate_action_name,
-            }
-        )
+        if include_navigation:
+            navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
+            checks.append(
+                {
+                    "name": f"{pinky_id}.navigate_to_goal",
+                    "ready": await self._async_is_server_ready(
+                        self.goal_pose_action_client,
+                        action_name=navigate_action_name,
+                        wait_timeout_sec=0.0,
+                    ),
+                    "action_name": navigate_action_name,
+                }
+            )
 
         if include_patrol and self.patrol_path_action_client is not None:
             patrol_action_name = f"/ropi/control/{patrol_pinky_id}/execute_patrol_path"
