@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QTabWidget,
     QTableWidget,
 )
 
@@ -243,6 +244,19 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert map_canvas is not None
         assert map_canvas.map_loaded is False
         assert map_canvas.status_text == "좌표 설정 맵 미수신"
+        assert map_canvas.minimumHeight() <= 240
+
+        table_tabs = page.findChild(QTabWidget, "coordinateTableTabs")
+        assert table_tabs is not None
+        assert table_tabs.count() == 6
+        assert [table_tabs.tabText(index) for index in range(table_tabs.count())] == [
+            "operation_zone",
+            "goal_pose",
+            "patrol_area",
+            "FMS waypoint",
+            "FMS edge",
+            "FMS route",
+        ]
 
         assert page.findChild(QTableWidget, "operationZoneTable") is not None
         assert page.findChild(QTableWidget, "goalPoseTable") is not None

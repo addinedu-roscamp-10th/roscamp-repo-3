@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -375,61 +376,69 @@ class CoordinateZoneSettingsPage(QWidget):
         self.map_canvas = OperationalMapOverlay()
         self.map_canvas.setObjectName("coordinateZoneMapCanvas")
         self.map_canvas.clear_map("좌표 설정 맵 미수신")
-        self.map_canvas.setMinimumHeight(280)
+        self.map_canvas.setMinimumHeight(240)
         self.map_canvas.map_clicked.connect(self.handle_map_click)
         self.map_canvas.map_dragged.connect(self.handle_map_drag)
 
         map_layout.addWidget(map_title)
         map_layout.addWidget(self.map_canvas)
 
-        table_row = QHBoxLayout()
-        table_row.setSpacing(12)
-        table_row.addWidget(
+        column.addWidget(map_card, 3)
+        column.addWidget(self._build_table_tabs(), 2)
+        return column
+
+    def _build_table_tabs(self):
+        tabs = QTabWidget()
+        tabs.setObjectName("coordinateTableTabs")
+        tabs.addTab(
             self._build_table_card(
                 "operation_zone",
                 "operationZoneTable",
                 ["zone_id", "zone_name", "zone_type", "enabled"],
-            )
+            ),
+            "operation_zone",
         )
-        table_row.addWidget(
+        tabs.addTab(
             self._build_table_card(
                 "goal_pose",
                 "goalPoseTable",
                 ["goal_pose_id", "purpose", "zone", "x/y/yaw"],
-            )
+            ),
+            "goal_pose",
         )
-        table_row.addWidget(
+        tabs.addTab(
             self._build_table_card(
                 "patrol_area.path_json",
                 "patrolAreaTable",
                 ["patrol_area_id", "revision", "waypoints", "enabled"],
-            )
+            ),
+            "patrol_area",
         )
-        table_row.addWidget(
+        tabs.addTab(
             self._build_table_card(
                 "FMS waypoint",
                 "fmsWaypointTable",
                 ["waypoint_id", "display_name", "type", "x/y/yaw", "enabled"],
-            )
+            ),
+            "FMS waypoint",
         )
-        table_row.addWidget(
+        tabs.addTab(
             self._build_table_card(
                 "FMS edge",
                 "fmsEdgeTable",
                 ["edge_id", "from", "to", "direction", "enabled"],
-            )
+            ),
+            "FMS edge",
         )
-        table_row.addWidget(
+        tabs.addTab(
             self._build_table_card(
                 "FMS route",
                 "fmsRouteTable",
                 ["route_id", "name", "scope", "waypoints", "enabled"],
-            )
+            ),
+            "FMS route",
         )
-
-        column.addWidget(map_card)
-        column.addLayout(table_row)
-        return column
+        return tabs
 
     def _build_table_card(self, title_text, object_name, headers):
         card = QFrame()
@@ -450,6 +459,8 @@ class CoordinateZoneSettingsPage(QWidget):
             table_headers.append("상태")
         table = QTableWidget(0, len(table_headers))
         table.setObjectName(object_name)
+        table.setMinimumHeight(150)
+        table.setMaximumHeight(230)
         table.setHorizontalHeaderLabels(table_headers)
         table.horizontalHeader().setStretchLastSection(True)
         self.tables[object_name] = table
