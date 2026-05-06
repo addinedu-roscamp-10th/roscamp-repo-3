@@ -92,6 +92,59 @@ class CoordinateConfigLoadWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class CoordinateConfigBatchSaveWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(
+        self,
+        *,
+        operations,
+        coordinate_service_factory=CoordinateConfigRemoteService,
+        fms_service_factory=FmsConfigRemoteService,
+    ):
+        super().__init__()
+        self.operations = [dict(operation) for operation in operations or []]
+        self.coordinate_service_factory = coordinate_service_factory
+        self.fms_service_factory = fms_service_factory
+
+    def run(self):
+        try:
+            coordinate_service = self.coordinate_service_factory()
+            fms_service = self.fms_service_factory()
+            successes = []
+            failures = []
+
+            for operation in self.operations:
+                table = operation.get("table")
+                method_name = operation.get("method")
+                payload = dict(operation.get("payload") or {})
+                service = (
+                    fms_service
+                    if str(table or "").startswith("fms_")
+                    else coordinate_service
+                )
+                try:
+                    response = getattr(service, method_name)(**payload)
+                except Exception as exc:
+                    failures.append({**operation, "error": str(exc)})
+                    continue
+
+                if _operation_response_ok(table, response):
+                    successes.append({**operation, "response": response})
+                else:
+                    failures.append(
+                        {
+                            **operation,
+                            "response": response,
+                            "error": _format_result_error(response),
+                        }
+                    )
+
+            self.finished.emit(True, {"successes": successes, "failures": failures})
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
 class GoalPoseSaveWorker(QObject):
     finished = pyqtSignal(object, object)
 
@@ -256,6 +309,14 @@ def _format_result_error(response):
     return str(result_code or "좌표 설정 요청에 실패했습니다.")
 
 
+def _operation_response_ok(table, response):
+    if not isinstance(response, dict):
+        return False
+    if str(table or "").startswith("fms_"):
+        return response.get("result_code") == "OK"
+    return response.get("result_code") in {"OK", "UPDATED", "CREATED"}
+
+
 def _decode_base64_asset(value):
     try:
         return base64.b64decode(str(value or ""), validate=True)
@@ -264,6 +325,7 @@ def _decode_base64_asset(value):
 
 
 __all__ = [
+    "CoordinateConfigBatchSaveWorker",
     "CoordinateConfigLoadWorker",
     "FmsEdgeSaveWorker",
     "FmsRouteSaveWorker",

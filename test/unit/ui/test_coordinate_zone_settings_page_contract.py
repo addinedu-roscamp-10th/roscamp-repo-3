@@ -204,6 +204,9 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert discard_button.text() == "변경 취소"
         assert save_button.isEnabled() is False
         assert discard_button.isEnabled() is False
+        deactivate_button = page.findChild(QPushButton, "coordinateDeactivateRowButton")
+        assert deactivate_button.text() == "선택 row 비활성화"
+        assert deactivate_button.isEnabled() is False
         new_zone_button = page.findChild(QPushButton, "operationZoneNewButton")
         assert new_zone_button.text() == "새 구역"
         assert new_zone_button.parent() is not page.operation_zone_form
@@ -1121,6 +1124,91 @@ def test_goal_pose_save_worker_sends_if_loc_004_payload():
     assert emitted[0][1]["goal_pose"]["updated_at"] == "2026-05-02T03:30:00Z"
 
 
+def test_coordinate_batch_save_worker_saves_multiple_draft_rows():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateConfigBatchSaveWorker,
+    )
+
+    calls = []
+
+    class FakeCoordinateService:
+        def update_goal_pose(self, **payload):
+            calls.append(("goal_pose", payload))
+            return {
+                "result_code": "UPDATED",
+                "goal_pose": {
+                    **payload,
+                    "updated_at": "2026-05-02T03:30:00Z",
+                },
+            }
+
+    class FakeFmsService:
+        def upsert_waypoint(self, **payload):
+            calls.append(("fms_waypoint", payload))
+            return {
+                "result_code": "OK",
+                "waypoint": {
+                    **payload,
+                    "map_id": "map_test",
+                    "updated_at": "2026-05-04T10:30:00Z",
+                },
+            }
+
+    operations = [
+        {
+            "table": "goal_pose",
+            "row_id": "delivery_room_301",
+            "method": "update_goal_pose",
+            "payload": {
+                "goal_pose_id": "delivery_room_301",
+                "expected_updated_at": "2026-05-02T03:00:00Z",
+                "zone_id": "room_301",
+                "purpose": "DESTINATION",
+                "pose_x": 1.8,
+                "pose_y": 0.02,
+                "pose_yaw": 0.0,
+                "frame_id": "map",
+                "is_enabled": True,
+            },
+        },
+        {
+            "table": "fms_waypoint",
+            "row_id": "corridor_01",
+            "method": "upsert_waypoint",
+            "payload": {
+                "waypoint_id": "corridor_01",
+                "expected_updated_at": "2026-05-04T10:01:00Z",
+                "display_name": "복도1",
+                "waypoint_type": "CORRIDOR",
+                "pose_x": 0.2,
+                "pose_y": 0.4,
+                "pose_yaw": 1.57,
+                "frame_id": "map",
+                "snap_group": "main_corridor",
+                "is_enabled": False,
+            },
+        },
+    ]
+    emitted = []
+    worker = CoordinateConfigBatchSaveWorker(
+        operations=operations,
+        coordinate_service_factory=FakeCoordinateService,
+        fms_service_factory=FakeFmsService,
+    )
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+
+    worker.run()
+
+    assert calls == [
+        ("goal_pose", operations[0]["payload"]),
+        ("fms_waypoint", operations[1]["payload"]),
+    ]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["failures"] == []
+    assert emitted[0][1]["successes"][0]["row_id"] == "delivery_room_301"
+    assert emitted[0][1]["successes"][1]["row_id"] == "corridor_01"
+
+
 def test_coordinate_zone_settings_page_applies_goal_pose_save_success():
     _app()
 
@@ -1195,6 +1283,123 @@ def test_coordinate_zone_settings_page_keeps_dirty_values_on_goal_pose_save_fail
         assert page.goal_pose_dirty is True
         assert page.save_button.isEnabled() is True
         assert "GOAL_POSE_STALE" in page.validation_message_label.text()
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_preserves_dirty_rows_when_switching_selection():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        page.findChild(QDoubleSpinBox, "goalPoseXSpin").setValue(1.8)
+
+        page.select_fms_waypoint(0)
+
+        assert page.goal_pose_rows[0]["pose_x"] == 1.8
+        assert page.save_button.isEnabled() is True
+        operations = page._build_coordinate_batch_save_operations()
+        assert operations == [
+            {
+                "table": "goal_pose",
+                "row_id": "delivery_room_301",
+                "method": "update_goal_pose",
+                "payload": {
+                    "goal_pose_id": "delivery_room_301",
+                    "expected_updated_at": "2026-05-02T03:00:00Z",
+                    "zone_id": "room_301",
+                    "purpose": "DESTINATION",
+                    "pose_x": 1.8,
+                    "pose_y": 0.02,
+                    "pose_yaw": 0.0,
+                    "frame_id": "map",
+                    "is_enabled": True,
+                },
+            }
+        ]
+
+        page._handle_coordinate_batch_save_finished(
+            True,
+            {
+                "successes": [
+                    {
+                        "table": "goal_pose",
+                        "row_id": "delivery_room_301",
+                        "response": {
+                            "result_code": "UPDATED",
+                            "goal_pose": {
+                                "goal_pose_id": "delivery_room_301",
+                                "zone_id": "room_301",
+                                "zone_name": "301호",
+                                "purpose": "DESTINATION",
+                                "pose_x": 1.8,
+                                "pose_y": 0.02,
+                                "pose_yaw": 0.0,
+                                "frame_id": "map",
+                                "is_enabled": True,
+                                "updated_at": "2026-05-02T03:30:00Z",
+                            },
+                        },
+                    }
+                ],
+                "failures": [],
+            },
+        )
+
+        assert page.goal_pose_dirty_row_ids == set()
+        assert page.save_button.isEnabled() is False
+        assert (
+            page.findChild(QTableWidget, "goalPoseTable").item(0, 3).text()
+            == "x=1.80, y=0.02, yaw=0.00"
+        )
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_deactivates_selected_fms_waypoint_as_draft():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_waypoint(0)
+
+        deactivate_button = page.findChild(QPushButton, "coordinateDeactivateRowButton")
+        assert deactivate_button.isEnabled() is True
+
+        page.deactivate_selected_row()
+
+        assert page.findChild(QCheckBox, "fmsWaypointEnabledCheck").isChecked() is False
+        assert page.fms_waypoint_rows[0]["is_enabled"] is False
+        assert page.fms_waypoint_dirty_row_ids == {"corridor_01"}
+        assert page.save_button.isEnabled() is True
+
+        operations = page._build_coordinate_batch_save_operations()
+        assert operations[0]["table"] == "fms_waypoint"
+        assert operations[0]["payload"]["waypoint_id"] == "corridor_01"
+        assert operations[0]["payload"]["is_enabled"] is False
     finally:
         page.close()
 
