@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QApplication,
     QLabel,
     QPushButton,
     QTabWidget,
@@ -294,6 +295,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.save_shortcut = None
         self.undo_shortcut = None
         self.redo_shortcut = None
+        self._app_shortcut_filter_installed = False
         self._build_ui()
         self._build_shortcuts()
         self._install_shortcut_event_filters()
@@ -365,15 +367,53 @@ class CoordinateZoneSettingsPage(QWidget):
         self.installEventFilter(self)
         for widget in self.findChildren(QWidget):
             widget.installEventFilter(self)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+            self._app_shortcut_filter_installed = True
+
+    def _remove_shortcut_event_filter(self):
+        if not self._app_shortcut_filter_installed:
+            return
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+        self._app_shortcut_filter_installed = False
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.KeyPress:
+        if (
+            event.type() == QEvent.Type.KeyPress
+            and self._shortcut_event_belongs_to_page(watched)
+        ):
             action = self._shortcut_action_for_key_event(event)
             if action is not None:
                 self._handle_shortcut_action(action)
                 event.accept()
                 return True
         return super().eventFilter(watched, event)
+
+    def _shortcut_event_belongs_to_page(self, watched):
+        if not self.isVisible():
+            return False
+
+        focus_widget = QApplication.focusWidget()
+        if self._is_self_or_descendant(focus_widget):
+            return True
+        if self._is_self_or_descendant(watched):
+            return True
+
+        if isinstance(watched, QWidget):
+            page_window = self.window()
+            return page_window is not None and watched.window() is page_window
+        return False
+
+    def _is_self_or_descendant(self, widget):
+        current = widget
+        while current is not None:
+            if current is self:
+                return True
+            current = current.parentWidget() if isinstance(current, QWidget) else None
+        return False
 
     @staticmethod
     def _shortcut_action_for_key_event(event):
@@ -545,8 +585,8 @@ class CoordinateZoneSettingsPage(QWidget):
             table_headers.append("상태")
         table = QTableWidget(0, len(table_headers))
         table.setObjectName(object_name)
-        table.setMinimumHeight(100)
-        table.setMaximumHeight(140)
+        table.setMinimumHeight(160)
+        table.setMaximumHeight(240)
         table.setHorizontalHeaderLabels(table_headers)
         table.horizontalHeader().setStretchLastSection(True)
         self.tables[object_name] = table
@@ -4238,6 +4278,7 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def shutdown(self):
+        self._remove_shortcut_event_filter()
         self._stop_load_thread()
         self._stop_coordinate_batch_save_thread()
         self._stop_operation_zone_save_thread()

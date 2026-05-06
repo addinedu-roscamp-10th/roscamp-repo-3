@@ -280,7 +280,8 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert table_layout.contentsMargins().top() <= 6
         assert table_layout.contentsMargins().bottom() <= 6
         assert table_layout.spacing() <= 4
-        assert goal_table.maximumHeight() <= 145
+        assert goal_table.minimumHeight() >= 150
+        assert goal_table.maximumHeight() >= 220
 
         labels = _label_texts(page)
         assert "Active Map" in labels
@@ -439,6 +440,63 @@ def test_coordinate_zone_settings_page_keyboard_events_override_focused_spinbox_
             QTest.keyRelease(x_spin, Qt.Key.Key_Control)
             QApplication.processEvents()
         page.close()
+
+
+def test_coordinate_zone_settings_page_keyboard_events_work_from_admin_shell_window():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+    from ui.utils.widgets.admin_shell import AdminShell
+
+    shell = AdminShell([("coordinates", "좌표/구역 설정")], "tester")
+    page = CoordinateZoneSettingsPage()
+    x_spin = None
+
+    try:
+        shell.add_page("coordinates", page)
+        shell.set_page("coordinates")
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        x_spin = page.findChild(QDoubleSpinBox, "goalPoseXSpin")
+        x_spin.setValue(1.9)
+        shell.show()
+        QApplication.processEvents()
+
+        QTest.keyClick(shell, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+
+        assert x_spin.value() == 1.7
+        assert page.goal_pose_dirty is False
+        assert page.findChild(QShortcut, "coordinateRedoShortcut").isEnabled() is True
+
+        QTest.keyClick(
+            shell,
+            Qt.Key.Key_Z,
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+        )
+
+        assert x_spin.value() == 1.9
+        assert page.goal_pose_dirty is True
+
+        calls = []
+        page.save_current_edit = lambda: calls.append("save")
+
+        QTest.keyClick(shell, Qt.Key.Key_S, Qt.KeyboardModifier.ControlModifier)
+
+        assert calls == ["save"]
+    finally:
+        if x_spin is not None:
+            QTest.keyRelease(x_spin, Qt.Key.Key_Shift)
+            QTest.keyRelease(x_spin, Qt.Key.Key_Control)
+            QApplication.processEvents()
+        page.shutdown()
+        shell.close()
 
 
 def test_coordinate_config_load_worker_fetches_bundle_and_assets():
