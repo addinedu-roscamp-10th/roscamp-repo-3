@@ -1,6 +1,6 @@
 import copy
 
-from PyQt6.QtCore import QEvent, Qt
+from PyQt6.QtCore import QEvent, QTimer, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QFrame,
@@ -296,6 +296,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.undo_shortcut = None
         self.redo_shortcut = None
         self._app_shortcut_filter_installed = False
+        self._pending_shortcut_override = None
         self._build_ui()
         self._build_shortcuts()
         self._install_shortcut_event_filters()
@@ -381,15 +382,41 @@ class CoordinateZoneSettingsPage(QWidget):
         self._app_shortcut_filter_installed = False
 
     def eventFilter(self, watched, event):
-        if (
-            event.type() == QEvent.Type.KeyPress
-            and self._shortcut_event_belongs_to_page(watched)
+        if event.type() not in (
+            QEvent.Type.ShortcutOverride,
+            QEvent.Type.KeyPress,
         ):
+            return super().eventFilter(watched, event)
+        if not self._shortcut_event_belongs_to_page(watched):
+            return super().eventFilter(watched, event)
+
+        if event.type() == QEvent.Type.ShortcutOverride:
+            fingerprint = self._shortcut_event_fingerprint(event)
+            if self._pending_shortcut_override == fingerprint:
+                event.accept()
+                return True
             action = self._shortcut_action_for_key_event(event)
             if action is not None:
                 self._handle_shortcut_action(action)
+                self._pending_shortcut_override = fingerprint
                 event.accept()
                 return True
+            return super().eventFilter(watched, event)
+
+        fingerprint = self._shortcut_event_fingerprint(event)
+        if self._pending_shortcut_override is not None:
+            pending_fingerprint = self._pending_shortcut_override
+            if pending_fingerprint == fingerprint:
+                QTimer.singleShot(0, self._clear_pending_shortcut_override)
+                event.accept()
+                return True
+            self._pending_shortcut_override = None
+
+        action = self._shortcut_action_for_key_event(event)
+        if action is not None:
+            self._handle_shortcut_action(action)
+            event.accept()
+            return True
         return super().eventFilter(watched, event)
 
     def _shortcut_event_belongs_to_page(self, watched):
@@ -417,6 +444,13 @@ class CoordinateZoneSettingsPage(QWidget):
 
     @staticmethod
     def _shortcut_action_for_key_event(event):
+        if event.matches(QKeySequence.StandardKey.Save):
+            return "save"
+        if event.matches(QKeySequence.StandardKey.Redo):
+            return "redo"
+        if event.matches(QKeySequence.StandardKey.Undo):
+            return "undo"
+
         modifiers = event.modifiers()
         if not bool(modifiers & Qt.KeyboardModifier.ControlModifier):
             return None
@@ -435,6 +469,19 @@ class CoordinateZoneSettingsPage(QWidget):
         if key == Qt.Key.Key_Z:
             return "undo"
         return None
+
+    @staticmethod
+    def _shortcut_event_fingerprint(event):
+        shortcut_modifiers = event.modifiers() & (
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.ShiftModifier
+            | Qt.KeyboardModifier.AltModifier
+            | Qt.KeyboardModifier.MetaModifier
+        )
+        return event.key(), shortcut_modifiers
+
+    def _clear_pending_shortcut_override(self):
+        self._pending_shortcut_override = None
 
     def _handle_shortcut_action(self, action):
         if action == "save":

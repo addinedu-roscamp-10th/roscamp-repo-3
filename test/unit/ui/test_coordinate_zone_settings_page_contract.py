@@ -4,8 +4,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtCore import QEvent, Qt
+from PyQt6.QtGui import QKeyEvent, QKeySequence, QShortcut
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
     QApplication,
@@ -497,6 +497,73 @@ def test_coordinate_zone_settings_page_keyboard_events_work_from_admin_shell_win
             QApplication.processEvents()
         page.shutdown()
         shell.close()
+
+
+def test_coordinate_zone_settings_page_shortcut_override_uses_page_undo_history():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    x_spin = None
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        x_spin = page.findChild(QDoubleSpinBox, "goalPoseXSpin")
+        x_spin.setValue(1.8)
+        x_spin.setValue(1.9)
+        page.show()
+        editor = x_spin.lineEdit()
+        editor.setFocus()
+        QApplication.processEvents()
+
+        shortcut_override = QKeyEvent(
+            QEvent.Type.ShortcutOverride,
+            Qt.Key.Key_Z,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+
+        QApplication.sendEvent(editor, shortcut_override)
+
+        assert shortcut_override.isAccepted() is True
+        assert x_spin.value() == 1.8
+
+        key_press = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Z,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+
+        QApplication.sendEvent(editor, key_press)
+
+        assert key_press.isAccepted() is True
+        assert x_spin.value() == 1.8
+
+        redo_override = QKeyEvent(
+            QEvent.Type.ShortcutOverride,
+            Qt.Key.Key_Z,
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+        )
+
+        QApplication.sendEvent(editor, redo_override)
+
+        assert redo_override.isAccepted() is True
+        assert x_spin.value() == 1.9
+    finally:
+        if x_spin is not None:
+            QTest.keyRelease(x_spin, Qt.Key.Key_Shift)
+            QTest.keyRelease(x_spin, Qt.Key.Key_Control)
+            QApplication.processEvents()
+        page.shutdown()
+        page.close()
 
 
 def test_coordinate_config_load_worker_fetches_bundle_and_assets():
