@@ -2229,13 +2229,6 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             return
 
-        for vertex in self.operation_zone_boundary_vertices:
-            if not self.map_canvas.contains_world_pose(vertex):
-                self.validation_message_label.setText(
-                    "구역 boundary 꼭짓점이 맵 범위를 벗어나 저장할 수 없습니다."
-                )
-                return
-
         payload = self._build_operation_zone_boundary_save_payload()
         self.save_button.setEnabled(False)
         self.discard_button.setEnabled(False)

@@ -1615,6 +1615,67 @@ def test_coordinate_zone_settings_page_reports_busy_batch_save_reason():
         page.close()
 
 
+def test_coordinate_zone_settings_page_saves_dragged_boundary_with_legacy_out_of_bounds_vertex():
+    _app()
+
+    import ui.utils.pages.caregiver.coordinate_zone_settings_page as page_module
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    bundle = _sample_bundle()
+    bundle["operation_zones"][0]["boundary_json"]["vertices"] = [
+        {"x": -0.5, "y": 0.0},
+        {"x": 1.0, "y": 0.0},
+        {"x": 1.0, "y": 1.0},
+    ]
+    page = CoordinateZoneSettingsPage()
+    original_start_worker_thread = page_module.start_worker_thread
+    started_payloads = []
+
+    def fake_start_worker_thread(owner, *, worker, finished_handler, clear_handler):
+        started_payloads.append(dict(worker.payload))
+        return object(), worker
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": bundle,
+                **_sample_map_assets(),
+            }
+        )
+        page.select_operation_zone(0)
+        page.select_operation_zone_boundary_vertex(1)
+        page.move_selected_operation_zone_boundary_vertex({"x": 0.5, "y": 0.5})
+        page_module.start_worker_thread = fake_start_worker_thread
+
+        page.save_button.click()
+
+        assert started_payloads == [
+            {
+                "zone_id": "room_301",
+                "expected_revision": 1,
+                "boundary_json": {
+                    "type": "POLYGON",
+                    "header": {"frame_id": "map"},
+                    "vertices": [
+                        {"x": -0.5, "y": 0.0},
+                        {"x": 0.5, "y": 0.5},
+                        {"x": 1.0, "y": 1.0},
+                    ],
+                },
+            }
+        ]
+        assert page.validation_message_label.text() == (
+            "운영 구역 boundary를 저장하는 중입니다."
+        )
+    finally:
+        page_module.start_worker_thread = original_start_worker_thread
+        page.operation_zone_save_thread = None
+        page.close()
+
+
 def test_coordinate_zone_settings_page_marks_dirty_row_status_and_summary():
     _app()
 
