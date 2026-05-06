@@ -31,6 +31,7 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.fms_route_pixel_points = []
         self.fms_route_labels = []
         self.selected_fms_route_index = None
+        self._heading_drag_active = False
         self.status_text = "순찰 맵 미수신"
 
     def render(self, task):
@@ -114,6 +115,7 @@ class OperationalMapOverlay(MapCanvasWidget):
             self.fall_alert_pixel_point = None
 
     def _clear_overlay(self, status_text):
+        self._heading_drag_active = False
         self.route_pixel_points = []
         self.route_heading_yaws = []
         self.current_waypoint_index = None
@@ -341,6 +343,7 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.update()
 
     def clear_configuration_overlay(self):
+        self._heading_drag_active = False
         self.route_pixel_points = []
         self.route_heading_yaws = []
         self.current_waypoint_index = None
@@ -373,6 +376,111 @@ class OperationalMapOverlay(MapCanvasWidget):
         self._draw_route(painter, target)
         self._draw_robot(painter, target)
         self._draw_fall_alert(painter, target)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._is_heading_handle_hit(
+            event.position()
+        ):
+            self._heading_drag_active = True
+            event.accept()
+            return
+
+        self._heading_drag_active = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._heading_drag_active and event.buttons() & Qt.MouseButton.LeftButton:
+            world_pose = self.view_to_world(event.position())
+            payload = self.heading_drag_payload_for_world_target(world_pose)
+            if payload is not None:
+                self.map_heading_dragged.emit(payload)
+                event.accept()
+                return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._heading_drag_active:
+            self._heading_drag_active = False
+            event.accept()
+            return
+
+        super().mouseReleaseEvent(event)
+
+    def heading_drag_payload_for_world_target(self, world_pose):
+        context = self._selected_heading_context()
+        if context is None or not isinstance(world_pose, dict):
+            return None
+
+        origin = self.pixel_to_world(context["pixel"])
+        if not isinstance(origin, dict):
+            return None
+
+        try:
+            origin_x = float(origin.get("x"))
+            origin_y = float(origin.get("y"))
+            target_x = float(world_pose.get("x"))
+            target_y = float(world_pose.get("y"))
+        except (TypeError, ValueError):
+            return None
+
+        delta_x = target_x - origin_x
+        delta_y = target_y - origin_y
+        if abs(delta_x) < 1e-9 and abs(delta_y) < 1e-9:
+            return None
+        return {"yaw": math.atan2(delta_y, delta_x)}
+
+    def _is_heading_handle_hit(self, view_point):
+        handle = self._selected_heading_handle_view_point()
+        if handle is None:
+            return False
+        delta_x = float(view_point.x()) - handle.x()
+        delta_y = float(view_point.y()) - handle.y()
+        return math.hypot(delta_x, delta_y) <= 12.0
+
+    def _selected_heading_handle_view_point(self):
+        context = self._selected_heading_context()
+        if context is None:
+            return None
+        target = self.image_target_rect()
+        if target.isNull():
+            return None
+        origin = self.to_view_point(context["pixel"], target)
+        if origin is None:
+            return None
+        yaw = self._optional_float(context.get("yaw"))
+        return self._heading_endpoint(
+            origin,
+            yaw if yaw is not None else 0.0,
+            context["length"],
+        )
+
+    def _selected_heading_context(self):
+        if self.selected_goal_pose_pixel_point is not None:
+            return {
+                "pixel": self.selected_goal_pose_pixel_point,
+                "yaw": self.selected_goal_pose_heading_yaw,
+                "length": 18.0,
+            }
+        if self.selected_fms_waypoint_pixel_point is not None:
+            return {
+                "pixel": self.selected_fms_waypoint_pixel_point,
+                "yaw": self.selected_fms_waypoint_heading_yaw,
+                "length": 18.0,
+            }
+        index = self.current_waypoint_index
+        if index is not None and 0 <= index < len(self.route_pixel_points):
+            yaw = (
+                self.route_heading_yaws[index]
+                if index < len(self.route_heading_yaws)
+                else None
+            )
+            return {
+                "pixel": self.route_pixel_points[index],
+                "yaw": yaw,
+                "length": 15.0,
+            }
+        return None
 
     def _draw_zone_boundary(self, painter, target):
         points = [

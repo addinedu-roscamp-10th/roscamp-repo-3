@@ -1,8 +1,11 @@
 import os
+import math
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import QEvent, Qt
+from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
 
@@ -110,6 +113,86 @@ def test_map_overlay_tracks_fms_waypoint_labels_and_yaws():
         assert overlay.fms_waypoint_labels == []
         assert overlay.fms_waypoint_heading_yaws == []
         assert overlay.selected_fms_waypoint_pixel_point is None
+    finally:
+        overlay.close()
+
+
+def test_map_overlay_builds_heading_drag_payload_from_selected_goal_pose():
+    _app()
+
+    from ui.utils.widgets.map_overlay import OperationalMapOverlay
+
+    overlay = OperationalMapOverlay()
+
+    try:
+        overlay.load_map_from_assets(
+            yaml_text="image: map.pgm\nresolution: 1.0\norigin: [0.0, 0.0, 0.0]\n",
+            pgm_bytes=b"P5\n10 10\n255\n" + bytes([0] * 100),
+            cache_key=("heading-test", "yaml", "pgm"),
+        )
+        overlay.show_goal_pose_editor(
+            goal_pose_pixel_points=[(2, 7)],
+            goal_pose_yaws=[0.0],
+            selected_pixel_point=(2, 7),
+            selected_yaw=0.0,
+        )
+
+        payload = overlay.heading_drag_payload_for_world_target({"x": 2.0, "y": 4.0})
+
+        assert payload == {"yaw": math.pi / 2}
+    finally:
+        overlay.close()
+
+
+def test_map_overlay_heading_handle_mouse_drag_emits_yaw_payload():
+    _app()
+
+    from ui.utils.widgets.map_overlay import OperationalMapOverlay
+
+    overlay = OperationalMapOverlay()
+
+    try:
+        overlay.resize(200, 200)
+        overlay.load_map_from_assets(
+            yaml_text="image: map.pgm\nresolution: 1.0\norigin: [0.0, 0.0, 0.0]\n",
+            pgm_bytes=b"P5\n10 10\n255\n" + bytes([0] * 100),
+            cache_key=("heading-mouse-test", "yaml", "pgm"),
+        )
+        overlay.show_goal_pose_editor(
+            goal_pose_pixel_points=[(2, 7)],
+            goal_pose_yaws=[0.0],
+            selected_pixel_point=(2, 7),
+            selected_yaw=0.0,
+        )
+        emitted = []
+        overlay.map_heading_dragged.connect(emitted.append)
+
+        handle = overlay._selected_heading_handle_view_point()
+        target = overlay.image_target_rect()
+        move_point = overlay.to_view_point(
+            overlay.world_to_pixel({"x": 2.0, "y": 4.0}), target
+        )
+
+        overlay.mousePressEvent(
+            QMouseEvent(
+                QEvent.Type.MouseButtonPress,
+                handle,
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+        )
+        overlay.mouseMoveEvent(
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                move_point,
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+        )
+
+        assert emitted == [{"yaw": math.pi / 2}]
     finally:
         overlay.close()
 

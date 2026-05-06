@@ -379,6 +379,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.map_canvas.setMinimumHeight(240)
         self.map_canvas.map_clicked.connect(self.handle_map_click)
         self.map_canvas.map_dragged.connect(self.handle_map_drag)
+        self.map_canvas.map_heading_dragged.connect(self.handle_map_heading_drag)
 
         map_layout.addWidget(map_title)
         map_layout.addWidget(self.map_canvas)
@@ -1642,6 +1643,27 @@ class CoordinateZoneSettingsPage(QWidget):
             self.move_selected_patrol_waypoint_to_world(world_pose)
         elif self.selected_edit_type == "fms_waypoint":
             self.handle_map_click_for_fms_waypoint(world_pose)
+
+    def handle_map_heading_drag(self, payload):
+        yaw = self._heading_drag_yaw(payload)
+        if yaw is None:
+            return
+
+        if self.selected_edit_type == "goal_pose":
+            self.goal_pose_yaw_spin.setValue(yaw)
+        elif self.selected_edit_type == "patrol_area":
+            self.patrol_waypoint_yaw_spin.setValue(yaw)
+        elif self.selected_edit_type == "fms_waypoint":
+            self.fms_waypoint_yaw_spin.setValue(yaw)
+
+    @staticmethod
+    def _heading_drag_yaw(payload):
+        if not isinstance(payload, dict):
+            return None
+        try:
+            return float(payload.get("yaw"))
+        except (TypeError, ValueError):
+            return None
 
     def handle_map_click_for_operation_zone(self, world_pose):
         if self.selected_edit_type != "operation_zone" or not isinstance(

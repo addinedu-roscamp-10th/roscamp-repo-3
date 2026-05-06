@@ -1116,6 +1116,41 @@ def test_coordinate_zone_settings_page_goal_pose_overlay_tracks_yaw_preview():
         page.close()
 
 
+def test_coordinate_zone_settings_page_goal_pose_heading_drag_updates_yaw_only():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+
+        x_spin = page.findChild(QDoubleSpinBox, "goalPoseXSpin")
+        y_spin = page.findChild(QDoubleSpinBox, "goalPoseYSpin")
+        yaw_spin = page.findChild(QDoubleSpinBox, "goalPoseYawSpin")
+        assert x_spin.value() == 1.7
+        assert y_spin.value() == 0.02
+
+        page.map_canvas.map_heading_dragged.emit({"yaw": 1.5708})
+
+        assert x_spin.value() == 1.7
+        assert y_spin.value() == 0.02
+        assert yaw_spin.value() == 1.5708
+        assert page.goal_pose_dirty is True
+        assert page.map_canvas.selected_goal_pose_heading_yaw == 1.5708
+    finally:
+        page.close()
+
+
 def test_goal_pose_save_worker_sends_if_loc_004_payload():
     from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
         GoalPoseSaveWorker,
@@ -1978,6 +2013,39 @@ def test_coordinate_zone_settings_page_patrol_overlay_tracks_waypoint_yaws():
         page.close()
 
 
+def test_coordinate_zone_settings_page_patrol_heading_drag_updates_yaw_only():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+        page.select_patrol_waypoint(1)
+
+        page.map_canvas.map_heading_dragged.emit({"yaw": -1.5708})
+
+        assert page.patrol_waypoint_rows[1]["x"] == 1.0
+        assert page.patrol_waypoint_rows[1]["y"] == 1.0
+        assert page.patrol_waypoint_rows[1]["yaw"] == -1.5708
+        assert (
+            page.findChild(QDoubleSpinBox, "patrolWaypointYawSpin").value() == -1.5708
+        )
+        assert page.patrol_area_dirty is True
+        assert page.map_canvas.route_heading_yaws == [0.0, -1.5708]
+    finally:
+        page.close()
+
+
 def test_coordinate_zone_settings_page_selects_fms_waypoint_into_edit_form():
     _app()
 
@@ -2013,6 +2081,41 @@ def test_coordinate_zone_settings_page_selects_fms_waypoint_into_edit_form():
         assert page.map_canvas.fms_waypoint_labels == ["복도1", "복도2"]
         assert page.map_canvas.selected_fms_waypoint_heading_yaw == 1.57
         assert page.save_button.isEnabled() is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_fms_waypoint_heading_drag_updates_yaw_only():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_waypoint(0)
+
+        x_spin = page.findChild(QDoubleSpinBox, "fmsWaypointXSpin")
+        y_spin = page.findChild(QDoubleSpinBox, "fmsWaypointYSpin")
+        yaw_spin = page.findChild(QDoubleSpinBox, "fmsWaypointYawSpin")
+        assert x_spin.value() == 0.2
+        assert y_spin.value() == 0.4
+
+        page.map_canvas.map_heading_dragged.emit({"yaw": 3.1416})
+
+        assert x_spin.value() == 0.2
+        assert y_spin.value() == 0.4
+        assert yaw_spin.value() == 3.1416
+        assert page.fms_waypoint_dirty is True
+        assert page.map_canvas.selected_fms_waypoint_heading_yaw == 3.1416
     finally:
         page.close()
 

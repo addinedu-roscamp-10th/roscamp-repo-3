@@ -104,6 +104,7 @@ def parse_map_yaml_text(yaml_text):
 class MapCanvasWidget(QFrame):
     map_clicked = pyqtSignal(object)
     map_dragged = pyqtSignal(object)
+    map_heading_dragged = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
