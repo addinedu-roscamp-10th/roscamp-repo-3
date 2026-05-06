@@ -4,6 +4,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -276,6 +277,104 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert "FMS route" in labels
         assert "Validation" in labels
         assert "맵이 로드되기 전에는 좌표를 저장할 수 없습니다." in labels
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_registers_keyboard_shortcuts():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        save_shortcut = page.findChild(QShortcut, "coordinateSaveShortcut")
+        undo_shortcut = page.findChild(QShortcut, "coordinateUndoShortcut")
+        redo_shortcut = page.findChild(QShortcut, "coordinateRedoShortcut")
+
+        assert save_shortcut is not None
+        assert undo_shortcut is not None
+        assert redo_shortcut is not None
+        assert save_shortcut.key() == QKeySequence("Ctrl+S")
+        assert undo_shortcut.key() == QKeySequence("Ctrl+Z")
+        assert redo_shortcut.key() == QKeySequence("Ctrl+Shift+Z")
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_save_shortcut_uses_page_save_action():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        page.findChild(QDoubleSpinBox, "goalPoseXSpin").setValue(1.9)
+        calls = []
+        page.save_current_edit = lambda: calls.append("save")
+
+        page.findChild(QShortcut, "coordinateSaveShortcut").activated.emit()
+
+        assert calls == ["save"]
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_undo_redo_shortcuts_restore_goal_pose_snapshots():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        x_spin = page.findChild(QDoubleSpinBox, "goalPoseXSpin")
+        y_spin = page.findChild(QDoubleSpinBox, "goalPoseYSpin")
+        assert x_spin.value() == 1.7
+        assert y_spin.value() == 0.02
+
+        x_spin.setValue(1.9)
+
+        assert page.goal_pose_dirty is True
+        assert page.findChild(QShortcut, "coordinateUndoShortcut").isEnabled() is True
+        assert page.findChild(QShortcut, "coordinateRedoShortcut").isEnabled() is False
+
+        page.findChild(QShortcut, "coordinateUndoShortcut").activated.emit()
+
+        assert x_spin.value() == 1.7
+        assert y_spin.value() == 0.02
+        assert page.goal_pose_dirty is False
+        assert page.save_button.isEnabled() is False
+        assert page.findChild(QShortcut, "coordinateRedoShortcut").isEnabled() is True
+
+        page.findChild(QShortcut, "coordinateRedoShortcut").activated.emit()
+
+        assert x_spin.value() == 1.9
+        assert y_spin.value() == 0.02
+        assert page.goal_pose_dirty is True
+        assert page.save_button.isEnabled() is True
     finally:
         page.close()
 

@@ -1,6 +1,7 @@
 import copy
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -286,7 +287,16 @@ class CoordinateZoneSettingsPage(QWidget):
         self._syncing_fms_route_form = False
         self._syncing_fms_route_waypoint_form = False
         self._suppress_draft_capture = False
+        self._edit_history = []
+        self._edit_history_index = -1
+        self._edit_history_selection = None
+        self._restoring_edit_history = False
+        self.save_shortcut = None
+        self.undo_shortcut = None
+        self.redo_shortcut = None
         self._build_ui()
+        self._build_shortcuts()
+        self._sync_shortcuts_enabled_state()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -325,6 +335,40 @@ class CoordinateZoneSettingsPage(QWidget):
         self.save_button.clicked.connect(self.save_current_edit)
         self.discard_button.clicked.connect(self.discard_current_edit)
         return [self.refresh_button, self.discard_button, self.save_button]
+
+    def _build_shortcuts(self):
+        self.save_shortcut = self._create_page_shortcut(
+            "coordinateSaveShortcut",
+            "Ctrl+S",
+            self._activate_save_shortcut,
+        )
+        self.undo_shortcut = self._create_page_shortcut(
+            "coordinateUndoShortcut",
+            "Ctrl+Z",
+            self._activate_undo_shortcut,
+        )
+        self.redo_shortcut = self._create_page_shortcut(
+            "coordinateRedoShortcut",
+            "Ctrl+Shift+Z",
+            self._activate_redo_shortcut,
+        )
+
+    def _create_page_shortcut(self, object_name, key_sequence, slot):
+        shortcut = QShortcut(QKeySequence(key_sequence), self)
+        shortcut.setObjectName(object_name)
+        shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        shortcut.activated.connect(slot)
+        return shortcut
+
+    def _activate_save_shortcut(self):
+        if self.save_button.isEnabled():
+            self.save_current_edit()
+
+    def _activate_undo_shortcut(self):
+        self.undo_local_edit()
+
+    def _activate_redo_shortcut(self):
+        self.redo_local_edit()
 
     def _build_active_map_bar(self):
         panel = QFrame()
@@ -1072,6 +1116,10 @@ class CoordinateZoneSettingsPage(QWidget):
         self.discard_button.setEnabled(False)
         self._sync_deactivate_row_button()
         self._sync_revert_row_button()
+        self._edit_history = []
+        self._edit_history_index = -1
+        self._edit_history_selection = None
+        self._sync_shortcuts_enabled_state()
 
     def _clear_dirty_row_sets(self):
         self.operation_zone_dirty_row_ids.clear()
@@ -1118,6 +1166,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.discard_button.setEnabled(selected_dirty or pending_dirty)
         self._sync_deactivate_row_button()
         self._update_coordinate_draft_status_views()
+        self._record_edit_history_snapshot()
 
     def _operation_zone_form_has_metadata_change(self):
         if (
@@ -3717,6 +3766,368 @@ class CoordinateZoneSettingsPage(QWidget):
             self.discard_button.setEnabled(self._has_pending_draft_changes())
             self._sync_deactivate_row_button()
             self._update_coordinate_draft_status_views()
+            self._sync_shortcuts_enabled_state()
+
+    def undo_local_edit(self):
+        if not self._can_undo_edit():
+            return
+        self._edit_history_index -= 1
+        self._restore_edit_history_snapshot(
+            self._edit_history[self._edit_history_index],
+            "이전 편집 상태로 되돌렸습니다.",
+        )
+
+    def redo_local_edit(self):
+        if not self._can_redo_edit():
+            return
+        self._edit_history_index += 1
+        self._restore_edit_history_snapshot(
+            self._edit_history[self._edit_history_index],
+            "다음 편집 상태를 적용했습니다.",
+        )
+
+    def _record_edit_history_snapshot(self):
+        if self._restoring_edit_history:
+            self._sync_shortcuts_enabled_state()
+            return
+
+        snapshot = self._capture_edit_history_snapshot()
+        if snapshot is None:
+            self._edit_history = []
+            self._edit_history_index = -1
+            self._edit_history_selection = None
+            self._sync_shortcuts_enabled_state()
+            return
+
+        selection = snapshot["selection"]
+        if selection != self._edit_history_selection:
+            self._edit_history = [snapshot]
+            self._edit_history_index = 0
+            self._edit_history_selection = selection
+            self._sync_shortcuts_enabled_state()
+            return
+
+        current = (
+            self._edit_history[self._edit_history_index]
+            if 0 <= self._edit_history_index < len(self._edit_history)
+            else None
+        )
+        if current == snapshot:
+            self._sync_shortcuts_enabled_state()
+            return
+
+        if self._edit_history_index < len(self._edit_history) - 1:
+            self._edit_history = self._edit_history[: self._edit_history_index + 1]
+        self._edit_history.append(snapshot)
+        self._edit_history_index = len(self._edit_history) - 1
+        self._sync_shortcuts_enabled_state()
+
+    def _capture_edit_history_snapshot(self):
+        selection = self._edit_history_selection_key()
+        if selection is None:
+            return None
+        return {
+            "selection": selection,
+            "selected_edit_type": self.selected_edit_type,
+            "operation_zone_rows": copy.deepcopy(self.operation_zone_rows),
+            "goal_pose_rows": copy.deepcopy(self.goal_pose_rows),
+            "patrol_area_rows": copy.deepcopy(self.patrol_area_rows),
+            "fms_waypoint_rows": copy.deepcopy(self.fms_waypoint_rows),
+            "fms_edge_rows": copy.deepcopy(self.fms_edge_rows),
+            "fms_route_rows": copy.deepcopy(self.fms_route_rows),
+            "current_bundle": copy.deepcopy(self.current_bundle),
+            "dirty_row_ids": {
+                "operation_zone": sorted(self.operation_zone_dirty_row_ids),
+                "goal_pose": sorted(self.goal_pose_dirty_row_ids),
+                "fms_waypoint": sorted(self.fms_waypoint_dirty_row_ids),
+                "fms_edge": sorted(self.fms_edge_dirty_row_ids),
+                "fms_route": sorted(self.fms_route_dirty_row_ids),
+            },
+            "dirty_flags": {
+                "operation_zone": self.operation_zone_dirty,
+                "operation_zone_boundary": self.operation_zone_boundary_dirty,
+                "goal_pose": self.goal_pose_dirty,
+                "patrol_area": self.patrol_area_dirty,
+                "fms_waypoint": self.fms_waypoint_dirty,
+                "fms_edge": self.fms_edge_dirty,
+                "fms_route": self.fms_route_dirty,
+            },
+            "modes": {
+                "operation_zone": self.operation_zone_mode,
+                "fms_waypoint": self.fms_waypoint_mode,
+                "fms_edge": self.fms_edge_mode,
+                "fms_route": self.fms_route_mode,
+            },
+            "indices": {
+                "operation_zone": self.selected_operation_zone_index,
+                "operation_zone_boundary_vertex": (
+                    self.selected_operation_zone_boundary_vertex_index
+                ),
+                "goal_pose": self.selected_goal_pose_index,
+                "patrol_area": self.selected_patrol_area_index,
+                "patrol_waypoint": self.selected_patrol_waypoint_index,
+                "fms_waypoint": self.selected_fms_waypoint_index,
+                "fms_edge": self.selected_fms_edge_index,
+                "fms_route": self.selected_fms_route_index,
+                "fms_route_waypoint": self.selected_fms_route_waypoint_index,
+            },
+            "operation_zone_boundary_vertices": copy.deepcopy(
+                self.operation_zone_boundary_vertices
+            ),
+            "patrol_waypoint_rows": copy.deepcopy(self.patrol_waypoint_rows),
+            "fms_route_waypoint_rows": copy.deepcopy(self.fms_route_waypoint_rows),
+            "form": self._capture_current_edit_form_values(),
+        }
+
+    def _edit_history_selection_key(self):
+        if (
+            self.selected_edit_type == "operation_zone"
+            and self.operation_zone_mode == "create"
+        ):
+            return ("operation_zone_create", None)
+        if self.selected_edit_type == "operation_zone" and self.selected_operation_zone:
+            return ("operation_zone", self.selected_operation_zone.get("zone_id"))
+        if self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
+            return ("goal_pose", self.selected_goal_pose.get("goal_pose_id"))
+        if self.selected_edit_type == "patrol_area" and self.selected_patrol_area:
+            return ("patrol_area", self.selected_patrol_area.get("patrol_area_id"))
+        if self.selected_edit_type == "fms_waypoint" and self.selected_fms_waypoint:
+            return ("fms_waypoint", self.selected_fms_waypoint.get("waypoint_id"))
+        if self.selected_edit_type == "fms_edge" and self.selected_fms_edge:
+            return ("fms_edge", self.selected_fms_edge.get("edge_id"))
+        if self.selected_edit_type == "fms_route" and self.selected_fms_route:
+            return ("fms_route", self.selected_fms_route.get("route_id"))
+        return None
+
+    def _capture_current_edit_form_values(self):
+        if self.selected_edit_type == "goal_pose":
+            return {
+                "zone_id": self.goal_pose_zone_combo.currentData(),
+                "purpose": self.goal_pose_purpose_combo.currentText(),
+                "pose_x": self.goal_pose_x_spin.value(),
+                "pose_y": self.goal_pose_y_spin.value(),
+                "pose_yaw": self.goal_pose_yaw_spin.value(),
+                "is_enabled": self.goal_pose_enabled_check.isChecked(),
+            }
+        if self.selected_edit_type == "patrol_area":
+            return {
+                "selected_patrol_waypoint_index": self.selected_patrol_waypoint_index,
+                "patrol_waypoint_rows": copy.deepcopy(self.patrol_waypoint_rows),
+            }
+        if self.selected_edit_type == "fms_waypoint":
+            return {
+                "waypoint_id": self.fms_waypoint_id_input.text(),
+                "display_name": self.fms_waypoint_name_input.text(),
+                "waypoint_type": self.fms_waypoint_type_combo.currentText(),
+                "pose_x": self.fms_waypoint_x_spin.value(),
+                "pose_y": self.fms_waypoint_y_spin.value(),
+                "pose_yaw": self.fms_waypoint_yaw_spin.value(),
+                "snap_group": self.fms_waypoint_snap_group_input.text(),
+                "is_enabled": self.fms_waypoint_enabled_check.isChecked(),
+            }
+        return {}
+
+    def _restore_edit_history_snapshot(self, snapshot, message):
+        self._restoring_edit_history = True
+        try:
+            self.selected_edit_type = snapshot.get("selected_edit_type")
+            self.operation_zone_rows = copy.deepcopy(
+                snapshot.get("operation_zone_rows", [])
+            )
+            self.goal_pose_rows = copy.deepcopy(snapshot.get("goal_pose_rows", []))
+            self.patrol_area_rows = copy.deepcopy(snapshot.get("patrol_area_rows", []))
+            self.fms_waypoint_rows = copy.deepcopy(
+                snapshot.get("fms_waypoint_rows", [])
+            )
+            self.fms_edge_rows = copy.deepcopy(snapshot.get("fms_edge_rows", []))
+            self.fms_route_rows = copy.deepcopy(snapshot.get("fms_route_rows", []))
+            self.current_bundle = copy.deepcopy(snapshot.get("current_bundle", {}))
+            dirty_row_ids = snapshot.get("dirty_row_ids", {})
+            self.operation_zone_dirty_row_ids = set(
+                dirty_row_ids.get("operation_zone", [])
+            )
+            self.goal_pose_dirty_row_ids = set(dirty_row_ids.get("goal_pose", []))
+            self.fms_waypoint_dirty_row_ids = set(dirty_row_ids.get("fms_waypoint", []))
+            self.fms_edge_dirty_row_ids = set(dirty_row_ids.get("fms_edge", []))
+            self.fms_route_dirty_row_ids = set(dirty_row_ids.get("fms_route", []))
+            modes = snapshot.get("modes", {})
+            self.operation_zone_mode = modes.get("operation_zone")
+            self.fms_waypoint_mode = modes.get("fms_waypoint")
+            self.fms_edge_mode = modes.get("fms_edge")
+            self.fms_route_mode = modes.get("fms_route")
+            indices = snapshot.get("indices", {})
+            self.selected_operation_zone_index = indices.get("operation_zone")
+            self.selected_operation_zone_boundary_vertex_index = indices.get(
+                "operation_zone_boundary_vertex"
+            )
+            self.selected_goal_pose_index = indices.get("goal_pose")
+            self.selected_patrol_area_index = indices.get("patrol_area")
+            self.selected_patrol_waypoint_index = indices.get("patrol_waypoint")
+            self.selected_fms_waypoint_index = indices.get("fms_waypoint")
+            self.selected_fms_edge_index = indices.get("fms_edge")
+            self.selected_fms_route_index = indices.get("fms_route")
+            self.selected_fms_route_waypoint_index = indices.get("fms_route_waypoint")
+            dirty_flags = snapshot.get("dirty_flags", {})
+            self.operation_zone_dirty = bool(dirty_flags.get("operation_zone"))
+            self.operation_zone_boundary_dirty = bool(
+                dirty_flags.get("operation_zone_boundary")
+            )
+            self.goal_pose_dirty = bool(dirty_flags.get("goal_pose"))
+            self.patrol_area_dirty = bool(dirty_flags.get("patrol_area"))
+            self.fms_waypoint_dirty = bool(dirty_flags.get("fms_waypoint"))
+            self.fms_edge_dirty = bool(dirty_flags.get("fms_edge"))
+            self.fms_route_dirty = bool(dirty_flags.get("fms_route"))
+            self.operation_zone_boundary_vertices = copy.deepcopy(
+                snapshot.get("operation_zone_boundary_vertices", [])
+            )
+            self.patrol_waypoint_rows = copy.deepcopy(
+                snapshot.get("patrol_waypoint_rows", [])
+            )
+            self.fms_route_waypoint_rows = copy.deepcopy(
+                snapshot.get("fms_route_waypoint_rows", [])
+            )
+
+            self._populate_goal_pose_form_options()
+            self._populate_fms_edge_form_options()
+            self._populate_fms_route_waypoint_options()
+            self._refresh_bundle_tables()
+            self._restore_selected_rows_from_indices()
+            self._sync_edit_panel_visibility()
+            self._restore_current_edit_form_values(snapshot.get("form") or {})
+            self.validation_message_label.setText(message)
+            self._sync_current_edit_save_state()
+        finally:
+            self._restoring_edit_history = False
+        self._sync_shortcuts_enabled_state()
+
+    def _restore_selected_rows_from_indices(self):
+        self.selected_operation_zone = self._row_at(
+            self.operation_zone_rows,
+            self.selected_operation_zone_index,
+        )
+        self.selected_goal_pose = self._row_at(
+            self.goal_pose_rows,
+            self.selected_goal_pose_index,
+        )
+        self.selected_patrol_area = self._row_at(
+            self.patrol_area_rows,
+            self.selected_patrol_area_index,
+        )
+        self.selected_fms_waypoint = self._row_at(
+            self.fms_waypoint_rows,
+            self.selected_fms_waypoint_index,
+        )
+        self.selected_fms_edge = self._row_at(
+            self.fms_edge_rows,
+            self.selected_fms_edge_index,
+        )
+        self.selected_fms_route = self._row_at(
+            self.fms_route_rows,
+            self.selected_fms_route_index,
+        )
+
+    @staticmethod
+    def _row_at(rows, index):
+        if index is None:
+            return None
+        try:
+            return dict(rows[int(index)])
+        except (IndexError, TypeError, ValueError):
+            return None
+
+    def _sync_edit_panel_visibility(self):
+        edit_type = self.selected_edit_type
+        self.edit_placeholder_label.setHidden(edit_type is not None)
+        self.operation_zone_form.setHidden(edit_type != "operation_zone")
+        self.goal_pose_form.setHidden(edit_type != "goal_pose")
+        self.patrol_area_form.setHidden(edit_type != "patrol_area")
+        self.fms_waypoint_form.setHidden(edit_type != "fms_waypoint")
+        self.fms_edge_form.setHidden(edit_type != "fms_edge")
+        self.fms_route_form.setHidden(edit_type != "fms_route")
+        labels = {
+            "operation_zone": "운영 구역 편집 모드",
+            "goal_pose": "목표 좌표 편집 모드",
+            "patrol_area": "순찰 경로 편집 모드",
+            "fms_waypoint": "FMS waypoint 편집 모드",
+            "fms_edge": "FMS edge 편집 모드",
+            "fms_route": "FMS route 편집 모드",
+        }
+        self.edit_mode_label.setText(labels.get(edit_type, "선택 모드"))
+
+    def _restore_current_edit_form_values(self, form):
+        if self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
+            self._set_goal_pose_form(self.selected_goal_pose)
+            self._syncing_goal_pose_form = True
+            try:
+                self._set_combo_data(self.goal_pose_zone_combo, form.get("zone_id"))
+                self._set_combo_text(
+                    self.goal_pose_purpose_combo,
+                    _display(form.get("purpose")),
+                )
+                self.goal_pose_x_spin.setValue(_float_or_default(form.get("pose_x")))
+                self.goal_pose_y_spin.setValue(_float_or_default(form.get("pose_y")))
+                self.goal_pose_yaw_spin.setValue(
+                    _float_or_default(form.get("pose_yaw"))
+                )
+                self.goal_pose_enabled_check.setChecked(
+                    bool(form.get("is_enabled", True))
+                )
+            finally:
+                self._syncing_goal_pose_form = False
+            self._sync_goal_pose_overlay()
+        elif self.selected_edit_type == "patrol_area" and self.selected_patrol_area:
+            self._set_patrol_area_form(self.selected_patrol_area)
+            self.patrol_waypoint_rows = copy.deepcopy(
+                form.get("patrol_waypoint_rows", self.patrol_waypoint_rows)
+            )
+            self.selected_patrol_waypoint_index = form.get(
+                "selected_patrol_waypoint_index",
+                self.selected_patrol_waypoint_index,
+            )
+            self._populate_patrol_waypoint_table()
+            self._set_patrol_waypoint_form(self.selected_patrol_waypoint_index)
+            self._sync_patrol_overlay()
+        elif self.selected_edit_type == "fms_waypoint" and self.selected_fms_waypoint:
+            self._set_fms_waypoint_form(
+                self.selected_fms_waypoint,
+                mode=self.fms_waypoint_mode or "edit",
+            )
+            self._syncing_fms_waypoint_form = True
+            try:
+                self.fms_waypoint_id_input.setText(_display(form.get("waypoint_id")))
+                self.fms_waypoint_name_input.setText(_display(form.get("display_name")))
+                self._set_combo_text(
+                    self.fms_waypoint_type_combo,
+                    _display(form.get("waypoint_type") or "CORRIDOR"),
+                )
+                self.fms_waypoint_x_spin.setValue(_float_or_default(form.get("pose_x")))
+                self.fms_waypoint_y_spin.setValue(_float_or_default(form.get("pose_y")))
+                self.fms_waypoint_yaw_spin.setValue(
+                    _float_or_default(form.get("pose_yaw"))
+                )
+                self.fms_waypoint_snap_group_input.setText(
+                    _display(form.get("snap_group"))
+                )
+                self.fms_waypoint_enabled_check.setChecked(
+                    bool(form.get("is_enabled", True))
+                )
+            finally:
+                self._syncing_fms_waypoint_form = False
+            self._sync_fms_waypoint_overlay()
+
+    def _can_undo_edit(self):
+        return self._edit_history_index > 0
+
+    def _can_redo_edit(self):
+        return 0 <= self._edit_history_index < len(self._edit_history) - 1
+
+    def _sync_shortcuts_enabled_state(self):
+        if self.save_shortcut is not None:
+            self.save_shortcut.setEnabled(self.save_button.isEnabled())
+        if self.undo_shortcut is not None:
+            self.undo_shortcut.setEnabled(self._can_undo_edit())
+        if self.redo_shortcut is not None:
+            self.redo_shortcut.setEnabled(self._can_redo_edit())
 
     @staticmethod
     def _set_combo_data(combo, value):
