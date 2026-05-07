@@ -9,6 +9,7 @@ KIOSK_GUIDE_CONFIRMATION_PAGE = (
     REPO_ROOT / "ui" / "kiosk_ui" / "guide_confirmation_page.py"
 )
 KIOSK_GUIDE_PROGRESS_PAGE = REPO_ROOT / "ui" / "kiosk_ui" / "guide_progress_page.py"
+KIOSK_STAFF_CALL_MODAL = REPO_ROOT / "ui" / "kiosk_ui" / "staff_call_modal.py"
 KIOSK_SHARED_WIDGETS = REPO_ROOT / "ui" / "kiosk_ui" / "shared_widgets.py"
 
 
@@ -92,3 +93,15 @@ def test_kiosk_guide_progress_page_is_split_from_main_window():
     assert KIOSK_GUIDE_PROGRESS_PAGE.exists()
     assert "class KioskRobotGuidanceProgressPage" not in main_source
     assert "class KioskProgressStage" not in main_source
+
+
+def test_kiosk_staff_call_modal_is_split_from_main_window():
+    from ui.kiosk_ui.main_window import KioskHomeWindow
+    from ui.kiosk_ui.staff_call_modal import KioskStaffCallModal
+
+    main_source = KIOSK_MAIN_WINDOW.read_text(encoding="utf-8")
+
+    assert KioskHomeWindow.__name__ == "KioskHomeWindow"
+    assert KioskStaffCallModal.__module__.endswith("staff_call_modal")
+    assert KIOSK_STAFF_CALL_MODAL.exists()
+    assert "class KioskStaffCallModal" not in main_source
