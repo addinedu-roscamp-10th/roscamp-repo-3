@@ -77,7 +77,7 @@ def _build_guide_runtime_subscriber(node):
         )
     except ImportError as exc:
         node.get_logger().warning(
-            "Guide runtime subscriber disabled because GuideTrackingUpdate "
+            "Guide runtime subscriber disabled because GuidePhaseSnapshot "
             f"interface is unavailable: {exc}"
         )
         return None

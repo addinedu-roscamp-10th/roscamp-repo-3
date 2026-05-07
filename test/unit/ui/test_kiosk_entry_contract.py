@@ -655,9 +655,9 @@ def test_kiosk_progress_page_starts_guidance_driving_with_detected_track():
             return True, "tracking", {
                 "guide_runtime": {
                     "last_update": {
-                        "tracking_status": "TRACKING",
-                        "active_track_id": "track_17",
-                        "tracking_result_seq": 77,
+                        "guide_phase": "READY_TO_START_GUIDANCE",
+                        "target_track_id": 17,
+                        "seq": 77,
                     }
                 }
             }
@@ -699,12 +699,12 @@ def test_kiosk_progress_page_starts_guidance_driving_with_detected_track():
         page.start_guidance_driving()
 
         assert service.started == [
-            {
-                "task_id": "3001",
-                "pinky_id": "pinky1",
-                "target_track_id": "track_17",
-            }
-        ]
+                {
+                    "task_id": "3001",
+                    "pinky_id": "pinky1",
+                    "target_track_id": 17,
+                }
+            ]
         assert page.robot_state_chip.text() == "안내 중"
         assert page.distance_label.text() == "안내 주행을 시작했습니다."
     finally:
@@ -729,10 +729,9 @@ def test_kiosk_progress_page_keeps_waiting_state_when_guidance_driving_start_fai
 
         def get_tracking_status(self, **_kwargs):
             return True, "안내 대상을 확인했습니다.", {
-                "tracking_status": "TRACKING",
-                "active_track_id": "track_17",
-                "target_track_id": "track_17",
-                "tracking_result_seq": 881,
+                "guide_phase": "READY_TO_START_GUIDANCE",
+                "target_track_id": 17,
+                "seq": 881,
             }
 
         def get_guide_runtime_status(self):

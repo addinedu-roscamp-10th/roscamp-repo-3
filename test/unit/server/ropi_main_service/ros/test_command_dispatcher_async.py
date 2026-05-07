@@ -157,6 +157,24 @@ class FakeGuideTrackingUpdatePublisher:
         return {"accepted": True, "message": "published"}
 
 
+class FakeGuidePhaseSnapshotView:
+    pinky_id = "pinky1"
+    task_id = "3001"
+    guide_phase = "READY_TO_START_GUIDANCE"
+    target_track_id = 17
+    reason_code = ""
+    seq = 42
+    occurred_at_sec = 1776602110
+    occurred_at_nanosec = 0
+    received_at_sec = 1776602111
+    received_at_nanosec = 0
+    stale = False
+
+
+class FakeGuideRuntimeSubscriber:
+    latest_updates = {"pinky1": FakeGuidePhaseSnapshotView()}
+
+
 def test_async_dispatch_prefers_async_goal_pose_action_client():
     goal_client = FakeAsyncGoalPoseActionClient()
     dispatcher = RosServiceCommandDispatcher(goal_pose_action_client=goal_client)
@@ -529,6 +547,50 @@ def test_async_dispatch_runtime_status_prefers_async_readiness_checks():
             "wait_timeout_sec": 0.0,
         }
     ]
+
+
+def test_async_dispatch_runtime_status_exposes_guide_phase_snapshot():
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        guide_runtime_subscriber=FakeGuideRuntimeSubscriber(),
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "get_runtime_status",
+                {
+                    "pinky_id": "pinky1",
+                    "include_navigation": False,
+                    "include_guide": True,
+                    "arm_ids": [],
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["guide_runtime"] == {
+        "pinky_id": "pinky1",
+        "connected": True,
+        "stale": False,
+        "last_update": {
+            "task_id": "3001",
+            "pinky_id": "pinky1",
+            "guide_phase": "READY_TO_START_GUIDANCE",
+            "target_track_id": 17,
+            "reason_code": "",
+            "seq": 42,
+            "occurred_at_sec": 1776602110,
+            "occurred_at_nanosec": 0,
+            "received_at_sec": 1776602111,
+            "received_at_nanosec": 0,
+        },
+    }
+    last_update = response["guide_runtime"]["last_update"]
+    assert "tracking_status" not in last_update
+    assert "bbox_xyxy" not in last_update
 
 
 def test_async_dispatch_runtime_status_checks_patrol_only_when_requested():

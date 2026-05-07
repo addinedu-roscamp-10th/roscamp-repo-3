@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Dict
 
-from ropi_interface.msg import GuideTrackingUpdate
+from ropi_interface.msg import GuidePhaseSnapshot
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
@@ -12,33 +12,30 @@ DEFAULT_PINKY_IDS = ("pinky1",)
 
 
 @dataclass
-class GuideTrackingUpdateView:
+class GuidePhaseSnapshotView:
     pinky_id: str
     task_id: str
-    target_track_id: str
-    tracking_status: str
-    tracking_result_seq: int
-    frame_ts_sec: int
-    frame_ts_nanosec: int
-    bbox_valid: bool
-    bbox_xyxy: list[int]
-    image_width_px: int
-    image_height_px: int
+    guide_phase: str
+    target_track_id: int
+    reason_code: str
+    seq: int
+    occurred_at_sec: int
+    occurred_at_nanosec: int
     received_at_sec: int
     received_at_nanosec: int
     stale: bool
 
 
 class GuideRuntimeSubscriber:
-    """Server-side IF-GUI-006 subscriber for guide tracking updates."""
+    """Server-side IF-GUI-007 subscriber for guide phase snapshots."""
 
     def __init__(self, node: Node):
         self._node = node
         self._node.declare_parameter("guide_subscriber.pinky_ids", list(DEFAULT_PINKY_IDS))
-        self._node.declare_parameter("guide_subscriber.tracking_topic_names", [])
+        self._node.declare_parameter("guide_subscriber.phase_topic_names", [])
         self._node.declare_parameter(
-            "guide_subscriber.tracking_topic_template",
-            "/ropi/guide/{pinky_id}/tracking_update",
+            "guide_subscriber.phase_topic_template",
+            "/ropi/control/{pinky_id}/guide_phase_snapshot",
         )
         self._node.declare_parameter(
             "guide_subscriber.stale_timeout_sec",
@@ -50,17 +47,17 @@ class GuideRuntimeSubscriber:
         if not self._pinky_ids:
             self._pinky_ids = list(DEFAULT_PINKY_IDS)
 
-        raw_topic_names = self._node.get_parameter("guide_subscriber.tracking_topic_names").value
-        self._tracking_topic_names = [str(value).strip() for value in raw_topic_names if str(value).strip()]
-        self._tracking_topic_template = str(
-            self._node.get_parameter("guide_subscriber.tracking_topic_template").value
+        raw_topic_names = self._node.get_parameter("guide_subscriber.phase_topic_names").value
+        self._phase_topic_names = [str(value).strip() for value in raw_topic_names if str(value).strip()]
+        self._phase_topic_template = str(
+            self._node.get_parameter("guide_subscriber.phase_topic_template").value
         ).strip()
         self._stale_timeout_sec = float(
             self._node.get_parameter("guide_subscriber.stale_timeout_sec").value
         )
 
         self._lock = Lock()
-        self._latest_updates: Dict[str, GuideTrackingUpdateView] = {}
+        self._latest_updates: Dict[str, GuidePhaseSnapshotView] = {}
         self._warned_stale = set()
         self._subscriptions = []
 
@@ -75,38 +72,35 @@ class GuideRuntimeSubscriber:
             topic_name = self._resolve_topic_name(index=index, pinky_id=pinky_id)
             self._subscriptions.append(
                 self._node.create_subscription(
-                    GuideTrackingUpdate,
+                    GuidePhaseSnapshot,
                     topic_name,
                     self._build_callback(pinky_id),
                     qos,
                 )
             )
             self._node.get_logger().info(
-                f"[guide-subscriber] pinky_id={pinky_id} tracking_update={topic_name}"
+                f"[guide-subscriber] pinky_id={pinky_id} guide_phase_snapshot={topic_name}"
             )
 
         self._stale_timer = self._node.create_timer(1.0, self._check_stale)
 
     @property
-    def latest_updates(self) -> Dict[str, GuideTrackingUpdateView]:
+    def latest_updates(self) -> Dict[str, GuidePhaseSnapshotView]:
         with self._lock:
             return dict(self._latest_updates)
 
     def _build_callback(self, pinky_id: str):
-        def _on_update(msg: GuideTrackingUpdate):
+        def _on_update(msg: GuidePhaseSnapshot):
             received_at = self._node.get_clock().now().to_msg()
-            view = GuideTrackingUpdateView(
-                pinky_id=pinky_id,
+            view = GuidePhaseSnapshotView(
+                pinky_id=str(msg.pinky_id or pinky_id),
                 task_id=str(msg.task_id),
-                target_track_id=str(msg.target_track_id),
-                tracking_status=str(msg.tracking_status),
-                tracking_result_seq=int(msg.tracking_result_seq),
-                frame_ts_sec=int(msg.frame_ts.sec),
-                frame_ts_nanosec=int(msg.frame_ts.nanosec),
-                bbox_valid=bool(msg.bbox_valid),
-                bbox_xyxy=[int(value) for value in list(msg.bbox_xyxy)],
-                image_width_px=int(msg.image_width_px),
-                image_height_px=int(msg.image_height_px),
+                guide_phase=str(msg.guide_phase),
+                target_track_id=int(msg.target_track_id),
+                reason_code=str(msg.reason_code),
+                seq=int(msg.seq),
+                occurred_at_sec=int(msg.occurred_at.sec),
+                occurred_at_nanosec=int(msg.occurred_at.nanosec),
                 received_at_sec=int(received_at.sec),
                 received_at_nanosec=int(received_at.nanosec),
                 stale=False,
@@ -114,17 +108,16 @@ class GuideRuntimeSubscriber:
 
             with self._lock:
                 current = self._latest_updates.get(pinky_id)
-                if current is not None and current.tracking_result_seq > view.tracking_result_seq:
+                if current is not None and current.seq > view.seq:
                     return
                 self._latest_updates[pinky_id] = view
                 self._warned_stale.discard(pinky_id)
 
             self._node.get_logger().info(
-                "IF-GUI-006 tracking update received: "
+                "IF-GUI-007 guide phase snapshot received: "
                 f"pinky_id={view.pinky_id}, task_id={view.task_id or '-'}, "
-                f"target_track_id={view.target_track_id or '-'}, "
-                f"tracking_status={view.tracking_status or '-'}, "
-                f"tracking_result_seq={view.tracking_result_seq}"
+                f"guide_phase={view.guide_phase or '-'}, "
+                f"target_track_id={view.target_track_id}, seq={view.seq}"
             )
 
         return _on_update
@@ -138,7 +131,7 @@ class GuideRuntimeSubscriber:
                 self._warned_stale.add(pinky_id)
                 view.stale = True
                 self._node.get_logger().warning(
-                    f"IF-GUI-006 tracking update became stale for {pinky_id} "
+                    f"IF-GUI-007 guide phase snapshot became stale for {pinky_id} "
                     f"(timeout={self._stale_timeout_sec:.1f}s)"
                 )
 
@@ -148,11 +141,11 @@ class GuideRuntimeSubscriber:
         return (now - received) > self._stale_timeout_sec
 
     def _resolve_topic_name(self, *, index: int, pinky_id: str) -> str:
-        if index < len(self._tracking_topic_names):
-            return self._tracking_topic_names[index]
-        if "{pinky_id}" in self._tracking_topic_template:
-            return self._tracking_topic_template.format(pinky_id=pinky_id)
-        return self._tracking_topic_template
+        if index < len(self._phase_topic_names):
+            return self._phase_topic_names[index]
+        if "{pinky_id}" in self._phase_topic_template:
+            return self._phase_topic_template.format(pinky_id=pinky_id)
+        return self._phase_topic_template
 
 
-__all__ = ["GuideRuntimeSubscriber", "GuideTrackingUpdateView"]
+__all__ = ["GuidePhaseSnapshotView", "GuideRuntimeSubscriber"]

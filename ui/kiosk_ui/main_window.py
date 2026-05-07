@@ -1796,6 +1796,9 @@ class KioskRobotGuidanceProgressPage(QWidget):
         self._apply_tracking_status_payload(ok, last_update)
 
     def _apply_tracking_status_payload(self, ok, payload):
+        if (payload or {}).get("guide_phase"):
+            return self._apply_guide_phase_payload(ok, payload)
+
         tracking_status = str((payload or {}).get("tracking_status") or "").strip()
         if not ok and tracking_status in {"", "NOT_TRACKING"}:
             return False
@@ -1838,14 +1841,66 @@ class KioskRobotGuidanceProgressPage(QWidget):
             self.distance_label.setText(warning_message)
         return bool(tracking_status)
 
+    def _apply_guide_phase_payload(self, ok, payload):
+        guide_phase = str((payload or {}).get("guide_phase") or "").strip().upper()
+        if not ok and not guide_phase:
+            return False
+
+        target_track_id = self._normalize_target_track_id(
+            (payload or {}).get("target_track_id")
+        )
+        phase = guide_phase or self._current_session_phase()
+        task_status = str(
+            (payload or {}).get("task_status")
+            or (self.current_session or {}).get("task_status")
+            or "RUNNING"
+        ).strip().upper()
+
+        self.current_session = {
+            **(self.current_session or {}),
+            "phase": phase,
+            "guide_phase": phase,
+            "task_status": task_status,
+        }
+        if target_track_id is not None:
+            self.current_session["target_track_id"] = target_track_id
+            self.detected_target_track_id = target_track_id
+
+        self._update_guide_progress_display(phase, task_status)
+        if phase == "READY_TO_START_GUIDANCE" and target_track_id is not None:
+            self.start_driving_button.setEnabled(True)
+        elif phase in {
+            "WAIT_TARGET_TRACKING",
+            "GUIDANCE_RUNNING",
+            "WAIT_REIDENTIFY",
+            "GUIDANCE_FINISHED",
+            "GUIDANCE_CANCELLED",
+            "GUIDANCE_FAILED",
+        }:
+            self.start_driving_button.setEnabled(False)
+
+        seq = (payload or {}).get("seq")
+        if seq is not None and self.selected_patient:
+            self.request_id_label.setText(
+                f"안내 대상: {self.selected_patient.get('name', '-')} / phase 순번: {seq}"
+            )
+        warning_message = self._latest_result_warning_message()
+        if warning_message:
+            self.distance_label.setText(warning_message)
+        return bool(guide_phase)
+
     def start_guidance_driving(self):
         task_id = str((self.current_session or {}).get("task_id", "")).strip()
         if not task_id:
             self.distance_label.setText("안내 주행 시작에 필요한 task_id가 없습니다.")
             return
 
-        target_track_id = self.detected_target_track_id or self._session_target_track_id()
-        if not target_track_id:
+        target_track_id = self._normalize_target_track_id(
+            self.detected_target_track_id
+            if self.detected_target_track_id is not None
+            else self._session_target_track_id()
+        )
+        if target_track_id is None:
             self.distance_label.setText("안내 대상 확인 후 주행을 시작할 수 있습니다.")
             self.start_driving_button.setEnabled(False)
             return
@@ -2031,11 +2086,17 @@ class KioskRobotGuidanceProgressPage(QWidget):
     def _session_target_track_id(self):
         session = self.current_session or {}
         command_response = session.get("command_response") or {}
-        return str(
-            command_response.get("target_track_id")
-            or session.get("target_track_id")
-            or ""
-        ).strip()
+        return command_response.get("target_track_id", session.get("target_track_id"))
+
+    @staticmethod
+    def _normalize_target_track_id(value):
+        try:
+            normalized = int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+        if normalized < 0:
+            return None
+        return normalized
 
     def _current_session_phase(self):
         session = self.current_session or {}

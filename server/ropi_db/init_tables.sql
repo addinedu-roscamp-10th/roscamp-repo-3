@@ -414,7 +414,7 @@ CREATE TABLE `guide_task_detail` (
     `member_id` BIGINT UNSIGNED NOT NULL,
     `destination_goal_pose_id` VARCHAR(100) NOT NULL,
     `guide_phase` VARCHAR(50) NULL,
-    `target_track_id` VARCHAR(100) NULL,
+    `target_track_id` INT NULL,
     `notes` TEXT NULL,
     CONSTRAINT `pk_guide_task_detail` PRIMARY KEY (`task_id`),
     CONSTRAINT `fk_guide_task_detail_task`
