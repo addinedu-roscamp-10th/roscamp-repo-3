@@ -16,13 +16,5 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES builtin_interfaces
 )
 
-install(
-  PROGRAMS
-    jetcobot_status_json_publisher.py
-    jetcobot_status_publisher.py
-    jetcobot_status_bridge.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
