@@ -126,6 +126,73 @@ uv run ropi-ros-service
 ROPI ROS Service listening on /tmp/ropi_control_ros_service.sock
 ```
 
+### 1-1. 개별 ROS action 테스트
+
+운반 전체 태스크를 만들지 않고 Pinky 주행 또는 Jetcobot 팔 action만 따로 보낼 때는 `ropi-ros-action-test`를 사용한다. Control Service와 DB는 필요 없고, `ropi-ros-service`와 테스트할 대상 action server만 떠 있으면 된다.
+
+도움말과 UDS 확인:
+
+```bash
+cd /home/addinedu/dev/roscamp-repo-3
+uv run ropi-ros-action-test --help
+test -S /tmp/ropi_control_ros_service.sock && echo "ROS bridge UDS ok"
+```
+
+대상별 readiness 확인:
+
+```bash
+# Pinky 주행 action만 확인한다.
+uv run ropi-ros-action-test status --pinky-id pinky2
+
+# arm action만 확인한다. Pinky 주행 노드가 없어도 이 확인은 가능하다.
+uv run ropi-ros-action-test status --arm-id arm1
+uv run ropi-ros-action-test status --arm-id arm2
+
+# arm1, arm2를 한 번에 확인한다.
+uv run ropi-ros-action-test status --arm-id arm1 --arm-id arm2
+```
+
+Pinky 주행 action 전송:
+
+```bash
+# --pose 형식은 x,y,yaw[,frame_id]다. yaw는 radian이다.
+uv run ropi-ros-action-test nav \
+  --pinky-id pinky2 \
+  --task-id manual_nav_001 \
+  --nav-phase DELIVERY_PICKUP \
+  --pose "1.0,2.0,0.0" \
+  --timeout-sec 120
+
+# degree 단위 yaw가 필요하면 key-value 형식을 쓴다.
+uv run ropi-ros-action-test nav \
+  --pinky-id pinky2 \
+  --task-id manual_nav_002 \
+  --nav-phase RETURN_TO_DOCK \
+  --pose "x=0.0,y=0.0,yaw_deg=180,frame_id=map"
+```
+
+Jetcobot 팔 action 전송:
+
+```bash
+# pickup-side arm: 물품을 Pinky 적재 슬롯으로 올린다.
+uv run ropi-ros-action-test arm \
+  --arm-id arm1 \
+  --task-id manual_arm_load_001 \
+  --transfer-direction TO_ROBOT \
+  --item-id 1 \
+  --quantity 1 \
+  --robot-slot-id robot_slot_a1
+
+# destination-side arm: Pinky 적재 슬롯에서 물품을 내린다.
+uv run ropi-ros-action-test arm \
+  --arm-id arm2 \
+  --task-id manual_arm_unload_001 \
+  --transfer-direction FROM_ROBOT \
+  --item-id 1 \
+  --quantity 1 \
+  --robot-slot-id robot_slot_a1
+```
+
 ### 2. Control Service
 
 ```bash
