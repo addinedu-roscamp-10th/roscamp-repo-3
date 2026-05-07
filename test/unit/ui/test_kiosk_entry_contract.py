@@ -674,7 +674,10 @@ def test_kiosk_progress_page_starts_guidance_driving_with_detected_track():
             }
 
     service = TrackingRuntimeService()
-    page = KioskRobotGuidanceProgressPage()
+    home_calls = []
+    page = KioskRobotGuidanceProgressPage(
+        go_home_page=lambda: home_calls.append("home")
+    )
     page.service = service
 
     try:
@@ -705,8 +708,12 @@ def test_kiosk_progress_page_starts_guidance_driving_with_detected_track():
                     "target_track_id": 17,
                 }
             ]
-        assert page.robot_state_chip.text() == "안내 중"
-        assert page.distance_label.text() == "안내 주행을 시작했습니다."
+        assert home_calls == ["home"]
+        assert page.current_session is None
+        assert page.selected_patient is None
+        assert page.detected_target_track_id is None
+        assert page.start_driving_button.isEnabled() is False
+        assert page.status_timer.isActive() is False
     finally:
         page.close()
 
@@ -913,7 +920,7 @@ def test_kiosk_progress_page_uses_guide_runtime_phase_snapshot():
         page.close()
 
 
-def test_kiosk_progress_page_applies_task_status_query_to_guide_progress():
+def test_kiosk_progress_page_treats_post_start_task_status_as_handoff_complete():
     _app()
 
     from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
@@ -921,6 +928,7 @@ def test_kiosk_progress_page_applies_task_status_query_to_guide_progress():
     class GuideProgressService:
         def __init__(self):
             self.task_status_calls = []
+            self.runtime_calls = []
 
         def get_task_status(self, *, task_id):
             self.task_status_calls.append(task_id)
@@ -934,10 +942,14 @@ def test_kiosk_progress_page_applies_task_status_query_to_guide_progress():
             }
 
         def get_guide_runtime_status(self, **_kwargs):
+            self.runtime_calls.append(_kwargs)
             return False, "대기 중", {"guide_runtime": {"connected": False}}
 
     service = GuideProgressService()
-    page = KioskRobotGuidanceProgressPage()
+    home_calls = []
+    page = KioskRobotGuidanceProgressPage(
+        go_home_page=lambda: home_calls.append("home")
+    )
     page.service = service
 
     try:
@@ -959,13 +971,45 @@ def test_kiosk_progress_page_applies_task_status_query_to_guide_progress():
         )
 
         assert service.task_status_calls == ["3001"]
-        assert page.robot_state_chip.text() == "안내 중"
-        assert page.distance_label.text() == "로봇을 따라 이동해주세요."
+        assert service.runtime_calls == []
+        assert home_calls == ["home"]
+        assert page.current_session is None
+        assert page.selected_patient is None
         assert page.start_driving_button.isEnabled() is False
-        assert page.progress_stages[3].property("state") == "active"
-        assert page.progress_stages[4].property("state") == "pending"
+        assert page.progress_stages[4].property("state") == "active"
     finally:
         page.close()
+
+
+def test_kiosk_home_window_clears_visitor_context_after_guide_handoff():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskHomeWindow
+
+    window = KioskHomeWindow()
+    patient = {
+        "member_id": 1,
+        "visitor_id": 42,
+        "name": "김*수",
+        "room": "301",
+    }
+
+    try:
+        window.current_patient = patient
+        window.current_visitor_session = {"visitor_id": 42, "member_id": 1}
+        window.progress_page.selected_patient = patient
+        window.progress_page.current_session = {"task_id": 3001}
+        window.stack.setCurrentWidget(window.progress_page)
+
+        window.progress_page.go_home_page()
+
+        assert window.stack.currentWidget() is window.home_page
+        assert window.current_patient is None
+        assert window.current_visitor_session is None
+        assert window.progress_page.selected_patient is None
+        assert window.progress_page.current_session is None
+    finally:
+        window.close()
 
 
 def test_kiosk_staff_call_uses_in_app_modal_and_lobby_context():

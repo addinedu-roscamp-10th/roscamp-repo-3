@@ -25,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ui.kiosk_ui.guide_progress_state import (  # noqa: E402
+    POST_START_GUIDE_PHASES,
     build_guide_progress_view_state,
     guide_warning_message_for_reason,
 )
@@ -1576,10 +1577,10 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
         self.progress_stages = [
             KioskProgressStage(title_text="요청 접수", completed=True),
-            KioskProgressStage(title_text="로봇 배정", completed=True),
-            KioskProgressStage(title_text="출발 준비", active=True),
-            KioskProgressStage(title_text="이동 중"),
-            KioskProgressStage(title_text="도착", completed=False),
+            KioskProgressStage(title_text="로봇 이동", completed=True),
+            KioskProgressStage(title_text="안내자 확인", active=True),
+            KioskProgressStage(title_text="안내 시작"),
+            KioskProgressStage(title_text="인계 완료", completed=False),
         ]
         for stage in self.progress_stages:
             line_layout.addWidget(stage, 1)
@@ -1718,6 +1719,8 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
     def refresh_progress_status(self):
         task_applied = self.refresh_task_status()
+        if not self.current_session:
+            return task_applied
         if self._is_terminal_task_status((self.current_session or {}).get("task_status")):
             return task_applied
         self.refresh_runtime_status()
@@ -1767,6 +1770,13 @@ class KioskRobotGuidanceProgressPage(QWidget):
         }
         self._update_guide_progress_display(phase, task_status)
         self._apply_latest_result_warning()
+        if self._is_post_start_guide_phase(phase):
+            self._complete_guide_handoff(
+                message="안내를 시작했습니다. 로봇을 따라 이동해주세요.",
+                phase=phase,
+                task_status=task_status,
+            )
+            return True
         if self._is_terminal_task_status(task_status):
             self._set_status_polling_enabled(False)
         return True
@@ -1813,6 +1823,13 @@ class KioskRobotGuidanceProgressPage(QWidget):
             self.detected_target_track_id = target_track_id
 
         self._update_guide_progress_display(phase, task_status)
+        if self._is_post_start_guide_phase(phase):
+            self._complete_guide_handoff(
+                message="안내를 시작했습니다. 로봇을 따라 이동해주세요.",
+                phase=phase,
+                task_status=task_status,
+            )
+            return bool(guide_phase)
         if phase == "READY_TO_START_GUIDANCE" and target_track_id is not None:
             self.start_driving_button.setEnabled(True)
         elif phase in {
@@ -1885,9 +1902,11 @@ class KioskRobotGuidanceProgressPage(QWidget):
             "result_message": None,
         }
         self.start_driving_button.setEnabled(False)
-        self._apply_session_status()
-        self.distance_label.setText(message or "안내 주행을 시작했습니다.")
-        self.refresh_task_status()
+        self._complete_guide_handoff(
+            message=message or "안내 주행을 시작했습니다.",
+            phase=str((response or {}).get("phase") or "GUIDANCE_RUNNING").strip(),
+            task_status=str((response or {}).get("task_status") or "RUNNING").strip(),
+        )
 
     def _apply_session_status(self):
         session = self.current_session or {}
@@ -2008,7 +2027,15 @@ class KioskRobotGuidanceProgressPage(QWidget):
 
     @staticmethod
     def _is_terminal_task_status(task_status):
-        return str(task_status or "").strip().upper() in {"COMPLETED", "CANCELLED", "FAILED"}
+        return str(task_status or "").strip().upper() in {
+            "COMPLETED",
+            "CANCELLED",
+            "FAILED",
+        }
+
+    @staticmethod
+    def _is_post_start_guide_phase(phase):
+        return str(phase or "").strip().upper() in POST_START_GUIDE_PHASES
 
     @staticmethod
     def _guide_phase_label(phase, task_status):
@@ -2016,10 +2043,12 @@ class KioskRobotGuidanceProgressPage(QWidget):
         normalized_status = str(task_status or "").strip().upper()
         labels = {
             "WAIT_TARGET_TRACKING": "대상 확인 대기",
-            "GUIDANCE_RUNNING": "안내 주행 중",
-            "WAIT_REIDENTIFY": "대상 재확인",
-            "GUIDANCE_CANCELLED": "안내 취소",
-            "GUIDANCE_FINISHED": "안내 완료",
+            "READY_TO_START_GUIDANCE": "안내 시작 가능",
+            "GUIDANCE_RUNNING": "인계 완료",
+            "WAIT_REIDENTIFY": "인계 완료",
+            "GUIDANCE_CANCELLED": "인계 완료",
+            "GUIDANCE_FINISHED": "인계 완료",
+            "GUIDANCE_FAILED": "인계 완료",
             "WAIT_GUIDE_START_CONFIRM": "안내 시작 대기",
         }
         if normalized_phase in labels:
@@ -2055,6 +2084,25 @@ class KioskRobotGuidanceProgressPage(QWidget):
             or session.get("guide_phase")
             or ""
         ).strip().upper()
+
+    def _complete_guide_handoff(self, *, message, phase, task_status):
+        self._update_guide_progress_display(
+            phase or "GUIDANCE_RUNNING",
+            task_status or "RUNNING",
+        )
+        self.distance_label.setText(
+            message or "안내를 시작했습니다. 로봇을 따라 이동해주세요."
+        )
+        self.start_driving_button.setEnabled(False)
+        self.cancel_button.setEnabled(False)
+        self._set_status_polling_enabled(False)
+        self._clear_guide_screen_session()
+        self._go_home()
+
+    def _clear_guide_screen_session(self):
+        self.selected_patient = None
+        self.current_session = None
+        self.detected_target_track_id = None
 
     def finish_guidance(self):
         task_id = str((self.current_session or {}).get("task_id", "")).strip()
@@ -2220,17 +2268,17 @@ class KioskHomeWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.home_page = KioskHomePage()
         self.registration_page = KioskVisitorRegistrationPage(
-            go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
+            go_home_page=self._show_home_page,
             go_confirmation_page=self._show_confirmation_page,
-            go_back_page=lambda: self.stack.setCurrentWidget(self.home_page),
+            go_back_page=self._show_home_page,
         )
         self.confirmation_page = KioskGuideConfirmationPage(
-            go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
+            go_home_page=self._show_home_page,
             go_back_page=lambda: self.stack.setCurrentWidget(self.registration_page),
             go_progress_page=self._show_progress_page,
         )
         self.progress_page = KioskRobotGuidanceProgressPage(
-            go_home_page=lambda: self.stack.setCurrentWidget(self.home_page),
+            go_home_page=self._show_home_page,
         )
 
         self.home_page.register_card.clicked.connect(
@@ -2257,6 +2305,12 @@ class KioskHomeWindow(QMainWindow):
         self.staff_call_modal = KioskStaffCallModal(root)
         self.setCentralWidget(root)
         self._sync_staff_call_modal_geometry()
+
+    def _show_home_page(self):
+        self.current_patient = None
+        self.current_visitor_session = None
+        self.progress_page._clear_guide_screen_session()
+        self.stack.setCurrentWidget(self.home_page)
 
     def _show_registration_page(self, *, focus_resident_search=False):
         self.current_patient = None
