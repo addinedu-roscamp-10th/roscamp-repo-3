@@ -495,7 +495,14 @@ def test_kiosk_guide_confirmation_creates_db_backed_guide_task_before_command():
                 "command_type": "WAIT_TARGET_TRACKING",
             }
         ]
-        assert progress_calls[0][1]["task_id"] == 3001
+        session = progress_calls[0][1]
+        assert session["task_id"] == 3001
+        assert session["task_status"] == "WAITING_DISPATCH"
+        assert session["phase"] == "WAIT_GUIDE_START_CONFIRM"
+        assert session["assigned_robot_id"] == "pinky1"
+        assert session["resident_name"] == "김*수"
+        assert session["room_no"] == "301"
+        assert session["destination_id"] == "delivery_room_301"
     finally:
         page.close()
 
@@ -638,6 +645,167 @@ def test_kiosk_progress_page_prefers_db_backed_guide_session_status():
         assert page.robot_state_chip.text() == "대상 확인 중"
         assert page.distance_label.text() == "로봇이 안내 대상을 확인하고 있습니다."
         assert "상태: 대상 확인 대기" in page.request_id_label.text()
+    finally:
+        page.close()
+
+
+def test_kiosk_progress_page_keeps_wait_target_tracking_failure_on_progress_screen():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
+
+    class OfflineRuntimeService:
+        def get_guide_runtime_status(self, **_kwargs):
+            raise RuntimeError("runtime unavailable")
+
+    home_calls = []
+    page = KioskRobotGuidanceProgressPage(
+        go_home_page=lambda: home_calls.append("home")
+    )
+    page.service = OfflineRuntimeService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            },
+            session={
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "task_status": "WAITING_DISPATCH",
+                "phase": "WAIT_GUIDE_START_CONFIRM",
+                "command_result_code": "COMMAND_FAILED",
+                "command_message": "ROS 연결이 필요합니다.",
+                "command_response": {
+                    "result_code": "REJECTED",
+                    "reason_code": "GUIDE_COMMAND_TRANSPORT_ERROR",
+                    "result_message": "ROS 연결이 필요합니다.",
+                },
+            },
+        )
+
+        assert home_calls == []
+        assert page.current_session["task_id"] == 3001
+        assert page.distance_label.text() == "ROS 연결이 필요합니다."
+        assert page.start_driving_button.isEnabled() is False
+        assert page.cancel_button.isEnabled() is True
+    finally:
+        page.close()
+
+
+def test_kiosk_progress_page_enables_start_for_zero_track_id_from_session():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
+
+    class OfflineRuntimeService:
+        def get_guide_runtime_status(self, **_kwargs):
+            raise RuntimeError("runtime unavailable")
+
+    page = KioskRobotGuidanceProgressPage()
+    page.service = OfflineRuntimeService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            },
+            session={
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "task_status": "RUNNING",
+                "phase": "READY_TO_START_GUIDANCE",
+                "target_track_id": 0,
+            },
+        )
+
+        assert page.detected_target_track_id == 0
+        assert page.start_driving_button.isEnabled() is True
+        assert page.robot_state_chip.text() == "대상 확인 완료"
+    finally:
+        page.close()
+
+
+def test_kiosk_progress_page_does_not_enable_start_before_ready_phase_even_with_track_id():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
+
+    class OfflineRuntimeService:
+        def get_guide_runtime_status(self, **_kwargs):
+            raise RuntimeError("runtime unavailable")
+
+    page = KioskRobotGuidanceProgressPage()
+    page.service = OfflineRuntimeService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            },
+            session={
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "task_status": "WAITING_DISPATCH",
+                "target_track_id": 17,
+            },
+        )
+
+        assert page.detected_target_track_id == 17
+        assert page.start_driving_button.isEnabled() is False
+        assert page.robot_state_chip.text() == "안내 준비"
+    finally:
+        page.close()
+
+
+def test_kiosk_progress_page_does_not_enable_start_when_ready_without_track_id():
+    _app()
+
+    from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
+
+    class OfflineRuntimeService:
+        def get_guide_runtime_status(self, **_kwargs):
+            raise RuntimeError("runtime unavailable")
+
+    page = KioskRobotGuidanceProgressPage()
+    page.service = OfflineRuntimeService()
+
+    try:
+        page.set_patient(
+            {
+                "member_id": 1,
+                "visitor_id": 42,
+                "name": "김*수",
+                "room": "301",
+                "visit_status": "면회 가능",
+                "guide_available": True,
+            },
+            session={
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "task_status": "RUNNING",
+                "phase": "READY_TO_START_GUIDANCE",
+            },
+        )
+
+        assert page.detected_target_track_id is None
+        assert page.robot_state_chip.text() == "대상 확인 완료"
+        assert page.start_driving_button.isEnabled() is False
     finally:
         page.close()
 

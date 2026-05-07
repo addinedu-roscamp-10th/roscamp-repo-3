@@ -1701,8 +1701,10 @@ class KioskRobotGuidanceProgressPage(QWidget):
     def set_patient(self, patient, session=None):
         self.selected_patient = patient or None
         self.current_session = session or None
-        self.detected_target_track_id = self._session_target_track_id()
-        self.start_driving_button.setEnabled(bool(self.detected_target_track_id))
+        self.detected_target_track_id = self._normalize_target_track_id(
+            self._session_target_track_id()
+        )
+        self.start_driving_button.setEnabled(False)
         task_id = str((self.current_session or {}).get("task_id", "-")).strip() or "-"
         if self.selected_patient:
             name = str(self.selected_patient.get("name", "-")).strip() or "-"
@@ -2012,7 +2014,10 @@ class KioskRobotGuidanceProgressPage(QWidget):
         self._apply_progress_stage_states(state.active_stage_index)
         self.progress_bar_fill.setFixedWidth(state.progress_fill_width)
         if state.start_driving_enabled is not None:
-            self.start_driving_button.setEnabled(state.start_driving_enabled)
+            self.start_driving_button.setEnabled(
+                state.start_driving_enabled
+                and self.detected_target_track_id is not None
+            )
         if state.cancel_enabled is not None:
             self.cancel_button.setEnabled(state.cancel_enabled)
 
