@@ -935,6 +935,11 @@ QFrame#patrolResumeFormPanel {
     border-radius: 14px;
 }
 
+QFrame#fallAlertPanel[markerFocused="true"] {
+    background: #FFF7ED;
+    border: 2px solid #DC2626;
+}
+
 QLabel#fallAlertMarker {
     color: #991B1B;
     font-size: 13px;

@@ -562,6 +562,9 @@ class TaskMonitorPage(QWidget):
         self.evidence_image_btn = self.patrol_runtime_section.evidence_image_btn
         self.evidence_status_label = self.patrol_runtime_section.evidence_status_label
         self.evidence_image_btn.clicked.connect(self.open_fall_evidence_dialog)
+        self.patrol_map_overlay.fall_alert_clicked.connect(
+            self._handle_fall_alert_marker_clicked
+        )
         self.resume_patrol_btn = self.patrol_runtime_section.resume_patrol_btn
         self.resume_status_label = self.patrol_runtime_section.resume_status_label
         self.resume_patrol_btn.clicked.connect(self.open_patrol_resume_dialog)
@@ -941,6 +944,14 @@ class TaskMonitorPage(QWidget):
             task,
             can_resume=self._can_resume_patrol(task),
             evidence_available=self._is_evidence_image_available(alert),
+        )
+
+    def _handle_fall_alert_marker_clicked(self):
+        task = self._current_task()
+        if not task or not task.get("fall_alert"):
+            return
+        self.patrol_runtime_section.focus_fall_alert(
+            evidence_available=self._has_current_evidence_image(),
         )
 
     def _can_resume_patrol(self, task):

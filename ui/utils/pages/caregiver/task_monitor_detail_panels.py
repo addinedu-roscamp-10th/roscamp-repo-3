@@ -334,6 +334,8 @@ class PatrolRuntimePanel(QWidget):
 
         self.alert_panel = QFrame()
         self.alert_panel.setObjectName("fallAlertPanel")
+        self.alert_panel.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._set_marker_focused(False)
         alert_layout = QVBoxLayout(self.alert_panel)
         alert_layout.setContentsMargins(14, 14, 14, 14)
         alert_layout.setSpacing(8)
@@ -398,6 +400,7 @@ class PatrolRuntimePanel(QWidget):
             return
 
         self.setHidden(False)
+        self._set_marker_focused(False)
         alert = task.get("fall_alert") or {}
         has_alert = bool(alert)
         should_show = has_alert or bool(can_resume)
@@ -431,6 +434,21 @@ class PatrolRuntimePanel(QWidget):
         self.resume_patrol_btn.setEnabled(bool(can_resume))
         self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
 
+    def focus_fall_alert(self, *, evidence_available=False):
+        if self.alert_panel.isHidden():
+            return False
+        self._set_marker_focused(True)
+        if evidence_available and self.evidence_image_btn.isEnabled():
+            self.evidence_image_btn.setFocus(Qt.FocusReason.MouseFocusReason)
+        else:
+            self.alert_panel.setFocus(Qt.FocusReason.MouseFocusReason)
+        return True
+
+    def _set_marker_focused(self, focused):
+        self.alert_panel.setProperty("markerFocused", bool(focused))
+        self.alert_panel.style().unpolish(self.alert_panel)
+        self.alert_panel.style().polish(self.alert_panel)
+
     def _render_progress(self, task):
         self.patrol_area_label.setText(self._format_patrol_area(task))
         self.patrol_robot_label.setText(_display(task.get("assigned_robot_id")))
@@ -450,6 +468,7 @@ class PatrolRuntimePanel(QWidget):
         self.evidence_status_label.setHidden(True)
         self.resume_status_label.setHidden(True)
         self.fall_marker_label.setText("낙상 지점 미수신")
+        self._set_marker_focused(False)
         self.evidence_image_btn.setEnabled(False)
         self.evidence_image_btn.setText("증거사진 조회")
         self.resume_patrol_btn.setEnabled(False)

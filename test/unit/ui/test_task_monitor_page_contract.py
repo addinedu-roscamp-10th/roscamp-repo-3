@@ -600,6 +600,42 @@ def test_task_monitor_page_starts_fall_evidence_lookup_from_selected_alert(monke
         page.close()
 
 
+def test_task_monitor_page_focuses_fall_alert_action_from_marker_click():
+    app = _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+
+    try:
+        page.show()
+        app.processEvents()
+        page.apply_stream_event(
+            {
+                "event_type": "ALERT_CREATED",
+                "payload": {
+                    "task_id": "2001",
+                    "alert_id": "17",
+                    "result_seq": 541,
+                    "frame_id": "frame-541",
+                    "evidence_image_id": "fall_evidence_pinky3_541",
+                    "evidence_image_available": True,
+                    "zone_name": "3층 복도",
+                    "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                },
+            }
+        )
+
+        page.patrol_map_overlay.fall_alert_clicked.emit()
+        app.processEvents()
+
+        assert page.fall_alert_panel.property("markerFocused") is True
+        assert app.focusWidget() is page.evidence_image_btn
+    finally:
+        page.shutdown()
+        page.close()
+
+
 def test_task_monitor_page_shows_fall_evidence_dialog_on_ok_response():
     _app()
 

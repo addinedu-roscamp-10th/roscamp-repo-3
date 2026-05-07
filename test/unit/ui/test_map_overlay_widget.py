@@ -85,6 +85,58 @@ def test_patrol_map_overlay_loads_pgm_yaml_and_converts_world_coordinates():
         overlay.close()
 
 
+def test_patrol_map_overlay_emits_fall_alert_click_without_map_click():
+    _app()
+
+    from ui.utils.widgets.map_overlay import PatrolMapOverlay
+
+    overlay = PatrolMapOverlay()
+
+    try:
+        overlay.resize(200, 200)
+        overlay.render(
+            {
+                "task_type": "PATROL",
+                "patrol_map": {
+                    "map_id": "map_0504",
+                    "frame_id": "map",
+                    "yaml_path": str(
+                        PROJECT_ROOT
+                        / "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml"
+                    ),
+                    "pgm_path": str(
+                        PROJECT_ROOT
+                        / "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm"
+                    ),
+                },
+                "fall_alert": {
+                    "alert_pose": {"x": 0.6, "y": 0.1, "yaw": 0.0},
+                },
+            }
+        )
+        emitted = []
+        map_clicks = []
+        overlay.fall_alert_clicked.connect(lambda: emitted.append(True))
+        overlay.map_clicked.connect(map_clicks.append)
+
+        target = overlay.image_target_rect()
+        click_point = overlay.to_view_point(overlay.fall_alert_pixel_point, target)
+        overlay.mousePressEvent(
+            QMouseEvent(
+                QEvent.Type.MouseButtonPress,
+                click_point,
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+        )
+
+        assert emitted == [True]
+        assert map_clicks == []
+    finally:
+        overlay.close()
+
+
 def test_map_overlay_tracks_fms_waypoint_labels_and_yaws():
     _app()
 
