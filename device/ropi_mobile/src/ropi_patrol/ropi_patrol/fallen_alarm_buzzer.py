@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
+import signal
+import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -21,6 +26,7 @@ class FallenAlarm(Node):
 
         self.alarm_active = False
         self.stop_event = threading.Event()
+        self.led_process = None
 
         self.buzzer = Buzzer()
 
@@ -48,8 +54,94 @@ class FallenAlarm(Node):
         True  -> 부저 ON
         False -> 부저 OFF
         """
-        self.alarm_active = bool(msg.data)
+        next_alarm_active = bool(msg.data)
+        if self.alarm_active == next_alarm_active:
+            if self.alarm_active:
+                self.start_led_blink()
+            return
+
+        self.alarm_active = next_alarm_active
         self.get_logger().info(f"Alarm state: {self.alarm_active}")
+
+        if self.alarm_active:
+            self.start_led_blink()
+        else:
+            self.stop_led_blink()
+
+    def start_led_blink(self):
+        """
+        LED 제어는 pinkylib import 문제를 피하기 위해 별도 프로세스로 실행한다.
+        """
+        if self.led_process and self.led_process.poll() is None:
+            return
+
+        led_script = Path(__file__).with_name("led.py")
+        led_command = self.make_led_command(led_script, "--interval", "1.0")
+
+        try:
+            self.led_process = subprocess.Popen(
+                led_command,
+                start_new_session=True,
+            )
+            self.get_logger().info("LED blink process started.")
+
+        except Exception as e:
+            self.led_process = None
+            self.get_logger().error(f"Failed to start LED blink process: {e}")
+
+    def turn_led_off_once(self):
+        led_script = Path(__file__).with_name("led.py")
+        led_command = self.make_led_command(led_script, "--off")
+
+        try:
+            subprocess.run(
+                led_command,
+                timeout=3.0,
+                check=False,
+            )
+
+        except Exception as e:
+            self.get_logger().error(f"Failed to turn LED off: {e}")
+
+    def make_led_command(self, led_script, *args):
+        command = [sys.executable, str(led_script), *args]
+
+        if os.geteuid() == 0:
+            return command
+
+        # pinkylib는 일반 사용자 import 시 sudo 재실행을 수행하므로,
+        # 처음부터 root python으로 led.py를 실행해 중간 shell/sudo 프로세스를 줄인다.
+        return ["sudo", *command]
+
+    def stop_led_blink(self):
+        """
+        LED 깜빡임 프로세스를 종료하면 led.py의 finally에서 LED를 끈다.
+        """
+        if not self.led_process:
+            return
+
+        process = self.led_process
+        self.led_process = None
+
+        if process.poll() is not None:
+            return
+
+        force_stopped = False
+
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=2.0)
+
+        except subprocess.TimeoutExpired:
+            force_stopped = True
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=1.0)
+
+        except Exception as e:
+            self.get_logger().error(f"Failed to stop LED blink process: {e}")
+
+        if force_stopped:
+            self.turn_led_off_once()
 
     def buzzer_loop(self):
         """
@@ -85,11 +177,14 @@ class FallenAlarm(Node):
         except Exception:
             pass
 
+        self.stop_led_blink()
+
     def close(self):
         """
         부저 자원 반환
         """
         self.stop_event.set()
+        self.stop_led_blink()
 
         try:
             self.buzzer.buzzer_stop()
