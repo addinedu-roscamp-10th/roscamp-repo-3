@@ -31,7 +31,6 @@ setup(
         'console_scripts': [
             "fallen_detection_client = ropi_patrol.fallen_detection_client:main",
             "ropi_camera = ropi_patrol.ropi_camera:main",
-            "patrol_path_action_server = ropi_patrol.patrol_path_action_server:main",
             "fallen_alarm_buzzer = ropi_patrol.fallen_alarm_buzzer:main",
         ],
     },

@@ -36,13 +36,3 @@ ropi_camera:
     camera_width: 480
     camera_height: 320
     jpeg_quality: 70
-
-patrol_path_action_server:
-  ros__parameters:
-    robot_id: "pinky3"
-    action_name: "/ropi/control/pinky3/execute_patrol_path"
-    fall_response_service_name: "/ropi/control/pinky3/fall_response_control"
-    alarm_topic: "/fall_alarm"
-    active_task_topic: "/ropi/robots/pinky3/active_task_id"
-    nav_check_interval_sec: 0.2
-    auto_start_patrol: false
