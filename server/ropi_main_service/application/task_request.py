@@ -35,6 +35,8 @@ class TaskRequestService:
         patrol_workflow_starter=None,
         delivery_request_precheck=None,
         async_delivery_request_precheck=None,
+        patrol_request_precheck=None,
+        async_patrol_request_precheck=None,
         command_client=None,
         command_execution_recorder=None,
         fall_response_command_service=None,
@@ -48,6 +50,8 @@ class TaskRequestService:
         self.patrol_workflow_starter = patrol_workflow_starter
         self.delivery_request_precheck = delivery_request_precheck
         self.async_delivery_request_precheck = async_delivery_request_precheck
+        self.patrol_request_precheck = patrol_request_precheck
+        self.async_patrol_request_precheck = async_patrol_request_precheck
         self.command_client = command_client or UnixDomainSocketCommandClient()
         self.command_execution_recorder = command_execution_recorder or CommandExecutionRecorder()
         self.cancel_timeout_sec = float(cancel_timeout_sec)
@@ -93,6 +97,8 @@ class TaskRequestService:
         self.patrol_create_service = PatrolTaskCreateService(
             repository=self.repository,
             patrol_workflow_starter=patrol_workflow_starter,
+            patrol_request_precheck=patrol_request_precheck,
+            async_patrol_request_precheck=async_patrol_request_precheck,
         )
 
     def get_product_names(self):
@@ -529,6 +535,10 @@ class TaskRequestService:
         self.create_service.async_delivery_request_precheck = self.async_delivery_request_precheck
         self.patrol_create_service.repository = self.repository
         self.patrol_create_service.patrol_workflow_starter = self.patrol_workflow_starter
+        self.patrol_create_service.patrol_request_precheck = self.patrol_request_precheck
+        self.patrol_create_service.async_patrol_request_precheck = (
+            self.async_patrol_request_precheck
+        )
 
     def _sync_cancel_service_dependencies(self):
         self.delivery_cancel_service.repository = self.repository

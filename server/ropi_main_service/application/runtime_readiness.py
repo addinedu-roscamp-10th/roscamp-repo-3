@@ -21,13 +21,16 @@ class RosRuntimeReadinessService:
         command_client=None,
         runtime_config=None,
         arm_ids=None,
+        include_navigation=True,
         include_patrol=False,
         include_guide=False,
         readiness_timeout_sec=DEFAULT_READINESS_TIMEOUT_SEC,
     ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
         self.runtime_config = runtime_config or get_delivery_runtime_config()
-        self.arm_ids = list(self.runtime_config.arm_ids if arm_ids is None else arm_ids)
+        default_arm_ids = getattr(self.runtime_config, "arm_ids", ())
+        self.arm_ids = list(default_arm_ids if arm_ids is None else arm_ids)
+        self.include_navigation = bool(include_navigation)
         self.include_patrol = bool(include_patrol)
         self.include_guide = bool(include_guide)
         self.readiness_timeout_sec = float(readiness_timeout_sec)
@@ -62,8 +65,11 @@ class RosRuntimeReadinessService:
             "pinky_id": self.runtime_config.pinky_id,
             "arm_ids": list(self.arm_ids),
         }
+        if not self.include_navigation:
+            payload["include_navigation"] = False
         if self.include_patrol:
             payload["include_patrol"] = True
+            payload["patrol_pinky_id"] = self.runtime_config.pinky_id
         if self.include_guide:
             payload["include_guide"] = True
         return payload

@@ -1,6 +1,7 @@
 import asyncio
 
 from server.ropi_main_service.application.delivery_config import DeliveryRuntimeConfig
+from server.ropi_main_service.application.patrol_config import PatrolRuntimeConfig
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 
 
@@ -83,6 +84,35 @@ def test_runtime_readiness_can_preflight_guide_runtime_without_arm_checks():
                 "pinky_id": "pinky1",
                 "arm_ids": [],
                 "include_guide": True,
+            },
+            "timeout": 0.8,
+        }
+    ]
+
+
+def test_runtime_readiness_can_preflight_patrol_runtime_without_navigation_or_arms():
+    command_client = FakeCommandClient()
+    service = RosRuntimeReadinessService(
+        command_client=command_client,
+        runtime_config=PatrolRuntimeConfig(pinky_id="pinky3"),
+        arm_ids=[],
+        include_navigation=False,
+        include_patrol=True,
+        readiness_timeout_sec=0.8,
+    )
+
+    response = service.get_status()
+
+    assert response == {"ready": True, "checks": []}
+    assert command_client.calls == [
+        {
+            "command": "get_runtime_status",
+            "payload": {
+                "pinky_id": "pinky3",
+                "arm_ids": [],
+                "include_navigation": False,
+                "include_patrol": True,
+                "patrol_pinky_id": "pinky3",
             },
             "timeout": 0.8,
         }

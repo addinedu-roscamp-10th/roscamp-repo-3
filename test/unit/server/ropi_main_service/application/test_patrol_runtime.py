@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import patch
 
 from server.ropi_main_service.application.delivery_workflow_task_manager import (
     DeliveryWorkflowTaskManager,
@@ -60,11 +61,32 @@ class FakeOrchestrator:
 
 class FakeTaskRequestRepository:
     def __init__(self):
+        self.create_calls = []
         self.workflow_result_calls = []
+
+    async def async_create_patrol_task(self, **kwargs):
+        self.create_calls.append(kwargs)
+        return {
+            "result_code": "ACCEPTED",
+            "task_id": 2001,
+            "task_status": "WAITING_DISPATCH",
+            "assigned_robot_id": "pinky3",
+            "patrol_area_id": kwargs["patrol_area_id"],
+        }
 
     async def async_record_patrol_task_workflow_result(self, **kwargs):
         self.workflow_result_calls.append(kwargs)
         return {"result_code": "SUCCEEDED", "task_status": "COMPLETED"}
+
+
+def build_patrol_request_payload():
+    return {
+        "request_id": "req_patrol_001",
+        "caregiver_id": "1",
+        "patrol_area_id": "patrol_ward_night_01",
+        "priority": "NORMAL",
+        "idempotency_key": "idem_patrol_001",
+    }
 
 
 def test_build_patrol_request_service_starts_background_patrol_workflow():
@@ -117,3 +139,54 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
             },
         }
     ]
+
+
+def test_build_patrol_request_service_rejects_before_task_create_when_runtime_not_ready():
+    class FakeReadinessService:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def get_status(self):
+            raise AssertionError("async patrol precheck should not use sync readiness")
+
+        async def async_get_status(self):
+            return {
+                "ready": False,
+                "checks": [
+                    {
+                        "name": "pinky3.execute_patrol_path",
+                        "ready": False,
+                        "action_name": "/ropi/control/pinky3/execute_patrol_path",
+                    }
+                ],
+            }
+
+    workflow_task_manager = DeliveryWorkflowTaskManager()
+    task_request_repository = FakeTaskRequestRepository()
+
+    async def scenario():
+        with patch(
+            "server.ropi_main_service.application.patrol_runtime.RosRuntimeReadinessService",
+            FakeReadinessService,
+            create=True,
+        ):
+            service = patrol_runtime.build_patrol_request_service(
+                loop=asyncio.get_running_loop(),
+                workflow_task_manager=workflow_task_manager,
+                patrol_execution_repository=FakeRepository(),
+                patrol_orchestrator=FakeOrchestrator(),
+                task_request_repository=task_request_repository,
+            )
+            response = await service.async_create_patrol_task(
+                **build_patrol_request_payload()
+            )
+            await workflow_task_manager.join(timeout_sec=1.0)
+            return response
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "PATROL_RUNTIME_NOT_READY"
+    assert response["assigned_robot_id"] == "pinky3"
+    assert task_request_repository.create_calls == []
+    assert task_request_repository.workflow_result_calls == []
