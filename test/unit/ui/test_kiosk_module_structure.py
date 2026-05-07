@@ -8,6 +8,7 @@ KIOSK_REGISTRATION_PAGE = REPO_ROOT / "ui" / "kiosk_ui" / "registration_page.py"
 KIOSK_GUIDE_CONFIRMATION_PAGE = (
     REPO_ROOT / "ui" / "kiosk_ui" / "guide_confirmation_page.py"
 )
+KIOSK_GUIDE_PROGRESS_PAGE = REPO_ROOT / "ui" / "kiosk_ui" / "guide_progress_page.py"
 KIOSK_SHARED_WIDGETS = REPO_ROOT / "ui" / "kiosk_ui" / "shared_widgets.py"
 
 
@@ -74,3 +75,20 @@ def test_kiosk_guide_confirmation_page_is_split_from_main_window():
     assert "class KioskTopIconButton" not in main_source
     assert "class KioskGuideNoticeGlyph" not in main_source
     assert "class KioskConfirmationActionButton" not in main_source
+
+
+def test_kiosk_guide_progress_page_is_split_from_main_window():
+    from ui.kiosk_ui.guide_progress_page import (
+        KioskProgressStage,
+        KioskRobotGuidanceProgressPage,
+    )
+    from ui.kiosk_ui.main_window import KioskHomeWindow
+
+    main_source = KIOSK_MAIN_WINDOW.read_text(encoding="utf-8")
+
+    assert KioskHomeWindow.__name__ == "KioskHomeWindow"
+    assert KioskRobotGuidanceProgressPage.__module__.endswith("guide_progress_page")
+    assert KioskProgressStage.__module__.endswith("guide_progress_page")
+    assert KIOSK_GUIDE_PROGRESS_PAGE.exists()
+    assert "class KioskRobotGuidanceProgressPage" not in main_source
+    assert "class KioskProgressStage" not in main_source
