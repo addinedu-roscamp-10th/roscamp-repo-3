@@ -1772,74 +1772,20 @@ class KioskRobotGuidanceProgressPage(QWidget):
         return True
 
     def refresh_runtime_status(self):
-        task_id = str((self.current_session or {}).get("task_id", "")).strip()
         pinky_id = str((self.current_session or {}).get("pinky_id", "pinky1")).strip() or "pinky1"
-        get_tracking_status = getattr(self.service, "get_tracking_status", None)
-        if get_tracking_status is not None and task_id:
-            try:
-                ok, _message, status = get_tracking_status(
-                    task_id=task_id,
-                    pinky_id=pinky_id,
-                )
-                if self._apply_tracking_status_payload(ok, status or {}):
-                    return
-            except Exception:
-                pass
-
         try:
-            ok, message, status = self.service.get_guide_runtime_status()
+            ok, message, status = self.service.get_guide_runtime_status(pinky_id=pinky_id)
         except Exception:
             return
 
         guide_runtime = (status or {}).get("guide_runtime") or {}
         last_update = guide_runtime.get("last_update") or {}
-        self._apply_tracking_status_payload(ok, last_update)
+        self._apply_guide_runtime_payload(ok, last_update)
 
-    def _apply_tracking_status_payload(self, ok, payload):
+    def _apply_guide_runtime_payload(self, ok, payload):
         if (payload or {}).get("guide_phase"):
             return self._apply_guide_phase_payload(ok, payload)
-
-        tracking_status = str((payload or {}).get("tracking_status") or "").strip()
-        if not ok and tracking_status in {"", "NOT_TRACKING"}:
-            return False
-
-        target_track_id = str(
-            (payload or {}).get("active_track_id")
-            or (payload or {}).get("target_track_id")
-            or ""
-        ).strip()
-        tracking_seq = (payload or {}).get("tracking_result_seq")
-        warning_message = self._latest_result_warning_message()
-
-        if ok and tracking_status:
-            if tracking_status == "TRACKING":
-                if self._current_session_phase() == "GUIDANCE_RUNNING":
-                    self.robot_state_chip.setText("안내 중")
-                    if not warning_message:
-                        self.distance_label.setText("로봇 안내가 진행 중입니다.")
-                else:
-                    self.robot_state_chip.setText("대상 확인 완료")
-                    if not warning_message:
-                        self.distance_label.setText(
-                            "안내 대상을 확인했습니다. 주행을 시작할 수 있습니다."
-                        )
-                if target_track_id:
-                    self.detected_target_track_id = target_track_id
-                    self.start_driving_button.setEnabled(
-                        self._current_session_phase() != "GUIDANCE_RUNNING"
-                    )
-            else:
-                self.robot_state_chip.setText(tracking_status)
-                if not warning_message:
-                    self.distance_label.setText(f"현재 상태: {tracking_status}")
-
-        if tracking_seq is not None and self.selected_patient:
-            self.request_id_label.setText(
-                f"안내 대상: {self.selected_patient.get('name', '-')} / 추적 순번: {tracking_seq}"
-            )
-        if warning_message:
-            self.distance_label.setText(warning_message)
-        return bool(tracking_status)
+        return False
 
     def _apply_guide_phase_payload(self, ok, payload):
         guide_phase = str((payload or {}).get("guide_phase") or "").strip().upper()
@@ -2002,6 +1948,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
         if phase and phase not in {
             "WAIT_GUIDE_START_CONFIRM",
             "WAIT_TARGET_TRACKING",
+            "READY_TO_START_GUIDANCE",
             "WAIT_REIDENTIFY",
         }:
             return ""

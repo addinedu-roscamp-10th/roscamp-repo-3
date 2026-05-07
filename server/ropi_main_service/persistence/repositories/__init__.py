@@ -6,7 +6,6 @@ from .inventory_repository import InventoryRepository
 from .guide_task_repository import GuideTaskRepository
 from .guide_task_lifecycle_repository import GuideTaskLifecycleRepository
 from .guide_task_navigation_repository import GuideTaskNavigationRepository
-from .guide_tracking_repository import GuideTrackingRepository
 from .kiosk_visitor_repository import KioskVisitorRepository
 from .patient_repository import PatientRepository
 from .patrol_task_create_repository import (
@@ -38,7 +37,6 @@ __all__ = [
     "GuideTaskRepository",
     "GuideTaskLifecycleRepository",
     "GuideTaskNavigationRepository",
-    "GuideTrackingRepository",
     "InventoryRepository",
     "KioskVisitorRepository",
     "PatientRepository",

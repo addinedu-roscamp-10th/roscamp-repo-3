@@ -167,29 +167,30 @@ class VisitGuidePage(QWidget):
             self.status_label.setText(f"상태: {message}")
 
     def refresh_guide_runtime_status(self):
+        pinky_id = str((self.current_session or {}).get("pinky_id") or "").strip() or None
         try:
-            ok, message, status = self.service.get_guide_runtime_status()
+            ok, message, status = self.service.get_guide_runtime_status(pinky_id=pinky_id)
         except Exception as exc:
             self.status_label.setText(f"상태: 안내 상태 조회 실패 - {exc}")
             return
 
         guide_runtime = (status or {}).get("guide_runtime") or {}
         last_update = guide_runtime.get("last_update") or {}
-        tracking_status = str(last_update.get("tracking_status") or "-").strip() or "-"
+        guide_phase = str(last_update.get("guide_phase") or "-").strip() or "-"
         task_id = str(last_update.get("task_id") or "-").strip() or "-"
-        seq = last_update.get("tracking_result_seq")
+        seq = last_update.get("seq")
         seq_text = "-" if seq is None else str(seq)
 
         if ok:
             self.status_label.setText(
                 f"상태: {message} "
-                f"(tracking_status={tracking_status}, task_id={task_id}, seq={seq_text})"
+                f"(guide_phase={guide_phase}, task_id={task_id}, seq={seq_text})"
             )
             return
 
         self.status_label.setText(
             f"상태: {message} "
-            f"(tracking_status={tracking_status}, task_id={task_id}, seq={seq_text})"
+            f"(guide_phase={guide_phase}, task_id={task_id}, seq={seq_text})"
         )
 
     def reset_search(self):

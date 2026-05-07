@@ -87,7 +87,6 @@ def _serialize(value):
 def _ai_server_endpoint():
     host = (
         os.getenv("AI_FALL_EVIDENCE_HOST")
-        or os.getenv("AI_GUIDE_TRACKING_STREAM_HOST")
         or os.getenv("AI_FALL_STREAM_HOST")
         or os.getenv("AI_SERVER_HOST")
     )
@@ -97,7 +96,6 @@ def _ai_server_endpoint():
 
     port = (
         os.getenv("AI_FALL_EVIDENCE_PORT")
-        or os.getenv("AI_GUIDE_TRACKING_STREAM_PORT")
         or os.getenv("AI_FALL_STREAM_PORT")
         or "6000"
     )

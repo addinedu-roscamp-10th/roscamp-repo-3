@@ -20,12 +20,6 @@ _EXPORTS = {
         "guide_phase_snapshot_runtime",
         "GuidePhaseSnapshotRuntimePoller",
     ),
-    "GuideTrackingResultProcessor": ("guide_tracking_result", "GuideTrackingResultProcessor"),
-    "GuideTrackingSnapshotStore": ("guide_tracking_snapshot", "GuideTrackingSnapshotStore"),
-    "GuideTrackingUpdatePublisherService": (
-        "guide_tracking_update",
-        "GuideTrackingUpdatePublisherService",
-    ),
     "GoalPoseNavigationService": ("goal_pose_navigation", "GoalPoseNavigationService"),
     "InventoryService": ("inventory", "InventoryService"),
     "KioskVisitorService": ("kiosk_visitor", "KioskVisitorService"),

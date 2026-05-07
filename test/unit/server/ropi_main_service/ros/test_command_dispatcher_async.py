@@ -140,23 +140,6 @@ class FakeAsyncGuideCommandClient:
         }
 
 
-class FakeGuideTrackingUpdatePublisher:
-    def __init__(self):
-        self.calls = []
-
-    def publish(self, *, pinky_id, update):
-        raise AssertionError("async dispatcher should prefer async_publish")
-
-    async def async_publish(self, *, pinky_id, update):
-        self.calls.append(
-            {
-                "pinky_id": pinky_id,
-                "update": update,
-            }
-        )
-        return {"accepted": True, "message": "published"}
-
-
 class FakeGuidePhaseSnapshotView:
     pinky_id = "pinky1"
     task_id = "3001"
@@ -261,65 +244,7 @@ def test_async_dispatch_guide_command_uses_int_track_id_and_destination_pose():
     assert "finish_reason" not in request
 
 
-def test_async_dispatch_publishes_guide_tracking_update():
-    publisher = FakeGuideTrackingUpdatePublisher()
-    dispatcher = RosServiceCommandDispatcher(
-        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
-        guide_tracking_update_publisher=publisher,
-    )
-
-    async def scenario():
-        try:
-            return await dispatcher.async_dispatch(
-                "publish_guide_tracking_update",
-                {
-                    "pinky_id": "pinky1",
-                    "task_id": "3001",
-                    "target_track_id": "track_17",
-                    "tracking_status": "TRACKING",
-                    "tracking_result_seq": 881,
-                    "frame_ts_sec": 1776602110,
-                    "frame_ts_nanosec": 0,
-                    "bbox_valid": True,
-                    "bbox_xyxy": [120, 80, 300, 420],
-                    "image_width_px": 640,
-                    "image_height_px": 480,
-                },
-            )
-        finally:
-            dispatcher.close()
-
-    response = asyncio.run(scenario())
-
-    assert response == {
-        "result_code": "ACCEPTED",
-        "result_message": "guide tracking update publish accepted.",
-        "pinky_id": "pinky1",
-        "task_id": "3001",
-        "target_track_id": "track_17",
-        "tracking_status": "TRACKING",
-        "tracking_result_seq": 881,
-    }
-    assert publisher.calls == [
-        {
-            "pinky_id": "pinky1",
-            "update": {
-                "task_id": "3001",
-                "target_track_id": "track_17",
-                "tracking_status": "TRACKING",
-                "tracking_result_seq": 881,
-                "frame_ts_sec": 1776602110,
-                "frame_ts_nanosec": 0,
-                "bbox_valid": True,
-                "bbox_xyxy": [120, 80, 300, 420],
-                "image_width_px": 640,
-                "image_height_px": 480,
-            },
-        }
-    ]
-
-
-def test_async_dispatch_guide_tracking_update_requires_publisher():
+def test_async_dispatch_rejects_retired_guide_tracking_update_command():
     dispatcher = RosServiceCommandDispatcher(
         goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
     )
@@ -328,31 +253,16 @@ def test_async_dispatch_guide_tracking_update_requires_publisher():
         try:
             with pytest.raises(
                 RosServiceCommandDispatchError,
-                match="guide tracking update publisher",
+                match="Unsupported ROS service command",
             ) as exc_info:
-                await dispatcher.async_dispatch(
-                    "publish_guide_tracking_update",
-                    {
-                        "pinky_id": "pinky1",
-                        "task_id": "3001",
-                        "target_track_id": "track_17",
-                        "tracking_status": "TRACKING",
-                        "tracking_result_seq": 881,
-                        "frame_ts_sec": 1776602110,
-                        "frame_ts_nanosec": 0,
-                        "bbox_valid": True,
-                        "bbox_xyxy": [120, 80, 300, 420],
-                        "image_width_px": 640,
-                        "image_height_px": 480,
-                    },
-                )
+                await dispatcher.async_dispatch("publish_guide_tracking_update", {})
             return exc_info.value.error_code
         finally:
             dispatcher.close()
 
     error_code = asyncio.run(scenario())
 
-    assert error_code == "GUIDE_TRACKING_UPDATE_PUBLISHER_UNAVAILABLE"
+    assert error_code == "UNKNOWN_COMMAND"
 
 
 def test_async_dispatch_prefers_async_manipulation_action_client():

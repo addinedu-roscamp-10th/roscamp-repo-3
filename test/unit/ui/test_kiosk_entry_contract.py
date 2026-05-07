@@ -606,7 +606,7 @@ def test_kiosk_progress_page_prefers_db_backed_guide_session_status():
     from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
 
     class OfflineRuntimeService:
-        def get_guide_runtime_status(self):
+        def get_guide_runtime_status(self, **_kwargs):
             raise RuntimeError("runtime unavailable")
 
     page = KioskRobotGuidanceProgressPage()
@@ -651,7 +651,7 @@ def test_kiosk_progress_page_starts_guidance_driving_with_detected_track():
         def __init__(self):
             self.started = []
 
-        def get_guide_runtime_status(self):
+        def get_guide_runtime_status(self, **_kwargs):
             return True, "tracking", {
                 "guide_runtime": {
                     "last_update": {
@@ -727,15 +727,18 @@ def test_kiosk_progress_page_keeps_waiting_state_when_guidance_driving_start_fai
                 "assigned_robot_id": "pinky1",
             }
 
-        def get_tracking_status(self, **_kwargs):
+        def get_guide_runtime_status(self, **_kwargs):
             return True, "안내 대상을 확인했습니다.", {
-                "guide_phase": "READY_TO_START_GUIDANCE",
-                "target_track_id": 17,
-                "seq": 881,
+                "guide_runtime": {
+                    "connected": True,
+                    "stale": False,
+                    "last_update": {
+                        "guide_phase": "READY_TO_START_GUIDANCE",
+                        "target_track_id": 17,
+                        "seq": 881,
+                    },
+                }
             }
-
-        def get_guide_runtime_status(self):
-            return False, "대기 중", {"guide_runtime": {"connected": False}}
 
         def start_guide_driving(self, **_kwargs):
             return False, "navigation unavailable", {
@@ -796,16 +799,20 @@ def test_kiosk_progress_page_preserves_pre_driving_rejection_warning_after_track
                 "result_message": "안내 ROS 런타임이 준비되지 않았습니다.",
             }
 
-        def get_tracking_status(self, **_kwargs):
+        def get_guide_runtime_status(self, **_kwargs):
             return True, "안내 대상을 확인했습니다.", {
-                "tracking_status": "TRACKING",
-                "active_track_id": "track_17",
-                "target_track_id": "track_17",
-                "tracking_result_seq": 881,
+                "guide_runtime": {
+                    "connected": True,
+                    "stale": False,
+                    "last_update": {
+                        "task_id": "3001",
+                        "pinky_id": "pinky1",
+                        "guide_phase": "READY_TO_START_GUIDANCE",
+                        "target_track_id": 17,
+                        "seq": 881,
+                    },
+                }
             }
-
-        def get_guide_runtime_status(self):
-            raise AssertionError("control tracking status should be used first")
 
     page = KioskRobotGuidanceProgressPage()
     page.service = GuideRuntimeNotReadyService()
@@ -828,7 +835,7 @@ def test_kiosk_progress_page_preserves_pre_driving_rejection_warning_after_track
             },
         )
 
-        assert page.detected_target_track_id == "track_17"
+        assert page.detected_target_track_id == 17
         assert page.start_driving_button.isEnabled() is True
         assert page.robot_state_chip.text() == "대상 확인 완료"
         assert page.distance_label.text() == "안내 ROS 런타임이 준비되지 않았습니다."
@@ -836,7 +843,7 @@ def test_kiosk_progress_page_preserves_pre_driving_rejection_warning_after_track
         page.close()
 
 
-def test_kiosk_progress_page_uses_control_tracking_status_before_ros_runtime():
+def test_kiosk_progress_page_uses_guide_runtime_phase_snapshot():
     _app()
 
     from ui.kiosk_ui.main_window import KioskRobotGuidanceProgressPage
@@ -858,18 +865,21 @@ def test_kiosk_progress_page_uses_control_tracking_status_before_ros_runtime():
                 "assigned_robot_id": "pinky1",
             }
 
-        def get_tracking_status(self, **kwargs):
-            self.status_calls.append(kwargs)
-            return True, "안내 대상을 확인했습니다.", {
-                "tracking_status": "TRACKING",
-                "active_track_id": "track_17",
-                "target_track_id": "track_17",
-                "tracking_result_seq": 881,
-            }
-
-        def get_guide_runtime_status(self):
+        def get_guide_runtime_status(self, **_kwargs):
             self.runtime_called = True
-            raise RuntimeError("runtime should not be required")
+            return True, "안내 대상을 확인했습니다.", {
+                "guide_runtime": {
+                    "connected": True,
+                    "stale": False,
+                    "last_update": {
+                        "task_id": "3001",
+                        "pinky_id": "pinky1",
+                        "guide_phase": "READY_TO_START_GUIDANCE",
+                        "target_track_id": 17,
+                        "seq": 881,
+                    },
+                }
+            }
 
     service = ControlTrackingService()
     page = KioskRobotGuidanceProgressPage()
@@ -894,9 +904,9 @@ def test_kiosk_progress_page_uses_control_tracking_status_before_ros_runtime():
         )
 
         assert service.task_status_calls == ["3001"]
-        assert service.status_calls == [{"task_id": "3001", "pinky_id": "pinky1"}]
-        assert service.runtime_called is False
-        assert page.detected_target_track_id == "track_17"
+        assert service.status_calls == []
+        assert service.runtime_called is True
+        assert page.detected_target_track_id == 17
         assert page.start_driving_button.isEnabled() is True
         assert page.robot_state_chip.text() == "대상 확인 완료"
     finally:
@@ -923,10 +933,7 @@ def test_kiosk_progress_page_applies_task_status_query_to_guide_progress():
                 "assigned_robot_id": "pinky1",
             }
 
-        def get_tracking_status(self, **_kwargs):
-            return False, "대기 중", {"tracking_status": "NOT_TRACKING"}
-
-        def get_guide_runtime_status(self):
+        def get_guide_runtime_status(self, **_kwargs):
             return False, "대기 중", {"guide_runtime": {"connected": False}}
 
     service = GuideProgressService()
