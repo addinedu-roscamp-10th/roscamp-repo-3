@@ -135,6 +135,14 @@ class DeliveryRequestRemoteService:
     def _rpc(self, method: str, **kwargs):
         return _rpc(self._SERVICE_NAME, method, **kwargs)
 
+    @staticmethod
+    def _without_none(kwargs):
+        return {
+            key: value
+            for key, value in kwargs.items()
+            if not (key == "map_id" and value is None)
+        }
+
     def get_delivery_items(self):
         return self._rpc("get_delivery_items")
 
@@ -195,6 +203,14 @@ class CoordinateConfigRemoteService:
     def _rpc(self, method: str, **kwargs):
         return _rpc(self._SERVICE_NAME, method, **kwargs)
 
+    @staticmethod
+    def _without_none(kwargs):
+        return {
+            key: value
+            for key, value in kwargs.items()
+            if not (key == "map_id" and value is None)
+        }
+
     def get_active_map_bundle(
         self,
         *,
@@ -208,6 +224,25 @@ class CoordinateConfigRemoteService:
             include_zone_boundaries=include_zone_boundaries,
             include_patrol_paths=include_patrol_paths,
         )
+
+    def get_map_bundle(
+        self,
+        *,
+        map_id=None,
+        include_disabled=True,
+        include_zone_boundaries=True,
+        include_patrol_paths=True,
+    ):
+        return self._rpc(
+            "get_map_bundle",
+            map_id=map_id,
+            include_disabled=include_disabled,
+            include_zone_boundaries=include_zone_boundaries,
+            include_patrol_paths=include_patrol_paths,
+        )
+
+    def list_map_profiles(self):
+        return self._rpc("list_map_profiles")
 
     def create_operation_zone(
         self,
@@ -235,14 +270,20 @@ class CoordinateConfigRemoteService:
         zone_name,
         zone_type,
         is_enabled,
+        map_id=None,
     ):
         return self._rpc(
             "update_operation_zone",
-            zone_id=zone_id,
-            expected_revision=expected_revision,
-            zone_name=zone_name,
-            zone_type=zone_type,
-            is_enabled=is_enabled,
+            **self._without_none(
+                {
+                    "zone_id": zone_id,
+                    "expected_revision": expected_revision,
+                    "zone_name": zone_name,
+                    "zone_type": zone_type,
+                    "is_enabled": is_enabled,
+                    "map_id": map_id,
+                }
+            ),
         )
 
     def update_operation_zone_boundary(
@@ -251,12 +292,18 @@ class CoordinateConfigRemoteService:
         zone_id,
         expected_revision,
         boundary_json,
+        map_id=None,
     ):
         return self._rpc(
             "update_operation_zone_boundary",
-            zone_id=zone_id,
-            expected_revision=expected_revision,
-            boundary_json=boundary_json,
+            **self._without_none(
+                {
+                    "zone_id": zone_id,
+                    "expected_revision": expected_revision,
+                    "boundary_json": boundary_json,
+                    "map_id": map_id,
+                }
+            ),
         )
 
     def update_goal_pose(
@@ -271,18 +318,24 @@ class CoordinateConfigRemoteService:
         pose_yaw,
         frame_id,
         is_enabled,
+        map_id=None,
     ):
         return self._rpc(
             "update_goal_pose",
-            goal_pose_id=goal_pose_id,
-            expected_updated_at=expected_updated_at,
-            zone_id=zone_id,
-            purpose=purpose,
-            pose_x=pose_x,
-            pose_y=pose_y,
-            pose_yaw=pose_yaw,
-            frame_id=frame_id,
-            is_enabled=is_enabled,
+            **self._without_none(
+                {
+                    "goal_pose_id": goal_pose_id,
+                    "expected_updated_at": expected_updated_at,
+                    "zone_id": zone_id,
+                    "purpose": purpose,
+                    "pose_x": pose_x,
+                    "pose_y": pose_y,
+                    "pose_yaw": pose_yaw,
+                    "frame_id": frame_id,
+                    "is_enabled": is_enabled,
+                    "map_id": map_id,
+                }
+            ),
         )
 
     def update_patrol_area_path(
@@ -291,12 +344,18 @@ class CoordinateConfigRemoteService:
         patrol_area_id,
         expected_revision,
         path_json,
+        map_id=None,
     ):
         return self._rpc(
             "update_patrol_area_path",
-            patrol_area_id=patrol_area_id,
-            expected_revision=expected_revision,
-            path_json=path_json,
+            **self._without_none(
+                {
+                    "patrol_area_id": patrol_area_id,
+                    "expected_revision": expected_revision,
+                    "path_json": path_json,
+                    "map_id": map_id,
+                }
+            ),
         )
 
     def get_map_asset(
@@ -320,6 +379,14 @@ class FmsConfigRemoteService:
     def _rpc(self, method: str, **kwargs):
         return _rpc(self._SERVICE_NAME, method, **kwargs)
 
+    @staticmethod
+    def _without_none(kwargs):
+        return {
+            key: value
+            for key, value in kwargs.items()
+            if not (key == "map_id" and value is None)
+        }
+
     def get_active_graph_bundle(
         self,
         *,
@@ -330,6 +397,24 @@ class FmsConfigRemoteService:
     ):
         return self._rpc(
             "get_active_graph_bundle",
+            include_disabled=include_disabled,
+            include_edges=include_edges,
+            include_routes=include_routes,
+            include_reservations=include_reservations,
+        )
+
+    def get_graph_bundle(
+        self,
+        *,
+        map_id=None,
+        include_disabled=True,
+        include_edges=True,
+        include_routes=True,
+        include_reservations=False,
+    ):
+        return self._rpc(
+            "get_graph_bundle",
+            map_id=map_id,
             include_disabled=include_disabled,
             include_edges=include_edges,
             include_routes=include_routes,
@@ -349,19 +434,25 @@ class FmsConfigRemoteService:
         frame_id,
         snap_group=None,
         is_enabled,
+        map_id=None,
     ):
         return self._rpc(
             "upsert_waypoint",
-            waypoint_id=waypoint_id,
-            expected_updated_at=expected_updated_at,
-            display_name=display_name,
-            waypoint_type=waypoint_type,
-            pose_x=pose_x,
-            pose_y=pose_y,
-            pose_yaw=pose_yaw,
-            frame_id=frame_id,
-            snap_group=snap_group,
-            is_enabled=is_enabled,
+            **self._without_none(
+                {
+                    "waypoint_id": waypoint_id,
+                    "expected_updated_at": expected_updated_at,
+                    "display_name": display_name,
+                    "waypoint_type": waypoint_type,
+                    "pose_x": pose_x,
+                    "pose_y": pose_y,
+                    "pose_yaw": pose_yaw,
+                    "frame_id": frame_id,
+                    "snap_group": snap_group,
+                    "is_enabled": is_enabled,
+                    "map_id": map_id,
+                }
+            ),
         )
 
     def upsert_edge(
@@ -375,17 +466,23 @@ class FmsConfigRemoteService:
         traversal_cost=None,
         priority=None,
         is_enabled,
+        map_id=None,
     ):
         return self._rpc(
             "upsert_edge",
-            edge_id=edge_id,
-            expected_updated_at=expected_updated_at,
-            from_waypoint_id=from_waypoint_id,
-            to_waypoint_id=to_waypoint_id,
-            is_bidirectional=is_bidirectional,
-            traversal_cost=traversal_cost,
-            priority=priority,
-            is_enabled=is_enabled,
+            **self._without_none(
+                {
+                    "edge_id": edge_id,
+                    "expected_updated_at": expected_updated_at,
+                    "from_waypoint_id": from_waypoint_id,
+                    "to_waypoint_id": to_waypoint_id,
+                    "is_bidirectional": is_bidirectional,
+                    "traversal_cost": traversal_cost,
+                    "priority": priority,
+                    "is_enabled": is_enabled,
+                    "map_id": map_id,
+                }
+            ),
         )
 
     def upsert_route(
@@ -397,15 +494,21 @@ class FmsConfigRemoteService:
         route_scope,
         waypoint_sequence,
         is_enabled,
+        map_id=None,
     ):
         return self._rpc(
             "upsert_route",
-            route_id=route_id,
-            expected_revision=expected_revision,
-            route_name=route_name,
-            route_scope=route_scope,
-            waypoint_sequence=waypoint_sequence,
-            is_enabled=is_enabled,
+            **self._without_none(
+                {
+                    "route_id": route_id,
+                    "expected_revision": expected_revision,
+                    "route_name": route_name,
+                    "route_scope": route_scope,
+                    "waypoint_sequence": waypoint_sequence,
+                    "is_enabled": is_enabled,
+                    "map_id": map_id,
+                }
+            ),
         )
 
 

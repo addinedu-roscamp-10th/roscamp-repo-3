@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QApplication,
+    QComboBox,
     QLabel,
     QPushButton,
     QTabWidget,
@@ -216,6 +217,9 @@ class CoordinateZoneSettingsPage(QWidget):
     def __init__(self):
         super().__init__()
         self.active_map_labels = {}
+        self.map_profile_rows = []
+        self.selected_map_id = None
+        self._syncing_map_selector = False
         self.tables = {}
         self.table_action_buttons = {}
         self.load_thread = None
@@ -513,7 +517,12 @@ class CoordinateZoneSettingsPage(QWidget):
 
         title = QLabel("Active Map")
         title.setObjectName("sectionTitle")
-        layout.addWidget(title, 0, 0, 1, 2)
+        layout.addWidget(title, 0, 0)
+
+        self.map_selector_combo = QComboBox()
+        self.map_selector_combo.setObjectName("coordinateMapSelectorCombo")
+        self.map_selector_combo.currentIndexChanged.connect(self._handle_map_selection_changed)
+        layout.addWidget(self.map_selector_combo, 0, 1, 1, 3)
 
         for index, (key, label_text) in enumerate(ACTIVE_MAP_FIELDS):
             label = QLabel(label_text)
@@ -768,6 +777,42 @@ class CoordinateZoneSettingsPage(QWidget):
         for key, label in self.active_map_labels.items():
             value = map_profile.get(key)
             label.setText("-" if value in (None, "") else str(value))
+        self.selected_map_id = str(map_profile.get("map_id") or "").strip() or None
+
+    def apply_map_profiles(self, map_profiles, selected_map_id=None):
+        rows = [row for row in map_profiles or [] if isinstance(row, dict)]
+        self.map_profile_rows = rows
+        selected_map_id = str(selected_map_id or self.selected_map_id or "").strip()
+        self._syncing_map_selector = True
+        try:
+            self.map_selector_combo.clear()
+            for row in rows:
+                map_id = str(row.get("map_id") or "").strip()
+                if not map_id:
+                    continue
+                map_name = str(row.get("map_name") or map_id).strip()
+                active_mark = " *" if row.get("is_active") else ""
+                self.map_selector_combo.addItem(f"{map_name} ({map_id}){active_mark}", map_id)
+            self._set_combo_data(self.map_selector_combo, selected_map_id or None)
+        finally:
+            self._syncing_map_selector = False
+
+    def _handle_map_selection_changed(self, _index):
+        if self._syncing_map_selector:
+            return
+        next_map_id = self.map_selector_combo.currentData()
+        next_map_id = str(next_map_id or "").strip() or None
+        if not next_map_id or next_map_id == self.selected_map_id:
+            return
+        if self._has_pending_draft_changes() or self._has_local_form_dirty_state():
+            self.validation_message_label.setText(
+                "저장되지 않은 변경이 있어 맵을 바꿀 수 없습니다."
+            )
+            self.apply_map_profiles(self.map_profile_rows, self.selected_map_id)
+            return
+        self.selected_map_id = next_map_id
+        self.map_canvas.clear_map("좌표 설정 맵 미수신")
+        self.load_coordinate_bundle()
 
     def load_coordinate_bundle(self):
         if self.load_thread is not None:
@@ -780,7 +825,7 @@ class CoordinateZoneSettingsPage(QWidget):
 
         self.load_thread, self.load_worker = start_worker_thread(
             self,
-            worker=CoordinateConfigLoadWorker(),
+            worker=CoordinateConfigLoadWorker(map_id=self.selected_map_id),
             finished_handler=self._handle_load_finished,
             clear_handler=self._clear_load_thread,
         )
@@ -835,6 +880,10 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_route_rows = normalized.fms_routes
         self._clear_dirty_row_sets()
         self.apply_active_map(normalized.map_profile)
+        self.apply_map_profiles(
+            normalized.source.get("map_profiles") or [normalized.map_profile],
+            normalized.map_profile.get("map_id"),
+        )
         self._populate_goal_pose_form_options()
         self._populate_fms_edge_form_options()
         self._populate_fms_route_waypoint_options()
@@ -2066,6 +2115,7 @@ class CoordinateZoneSettingsPage(QWidget):
     def _build_coordinate_batch_save_operations(self):
         self._capture_current_form_to_draft()
         operations = []
+        map_id = self._current_map_id() if self.current_bundle.get("map_profiles") else None
         for zone_id in sorted(self.operation_zone_dirty_row_ids):
             row = self._find_row_by_id(self.operation_zone_rows, "zone_id", zone_id)
             if row is None:
@@ -2081,6 +2131,7 @@ class CoordinateZoneSettingsPage(QWidget):
                         "zone_name": row.get("zone_name"),
                         "zone_type": row.get("zone_type"),
                         "is_enabled": bool(row.get("is_enabled")),
+                        **({"map_id": map_id} if map_id else {}),
                     },
                 }
             )
@@ -2107,6 +2158,7 @@ class CoordinateZoneSettingsPage(QWidget):
                         "pose_yaw": row.get("pose_yaw"),
                         "frame_id": row.get("frame_id"),
                         "is_enabled": bool(row.get("is_enabled")),
+                        **({"map_id": map_id} if map_id else {}),
                     },
                 }
             )
@@ -2123,9 +2175,11 @@ class CoordinateZoneSettingsPage(QWidget):
                     "table": "fms_waypoint",
                     "row_id": waypoint_id,
                     "method": "upsert_waypoint",
-                    "payload": build_fms_waypoint_payload(
-                        row,
-                        expected_updated_at=row.get("updated_at"),
+                    "payload": self._with_current_map_id(
+                        build_fms_waypoint_payload(
+                            row,
+                            expected_updated_at=row.get("updated_at"),
+                        )
                     ),
                 }
             )
@@ -2138,9 +2192,11 @@ class CoordinateZoneSettingsPage(QWidget):
                     "table": "fms_edge",
                     "row_id": edge_id,
                     "method": "upsert_edge",
-                    "payload": build_fms_edge_payload(
-                        row,
-                        expected_updated_at=row.get("updated_at"),
+                    "payload": self._with_current_map_id(
+                        build_fms_edge_payload(
+                            row,
+                            expected_updated_at=row.get("updated_at"),
+                        )
                     ),
                 }
             )
@@ -2153,13 +2209,25 @@ class CoordinateZoneSettingsPage(QWidget):
                     "table": "fms_route",
                     "row_id": route_id,
                     "method": "upsert_route",
-                    "payload": build_fms_route_payload(
-                        row,
-                        expected_revision=row.get("revision"),
+                    "payload": self._with_current_map_id(
+                        build_fms_route_payload(
+                            row,
+                            expected_revision=row.get("revision"),
+                        )
                     ),
                 }
             )
         return operations
+
+    def _current_map_id(self):
+        map_profile = self.current_bundle.get("map_profile") or {}
+        return str(map_profile.get("map_id") or self.selected_map_id or "").strip() or None
+
+    def _with_current_map_id(self, payload):
+        payload = dict(payload or {})
+        if self.current_bundle.get("map_profiles"):
+            payload["map_id"] = self._current_map_id()
+        return payload
 
     @staticmethod
     def _find_row_by_id(rows, key, row_id):
@@ -2481,7 +2549,7 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _build_operation_zone_save_payload(self):
-        return build_operation_zone_save_payload(
+        return self._with_current_map_id(build_operation_zone_save_payload(
             mode=self.operation_zone_mode,
             selected_operation_zone=self.selected_operation_zone,
             map_profile=self.current_bundle.get("map_profile"),
@@ -2489,7 +2557,7 @@ class CoordinateZoneSettingsPage(QWidget):
             zone_name=self.operation_zone_name_input.text(),
             zone_type=self.operation_zone_type_combo.currentText(),
             is_enabled=self.operation_zone_enabled_check.isChecked(),
-        )
+        ))
 
     def save_selected_operation_zone_boundary(self):
         if self.operation_zone_save_thread is not None:
@@ -2524,11 +2592,11 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _build_operation_zone_boundary_save_payload(self):
-        return build_operation_zone_boundary_save_payload(
+        return self._with_current_map_id(build_operation_zone_boundary_save_payload(
             selected_operation_zone=self.selected_operation_zone,
             boundary_vertices=self.operation_zone_boundary_vertices,
             frame_id=self._active_map_frame_id(),
-        )
+        ))
 
     def _handle_operation_zone_save_finished(self, ok, response):
         if not ok:
@@ -2801,12 +2869,12 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _build_patrol_area_path_save_payload(self):
-        return build_patrol_area_path_save_payload(
+        return self._with_current_map_id(build_patrol_area_path_save_payload(
             selected_patrol_area=self.selected_patrol_area,
             patrol_area_id=self.patrol_area_id_label.text(),
             frame_id=self._active_map_frame_id(),
             waypoints=self.patrol_waypoint_rows,
-        )
+        ))
 
     def _handle_patrol_area_path_save_finished(self, ok, response):
         if not ok:
@@ -3083,7 +3151,7 @@ class CoordinateZoneSettingsPage(QWidget):
         )
 
     def _build_goal_pose_update_payload(self):
-        return build_goal_pose_update_payload(
+        return self._with_current_map_id(build_goal_pose_update_payload(
             selected_goal_pose=self.selected_goal_pose,
             goal_pose_id=self.goal_pose_id_label.text(),
             zone_id=self.goal_pose_zone_combo.currentData(),
@@ -3093,7 +3161,7 @@ class CoordinateZoneSettingsPage(QWidget):
             pose_yaw=self.goal_pose_yaw_spin.value(),
             frame_id=self.goal_pose_frame_id_label.text(),
             is_enabled=self.goal_pose_enabled_check.isChecked(),
-        )
+        ))
 
     def _handle_goal_pose_save_finished(self, ok, response):
         if not ok:
@@ -3228,10 +3296,10 @@ class CoordinateZoneSettingsPage(QWidget):
         expected_updated_at = None
         if self.fms_waypoint_mode != "create" and self.selected_fms_waypoint:
             expected_updated_at = self.selected_fms_waypoint.get("updated_at")
-        return build_fms_waypoint_payload(
+        return self._with_current_map_id(build_fms_waypoint_payload(
             fms_waypoint_row_from_form(self),
             expected_updated_at=expected_updated_at,
-        )
+        ))
 
     def _handle_fms_waypoint_save_finished(self, ok, response):
         if not ok:
@@ -3393,10 +3461,10 @@ class CoordinateZoneSettingsPage(QWidget):
         expected_updated_at = None
         if self.fms_edge_mode != "create" and self.selected_fms_edge:
             expected_updated_at = self.selected_fms_edge.get("updated_at")
-        return build_fms_edge_payload(
+        return self._with_current_map_id(build_fms_edge_payload(
             fms_edge_row_from_form(self),
             expected_updated_at=expected_updated_at,
-        )
+        ))
 
     def _handle_fms_edge_save_finished(self, ok, response):
         if not ok:
@@ -3710,10 +3778,10 @@ class CoordinateZoneSettingsPage(QWidget):
         expected_revision = None
         if self.fms_route_mode != "create" and self.selected_fms_route:
             expected_revision = self.selected_fms_route.get("revision")
-        return build_fms_route_payload(
+        return self._with_current_map_id(build_fms_route_payload(
             fms_route_row_from_form(self),
             expected_revision=expected_revision,
-        )
+        ))
 
     def _handle_fms_route_save_finished(self, ok, response):
         if not ok:

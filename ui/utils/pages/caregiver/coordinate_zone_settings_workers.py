@@ -15,31 +15,54 @@ class CoordinateConfigLoadWorker(QObject):
     def __init__(
         self,
         *,
+        map_id=None,
         service_factory=CoordinateConfigRemoteService,
         fms_service_factory=FmsConfigRemoteService,
     ):
         super().__init__()
+        self.map_id = str(map_id or "").strip() or None
         self.service_factory = service_factory
         self.fms_service_factory = fms_service_factory
 
     def run(self):
         try:
             service = self.service_factory()
-            bundle = service.get_active_map_bundle(
-                include_disabled=True,
-                include_zone_boundaries=True,
-                include_patrol_paths=True,
-            )
+            if hasattr(service, "get_map_bundle"):
+                bundle = service.get_map_bundle(
+                    map_id=self.map_id,
+                    include_disabled=True,
+                    include_zone_boundaries=True,
+                    include_patrol_paths=True,
+                )
+            else:
+                bundle = service.get_active_map_bundle(
+                    include_disabled=True,
+                    include_zone_boundaries=True,
+                    include_patrol_paths=True,
+                )
             if not _is_ok_response(bundle):
                 self.finished.emit(False, _format_result_error(bundle))
                 return
 
-            fms_bundle = self.fms_service_factory().get_active_graph_bundle(
-                include_disabled=True,
-                include_edges=True,
-                include_routes=True,
-                include_reservations=False,
-            )
+            map_profile = bundle.get("map_profile") or {}
+            map_id = map_profile.get("map_id") or self.map_id
+
+            fms_service = self.fms_service_factory()
+            if hasattr(fms_service, "get_graph_bundle"):
+                fms_bundle = fms_service.get_graph_bundle(
+                    map_id=map_id,
+                    include_disabled=True,
+                    include_edges=True,
+                    include_routes=True,
+                    include_reservations=False,
+                )
+            else:
+                fms_bundle = fms_service.get_active_graph_bundle(
+                    include_disabled=True,
+                    include_edges=True,
+                    include_routes=True,
+                    include_reservations=False,
+                )
             if not _is_ok_response(fms_bundle):
                 self.finished.emit(False, _format_result_error(fms_bundle))
                 return
@@ -52,8 +75,6 @@ class CoordinateConfigLoadWorker(QObject):
                 "fms_reservations": fms_bundle.get("reservations") or [],
             }
 
-            map_profile = bundle.get("map_profile") or {}
-            map_id = map_profile.get("map_id")
             yaml_asset = service.get_map_asset(
                 asset_type="YAML",
                 map_id=map_id,
