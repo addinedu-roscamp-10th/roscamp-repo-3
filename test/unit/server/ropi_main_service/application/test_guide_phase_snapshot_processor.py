@@ -29,16 +29,24 @@ class FakeGuidePhaseSnapshotRepository:
 
 
 class FakeGoalPoseNavigationService:
-    def __init__(self, response=None):
-        self.response = response or {"result_code": "ACCEPTED", "nav_phase": "RETURN_TO_DOCK"}
+    def __init__(self, response=None, *, exc=None):
+        self.response = response or {
+            "result_code": "ACCEPTED",
+            "nav_phase": "RETURN_TO_DOCK",
+        }
+        self.exc = exc
         self.navigated = []
 
     def navigate(self, **kwargs):
         self.navigated.append(kwargs)
+        if self.exc is not None:
+            raise self.exc
         return dict(self.response)
 
     async def async_navigate(self, **kwargs):
         self.navigated.append(kwargs)
+        if self.exc is not None:
+            raise self.exc
         return dict(self.response)
 
 
@@ -185,6 +193,46 @@ def test_processor_does_not_change_finished_task_outcome_when_return_to_dock_fai
     }
 
 
+def test_processor_keeps_finished_task_response_when_return_to_dock_raises():
+    repository = FakeGuidePhaseSnapshotRepository(
+        response={
+            "result_code": "ACCEPTED",
+            "task_id": 3001,
+            "task_type": "GUIDE",
+            "task_status": "COMPLETED",
+            "phase": "GUIDANCE_FINISHED",
+            "guide_phase": "GUIDANCE_FINISHED",
+            "assigned_robot_id": "pinky1",
+            "target_track_id": 17,
+        }
+    )
+    navigation = FakeGoalPoseNavigationService(exc=RuntimeError("uds down"))
+    processor = GuidePhaseSnapshotProcessor(
+        guide_phase_snapshot_repository=repository,
+        goal_pose_navigation_service=navigation,
+        return_to_dock_goal_pose_resolver=_dock_pose,
+    )
+
+    response = processor.process(
+        {
+            "task_id": 3001,
+            "pinky_id": "pinky1",
+            "guide_phase": "GUIDANCE_FINISHED",
+            "target_track_id": 17,
+            "seq": 7,
+        }
+    )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_status"] == "COMPLETED"
+    assert response["phase"] == "GUIDANCE_FINISHED"
+    assert response["return_to_dock_response"] == {
+        "result_code": "FAILED",
+        "reason_code": "RETURN_TO_DOCK_DISPATCH_FAILED",
+        "result_message": "return_to_dock dispatch failed: uds down",
+    }
+
+
 def test_async_processor_records_snapshot_and_dispatches_return_to_dock():
     repository = FakeGuidePhaseSnapshotRepository(
         response={
@@ -219,3 +267,44 @@ def test_async_processor_records_snapshot_and_dispatches_return_to_dock():
 
     assert response["return_to_dock_response"]["result_code"] == "ACCEPTED"
     assert navigation.navigated[0]["nav_phase"] == "RETURN_TO_DOCK"
+
+
+def test_async_processor_keeps_finished_task_response_when_return_to_dock_raises():
+    repository = FakeGuidePhaseSnapshotRepository(
+        response={
+            "result_code": "ACCEPTED",
+            "task_id": 3001,
+            "task_type": "GUIDE",
+            "task_status": "COMPLETED",
+            "phase": "GUIDANCE_FINISHED",
+            "guide_phase": "GUIDANCE_FINISHED",
+            "assigned_robot_id": "pinky1",
+            "target_track_id": 17,
+        }
+    )
+    navigation = FakeGoalPoseNavigationService(exc=RuntimeError("uds down"))
+    processor = GuidePhaseSnapshotProcessor(
+        guide_phase_snapshot_repository=repository,
+        goal_pose_navigation_service=navigation,
+        return_to_dock_goal_pose_resolver=_dock_pose,
+    )
+
+    response = asyncio.run(
+        processor.async_process(
+            {
+                "task_id": 3001,
+                "pinky_id": "pinky1",
+                "guide_phase": "GUIDANCE_FINISHED",
+                "target_track_id": 17,
+                "seq": 1,
+            }
+        )
+    )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["task_status"] == "COMPLETED"
+    assert response["return_to_dock_response"] == {
+        "result_code": "FAILED",
+        "reason_code": "RETURN_TO_DOCK_DISPATCH_FAILED",
+        "result_message": "return_to_dock dispatch failed: uds down",
+    }

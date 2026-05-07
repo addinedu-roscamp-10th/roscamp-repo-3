@@ -75,7 +75,9 @@ class GuidePhaseSnapshotProcessor:
         return response
 
     def _maybe_dispatch_return_to_dock(self, *, normalized, response):
-        if not self._should_dispatch_return_to_dock(normalized=normalized, response=response):
+        if not self._should_dispatch_return_to_dock(
+            normalized=normalized, response=response
+        ):
             return
 
         task_id = response.get("task_id") or normalized["task_id"]
@@ -83,7 +85,13 @@ class GuidePhaseSnapshotProcessor:
             return
         self._return_dispatched_task_ids.add(task_id)
 
-        goal_pose = self.return_to_dock_goal_pose_resolver()
+        try:
+            goal_pose = self.return_to_dock_goal_pose_resolver()
+        except Exception as exc:
+            response["return_to_dock_response"] = (
+                self._build_return_to_dock_dispatch_failure(exc)
+            )
+            return
         if not goal_pose:
             response["return_to_dock_response"] = {
                 "result_code": "REJECTED",
@@ -92,16 +100,26 @@ class GuidePhaseSnapshotProcessor:
             }
             return
 
-        response["return_to_dock_response"] = self.goal_pose_navigation_service.navigate(
-            task_id=task_id,
-            pinky_id=response.get("assigned_robot_id") or normalized["pinky_id"],
-            nav_phase=RETURN_TO_DOCK_NAV_PHASE,
-            goal_pose=goal_pose,
-            timeout_sec=self.return_to_dock_timeout_sec,
-        )
+        try:
+            response["return_to_dock_response"] = (
+                self.goal_pose_navigation_service.navigate(
+                    task_id=task_id,
+                    pinky_id=response.get("assigned_robot_id")
+                    or normalized["pinky_id"],
+                    nav_phase=RETURN_TO_DOCK_NAV_PHASE,
+                    goal_pose=goal_pose,
+                    timeout_sec=self.return_to_dock_timeout_sec,
+                )
+            )
+        except Exception as exc:
+            response["return_to_dock_response"] = (
+                self._build_return_to_dock_dispatch_failure(exc)
+            )
 
     async def _async_maybe_dispatch_return_to_dock(self, *, normalized, response):
-        if not self._should_dispatch_return_to_dock(normalized=normalized, response=response):
+        if not self._should_dispatch_return_to_dock(
+            normalized=normalized, response=response
+        ):
             return
 
         task_id = response.get("task_id") or normalized["task_id"]
@@ -109,7 +127,13 @@ class GuidePhaseSnapshotProcessor:
             return
         self._return_dispatched_task_ids.add(task_id)
 
-        goal_pose = self.return_to_dock_goal_pose_resolver()
+        try:
+            goal_pose = self.return_to_dock_goal_pose_resolver()
+        except Exception as exc:
+            response["return_to_dock_response"] = (
+                self._build_return_to_dock_dispatch_failure(exc)
+            )
+            return
         if not goal_pose:
             response["return_to_dock_response"] = {
                 "result_code": "REJECTED",
@@ -131,13 +155,23 @@ class GuidePhaseSnapshotProcessor:
             "timeout_sec": self.return_to_dock_timeout_sec,
         }
         if async_navigate is not None:
-            response["return_to_dock_response"] = await async_navigate(**kwargs)
+            try:
+                response["return_to_dock_response"] = await async_navigate(**kwargs)
+            except Exception as exc:
+                response["return_to_dock_response"] = (
+                    self._build_return_to_dock_dispatch_failure(exc)
+                )
             return
 
-        response["return_to_dock_response"] = await asyncio.to_thread(
-            self.goal_pose_navigation_service.navigate,
-            **kwargs,
-        )
+        try:
+            response["return_to_dock_response"] = await asyncio.to_thread(
+                self.goal_pose_navigation_service.navigate,
+                **kwargs,
+            )
+        except Exception as exc:
+            response["return_to_dock_response"] = (
+                self._build_return_to_dock_dispatch_failure(exc)
+            )
 
     @staticmethod
     def _should_dispatch_return_to_dock(*, normalized, response):
@@ -148,6 +182,15 @@ class GuidePhaseSnapshotProcessor:
             and (response or {}).get("task_status") == "COMPLETED"
             and (response or {}).get("phase") == TERMINAL_FINISHED_PHASE
         )
+
+    @staticmethod
+    def _build_return_to_dock_dispatch_failure(exc):
+        message = str(exc).strip() or exc.__class__.__name__
+        return {
+            "result_code": "FAILED",
+            "reason_code": "RETURN_TO_DOCK_DISPATCH_FAILED",
+            "result_message": f"return_to_dock dispatch failed: {message}",
+        }
 
     def _mark_seq_or_build_stale_response(self, normalized):
         stream_key = (normalized["task_id"], normalized["pinky_id"])
@@ -195,7 +238,7 @@ class GuidePhaseSnapshotProcessor:
 
     @staticmethod
     def _default_return_to_dock_goal_pose():
-        return (get_delivery_runtime_config().return_to_dock_goal_pose or {})
+        return get_delivery_runtime_config().return_to_dock_goal_pose or {}
 
 
 __all__ = [
