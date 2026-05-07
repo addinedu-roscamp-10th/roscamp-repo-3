@@ -155,10 +155,14 @@ INSERT INTO `map_profile`
 (`map_id`, `map_name`, `map_revision`, `git_ref`, `yaml_path`, `pgm_path`,
  `frame_id`, `is_active`, `created_at`, `updated_at`)
 VALUES
-('map_test11_0423', 'map_test11_0423', 1, NULL,
- 'device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml',
- 'device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm',
- 'map', TRUE, NOW(), NOW());
+('map_0504', 'map_0504', 1, NULL,
+ 'device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml',
+ 'device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm',
+ 'map', TRUE, NOW(), NOW()),
+('map_test12_0506', 'map_test12_0506', 1, NULL,
+ 'test/local/map_test12_0506.yaml',
+ 'test/local/map_test12_0506.pgm',
+ 'map', FALSE, NOW(), NOW());
 
 -- =========================
 -- operation_zone
@@ -167,22 +171,22 @@ INSERT INTO `operation_zone`
 (`zone_id`, `map_id`, `zone_name`, `zone_type`, `revision`, `boundary_json`,
  `is_enabled`, `created_at`, `updated_at`)
 VALUES
-('room_301', 'map_test11_0423', '301호', 'ROOM', 1,
+('room_301', 'map_0504', '301호', 'ROOM', 1,
  '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":1.2,"y":-0.4},{"x":2.2,"y":-0.4},{"x":2.2,"y":0.5},{"x":1.2,"y":0.5}]}',
  TRUE, NOW(), NOW()),
-('room_302', 'map_test11_0423', '302호', 'ROOM', 1,
+('room_302', 'map_0504', '302호', 'ROOM', 1,
  '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":2.6,"y":0.6},{"x":3.4,"y":0.6},{"x":3.4,"y":1.4},{"x":2.6,"y":1.4}]}',
  TRUE, NOW(), NOW()),
-('room_305', 'map_test11_0423', '305호', 'ROOM', 1,
+('room_305', 'map_0504', '305호', 'ROOM', 1,
  '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":3.5},{"x":1.5,"y":3.5},{"x":1.5,"y":4.5},{"x":0.5,"y":4.5}]}',
  TRUE, NOW(), NOW()),
-('nursing_station', 'map_test11_0423', '간호스테이션', 'STAFF_STATION', 1,
+('nursing_station', 'map_0504', '간호스테이션', 'STAFF_STATION', 1,
  '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":-0.7,"y":0.8},{"x":0.3,"y":0.8},{"x":0.3,"y":1.6},{"x":-0.7,"y":1.6}]}',
  TRUE, NOW(), NOW()),
-('supply_station', 'map_test11_0423', '물품 적재 위치', 'SUPPLY_STATION', 1,
+('supply_station', 'map_0504', '물품 적재 위치', 'SUPPLY_STATION', 1,
  '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":-0.3,"y":-0.9},{"x":0.6,"y":-0.9},{"x":0.6,"y":-0.1},{"x":-0.3,"y":-0.1}]}',
  TRUE, NOW(), NOW()),
-('dock', 'map_test11_0423', '충전소', 'DOCK', 1,
+('dock', 'map_0504', '충전소', 'DOCK', 1,
  '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":-0.1},{"x":1.2,"y":-0.1},{"x":1.2,"y":0.6},{"x":0.5,"y":0.6}]}',
  TRUE, NOW(), NOW());
 
@@ -193,7 +197,7 @@ INSERT INTO `patrol_area`
 (`patrol_area_id`, `map_id`, `patrol_area_name`, `revision`, `path_json`,
  `is_enabled`, `created_at`, `updated_at`)
 VALUES
-('patrol_ward_night_01', 'map_test11_0423', '야간 병동 순찰', 7,
+('patrol_ward_night_01', 'map_0504', '야간 병동 순찰', 7,
  '{"header":{"frame_id":"map"},"poses":[{"x":0.1665755137108074,"y":-0.4496830900440016,"yaw":1.5707963267948966},{"x":1.6946025435218914,"y":0.0043433854992070454,"yaw":0.0},{"x":0.8577123880386353,"y":0.25597259402275085,"yaw":0.0}]}',
  TRUE, NOW(), NOW());
 
@@ -204,19 +208,28 @@ INSERT INTO `goal_pose`
 (`goal_pose_id`, `map_id`, `zone_id`, `purpose`, `pose_x`, `pose_y`, `pose_yaw`,
  `frame_id`, `is_enabled`, `created_at`, `updated_at`)
 VALUES
-('pickup_supply', 'map_test11_0423', 'supply_station', 'PICKUP', 0.1665755137108074, -0.4496830900440016, 1.5707963267948966,
+('pickup_supply', 'map_test12_0506', 'supply_station', 'PICKUP', 0.1665755137108074, -0.4496830900440016, 1.5707963267948966,
  'map', TRUE, NOW(), NOW()),
 
-('delivery_room_301', 'map_test11_0423', 'room_301', 'DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0,
+('delivery_room_301', 'map_test12_0506', 'room_301', 'DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0,
  'map', TRUE, NOW(), NOW()),
 
-('delivery_room_302', 'map_test11_0423', 'room_302', 'DESTINATION', 3.0, 1.0, 0.0,
+('delivery_room_302', 'map_test12_0506', 'room_302', 'DESTINATION', 3.0, 1.0, 0.0,
  'map', TRUE, NOW(), NOW()),
 
-('delivery_room_305', 'map_test11_0423', 'room_305', 'DESTINATION', 1.0, 4.0, 0.0,
+('delivery_room_305', 'map_test12_0506', 'room_305', 'DESTINATION', 1.0, 4.0, 0.0,
  'map', TRUE, NOW(), NOW()),
 
-('dock_home', 'map_test11_0423', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0,
+('dock_home', 'map_test12_0506', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0,
+ 'map', TRUE, NOW(), NOW()),
+
+('guide_room_301', 'map_0504', 'room_301', 'GUIDE_DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0,
+ 'map', TRUE, NOW(), NOW()),
+
+('guide_room_302', 'map_0504', 'room_302', 'GUIDE_DESTINATION', 3.0, 1.0, 0.0,
+ 'map', TRUE, NOW(), NOW()),
+
+('guide_room_305', 'map_0504', 'room_305', 'GUIDE_DESTINATION', 1.0, 4.0, 0.0,
  'map', TRUE, NOW(), NOW());
 
 -- =========================
@@ -228,7 +241,7 @@ INSERT INTO `task`
  `created_at`, `updated_at`, `started_at`)
 VALUES
 (1, 'DELIVERY', 'seed_delivery_001', 'seed_delivery_001', 'CAREGIVER', '1',
- 'NORMAL', 'RUNNING', 'MOVE_TO_PICKUP', 'pinky2', 'map_test11_0423',
+ 'NORMAL', 'RUNNING', 'MOVE_TO_PICKUP', 'pinky2', 'map_test12_0506',
  NOW(3), NOW(3), NOW(3));
 
 INSERT INTO `delivery_task_detail`
