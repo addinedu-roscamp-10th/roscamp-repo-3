@@ -9,7 +9,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer, GoalResponse, CancelResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 
@@ -30,6 +30,7 @@ class FallenDetectionClient(Node):
         self._declare_and_load_parameters()
 
         self.alarm_pub = self.create_publisher(Bool, self.alarm_topic, 10)
+        self.active_task_pub = self.create_publisher(String, self.active_task_topic, 10)
 
         self.stop_event = threading.Event()
 
@@ -90,6 +91,7 @@ class FallenDetectionClient(Node):
         self.declare_parameter("pinky_id", "pinky3")
         self.declare_parameter("patrol_action_name", "")
         self.declare_parameter("fall_response_service_name", "")
+        self.declare_parameter("active_task_topic", "")
         self.declare_parameter("nav_check_interval_sec", 0.2)
         self.declare_parameter("path_interpolation_step_m", 0.1)
         self.declare_parameter("segment_retry_count", 3)
@@ -110,6 +112,13 @@ class FallenDetectionClient(Node):
             configured_fall_response_service_name
             or f"/ropi/control/{self.pinky_id}/fall_response_control"
         )
+        configured_active_task_topic = str(
+            self.get_parameter("active_task_topic").value
+        ).strip()
+        self.active_task_topic = (
+            configured_active_task_topic
+            or f"/ropi/robots/{self.pinky_id}/active_task_id"
+        )
         self.nav_check_interval_sec = float(self.get_parameter("nav_check_interval_sec").value)
         self.path_interpolation_step_m = float(self.get_parameter("path_interpolation_step_m").value)
         self.segment_retry_count = int(self.get_parameter("segment_retry_count").value)
@@ -128,6 +137,8 @@ class FallenDetectionClient(Node):
             raise ValueError("patrol_action_name parameter is required.")
         if not self.fall_response_service_name:
             raise ValueError("fall_response_service_name parameter is required.")
+        if not self.active_task_topic:
+            raise ValueError("active_task_topic parameter is required.")
         if self.nav_check_interval_sec <= 0:
             raise ValueError("nav_check_interval_sec must be greater than 0.")
         if self.path_interpolation_step_m <= 0:
@@ -209,6 +220,11 @@ class FallenDetectionClient(Node):
         msg.data = bool(alarm)
         self.alarm_pub.publish(msg)
 
+    def _publish_active_task_id(self, task_id):
+        msg = String()
+        msg.data = str(task_id or "").strip()
+        self.active_task_pub.publish(msg)
+
     def execute_patrol_callback(self, goal_handle):
         """
         IF-PAT-003 ExecutePatrolPath action 실행부.
@@ -243,6 +259,7 @@ class FallenDetectionClient(Node):
             "current_waypoint_index": 0,
         }
         self.stop_requested_by_fall_response = False
+        self._publish_active_task_id(self.active_task_id)
 
         try:
             self._publish_patrol_feedback(
@@ -348,6 +365,8 @@ class FallenDetectionClient(Node):
             with self.nav_lock:
                 self.action_busy = False
                 self.navigation_running = False
+                self.active_task_id = ""
+            self._publish_active_task_id("")
 
     def _normalize_goal_path(self, path):
         frame_id = path.header.frame_id.strip() or "map"

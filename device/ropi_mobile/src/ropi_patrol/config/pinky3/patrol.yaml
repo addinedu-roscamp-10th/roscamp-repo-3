@@ -4,6 +4,7 @@ fallen_detection_client:
     pinky_id: "pinky3"
     patrol_action_name: ""
     fall_response_service_name: ""
+    active_task_topic: "/ropi/robots/pinky3/active_task_id"
     nav_check_interval_sec: 0.2
     path_interpolation_step_m: 0.1
     segment_retry_count: 3
