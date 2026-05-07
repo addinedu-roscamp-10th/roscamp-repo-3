@@ -82,11 +82,11 @@ def qapp():
 
 
 @pytest.fixture
-def patched_ui_endpoint(control_server, monkeypatch):
+def patched_ui_endpoint(runtime_control_server, monkeypatch):
     monkeypatch.setattr(tcp_client, "CONTROL_SERVER_HOST", SERVER_HOST)
-    monkeypatch.setattr(tcp_client, "CONTROL_SERVER_PORT", control_server["port"])
+    monkeypatch.setattr(tcp_client, "CONTROL_SERVER_PORT", runtime_control_server["port"])
     monkeypatch.setattr(tcp_client, "CONTROL_SERVER_TIMEOUT", 5.0)
-    return control_server
+    return runtime_control_server
 
 
 def test_server_process_heartbeat_reports_db_status(patched_ui_endpoint):
@@ -191,7 +191,7 @@ def test_ui_client_fall_evidence_query_hits_real_server_and_ai_mock(
         result_seq=fall_evidence_seed["result_seq"],
     )
 
-    assert response["result_code"] == "OK"
+    assert response["result_code"] == "OK", json.dumps(response, ensure_ascii=False)
     assert response["task_id"] == fall_evidence_seed["task_id"]
     assert response["alert_id"] == fall_evidence_seed["alert_id"]
     assert response["evidence_image_id"] == fall_evidence_seed["evidence_image_id"]

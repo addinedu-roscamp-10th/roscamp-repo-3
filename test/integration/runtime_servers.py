@@ -51,7 +51,7 @@ def wait_for_server_ready(server_process, server_port: int, app, timeout: float 
 
 
 @pytest.fixture(scope="session")
-def ros_service_stub(tmp_path_factory):
+def runtime_ros_service_stub(tmp_path_factory):
     del tmp_path_factory
     socket_dir = PROJECT_ROOT / ".pytest_tmp" / "ros-runtime"
     socket_dir.mkdir(parents=True, exist_ok=True)
@@ -396,11 +396,15 @@ def ai_evidence_server():
 
 
 @pytest.fixture
-def control_server_with_ai_fall_stream(qapp, ros_service_stub, ai_fall_stream_server):
+def control_server_with_ai_fall_stream(
+    qapp,
+    runtime_ros_service_stub,
+    ai_fall_stream_server,
+):
     server_port = find_free_port()
     server_process = _start_control_server(
         server_port=server_port,
-        ros_socket_path=ros_service_stub["socket_path"],
+        ros_socket_path=runtime_ros_service_stub["socket_path"],
         extra_env={
             "AI_FALL_STREAM_ENABLED": "true",
             "AI_FALL_STREAM_HOST": ai_fall_stream_server["host"],
@@ -417,11 +421,11 @@ def control_server_with_ai_fall_stream(qapp, ros_service_stub, ai_fall_stream_se
 
 
 @pytest.fixture(scope="session")
-def control_server(qapp, ros_service_stub, ai_evidence_server):
+def runtime_control_server(qapp, runtime_ros_service_stub, ai_evidence_server):
     server_port = find_free_port()
     server_process = _start_control_server(
         server_port=server_port,
-        ros_socket_path=ros_service_stub["socket_path"],
+        ros_socket_path=runtime_ros_service_stub["socket_path"],
         extra_env={
             "AI_FALL_EVIDENCE_HOST": ai_evidence_server["host"],
             "AI_FALL_EVIDENCE_PORT": str(ai_evidence_server["port"]),
@@ -453,6 +457,9 @@ def _start_control_server(*, server_port, ros_socket_path, extra_env):
             "PYTHONUNBUFFERED": "1",
             "ROPI_ROS_SERVICE_SOCKET_PATH": ros_socket_path,
             "ROPI_DELIVERY_GOAL_POSE_SOURCE": "db",
+            "AI_FALL_STREAM_ENABLED": "false",
+            "GUIDE_PHASE_SNAPSHOT_POLL_ENABLED": "false",
+            "ACTION_FEEDBACK_EVENT_POLL_ENABLED": "false",
             **extra_env,
         },
     )

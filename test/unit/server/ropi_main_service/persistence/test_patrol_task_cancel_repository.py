@@ -85,6 +85,42 @@ def test_async_record_patrol_task_cancel_result_updates_task_detail_and_event(mo
     )
 
 
+def test_async_record_patrol_task_cancel_result_normalizes_successful_ros_result(monkeypatch):
+    cursor = RecordingAsyncCursor(
+        row={
+            "task_id": 2001,
+            "task_status": "RUNNING",
+            "phase": "FOLLOW_PATROL_PATH",
+            "assigned_robot_id": "pinky3",
+            "patrol_status": "RUNNING",
+        }
+    )
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.patrol_task_cancel_repository.async_transaction",
+        lambda: FakeAsyncTransaction(cursor),
+    )
+
+    response = asyncio.run(
+        PatrolTaskCancelRepository().async_record_patrol_task_cancel_result(
+            task_id="2001",
+            caregiver_id=7,
+            reason="operator_cancel",
+            cancel_response={
+                "result_code": "SUCCESS",
+                "result_message": "done",
+                "task_id": "2001",
+                "cancel_requested": True,
+            },
+        )
+    )
+
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert response["task_status"] == "CANCEL_REQUESTED"
+    assert response["cancel_requested"] is True
+    assert cursor.calls[1][1][1:3] == ("CANCEL_REQUESTED", "done")
+    assert cursor.calls[4][1][4] == "CANCEL_REQUESTED"
+
+
 def test_async_record_patrol_task_cancel_result_keeps_status_when_ros_rejects(monkeypatch):
     cursor = RecordingAsyncCursor(
         row={
