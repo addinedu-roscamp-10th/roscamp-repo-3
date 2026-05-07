@@ -69,10 +69,17 @@ class GuideDrivingOrchestrator:
             task_id=task_id,
         )
         if context.get("result_code") != "ACCEPTED":
+            target_pinky_id = self._resolve_guide_driving_pinky_id(pinky_id, context)
+            response = self._record_guide_driving_start_rejection(
+                response=context,
+                task_id=context.get("task_id") or task_id,
+                pinky_id=target_pinky_id,
+                target_track_id=target_track_id,
+            )
             return (
                 False,
-                context.get("result_message") or "안내 주행을 시작할 수 없습니다.",
-                context,
+                response.get("result_message") or "안내 주행을 시작할 수 없습니다.",
+                response,
             )
 
         target_pinky_id = self._resolve_guide_driving_pinky_id(pinky_id, context)
@@ -114,26 +121,37 @@ class GuideDrivingOrchestrator:
         if invalid is not None:
             return False, invalid["result_message"], invalid
 
-        context = await self.guide_task_navigation_repository.async_get_guide_driving_context(
-            task_id=task_id,
+        context = (
+            await self.guide_task_navigation_repository.async_get_guide_driving_context(
+                task_id=task_id,
+            )
         )
         if context.get("result_code") != "ACCEPTED":
+            target_pinky_id = self._resolve_guide_driving_pinky_id(pinky_id, context)
+            response = await self._async_record_guide_driving_start_rejection(
+                response=context,
+                task_id=context.get("task_id") or task_id,
+                pinky_id=target_pinky_id,
+                target_track_id=target_track_id,
+            )
             return (
                 False,
-                context.get("result_message") or "안내 주행을 시작할 수 없습니다.",
-                context,
+                response.get("result_message") or "안내 주행을 시작할 수 없습니다.",
+                response,
             )
 
         target_pinky_id = self._resolve_guide_driving_pinky_id(pinky_id, context)
-        command_ok, command_message, command_response = (
-            await self.guide_command_lifecycle_service.async_send_command(
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                command_type=START_GUIDANCE_COMMAND,
-                target_track_id=target_track_id,
-                destination_id=context.get("destination_id"),
-                destination_pose=context.get("goal_pose"),
-            )
+        (
+            command_ok,
+            command_message,
+            command_response,
+        ) = await self.guide_command_lifecycle_service.async_send_command(
+            task_id=task_id,
+            pinky_id=target_pinky_id,
+            command_type=START_GUIDANCE_COMMAND,
+            target_track_id=target_track_id,
+            destination_id=context.get("destination_id"),
+            destination_pose=context.get("goal_pose"),
         )
         response = self._build_guide_driving_response(
             context=context,
@@ -222,7 +240,9 @@ class GuideDrivingOrchestrator:
 
     def _resolve_guide_driving_pinky_id(self, pinky_id, context):
         return (
-            str(pinky_id or context.get("assigned_robot_id") or self.default_pinky_id).strip()
+            str(
+                pinky_id or context.get("assigned_robot_id") or self.default_pinky_id
+            ).strip()
             or self.default_pinky_id
         )
 
@@ -234,10 +254,9 @@ class GuideDrivingOrchestrator:
         target_track_id,
         pinky_id,
     ):
-        message = (
-            (navigation_response or {}).get("result_message")
-            or "안내 목적지 이동 시작이 수락되지 않았습니다."
-        )
+        message = (navigation_response or {}).get(
+            "result_message"
+        ) or "안내 목적지 이동 시작이 수락되지 않았습니다."
         return {
             "result_code": (navigation_response or {}).get("result_code") or "REJECTED",
             "result_message": message,
@@ -263,11 +282,11 @@ class GuideDrivingOrchestrator:
         target_track_id,
     ):
         if self._normalize_positive_id(task_id) is None:
-            return
+            return response
 
         command_response = dict(response or {})
         command_response["accepted"] = False
-        self.guide_task_lifecycle_repository.record_command_result(
+        lifecycle_result = self.guide_task_lifecycle_repository.record_command_result(
             task_id=task_id,
             pinky_id=pinky_id,
             command_type=START_GUIDANCE_COMMAND,
@@ -275,6 +294,10 @@ class GuideDrivingOrchestrator:
             wait_timeout_sec=0,
             finish_reason="",
             command_response=command_response,
+        )
+        return self._merge_start_guidance_rejection_lifecycle_response(
+            response=response,
+            lifecycle_result=lifecycle_result,
         )
 
     async def _async_record_guide_driving_start_rejection(
@@ -286,22 +309,58 @@ class GuideDrivingOrchestrator:
         target_track_id,
     ):
         if self._normalize_positive_id(task_id) is None:
-            return
+            return response
 
         command_response = dict(response or {})
         command_response["accepted"] = False
-        await self.guide_task_lifecycle_repository.async_record_command_result(
-            task_id=task_id,
-            pinky_id=pinky_id,
-            command_type=START_GUIDANCE_COMMAND,
-            target_track_id=target_track_id,
-            wait_timeout_sec=0,
-            finish_reason="",
-            command_response=command_response,
+        lifecycle_result = (
+            await self.guide_task_lifecycle_repository.async_record_command_result(
+                task_id=task_id,
+                pinky_id=pinky_id,
+                command_type=START_GUIDANCE_COMMAND,
+                target_track_id=target_track_id,
+                wait_timeout_sec=0,
+                finish_reason="",
+                command_response=command_response,
+            )
+        )
+        return self._merge_start_guidance_rejection_lifecycle_response(
+            response=response,
+            lifecycle_result=lifecycle_result,
         )
 
     @staticmethod
-    def _build_guide_driving_response(*, context, command_response, target_track_id, pinky_id):
+    def _merge_start_guidance_rejection_lifecycle_response(
+        *,
+        response,
+        lifecycle_result,
+    ):
+        merged = dict(response or {}) if isinstance(response, dict) else {}
+        if not lifecycle_result:
+            return merged
+
+        merged["lifecycle_result"] = lifecycle_result
+        for key in (
+            "result_code",
+            "result_message",
+            "reason_code",
+            "task_id",
+            "task_type",
+            "task_status",
+            "phase",
+            "assigned_robot_id",
+            "guide_phase",
+            "target_track_id",
+            "accepted",
+        ):
+            if lifecycle_result.get(key) is not None:
+                merged[key] = lifecycle_result[key]
+        return merged
+
+    @staticmethod
+    def _build_guide_driving_response(
+        *, context, command_response, target_track_id, pinky_id
+    ):
         response_target_track_id = command_response.get("target_track_id")
         if response_target_track_id is None:
             response_target_track_id = target_track_id
@@ -311,7 +370,8 @@ class GuideDrivingOrchestrator:
             "reason_code": command_response.get("reason_code"),
             "task_id": command_response.get("task_id") or context.get("task_id"),
             "task_type": "GUIDE",
-            "task_status": command_response.get("task_status") or context.get("task_status"),
+            "task_status": command_response.get("task_status")
+            or context.get("task_status"),
             "phase": command_response.get("phase") or context.get("phase"),
             "guide_phase": command_response.get("guide_phase"),
             "assigned_robot_id": command_response.get("assigned_robot_id") or pinky_id,
@@ -344,7 +404,9 @@ class GuideDrivingOrchestrator:
         return None
 
     @staticmethod
-    def _build_guide_driving_invalid_response(*, result_message, reason_code, task_id=None):
+    def _build_guide_driving_invalid_response(
+        *, result_message, reason_code, task_id=None
+    ):
         return {
             "result_code": "INVALID_REQUEST",
             "result_message": result_message,

@@ -1299,6 +1299,64 @@ def test_async_guide_start_driving_rpc_publishes_task_update(control_service_ser
     assert published_events[0][1]["phase"] == "GUIDANCE_RUNNING"
 
 
+def test_async_guide_start_driving_rejection_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=44,
+        payload={
+            "service": "visit_guide",
+            "method": "start_guide_driving",
+            "kwargs": {
+                "task_id": "3001",
+                "target_track_id": 17,
+            },
+        },
+    )
+    published_events = []
+
+    class FakeAsyncVisitGuideService:
+        async def async_start_guide_driving(self, **payload):
+            return False, "안내 목적지 좌표가 설정되어 있지 않습니다.", {
+                "result_code": "REJECTED",
+                "result_message": "안내 목적지 좌표가 설정되어 있지 않습니다.",
+                "reason_code": "GUIDE_DESTINATION_NOT_CONFIGURED",
+                "task_id": payload["task_id"],
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "READY_TO_START_GUIDANCE",
+                "guide_phase": "READY_TO_START_GUIDANCE",
+                "assigned_robot_id": "pinky1",
+                "target_track_id": payload["target_track_id"],
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload[0] is False
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "GUIDE_COMMAND"
+    assert published_events[0][1]["latest_reason_code"] == (
+        "GUIDE_DESTINATION_NOT_CONFIGURED"
+    )
+    assert published_events[0][1]["result_code"] == "REJECTED"
+    assert published_events[0][1]["phase"] == "READY_TO_START_GUIDANCE"
+    assert published_events[0][1]["guide_detail"]["guide_phase"] == (
+        "READY_TO_START_GUIDANCE"
+    )
+
+
 def test_visit_guide_runtime_service_uses_guide_navigation_runtime_starter(
     control_service_server,
 ):
