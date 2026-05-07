@@ -322,8 +322,11 @@ def test_visit_guide_service_rejects_finish_guide_session_command_boundary():
     assert response["accepted"] is False
     assert response["result_code"] == "REJECTED"
     assert response["reason_code"] == "COMMAND_TYPE_INVALID"
-    assert lifecycle_repository.recorded[0]["command_type"] == "FINISH_GUIDANCE"
-    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == "COMMAND_TYPE_INVALID"
+    assert response["task_id"] == 3001
+    assert response["task_type"] == "GUIDE"
+    assert response["assigned_robot_id"] == "pinky1"
+    assert command_service.sent == []
+    assert lifecycle_repository.recorded == []
 
 
 def test_visit_guide_service_async_records_rejected_lifecycle_when_guide_command_transport_fails():
@@ -369,9 +372,12 @@ def test_visit_guide_service_async_finish_rejects_command_boundary():
 
     assert ok is False
     assert message == "지원하지 않는 안내 제어 명령입니다."
-    assert lifecycle_repository.recorded[0]["command_type"] == "FINISH_GUIDANCE"
-    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == "COMMAND_TYPE_INVALID"
     assert response["reason_code"] == "COMMAND_TYPE_INVALID"
+    assert response["task_id"] == 3001
+    assert response["task_type"] == "GUIDE"
+    assert response["assigned_robot_id"] == "pinky1"
+    assert command_service.sent == []
+    assert lifecycle_repository.recorded == []
 
 
 def test_visit_guide_service_start_guide_driving_sends_start_guidance_without_navigation():

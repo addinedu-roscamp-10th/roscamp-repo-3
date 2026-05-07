@@ -13,6 +13,7 @@ from server.ropi_main_service.persistence.repositories.visit_guide_repository im
 from server.ropi_main_service.application.guide_command import GuideCommandService
 from server.ropi_main_service.application.guide_command_lifecycle import (
     GuideCommandLifecycleService,
+    UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
 )
 from server.ropi_main_service.application.guide_driving_orchestrator import (
     DEFAULT_GUIDE_NAVIGATION_TIMEOUT_SEC,
@@ -270,12 +271,10 @@ class VisitGuideService:
         target_track_id="",
         finish_reason="",
     ):
-        return self.send_guide_command(
+        return self._reject_unsupported_guide_command(
             task_id=task_id,
-            command_type="FINISH_GUIDANCE",
             pinky_id=pinky_id,
-            target_track_id=target_track_id,
-            finish_reason=finish_reason,
+            command_type="FINISH_GUIDANCE",
         )
 
     async def async_finish_guide_session(
@@ -286,12 +285,10 @@ class VisitGuideService:
         target_track_id="",
         finish_reason="",
     ):
-        return await self.async_send_guide_command(
+        return self._reject_unsupported_guide_command(
             task_id=task_id,
-            command_type="FINISH_GUIDANCE",
             pinky_id=pinky_id,
-            target_track_id=target_track_id,
-            finish_reason=finish_reason,
+            command_type="FINISH_GUIDANCE",
         )
 
     def start_guide_driving(
@@ -383,6 +380,21 @@ class VisitGuideService:
         if guide_runtime.get("stale"):
             return False, "안내 추적 업데이트가 오래되어 최신 상태가 아닙니다.", status
         return True, "안내 추적 상태를 확인했습니다.", status
+
+    def _reject_unsupported_guide_command(self, *, task_id, pinky_id=None, command_type):
+        return False, UNSUPPORTED_GUIDE_COMMAND_MESSAGE, {
+            "accepted": False,
+            "result_code": "REJECTED",
+            "result_message": UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
+            "reason_code": "COMMAND_TYPE_INVALID",
+            "message": UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
+            "task_id": self._normalize_positive_id(task_id),
+            "task_type": "GUIDE",
+            "assigned_robot_id": (
+                str(pinky_id or self.default_pinky_id).strip() or self.default_pinky_id
+            ),
+            "command_type": str(command_type or "").strip().upper(),
+        }
 
     def _create_task_or_member_event(
         self,
