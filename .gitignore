@@ -224,3 +224,8 @@ guide_code_backup/
 patrol_code_backup/
 pinkylib/
 wireframes/
+
+# Local-only notes and references
+/test/local/*
+!/test/local/README.md
+/local_refs/
