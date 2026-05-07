@@ -9,6 +9,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from server.ropi_main_service.application.auth import AuthService
+from server.ropi_main_service.application.action_feedback_event_runtime import (
+    start_action_feedback_event_polling_if_enabled,
+)
 from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
@@ -210,6 +213,7 @@ class ControlServiceServer:
             async_stream_required_codes={MESSAGE_CODE_TASK_EVENT_SUBSCRIBE},
         )
         self.fall_inference_stream_task = None
+        self.action_feedback_event_poll_task = None
         self.guide_phase_snapshot_poll_task = None
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
@@ -311,6 +315,13 @@ class ControlServiceServer:
             loop=asyncio.get_running_loop(),
             task_event_publisher=self.task_event_stream_hub,
             workflow_task_manager=self.delivery_workflow_task_manager,
+        )
+        self.action_feedback_event_poll_task = (
+            start_action_feedback_event_polling_if_enabled(
+                loop=asyncio.get_running_loop(),
+                task_event_publisher=self.task_event_stream_hub,
+                workflow_task_manager=self.delivery_workflow_task_manager,
+            )
         )
         self.guide_phase_snapshot_poll_task = (
             start_guide_phase_snapshot_polling_if_enabled(
