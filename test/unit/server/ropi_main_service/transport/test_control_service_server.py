@@ -89,6 +89,7 @@ class FakeCoordinateConfigRepository:
 @pytest.fixture
 def control_service_server(monkeypatch):
     monkeypatch.setenv("AI_FALL_STREAM_ENABLED", "false")
+    monkeypatch.setenv("GUIDE_PHASE_SNAPSHOT_POLL_ENABLED", "false")
     return tcp_server.ControlServiceServer()
 
 
@@ -1243,7 +1244,7 @@ def test_async_guide_start_driving_rpc_publishes_task_update(control_service_ser
             "method": "start_guide_driving",
             "kwargs": {
                 "task_id": "3001",
-                "target_track_id": "track_17",
+                "target_track_id": 17,
             },
         },
     )
@@ -1639,6 +1640,74 @@ def test_start_failure_closes_background_writer_and_db_pool(control_service_serv
         "writer_stopped",
         "pool_closed",
     ]
+
+
+def test_start_wires_guide_phase_snapshot_poller(control_service_server, monkeypatch):
+    monkeypatch.setenv("GUIDE_PHASE_SNAPSHOT_POLL_ENABLED", "true")
+    events = []
+
+    class FakeTcpServer:
+        sockets = []
+
+    class FakeBackgroundDbWriter:
+        def start(self):
+            events.append("writer_started")
+
+        async def stop(self):
+            events.append("writer_stopped")
+
+    class FakeWorkflowTaskManager:
+        async def shutdown(self):
+            events.append("workflow_shutdown")
+
+    async def fake_start_server(*args, **kwargs):
+        events.append("tcp_started")
+        return FakeTcpServer()
+
+    async def fake_close_pool():
+        events.append("pool_closed")
+
+    def fake_start_guide_phase_snapshot_polling_if_enabled(**kwargs):
+        events.append(
+            (
+                "guide_phase_snapshot_poll_started",
+                kwargs["workflow_task_manager"],
+                kwargs["task_update_publisher"],
+                kwargs["loop"],
+            )
+        )
+        return "guide_phase_snapshot_poll_task"
+
+    async def scenario():
+        control_service_server.db_writer = FakeBackgroundDbWriter()
+        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
+
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
+            new=fake_start_server,
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.close_pool",
+            new=fake_close_pool,
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.start_guide_phase_snapshot_polling_if_enabled",
+            new=fake_start_guide_phase_snapshot_polling_if_enabled,
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.start_fall_inference_stream_if_enabled",
+            return_value=None,
+        ):
+            await control_service_server.start()
+            await control_service_server._shutdown_resources()
+
+    asyncio.run(scenario())
+
+    assert events[0] == "writer_started"
+    assert events[1][0] == "guide_phase_snapshot_poll_started"
+    assert events[1][1] is control_service_server.delivery_workflow_task_manager
+    assert events[1][2] is control_service_server.task_update_event_publisher
+    assert events[2] == "tcp_started"
+    assert control_service_server.guide_phase_snapshot_poll_task == (
+        "guide_phase_snapshot_poll_task"
+    )
 
 
 def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_service_server):

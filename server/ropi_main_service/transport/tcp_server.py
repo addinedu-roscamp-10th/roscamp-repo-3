@@ -13,11 +13,11 @@ from server.ropi_main_service.application.delivery_runtime import build_delivery
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
-from server.ropi_main_service.application.guide_tracking_runtime import (
-    start_guide_tracking_stream_if_enabled,
-)
 from server.ropi_main_service.application.guide_navigation_runtime import (
     GuideNavigationRuntimeStarter,
+)
+from server.ropi_main_service.application.guide_phase_snapshot_runtime import (
+    start_guide_phase_snapshot_polling_if_enabled,
 )
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
@@ -208,7 +208,7 @@ class ControlServiceServer:
             async_stream_required_codes={MESSAGE_CODE_TASK_EVENT_SUBSCRIBE},
         )
         self.fall_inference_stream_task = None
-        self.guide_tracking_stream_task = None
+        self.guide_phase_snapshot_poll_task = None
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         result = self.frame_router.dispatch(frame, loop=loop)
@@ -286,10 +286,12 @@ class ControlServiceServer:
             task_event_publisher=self.task_event_stream_hub,
             workflow_task_manager=self.delivery_workflow_task_manager,
         )
-        self.guide_tracking_stream_task = start_guide_tracking_stream_if_enabled(
-            loop=asyncio.get_running_loop(),
-            task_event_publisher=self.task_event_stream_hub,
-            workflow_task_manager=self.delivery_workflow_task_manager,
+        self.guide_phase_snapshot_poll_task = (
+            start_guide_phase_snapshot_polling_if_enabled(
+                loop=asyncio.get_running_loop(),
+                task_update_publisher=self.task_update_event_publisher,
+                workflow_task_manager=self.delivery_workflow_task_manager,
+            )
         )
         try:
             self._server = await asyncio.start_server(
