@@ -175,7 +175,7 @@ CREATE TABLE `operation_zone` (
     `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
     `created_at` DATETIME NOT NULL,
     `updated_at` DATETIME NOT NULL,
-    CONSTRAINT `pk_operation_zone` PRIMARY KEY (`zone_id`),
+    CONSTRAINT `pk_operation_zone` PRIMARY KEY (`map_id`, `zone_id`),
     CONSTRAINT `fk_operation_zone_map_profile`
         FOREIGN KEY (`map_id`)
         REFERENCES `map_profile` (`map_id`)
@@ -214,8 +214,8 @@ CREATE TABLE `goal_pose` (
         FOREIGN KEY (`map_id`)
         REFERENCES `map_profile` (`map_id`),
     CONSTRAINT `fk_goal_pose_operation_zone`
-        FOREIGN KEY (`zone_id`)
-        REFERENCES `operation_zone` (`zone_id`),
+        FOREIGN KEY (`map_id`, `zone_id`)
+        REFERENCES `operation_zone` (`map_id`, `zone_id`),
     KEY `idx_goal_pose_map_purpose` (`map_id`, `purpose`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

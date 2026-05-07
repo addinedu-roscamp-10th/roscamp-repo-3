@@ -9,5 +9,6 @@ SELECT
     created_at,
     updated_at
 FROM operation_zone
-WHERE zone_id = %s
+WHERE map_id = %s
+  AND zone_id = %s
 LIMIT 1

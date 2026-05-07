@@ -160,8 +160,8 @@ VALUES
  'device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm',
  'map', TRUE, NOW(), NOW()),
 ('map_test12_0506', 'map_test12_0506', 1, NULL,
- 'test/local/map_test12_0506.yaml',
- 'test/local/map_test12_0506.pgm',
+ 'device/ropi_mobile/src/ropi_nav_config/maps/map_test12_0506.yaml',
+ 'device/ropi_mobile/src/ropi_nav_config/maps/map_test12_0506.pgm',
  'map', FALSE, NOW(), NOW());
 
 -- =========================
@@ -187,6 +187,21 @@ VALUES
  '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":-0.3,"y":-0.9},{"x":0.6,"y":-0.9},{"x":0.6,"y":-0.1},{"x":-0.3,"y":-0.1}]}',
  TRUE, NOW(), NOW()),
 ('dock', 'map_0504', '충전소', 'DOCK', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":-0.1},{"x":1.2,"y":-0.1},{"x":1.2,"y":0.6},{"x":0.5,"y":0.6}]}',
+ TRUE, NOW(), NOW()),
+('room_301', 'map_test12_0506', '301호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":1.2,"y":-0.4},{"x":2.2,"y":-0.4},{"x":2.2,"y":0.5},{"x":1.2,"y":0.5}]}',
+ TRUE, NOW(), NOW()),
+('room_302', 'map_test12_0506', '302호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":2.6,"y":0.6},{"x":3.4,"y":0.6},{"x":3.4,"y":1.4},{"x":2.6,"y":1.4}]}',
+ TRUE, NOW(), NOW()),
+('room_305', 'map_test12_0506', '305호', 'ROOM', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":3.5},{"x":1.5,"y":3.5},{"x":1.5,"y":4.5},{"x":0.5,"y":4.5}]}',
+ TRUE, NOW(), NOW()),
+('supply_station', 'map_test12_0506', '물품 적재 위치', 'SUPPLY_STATION', 1,
+ '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":-0.3,"y":-0.9},{"x":0.6,"y":-0.9},{"x":0.6,"y":-0.1},{"x":-0.3,"y":-0.1}]}',
+ TRUE, NOW(), NOW()),
+('dock', 'map_test12_0506', '충전소', 'DOCK', 1,
  '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.5,"y":-0.1},{"x":1.2,"y":-0.1},{"x":1.2,"y":0.6},{"x":0.5,"y":0.6}]}',
  TRUE, NOW(), NOW());
 

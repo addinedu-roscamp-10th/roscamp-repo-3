@@ -19,7 +19,7 @@ def generate_launch_description():
         [FindPackageShare("ropi_nav_config"), "config", "nav2_params.yaml"]
     )
     default_map_file = PathJoinSubstitution(
-        [FindPackageShare("ropi_nav_config"), "maps", "map_test11_0423.yaml"]
+        [FindPackageShare("ropi_nav_config"), "maps", "map_0504.yaml"]
     )
     pinky_bringup_launch = PathJoinSubstitution(
         [FindPackageShare("pinky_navigation"), "launch", "bringup_launch.xml"]

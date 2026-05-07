@@ -62,7 +62,11 @@ class CoordinateConfigService:
 
         map_profile, error = self._resolve_map_profile(map_id=map_id)
         if error:
-            return self._not_found_response()
+            return self._not_found_response(
+                result_code=error.get("result_code", "NOT_FOUND"),
+                reason_code=error.get("reason_code", "ACTIVE_MAP_NOT_FOUND"),
+                result_message=error.get("result_message", "활성 map_profile이 없습니다."),
+            )
 
         map_id = map_profile["map_id"]
         operation_zones = self.repository.get_operation_zones(
@@ -163,6 +167,7 @@ class CoordinateConfigService:
             return error
 
         existing_zone = self.repository.get_operation_zone(
+            map_id=map_profile["map_id"],
             zone_id=normalized["zone_id"],
         )
         if existing_zone:
@@ -216,6 +221,7 @@ class CoordinateConfigService:
         existing_zone = await self._call_async_or_thread(
             "async_get_operation_zone",
             "get_operation_zone",
+            map_id=map_profile["map_id"],
             zone_id=normalized["zone_id"],
         )
         if existing_zone:
@@ -836,7 +842,11 @@ class CoordinateConfigService:
 
         map_profile, error = await self._async_resolve_map_profile(map_id=map_id)
         if error:
-            return self._not_found_response()
+            return self._not_found_response(
+                result_code=error.get("result_code", "NOT_FOUND"),
+                reason_code=error.get("reason_code", "ACTIVE_MAP_NOT_FOUND"),
+                result_message=error.get("result_message", "활성 map_profile이 없습니다."),
+            )
 
         map_id = map_profile["map_id"]
 
@@ -930,14 +940,14 @@ class CoordinateConfigService:
     ):
         error_factory = error_factory or operation_zone_error
         if not row:
-            reason_code = "MAP_NOT_ACTIVE" if requested_map_id else "ACTIVE_MAP_NOT_FOUND"
+            reason_code = "MAP_NOT_FOUND" if requested_map_id else "ACTIVE_MAP_NOT_FOUND"
             result_message = (
                 "요청한 map_id를 찾을 수 없습니다."
                 if requested_map_id
                 else "활성 map_profile이 없습니다."
             )
             return None, error_factory(
-                result_code="REJECTED" if requested_map_id else "NOT_FOUND",
+                result_code="NOT_FOUND",
                 reason_code=reason_code,
                 result_message=result_message,
             )
@@ -978,11 +988,17 @@ class CoordinateConfigService:
             ],
         }
 
-    def _not_found_response(self):
+    def _not_found_response(
+        self,
+        *,
+        result_code="NOT_FOUND",
+        reason_code="ACTIVE_MAP_NOT_FOUND",
+        result_message="활성 map_profile이 없습니다.",
+    ):
         return {
-            "result_code": "NOT_FOUND",
-            "result_message": "활성 map_profile이 없습니다.",
-            "reason_code": "ACTIVE_MAP_NOT_FOUND",
+            "result_code": result_code,
+            "result_message": result_message,
+            "reason_code": reason_code,
             "generated_at": generated_at(self._clock),
             "map_profile": None,
             "map_profiles": self._list_map_profiles(),
@@ -1168,7 +1184,7 @@ class CoordinateConfigService:
         if zone_id is None:
             return None
 
-        zone = self.repository.get_operation_zone(zone_id=zone_id)
+        zone = self.repository.get_operation_zone(map_id=map_id, zone_id=zone_id)
         return self._format_goal_pose_zone_validation(
             map_id=map_id,
             zone=zone,
@@ -1181,6 +1197,7 @@ class CoordinateConfigService:
         zone = await self._call_async_or_thread(
             "async_get_operation_zone",
             "get_operation_zone",
+            map_id=map_id,
             zone_id=zone_id,
         )
         return self._format_goal_pose_zone_validation(

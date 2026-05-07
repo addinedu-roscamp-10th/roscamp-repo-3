@@ -14,6 +14,10 @@ def _seed_sql() -> str:
     return INSERT_DUMMIES_SQL.read_text(encoding="utf-8")
 
 
+def _sql(relative_path: str) -> str:
+    return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+
+
 def test_schema_uses_member_event_without_legacy_event_type_tables():
     ddl = _ddl()
 
@@ -144,14 +148,50 @@ def test_operation_zone_supports_optional_boundary_polygon():
     assert "`path_json`" not in operation_zone_section
 
 
+def test_operation_zone_identity_is_scoped_by_map():
+    ddl = _ddl()
+
+    operation_zone_section = ddl.split("CREATE TABLE `operation_zone`", 1)[1].split(
+        "CREATE TABLE `patrol_area`",
+        1,
+    )[0]
+    goal_pose_section = ddl.split("CREATE TABLE `goal_pose`", 1)[1].split(
+        "CREATE TABLE `fms_waypoint`",
+        1,
+    )[0]
+
+    assert "CONSTRAINT `pk_operation_zone` PRIMARY KEY (`map_id`, `zone_id`)" in operation_zone_section
+    assert "CONSTRAINT `fk_goal_pose_operation_zone`" in goal_pose_section
+    assert "FOREIGN KEY (`map_id`, `zone_id`)" in goal_pose_section
+    assert "REFERENCES `operation_zone` (`map_id`, `zone_id`)" in goal_pose_section
+    assert "FOREIGN KEY (`zone_id`)" not in goal_pose_section
+
+
 def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
     seed_sql = _seed_sql()
 
     assert "delivery_room_301" in seed_sql
     assert "room2" not in seed_sql
+    assert "'device/ropi_mobile/src/ropi_nav_config/maps/map_test12_0506.yaml'" in seed_sql
+    assert "'device/ropi_mobile/src/ropi_nav_config/maps/map_test12_0506.pgm'" in seed_sql
+    assert "('room_301', 'map_0504', '301호', 'ROOM'," in seed_sql
+    assert "('room_301', 'map_test12_0506', '301호', 'ROOM'," in seed_sql
     assert "('pickup_supply', 'map_test12_0506', 'supply_station', 'PICKUP', 0.1665755137108074, -0.4496830900440016, 1.5707963267948966," in seed_sql
     assert "('delivery_room_301', 'map_test12_0506', 'room_301', 'DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0," in seed_sql
     assert "('dock_home', 'map_test12_0506', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0," in seed_sql
+
+
+def test_goal_pose_queries_join_operation_zone_by_map_and_zone():
+    for relative_path in (
+        "server/ropi_main_service/persistence/sql/coordinate_config/find_goal_pose.sql",
+        "server/ropi_main_service/persistence/sql/coordinate_config/list_goal_poses.sql",
+        "server/ropi_main_service/persistence/sql/task_request/list_delivery_destinations.sql",
+        "server/ropi_main_service/persistence/sql/task_request/list_enabled_goal_poses.sql",
+        "server/ropi_main_service/persistence/sql/guide/find_destination_goal_pose.sql",
+    ):
+        sql = _sql(relative_path)
+        assert "ON oz.map_id = gp.map_id" in sql
+        assert "AND oz.zone_id = gp.zone_id" in sql
 
 
 def test_dummy_patrol_area_contains_path_backed_route():

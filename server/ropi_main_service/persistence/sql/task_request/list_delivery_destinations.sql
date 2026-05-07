@@ -11,7 +11,8 @@ FROM goal_pose gp
 JOIN map_profile mp
     ON mp.map_id = gp.map_id
 LEFT JOIN operation_zone oz
-    ON oz.zone_id = gp.zone_id
+    ON oz.map_id = gp.map_id
+   AND oz.zone_id = gp.zone_id
 WHERE gp.is_enabled = TRUE
   AND gp.map_id = %s
   AND gp.purpose = 'DESTINATION'

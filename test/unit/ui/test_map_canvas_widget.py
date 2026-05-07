@@ -120,20 +120,20 @@ def test_patrol_overlay_keeps_existing_path_based_loading_contract():
             {
                 "task_type": "PATROL",
                 "patrol_map": {
-                    "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
-                    "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
+                    "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml",
+                    "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm",
                 },
                 "patrol_path": {
                     "poses": [
-                        {"x": 0.1665755137108074, "y": -0.4496830900440016},
-                        {"x": 1.6946025435218914, "y": 0.0043433854992070454},
+                        {"x": 0.2, "y": 0.2},
+                        {"x": 1.0, "y": 0.5},
                     ],
                 },
             }
         )
 
         assert overlay.map_loaded is True
-        assert overlay.map_image_size == (105, 59)
-        assert overlay.route_pixel_points == [(18, 46), (94, 24)]
+        assert overlay.map_image_size == (100, 50)
+        assert overlay.route_pixel_points == [(10, 40), (50, 25)]
     finally:
         overlay.close()

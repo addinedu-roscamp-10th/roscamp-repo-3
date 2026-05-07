@@ -31,15 +31,15 @@ def test_patrol_map_overlay_loads_pgm_yaml_and_converts_world_coordinates():
             {
                 "task_type": "PATROL",
                 "patrol_map": {
-                    "map_id": "map_test11_0423",
+                    "map_id": "map_0504",
                     "frame_id": "map",
                     "yaml_path": str(
                         PROJECT_ROOT
-                        / "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml"
+                        / "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml"
                     ),
                     "pgm_path": str(
                         PROJECT_ROOT
-                        / "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm"
+                        / "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm"
                     ),
                 },
                 "patrol_path": {
@@ -48,32 +48,32 @@ def test_patrol_map_overlay_loads_pgm_yaml_and_converts_world_coordinates():
                     "current_waypoint_index": 1,
                     "poses": [
                         {
-                            "x": 0.1665755137108074,
-                            "y": -0.4496830900440016,
+                            "x": 0.2,
+                            "y": 0.2,
                             "yaw": 1.57,
                         },
                         {
-                            "x": 1.6946025435218914,
-                            "y": 0.0043433854992070454,
+                            "x": 1.0,
+                            "y": 0.5,
                             "yaw": 0.0,
                         },
                     ],
                 },
-                "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
+                "pose": {"x": 0.8, "y": 0.3, "yaw": 0.0},
                 "fall_alert": {
-                    "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                    "alert_pose": {"x": 0.6, "y": 0.1, "yaw": 0.0},
                 },
             }
         )
 
         assert overlay.map_loaded is True
-        assert overlay.map_image_size == (105, 59)
-        assert overlay.route_pixel_points[0] == (18, 46)
-        assert overlay.route_pixel_points[1] == (94, 24)
+        assert overlay.map_image_size == (100, 50)
+        assert overlay.route_pixel_points[0] == (10, 40)
+        assert overlay.route_pixel_points[1] == (50, 25)
         assert overlay.route_heading_yaws == [1.57, 0.0]
         assert overlay.current_waypoint_index == 1
         assert overlay.robot_pixel_point is not None
-        assert overlay.fall_alert_pixel_point == (56, 15)
+        assert overlay.fall_alert_pixel_point == (30, 45)
 
         overlay.render({"task_type": "DELIVERY"})
 

@@ -172,7 +172,7 @@ def normalize_operation_zone_boundary_input(
         return None, operation_zone_error(
             result_code="INVALID_REQUEST",
             reason_code="FRAME_ID_MISMATCH",
-            result_message="구역 boundary frame_id가 active map frame과 일치하지 않습니다.",
+            result_message="구역 boundary frame_id가 선택 맵 frame과 일치하지 않습니다.",
         )
 
     raw_vertices = boundary.get("vertices")
@@ -258,7 +258,7 @@ def normalize_goal_pose_input(
         return None, goal_pose_error(
             result_code="INVALID_REQUEST",
             reason_code="FRAME_ID_MISMATCH",
-            result_message="frame_id가 active map frame과 일치하지 않습니다.",
+            result_message="frame_id가 선택 맵 frame과 일치하지 않습니다.",
         )
 
     parsed_pose_x = optional_float(pose_x)
@@ -404,7 +404,7 @@ def _normalize_patrol_path(path_json, *, active_frame_id):
         return None, patrol_area_error(
             result_code="INVALID_REQUEST",
             reason_code="FRAME_ID_MISMATCH",
-            result_message="순찰 경로 frame_id가 active map frame과 일치하지 않습니다.",
+            result_message="순찰 경로 frame_id가 선택 맵 frame과 일치하지 않습니다.",
         )
 
     raw_poses = path.get("poses")

@@ -69,11 +69,11 @@ class CoordinateConfigRepository:
             (str(map_id), bool(include_disabled)),
         )
 
-    def get_operation_zone(self, *, zone_id):
-        return fetch_one(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+    def get_operation_zone(self, *, map_id, zone_id):
+        return fetch_one(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
 
-    async def async_get_operation_zone(self, *, zone_id):
-        return await async_fetch_one(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+    async def async_get_operation_zone(self, *, map_id, zone_id):
+        return await async_fetch_one(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
 
     def create_operation_zone(
         self,
@@ -98,7 +98,7 @@ class CoordinateConfigRepository:
                         bool(is_enabled),
                     ),
                 )
-                cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+                cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
                 row = cur.fetchone()
             conn.commit()
             return row
@@ -128,7 +128,7 @@ class CoordinateConfigRepository:
                     bool(is_enabled),
                 ),
             )
-            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
             return await cur.fetchone()
 
     def get_goal_poses(self, *, map_id, include_disabled=True):
@@ -479,7 +479,7 @@ class CoordinateConfigRepository:
         async with async_transaction() as cur:
             await cur.execute(
                 LOCK_OPERATION_ZONE_SQL,
-                (str(zone_id), str(map_id)),
+                (str(map_id), str(zone_id)),
             )
             row = await cur.fetchone()
             if not row:
@@ -494,11 +494,11 @@ class CoordinateConfigRepository:
                     str(zone_name),
                     str(zone_type),
                     bool(is_enabled),
-                    str(zone_id),
                     str(map_id),
+                    str(zone_id),
                 ),
             )
-            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
             return {
                 "status": "UPDATED",
                 "operation_zone": await cur.fetchone(),
@@ -542,7 +542,7 @@ class CoordinateConfigRepository:
         async with async_transaction() as cur:
             await cur.execute(
                 LOCK_OPERATION_ZONE_SQL,
-                (str(zone_id), str(map_id)),
+                (str(map_id), str(zone_id)),
             )
             row = await cur.fetchone()
             if not row:
@@ -559,7 +559,7 @@ class CoordinateConfigRepository:
                     boundary_json=boundary_json,
                 ),
             )
-            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
             return {
                 "status": "UPDATED",
                 "operation_zone": await cur.fetchone(),
@@ -576,7 +576,7 @@ class CoordinateConfigRepository:
         zone_type,
         is_enabled,
     ):
-        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(zone_id), str(map_id)))
+        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
         row = cur.fetchone()
         if not row:
             return {"status": "NOT_FOUND", "operation_zone": None}
@@ -590,11 +590,11 @@ class CoordinateConfigRepository:
                 str(zone_name),
                 str(zone_type),
                 bool(is_enabled),
-                str(zone_id),
                 str(map_id),
+                str(zone_id),
             ),
         )
-        cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+        cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
         return {
             "status": "UPDATED",
             "operation_zone": cur.fetchone(),
@@ -610,7 +610,7 @@ class CoordinateConfigRepository:
         expected_revision,
         boundary_json,
     ):
-        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(zone_id), str(map_id)))
+        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
         row = cur.fetchone()
         if not row:
             return {"status": "NOT_FOUND", "operation_zone": None}
@@ -626,7 +626,7 @@ class CoordinateConfigRepository:
                 boundary_json=boundary_json,
             ),
         )
-        cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+        cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
         return {
             "status": "UPDATED",
             "operation_zone": cur.fetchone(),
@@ -811,8 +811,8 @@ class CoordinateConfigRepository:
     ):
         return (
             cls._json_dumps(boundary_json) if boundary_json is not None else None,
-            str(zone_id),
             str(map_id),
+            str(zone_id),
         )
 
     @staticmethod

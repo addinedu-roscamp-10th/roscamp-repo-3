@@ -5,5 +5,5 @@ SET
     is_enabled = %s,
     revision = revision + 1,
     updated_at = NOW()
-WHERE zone_id = %s
-  AND map_id = %s
+WHERE map_id = %s
+  AND zone_id = %s

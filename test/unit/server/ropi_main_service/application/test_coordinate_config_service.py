@@ -110,6 +110,14 @@ class FakeCoordinateConfigRepository:
         self.calls.append(("async_get_map_profile", map_id))
         return self.map_profiles_by_id.get(map_id)
 
+    def list_map_profiles(self):
+        self.calls.append(("list_map_profiles",))
+        return list(self.map_profiles_by_id.values())
+
+    async def async_list_map_profiles(self):
+        self.calls.append(("async_list_map_profiles",))
+        return list(self.map_profiles_by_id.values())
+
     def get_operation_zones(self, *, map_id, include_disabled=True):
         self.calls.append(("get_operation_zones", map_id, include_disabled))
         return self.operation_zones
@@ -142,12 +150,12 @@ class FakeCoordinateConfigRepository:
         self.calls.append(("async_get_patrol_area", patrol_area_id))
         return self.existing_patrol_area
 
-    def get_operation_zone(self, *, zone_id):
-        self.calls.append(("get_operation_zone", zone_id))
+    def get_operation_zone(self, *, map_id, zone_id):
+        self.calls.append(("get_operation_zone", map_id, zone_id))
         return self.existing_zone
 
-    async def async_get_operation_zone(self, *, zone_id):
-        self.calls.append(("async_get_operation_zone", zone_id))
+    async def async_get_operation_zone(self, *, map_id, zone_id):
+        self.calls.append(("async_get_operation_zone", map_id, zone_id))
         return self.existing_zone
 
     def create_operation_zone(
@@ -674,6 +682,7 @@ def test_active_map_bundle_formats_active_map_coordinate_data():
         ("get_operation_zones", "map_test11_0423", True),
         ("get_goal_poses", "map_test11_0423", True),
         ("get_patrol_areas", "map_test11_0423", True),
+        ("list_map_profiles",),
     ]
 
 
@@ -689,7 +698,26 @@ def test_active_map_bundle_returns_not_found_without_active_map():
     assert response["operation_zones"] == []
     assert response["goal_poses"] == []
     assert response["patrol_areas"] == []
-    assert repository.calls == [("get_active_map_profile",)]
+    assert repository.calls == [("get_active_map_profile",), ("list_map_profiles",)]
+
+
+def test_selected_map_bundle_reports_missing_requested_map():
+    repository = FakeCoordinateConfigRepository()
+
+    response = _service(repository).get_map_bundle(map_id="missing_map")
+
+    assert response["result_code"] == "NOT_FOUND"
+    assert response["reason_code"] == "MAP_NOT_FOUND"
+    assert response["result_message"] == "요청한 map_id를 찾을 수 없습니다."
+    assert response["map_profile"] is None
+    assert response["map_profiles"][0]["map_id"] == "map_test11_0423"
+    assert response["operation_zones"] == []
+    assert response["goal_poses"] == []
+    assert response["patrol_areas"] == []
+    assert repository.calls == [
+        ("get_map_profile", "missing_map"),
+        ("list_map_profiles",),
+    ]
 
 
 def test_active_map_bundle_async_uses_async_repository_methods():
@@ -709,6 +737,7 @@ def test_active_map_bundle_async_uses_async_repository_methods():
         ("async_get_operation_zones", "map_test11_0423", False),
         ("async_get_goal_poses", "map_test11_0423", False),
         ("async_get_patrol_areas", "map_test11_0423", False),
+        ("list_map_profiles",),
     ]
 
 
@@ -752,7 +781,7 @@ def test_create_operation_zone_creates_zone_on_active_map():
     }
     assert repository.calls == [
         ("get_active_map_profile",),
-        ("get_operation_zone", "caregiver_room"),
+        ("get_operation_zone", "map_test11_0423", "caregiver_room"),
         (
             "create_operation_zone",
             "map_test11_0423",
@@ -779,11 +808,11 @@ def test_create_operation_zone_rejects_duplicate_zone_id():
     assert response["operation_zone"] is None
     assert repository.calls == [
         ("get_active_map_profile",),
-        ("get_operation_zone", "room_301"),
+        ("get_operation_zone", "map_test11_0423", "room_301"),
     ]
 
 
-def test_create_operation_zone_rejects_non_active_map_id():
+def test_create_operation_zone_rejects_missing_map_id():
     repository = FakeCoordinateConfigRepository()
 
     response = _service(repository).create_operation_zone(
@@ -793,8 +822,8 @@ def test_create_operation_zone_rejects_non_active_map_id():
         map_id="other_map",
     )
 
-    assert response["result_code"] == "REJECTED"
-    assert response["reason_code"] == "MAP_NOT_ACTIVE"
+    assert response["result_code"] == "NOT_FOUND"
+    assert response["reason_code"] == "MAP_NOT_FOUND"
     assert response["operation_zone"] is None
     assert repository.calls == [("get_map_profile", "other_map")]
 
@@ -1125,7 +1154,7 @@ def test_update_goal_pose_updates_existing_pose_on_active_map():
     }
     assert repository.calls == [
         ("get_active_map_profile",),
-        ("get_operation_zone", "room_301"),
+        ("get_operation_zone", "map_test11_0423", "room_301"),
         (
             "update_goal_pose",
             "map_test11_0423",
@@ -1205,7 +1234,7 @@ def test_update_goal_pose_rejects_missing_zone():
     assert response["goal_pose"] is None
     assert repository.calls == [
         ("get_active_map_profile",),
-        ("get_operation_zone", "room_999"),
+        ("get_operation_zone", "map_test11_0423", "room_999"),
     ]
 
 
@@ -1255,7 +1284,7 @@ def test_update_goal_pose_async_uses_async_repository_method():
     assert response["goal_pose"]["is_enabled"] is False
     assert repository.calls == [
         ("async_get_active_map_profile",),
-        ("async_get_operation_zone", "room_301"),
+        ("async_get_operation_zone", "map_test11_0423", "room_301"),
         (
             "async_update_goal_pose",
             "map_test11_0423",

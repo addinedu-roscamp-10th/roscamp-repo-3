@@ -75,6 +75,29 @@ def test_coordinate_config_repository_fetches_map_profile_by_id(monkeypatch):
     ]
 
 
+def test_coordinate_config_repository_fetches_operation_zone_by_map_and_zone(monkeypatch):
+    calls = []
+
+    def fake_fetch_one(query, params=None):
+        calls.append((query, params))
+        return {"map_id": "map_test12_0506", "zone_id": "room_301"}
+
+    monkeypatch.setattr(coordinate_config_repository, "fetch_one", fake_fetch_one)
+
+    row = coordinate_config_repository.CoordinateConfigRepository().get_operation_zone(
+        map_id="map_test12_0506",
+        zone_id="room_301",
+    )
+
+    assert row == {"map_id": "map_test12_0506", "zone_id": "room_301"}
+    assert calls == [
+        (
+            coordinate_config_repository.FIND_OPERATION_ZONE_SQL,
+            ("map_test12_0506", "room_301"),
+        )
+    ]
+
+
 def test_coordinate_config_repository_exposes_async_fetch_methods(monkeypatch):
     calls = []
 
@@ -256,7 +279,7 @@ def test_coordinate_config_repository_creates_operation_zone_in_transaction(
         True,
     )
     assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
-    assert select_params == ("caregiver_room",)
+    assert select_params == ("map_test11_0423", "caregiver_room")
 
 
 def test_coordinate_config_repository_creates_patrol_area_in_transaction(
@@ -343,11 +366,11 @@ def test_coordinate_config_repository_updates_operation_zone_with_revision_lock(
     update_query, update_params = cursor.calls[1]
     select_query, select_params = cursor.calls[2]
     assert lock_query == coordinate_config_repository.LOCK_OPERATION_ZONE_SQL
-    assert lock_params == ("room_301", "map_test11_0423")
+    assert lock_params == ("map_test11_0423", "room_301")
     assert "revision = revision + 1" in update_query
-    assert update_params == ("301호", "ROOM", False, "room_301", "map_test11_0423")
+    assert update_params == ("301호", "ROOM", False, "map_test11_0423", "room_301")
     assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
-    assert select_params == ("room_301",)
+    assert select_params == ("map_test11_0423", "room_301")
 
 
 def test_coordinate_config_repository_reports_operation_zone_revision_conflict(
@@ -418,16 +441,16 @@ def test_coordinate_config_repository_updates_operation_zone_boundary_with_revis
     update_query, update_params = cursor.calls[1]
     select_query, select_params = cursor.calls[2]
     assert lock_query == coordinate_config_repository.LOCK_OPERATION_ZONE_SQL
-    assert lock_params == ("room_301", "map_test11_0423")
+    assert lock_params == ("map_test11_0423", "room_301")
     assert update_query == coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL
     assert update_params == (
         '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.0,"y":0.0},'
         '{"x":1.0,"y":0.0},{"x":1.0,"y":1.0}]}',
-        "room_301",
         "map_test11_0423",
+        "room_301",
     )
     assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
-    assert select_params == ("room_301",)
+    assert select_params == ("map_test11_0423", "room_301")
 
 
 def test_coordinate_config_repository_clears_operation_zone_boundary(
@@ -458,7 +481,7 @@ def test_coordinate_config_repository_clears_operation_zone_boundary(
     assert result == {"status": "UPDATED", "operation_zone": updated_row}
     assert cursor.calls[1] == (
         coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL,
-        (None, "room_301", "map_test11_0423"),
+        (None, "map_test11_0423", "room_301"),
     )
 
 
@@ -559,16 +582,22 @@ def test_coordinate_config_repository_exposes_async_operation_zone_mutations(
                 True,
             ),
         ),
-        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("caregiver_room",)),
+        (
+            coordinate_config_repository.FIND_OPERATION_ZONE_SQL,
+            ("map_test11_0423", "caregiver_room"),
+        ),
         (
             coordinate_config_repository.LOCK_OPERATION_ZONE_SQL,
-            ("room_301", "map_test11_0423"),
+            ("map_test11_0423", "room_301"),
         ),
         (
             coordinate_config_repository.UPDATE_OPERATION_ZONE_SQL,
-            ("301호", "ROOM", False, "room_301", "map_test11_0423"),
+            ("301호", "ROOM", False, "map_test11_0423", "room_301"),
         ),
-        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("room_301",)),
+        (
+            coordinate_config_repository.FIND_OPERATION_ZONE_SQL,
+            ("map_test11_0423", "room_301"),
+        ),
     ]
 
 
@@ -627,18 +656,21 @@ def test_coordinate_config_repository_exposes_async_operation_zone_boundary_upda
     assert calls == [
         (
             coordinate_config_repository.LOCK_OPERATION_ZONE_SQL,
-            ("room_301", "map_test11_0423"),
+            ("map_test11_0423", "room_301"),
         ),
         (
             coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL,
             (
                 '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.0,"y":0.0},'
                 '{"x":1.0,"y":0.0},{"x":1.0,"y":1.0}]}',
-                "room_301",
                 "map_test11_0423",
+                "room_301",
             ),
         ),
-        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("room_301",)),
+        (
+            coordinate_config_repository.FIND_OPERATION_ZONE_SQL,
+            ("map_test11_0423", "room_301"),
+        ),
     ]
 
 

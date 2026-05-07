@@ -67,10 +67,10 @@ def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
                 "task_type": "PATROL",
                 "phase": "WAIT_FALL_RESPONSE",
                 "patrol_map": {
-                    "map_id": "map_test11_0423",
+                    "map_id": "map_0504",
                     "frame_id": "map",
-                    "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
-                    "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
+                    "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml",
+                    "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm",
                 },
                 "fall_alert": {
                     "result_seq": 44,
@@ -79,7 +79,7 @@ def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
                     "evidence_image_id": "fall-2001-44",
                     "evidence_image_available": True,
                     "zone_name": "3층 복도",
-                    "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                    "alert_pose": {"x": 0.6, "y": 0.1, "yaw": 0.0},
                 },
             },
             can_resume=True,
@@ -93,7 +93,7 @@ def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
         assert panel.evidence_image_btn.isEnabled() is True
         assert panel.resume_patrol_btn.isEnabled() is True
         assert "3층 복도" in panel.fall_marker_label.text()
-        assert "x=0.93" in panel.fall_marker_label.text()
+        assert "x=0.60" in panel.fall_marker_label.text()
         assert panel.patrol_map_overlay.fall_alert_pixel_point is not None
 
         panel.render(

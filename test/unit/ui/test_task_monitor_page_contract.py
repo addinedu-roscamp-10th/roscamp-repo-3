@@ -344,36 +344,36 @@ def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
                         "reason_code": "NO_ELIGIBLE_PINKY",
                         "result_message": "순찰 가능한 로봇이 없습니다.",
                         "phase": "WAIT_FALL_RESPONSE",
-                        "assigned_robot_id": "pinky3",
-                        "patrol_map": {
-                            "map_id": "map_test11_0423",
-                            "frame_id": "map",
-                            "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
-                            "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
-                        },
+                            "assigned_robot_id": "pinky3",
+                            "patrol_map": {
+                                "map_id": "map_0504",
+                                "frame_id": "map",
+                                "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml",
+                                "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm",
+                            },
                         "patrol_path": {
                             "frame_id": "map",
-                            "waypoint_count": 3,
-                            "current_waypoint_index": 1,
-                            "poses": [
-                                {"x": 0.1665755137108074, "y": -0.4496830900440016, "yaw": 1.57},
-                                {"x": 1.6946025435218914, "y": 0.0043433854992070454, "yaw": 0.0},
-                            ],
-                        },
-                        "latest_feedback": {
-                            "feedback_summary": "MOVING / 남은 거리 1.25m",
-                            "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
-                        },
+                                "waypoint_count": 3,
+                                "current_waypoint_index": 1,
+                                "poses": [
+                                    {"x": 0.2, "y": 0.2, "yaw": 1.57},
+                                    {"x": 1.0, "y": 0.5, "yaw": 0.0},
+                                ],
+                            },
+                            "latest_feedback": {
+                                "feedback_summary": "MOVING / 남은 거리 1.25m",
+                                "pose": {"x": 0.8, "y": 0.3, "yaw": 0.0},
+                            },
                         "latest_alert": {
                             "alert_id": 17,
                             "result_seq": 44,
                             "frame_id": "frame-44",
                             "fall_streak_ms": 1200,
                             "evidence_image_id": "fall-2001-44",
-                            "evidence_image_available": True,
-                            "zone_name": "3층 복도",
-                            "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
-                        },
+                                "evidence_image_available": True,
+                                "zone_name": "3층 복도",
+                                "alert_pose": {"x": 0.6, "y": 0.1, "yaw": 0.0},
+                            },
                     }
                 ],
             },
@@ -388,10 +388,10 @@ def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
         assert page.evidence_image_id_label.text() == "fall-2001-44"
         assert "3층 복도" in page.fall_marker_label.text()
         assert page.patrol_map_overlay.map_loaded is True
-        assert page.patrol_map_overlay.route_pixel_points == [(18, 46), (94, 24)]
+        assert page.patrol_map_overlay.route_pixel_points == [(10, 40), (50, 25)]
         assert page.patrol_map_overlay.current_waypoint_index == 1
         assert page.patrol_map_overlay.robot_pixel_point is not None
-        assert page.patrol_map_overlay.fall_alert_pixel_point == (56, 15)
+        assert page.patrol_map_overlay.fall_alert_pixel_point == (30, 45)
         assert started_last_seq_values == [12]
     finally:
         page.shutdown()

@@ -16,11 +16,13 @@ ropi_nav_config/
   launch/pinky_nav.launch.py
   config/nav2_params.yaml
   config/mapper_params.yaml
-  maps/map_test11_0423.yaml
-  maps/map_test11_0423.pgm
+  maps/map_0504.yaml
+  maps/map_0504.pgm
+  maps/map_test12_0506.yaml
+  maps/map_test12_0506.pgm
 ```
 
-현재 `pinky1`, `pinky2`, `pinky3`는 같은 공간에서 같은 map과 navigation parameter를 사용한다. 그래서 이 패키지에서는 로봇별 폴더를 나누지 않고 공통 파일 한 벌만 형상관리한다.
+기본 launch map은 `map_0504`다. 운반팀은 별도 기준 맵인 `map_test12_0506`을 사용하므로 Pinky2 운반 실험/운영 시 launch argument로 해당 map을 명시한다. 로봇별 폴더를 만들지 않고 map 파일을 공통 `maps/` 아래에서 관리한다.
 
 ## 실행 전 source 순서
 
@@ -41,7 +43,15 @@ ros2 launch ropi_nav_config pinky_nav.launch.py
 ```bash
 ros2 launch ropi_nav_config pinky_nav.launch.py \
   params_file:=/absolute/path/to/nav2_params.yaml \
-  map:=/absolute/path/to/map_test11_0423.yaml
+  map:=/absolute/path/to/map_0504.yaml
+```
+
+운반팀 맵으로 Pinky2를 실행할 때:
+
+```bash
+ros2 launch ropi_nav_config pinky_nav.launch.py \
+  robot_id:=pinky2 \
+  map:=/absolute/path/to/map_test12_0506.yaml
 ```
 
 ## 내부 동작
@@ -57,12 +67,12 @@ pinky_navigation/launch/bringup_launch.xml
 | launch argument | 기본 경로 |
 | --- | --- |
 | `params_file` | `ropi_nav_config/config/nav2_params.yaml` |
-| `map` | `ropi_nav_config/maps/map_test11_0423.yaml` |
+| `map` | `ropi_nav_config/maps/map_0504.yaml` |
 | `use_sim_time` | `False` |
 
 ## 팀별 수정 규칙
 
-- map과 navigation parameter는 모든 핑키가 공통으로 사용하므로 임의로 로봇별 복사본을 만들지 않는다.
+- map과 navigation parameter는 공통 패키지에서 관리하고, 시나리오별 차이는 launch argument로 선택한다. 운반은 `map_test12_0506`, 순찰/안내 기본은 `map_0504`를 사용한다.
 - 안내, 운반, 순찰 시나리오별 설정은 각 시나리오 패키지의 `config/`에서 관리한다.
 - 제조사 `~/pinky_pro/src/pinky_pro/pinky_navigation` 안의 파일을 직접 수정해서 문제를 해결하지 않는다.
 - 새 map을 만들면 map `.yaml` 안의 `image` 경로가 같은 폴더의 실제 `.pgm` 파일을 가리키는지 확인한다.

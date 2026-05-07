@@ -537,7 +537,7 @@ class CoordinateZoneSettingsPage(QWidget):
         layout.setHorizontalSpacing(10)
         layout.setVerticalSpacing(3)
 
-        title = QLabel("Active Map")
+        title = QLabel("선택 맵")
         title.setObjectName("sectionTitle")
         layout.addWidget(title, 0, 0)
 

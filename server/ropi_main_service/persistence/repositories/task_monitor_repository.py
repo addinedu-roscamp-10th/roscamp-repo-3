@@ -86,7 +86,8 @@ LEFT JOIN member gm
 LEFT JOIN goal_pose ggp
     ON ggp.goal_pose_id = gtd.destination_goal_pose_id
 LEFT JOIN operation_zone goz
-    ON goz.zone_id = ggp.zone_id
+    ON goz.map_id = ggp.map_id
+   AND goz.zone_id = ggp.zone_id
 LEFT JOIN robot_runtime_status rrs
     ON rrs.robot_id = t.assigned_robot_id
 LEFT JOIN robot_data_log feedback
