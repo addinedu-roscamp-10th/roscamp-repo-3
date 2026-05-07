@@ -40,15 +40,29 @@ class CoordinateConfigService:
         include_zone_boundaries=True,
         include_patrol_paths=True,
     ):
+        return self.get_map_bundle(
+            map_id=None,
+            include_disabled=include_disabled,
+            include_zone_boundaries=include_zone_boundaries,
+            include_patrol_paths=include_patrol_paths,
+        )
+
+    def get_map_bundle(
+        self,
+        *,
+        map_id=None,
+        include_disabled=True,
+        include_zone_boundaries=True,
+        include_patrol_paths=True,
+    ):
         include_disabled = bool_value(include_disabled)
         include_zone_boundaries = bool_value(include_zone_boundaries)
         include_patrol_paths = bool_value(include_patrol_paths)
 
-        active_map = self.repository.get_active_map_profile()
-        if not active_map:
+        map_profile, error = self._resolve_map_profile(map_id=map_id)
+        if error:
             return self._not_found_response()
 
-        map_profile = format_map_profile(active_map)
         map_id = map_profile["map_id"]
         operation_zones = self.repository.get_operation_zones(
             map_id=map_id,
@@ -239,8 +253,9 @@ class CoordinateConfigService:
         zone_name,
         zone_type,
         is_enabled,
+        map_id=None,
     ):
-        map_profile, error = self._resolve_active_map()
+        map_profile, error = self._resolve_map_profile(map_id=map_id)
         if error:
             return error
 
@@ -284,8 +299,9 @@ class CoordinateConfigService:
         zone_name,
         zone_type,
         is_enabled,
+        map_id=None,
     ):
-        map_profile, error = await self._async_resolve_active_map()
+        map_profile, error = await self._async_resolve_map_profile(map_id=map_id)
         if error:
             return error
 
@@ -329,8 +345,9 @@ class CoordinateConfigService:
         zone_id,
         expected_revision,
         boundary_json,
+        map_id=None,
     ):
-        map_profile, error = self._resolve_active_map()
+        map_profile, error = self._resolve_map_profile(map_id=map_id)
         if error:
             return error
 
@@ -363,8 +380,9 @@ class CoordinateConfigService:
         zone_id,
         expected_revision,
         boundary_json,
+        map_id=None,
     ):
-        map_profile, error = await self._async_resolve_active_map()
+        map_profile, error = await self._async_resolve_map_profile(map_id=map_id)
         if error:
             return error
 
@@ -405,8 +423,10 @@ class CoordinateConfigService:
         pose_yaw,
         frame_id,
         is_enabled,
+        map_id=None,
     ):
-        map_profile, error = self._resolve_active_map(
+        map_profile, error = self._resolve_map_profile(
+            map_id=map_id,
             error_factory=goal_pose_error,
         )
         if error:
@@ -460,8 +480,10 @@ class CoordinateConfigService:
         pose_yaw,
         frame_id,
         is_enabled,
+        map_id=None,
     ):
-        map_profile, error = await self._async_resolve_active_map(
+        map_profile, error = await self._async_resolve_map_profile(
+            map_id=map_id,
             error_factory=goal_pose_error,
         )
         if error:
@@ -511,8 +533,10 @@ class CoordinateConfigService:
         patrol_area_id,
         expected_revision,
         path_json,
+        map_id=None,
     ):
-        map_profile, error = self._resolve_active_map(
+        map_profile, error = self._resolve_map_profile(
+            map_id=map_id,
             error_factory=patrol_area_error,
         )
         if error:
@@ -547,8 +571,10 @@ class CoordinateConfigService:
         patrol_area_id,
         expected_revision,
         path_json,
+        map_id=None,
     ):
-        map_profile, error = await self._async_resolve_active_map(
+        map_profile, error = await self._async_resolve_map_profile(
+            map_id=map_id,
             error_factory=patrol_area_error,
         )
         if error:
@@ -586,18 +612,29 @@ class CoordinateConfigService:
         include_zone_boundaries=True,
         include_patrol_paths=True,
     ):
+        return await self.async_get_map_bundle(
+            map_id=None,
+            include_disabled=include_disabled,
+            include_zone_boundaries=include_zone_boundaries,
+            include_patrol_paths=include_patrol_paths,
+        )
+
+    async def async_get_map_bundle(
+        self,
+        *,
+        map_id=None,
+        include_disabled=True,
+        include_zone_boundaries=True,
+        include_patrol_paths=True,
+    ):
         include_disabled = bool_value(include_disabled)
         include_zone_boundaries = bool_value(include_zone_boundaries)
         include_patrol_paths = bool_value(include_patrol_paths)
 
-        active_map = await self._call_async_or_thread(
-            "async_get_active_map_profile",
-            "get_active_map_profile",
-        )
-        if not active_map:
+        map_profile, error = await self._async_resolve_map_profile(map_id=map_id)
+        if error:
             return self._not_found_response()
 
-        map_profile = format_map_profile(active_map)
         map_id = map_profile["map_id"]
 
         operation_zones, goal_poses, patrol_areas = await asyncio.gather(
@@ -639,43 +676,70 @@ class CoordinateConfigService:
         return await asyncio.to_thread(sync_method, **kwargs)
 
     def _resolve_active_map(self, *, map_id=None, error_factory=None):
-        active_map = self.repository.get_active_map_profile()
-        return self._format_active_map_resolution(
-            active_map,
-            map_id=map_id,
-            error_factory=error_factory,
-        )
+        return self._resolve_map_profile(map_id=map_id, error_factory=error_factory)
 
     async def _async_resolve_active_map(self, *, map_id=None, error_factory=None):
-        active_map = await self._call_async_or_thread(
-            "async_get_active_map_profile",
-            "get_active_map_profile",
-        )
-        return self._format_active_map_resolution(
-            active_map,
+        return await self._async_resolve_map_profile(
             map_id=map_id,
             error_factory=error_factory,
         )
 
-    def _format_active_map_resolution(self, active_map, *, map_id=None, error_factory=None):
+    def _resolve_map_profile(self, *, map_id=None, error_factory=None):
         error_factory = error_factory or operation_zone_error
-        if not active_map:
-            return None, error_factory(
-                result_code="NOT_FOUND",
-                reason_code="ACTIVE_MAP_NOT_FOUND",
-                result_message="활성 map_profile이 없습니다.",
-            )
-
-        map_profile = format_map_profile(active_map)
         requested_map_id = normalize_optional_text(map_id)
-        if requested_map_id and requested_map_id != map_profile["map_id"]:
+        row = (
+            self.repository.get_map_profile(map_id=requested_map_id)
+            if requested_map_id
+            else self.repository.get_active_map_profile()
+        )
+        return self._format_map_profile_resolution(
+            row,
+            requested_map_id=requested_map_id,
+            error_factory=error_factory,
+        )
+
+    async def _async_resolve_map_profile(self, *, map_id=None, error_factory=None):
+        error_factory = error_factory or operation_zone_error
+        requested_map_id = normalize_optional_text(map_id)
+        if requested_map_id:
+            row = await self._call_async_or_thread(
+                "async_get_map_profile",
+                "get_map_profile",
+                map_id=requested_map_id,
+            )
+        else:
+            row = await self._call_async_or_thread(
+                "async_get_active_map_profile",
+                "get_active_map_profile",
+            )
+        return self._format_map_profile_resolution(
+            row,
+            requested_map_id=requested_map_id,
+            error_factory=error_factory,
+        )
+
+    def _format_map_profile_resolution(
+        self,
+        row,
+        *,
+        requested_map_id=None,
+        error_factory=None,
+    ):
+        error_factory = error_factory or operation_zone_error
+        if not row:
+            reason_code = "MAP_NOT_ACTIVE" if requested_map_id else "ACTIVE_MAP_NOT_FOUND"
+            result_message = (
+                "요청한 map_id를 찾을 수 없습니다."
+                if requested_map_id
+                else "활성 map_profile이 없습니다."
+            )
             return None, error_factory(
-                result_code="REJECTED",
-                reason_code="MAP_NOT_ACTIVE",
-                result_message="phase 1에서는 active map만 수정할 수 있습니다.",
+                result_code="REJECTED" if requested_map_id else "NOT_FOUND",
+                reason_code=reason_code,
+                result_message=result_message,
             )
 
-        return map_profile, None
+        return format_map_profile(row), None
 
     def _ok_response(
         self,
@@ -693,6 +757,7 @@ class CoordinateConfigService:
             "reason_code": None,
             "generated_at": generated_at(self._clock),
             "map_profile": map_profile,
+            "map_profiles": self._list_map_profiles(),
             "operation_zones": [
                 format_operation_zone(
                     row,
@@ -717,10 +782,41 @@ class CoordinateConfigService:
             "reason_code": "ACTIVE_MAP_NOT_FOUND",
             "generated_at": generated_at(self._clock),
             "map_profile": None,
+            "map_profiles": self._list_map_profiles(),
             "operation_zones": [],
             "goal_poses": [],
             "patrol_areas": [],
         }
+
+    def list_map_profiles(self):
+        rows = self.repository.list_map_profiles()
+        return {
+            "result_code": "OK",
+            "result_message": None,
+            "reason_code": None,
+            "generated_at": generated_at(self._clock),
+            "map_profiles": [format_map_profile(row) for row in rows or []],
+        }
+
+    async def async_list_map_profiles(self):
+        rows = await self._call_async_or_thread(
+            "async_list_map_profiles",
+            "list_map_profiles",
+        )
+        return {
+            "result_code": "OK",
+            "result_message": None,
+            "reason_code": None,
+            "generated_at": generated_at(self._clock),
+            "map_profiles": [format_map_profile(row) for row in rows or []],
+        }
+
+    def _list_map_profiles(self):
+        try:
+            rows = self.repository.list_map_profiles()
+        except Exception:
+            return []
+        return [format_map_profile(row) for row in rows or []]
 
     @classmethod
     def _format_operation_zone_update_result(cls, result):

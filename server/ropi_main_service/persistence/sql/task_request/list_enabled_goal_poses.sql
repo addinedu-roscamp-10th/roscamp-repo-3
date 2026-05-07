@@ -14,6 +14,6 @@ JOIN map_profile mp
 LEFT JOIN operation_zone oz
     ON oz.zone_id = gp.zone_id
 WHERE gp.is_enabled = TRUE
-  AND mp.is_active = TRUE
+  AND gp.map_id = %s
   AND gp.purpose IN ('PICKUP', 'DESTINATION', 'DOCK')
 ORDER BY FIELD(gp.purpose, 'PICKUP', 'DESTINATION', 'DOCK'), gp.goal_pose_id

@@ -666,7 +666,7 @@ def test_create_operation_zone_rejects_non_active_map_id():
     assert response["result_code"] == "REJECTED"
     assert response["reason_code"] == "MAP_NOT_ACTIVE"
     assert response["operation_zone"] is None
-    assert repository.calls == [("get_active_map_profile",)]
+    assert repository.calls == [("get_map_profile", "other_map")]
 
 
 def test_create_operation_zone_rejects_invalid_zone_type():

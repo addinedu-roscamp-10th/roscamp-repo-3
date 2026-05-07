@@ -19,6 +19,7 @@ FIND_MAP_PROFILE_SQL = load_sql("coordinate_config/find_map_profile.sql")
 FIND_OPERATION_ZONE_SQL = load_sql("coordinate_config/find_operation_zone.sql")
 FIND_PATROL_AREA_SQL = load_sql("coordinate_config/find_patrol_area.sql")
 INSERT_OPERATION_ZONE_SQL = load_sql("coordinate_config/insert_operation_zone.sql")
+LIST_MAP_PROFILES_SQL = load_sql("coordinate_config/list_map_profiles.sql")
 LIST_OPERATION_ZONES_SQL = load_sql("coordinate_config/list_operation_zones.sql")
 LIST_GOAL_POSES_SQL = load_sql("coordinate_config/list_goal_poses.sql")
 LIST_PATROL_AREAS_SQL = load_sql("coordinate_config/list_patrol_areas.sql")
@@ -41,6 +42,12 @@ class CoordinateConfigRepository:
 
     async def async_get_active_map_profile(self):
         return await async_fetch_one(ACTIVE_MAP_PROFILE_SQL)
+
+    def list_map_profiles(self):
+        return fetch_all(LIST_MAP_PROFILES_SQL)
+
+    async def async_list_map_profiles(self):
+        return await async_fetch_all(LIST_MAP_PROFILES_SQL)
 
     def get_map_profile(self, *, map_id):
         return fetch_one(FIND_MAP_PROFILE_SQL, (str(map_id),))
