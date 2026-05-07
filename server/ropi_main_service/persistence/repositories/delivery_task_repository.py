@@ -102,6 +102,7 @@ class DeliveryTaskRepository:
                 priority or "NORMAL",
                 self.runtime_config.pinky_id,
                 destination_goal_pose_id,
+                self.runtime_config.map_id,
             ),
         )
         return cur.lastrowid
@@ -125,6 +126,7 @@ class DeliveryTaskRepository:
                 priority or "NORMAL",
                 self.runtime_config.pinky_id,
                 destination_goal_pose_id,
+                self.runtime_config.map_id,
             ),
         )
         return cur.lastrowid

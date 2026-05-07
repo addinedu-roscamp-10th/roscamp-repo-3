@@ -338,19 +338,17 @@ class PatrolTaskCreateRepository:
         )
         return await cur.fetchone() is not None
 
-    @staticmethod
-    def _fetch_patrol_area_by_id(cur, patrol_area_id):
+    def _fetch_patrol_area_by_id(self, cur, patrol_area_id):
         cur.execute(
             load_sql("task_request/find_patrol_area_by_id.sql"),
-            (patrol_area_id,),
+            (patrol_area_id, self.runtime_config.map_id),
         )
         return cur.fetchone()
 
-    @staticmethod
-    async def _async_fetch_patrol_area_by_id(cur, patrol_area_id):
+    async def _async_fetch_patrol_area_by_id(self, cur, patrol_area_id):
         await cur.execute(
             load_sql("task_request/find_patrol_area_by_id.sql"),
-            (patrol_area_id,),
+            (patrol_area_id, self.runtime_config.map_id),
         )
         return await cur.fetchone()
 
