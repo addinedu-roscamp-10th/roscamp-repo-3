@@ -342,6 +342,40 @@ class CoordinateConfigRemoteService:
             ),
         )
 
+    def create_patrol_area(
+        self,
+        *,
+        patrol_area_id,
+        patrol_area_name,
+        path_json,
+        is_enabled=True,
+    ):
+        return self._rpc(
+            "create_patrol_area",
+            patrol_area_id=patrol_area_id,
+            patrol_area_name=patrol_area_name,
+            path_json=path_json,
+            is_enabled=is_enabled,
+        )
+
+    def update_patrol_area(
+        self,
+        *,
+        patrol_area_id,
+        expected_revision,
+        patrol_area_name,
+        path_json,
+        is_enabled,
+    ):
+        return self._rpc(
+            "update_patrol_area",
+            patrol_area_id=patrol_area_id,
+            expected_revision=expected_revision,
+            patrol_area_name=patrol_area_name,
+            path_json=path_json,
+            is_enabled=is_enabled,
+        )
+
     def update_patrol_area_path(
         self,
         *,

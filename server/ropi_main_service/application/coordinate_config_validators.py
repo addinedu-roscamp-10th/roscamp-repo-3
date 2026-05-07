@@ -302,17 +302,9 @@ def normalize_patrol_area_path_input(
     path_json,
     active_frame_id,
 ):
-    normalized_patrol_area_id = normalize_optional_text(patrol_area_id)
-    if (
-        not normalized_patrol_area_id
-        or len(normalized_patrol_area_id) > 100
-        or not ZONE_ID_PATTERN.match(normalized_patrol_area_id)
-    ):
-        return None, patrol_area_error(
-            result_code="INVALID_REQUEST",
-            reason_code="PATROL_AREA_NOT_FOUND",
-            result_message="patrol_area_id가 유효하지 않습니다.",
-        )
+    normalized_patrol_area_id, error = _normalize_patrol_area_id(patrol_area_id)
+    if error:
+        return None, error
 
     revision = optional_int(expected_revision)
     if revision is None or revision < 1:
@@ -322,6 +314,82 @@ def normalize_patrol_area_path_input(
             result_message="expected_revision이 유효하지 않습니다.",
         )
 
+    path, error = _normalize_patrol_path(
+        path_json,
+        active_frame_id=active_frame_id,
+    )
+    if error:
+        return None, error
+
+    return {
+        "patrol_area_id": normalized_patrol_area_id,
+        "expected_revision": revision,
+        "path_json": path,
+    }, None
+
+
+def normalize_patrol_area_input(
+    *,
+    patrol_area_id,
+    patrol_area_name,
+    path_json,
+    active_frame_id,
+    is_enabled,
+    expected_revision=None,
+):
+    normalized_patrol_area_id, error = _normalize_patrol_area_id(patrol_area_id)
+    if error:
+        return None, error
+
+    normalized_patrol_area_name = normalize_optional_text(patrol_area_name)
+    if not normalized_patrol_area_name or len(normalized_patrol_area_name) > 100:
+        return None, patrol_area_error(
+            result_code="INVALID_REQUEST",
+            reason_code="PATROL_AREA_NAME_INVALID",
+            result_message="patrol_area_name이 유효하지 않습니다.",
+        )
+
+    path, error = _normalize_patrol_path(
+        path_json,
+        active_frame_id=active_frame_id,
+    )
+    if error:
+        return None, error
+
+    normalized = {
+        "patrol_area_id": normalized_patrol_area_id,
+        "patrol_area_name": normalized_patrol_area_name,
+        "path_json": path,
+        "is_enabled": bool_value(is_enabled),
+    }
+    if expected_revision is not None:
+        revision = optional_int(expected_revision)
+        if revision is None or revision < 1:
+            return None, patrol_area_error(
+                result_code="INVALID_REQUEST",
+                reason_code="PATROL_AREA_REVISION_CONFLICT",
+                result_message="expected_revision이 유효하지 않습니다.",
+            )
+        normalized["expected_revision"] = revision
+    return normalized, None
+
+
+def _normalize_patrol_area_id(patrol_area_id):
+    normalized_patrol_area_id = normalize_optional_text(patrol_area_id)
+    if (
+        not normalized_patrol_area_id
+        or len(normalized_patrol_area_id) > 100
+        or not ZONE_ID_PATTERN.match(normalized_patrol_area_id)
+    ):
+        return None, patrol_area_error(
+            result_code="INVALID_REQUEST",
+            reason_code="PATROL_AREA_ID_INVALID",
+            result_message="patrol_area_id가 유효하지 않습니다.",
+        )
+    return normalized_patrol_area_id, None
+
+
+def _normalize_patrol_path(path_json, *, active_frame_id):
     path = json_object(path_json)
     header = path.get("header")
     if not isinstance(header, dict):
@@ -372,14 +440,7 @@ def normalize_patrol_area_path_input(
             )
         poses.append({"x": x, "y": y, "yaw": yaw})
 
-    return {
-        "patrol_area_id": normalized_patrol_area_id,
-        "expected_revision": revision,
-        "path_json": {
-            "header": {"frame_id": frame_id},
-            "poses": poses,
-        },
-    }, None
+    return {"header": {"frame_id": frame_id}, "poses": poses}, None
 
 
 __all__ = [
@@ -389,6 +450,7 @@ __all__ = [
     "normalize_goal_pose_input",
     "normalize_operation_zone_boundary_input",
     "normalize_operation_zone_input",
+    "normalize_patrol_area_input",
     "normalize_patrol_area_path_input",
     "operation_zone_error",
     "patrol_area_error",

@@ -92,6 +92,7 @@ class FakeCoordinateConfigRepository:
         self.boundary_update_result = None
         self.goal_pose_update_result = None
         self.patrol_area_update_result = None
+        self.existing_patrol_area = None
 
     def get_active_map_profile(self):
         self.calls.append(("get_active_map_profile",))
@@ -132,6 +133,14 @@ class FakeCoordinateConfigRepository:
     async def async_get_patrol_areas(self, *, map_id, include_disabled=True):
         self.calls.append(("async_get_patrol_areas", map_id, include_disabled))
         return self.patrol_areas
+
+    def get_patrol_area(self, *, patrol_area_id):
+        self.calls.append(("get_patrol_area", patrol_area_id))
+        return self.existing_patrol_area
+
+    async def async_get_patrol_area(self, *, patrol_area_id):
+        self.calls.append(("async_get_patrol_area", patrol_area_id))
+        return self.existing_patrol_area
 
     def get_operation_zone(self, *, zone_id):
         self.calls.append(("get_operation_zone", zone_id))
@@ -318,6 +327,127 @@ class FakeCoordinateConfigRepository:
                 "is_enabled": True,
                 "created_at": datetime(2026, 5, 2, 12, 0, 0),
                 "updated_at": datetime(2026, 5, 2, 12, 6, 0),
+            },
+        }
+
+    def create_patrol_area(
+        self,
+        *,
+        map_id,
+        patrol_area_id,
+        patrol_area_name,
+        path_json,
+        is_enabled=True,
+    ):
+        self.calls.append(
+            (
+                "create_patrol_area",
+                map_id,
+                patrol_area_id,
+                patrol_area_name,
+                path_json,
+                is_enabled,
+            )
+        )
+        return {
+            "patrol_area_id": patrol_area_id,
+            "map_id": map_id,
+            "patrol_area_name": patrol_area_name,
+            "revision": 1,
+            "path_json": path_json,
+            "waypoint_count": len(path_json["poses"]),
+            "path_frame_id": path_json["header"]["frame_id"],
+            "is_enabled": is_enabled,
+            "created_at": datetime(2026, 5, 2, 12, 2, 0),
+            "updated_at": datetime(2026, 5, 2, 12, 2, 0),
+        }
+
+    async def async_create_patrol_area(self, **kwargs):
+        self.calls.append(
+            (
+                "async_create_patrol_area",
+                kwargs["map_id"],
+                kwargs["patrol_area_id"],
+                kwargs["patrol_area_name"],
+                kwargs["path_json"],
+                kwargs["is_enabled"],
+            )
+        )
+        return {
+            "patrol_area_id": kwargs["patrol_area_id"],
+            "map_id": kwargs["map_id"],
+            "patrol_area_name": kwargs["patrol_area_name"],
+            "revision": 1,
+            "path_json": kwargs["path_json"],
+            "waypoint_count": len(kwargs["path_json"]["poses"]),
+            "path_frame_id": kwargs["path_json"]["header"]["frame_id"],
+            "is_enabled": kwargs["is_enabled"],
+            "created_at": datetime(2026, 5, 2, 12, 2, 0),
+            "updated_at": datetime(2026, 5, 2, 12, 2, 0),
+        }
+
+    def update_patrol_area(
+        self,
+        *,
+        map_id,
+        patrol_area_id,
+        expected_revision,
+        patrol_area_name,
+        path_json,
+        is_enabled,
+    ):
+        self.calls.append(
+            (
+                "update_patrol_area",
+                map_id,
+                patrol_area_id,
+                expected_revision,
+                patrol_area_name,
+                path_json,
+                is_enabled,
+            )
+        )
+        return self.patrol_area_update_result or {
+            "status": "UPDATED",
+            "patrol_area": {
+                "patrol_area_id": patrol_area_id,
+                "map_id": map_id,
+                "patrol_area_name": patrol_area_name,
+                "revision": expected_revision + 1,
+                "path_json": path_json,
+                "waypoint_count": len(path_json["poses"]),
+                "path_frame_id": path_json["header"]["frame_id"],
+                "is_enabled": is_enabled,
+                "created_at": datetime(2026, 5, 2, 12, 0, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 5, 0),
+            },
+        }
+
+    async def async_update_patrol_area(self, **kwargs):
+        self.calls.append(
+            (
+                "async_update_patrol_area",
+                kwargs["map_id"],
+                kwargs["patrol_area_id"],
+                kwargs["expected_revision"],
+                kwargs["patrol_area_name"],
+                kwargs["path_json"],
+                kwargs["is_enabled"],
+            )
+        )
+        return self.patrol_area_update_result or {
+            "status": "UPDATED",
+            "patrol_area": {
+                "patrol_area_id": kwargs["patrol_area_id"],
+                "map_id": kwargs["map_id"],
+                "patrol_area_name": kwargs["patrol_area_name"],
+                "revision": kwargs["expected_revision"] + 1,
+                "path_json": kwargs["path_json"],
+                "waypoint_count": len(kwargs["path_json"]["poses"]),
+                "path_frame_id": kwargs["path_json"]["header"]["frame_id"],
+                "is_enabled": kwargs["is_enabled"],
+                "created_at": datetime(2026, 5, 2, 12, 0, 0),
+                "updated_at": datetime(2026, 5, 2, 12, 5, 0),
             },
         }
 
@@ -1187,6 +1317,76 @@ def test_update_patrol_area_path_replaces_path_and_increments_revision():
             "patrol_ward_night_01",
             7,
             normalized_path,
+        ),
+    ]
+
+
+def test_create_patrol_area_creates_active_map_row_with_initial_path():
+    repository = FakeCoordinateConfigRepository()
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    response = _service(repository).create_patrol_area(
+        patrol_area_id="patrol_day_01",
+        patrol_area_name="주간 병동 순찰",
+        path_json=path_json,
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "CREATED"
+    assert response["patrol_area"]["patrol_area_id"] == "patrol_day_01"
+    assert response["patrol_area"]["revision"] == 1
+    assert response["patrol_area"]["waypoint_count"] == 2
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        ("get_patrol_area", "patrol_day_01"),
+        (
+            "create_patrol_area",
+            "map_test11_0423",
+            "patrol_day_01",
+            "주간 병동 순찰",
+            path_json,
+            True,
+        ),
+    ]
+
+
+def test_update_patrol_area_updates_name_path_and_enabled_state():
+    repository = FakeCoordinateConfigRepository()
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    response = _service(repository).update_patrol_area(
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision="7",
+        patrol_area_name="야간 병동 순찰",
+        path_json=path_json,
+        is_enabled=False,
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert response["patrol_area"]["revision"] == 8
+    assert response["patrol_area"]["is_enabled"] is False
+    assert repository.calls == [
+        ("get_active_map_profile",),
+        (
+            "update_patrol_area",
+            "map_test11_0423",
+            "patrol_ward_night_01",
+            7,
+            "야간 병동 순찰",
+            path_json,
+            False,
         ),
     ]
 

@@ -259,6 +259,56 @@ def test_coordinate_config_repository_creates_operation_zone_in_transaction(
     assert select_params == ("caregiver_room",)
 
 
+def test_coordinate_config_repository_creates_patrol_area_in_transaction(
+    monkeypatch,
+):
+    inserted_row = {
+        "patrol_area_id": "patrol_day_01",
+        "map_id": "map_test11_0423",
+        "patrol_area_name": "주간 병동 순찰",
+        "revision": 1,
+    }
+    cursor = FakeCursor(rows=[inserted_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    row = coordinate_config_repository.CoordinateConfigRepository().create_patrol_area(
+        map_id="map_test11_0423",
+        patrol_area_id="patrol_day_01",
+        patrol_area_name="주간 병동 순찰",
+        path_json=path_json,
+        is_enabled=True,
+    )
+
+    assert row == inserted_row
+    assert connection.began is True
+    assert connection.committed is True
+    insert_query, insert_params = cursor.calls[0]
+    select_query, select_params = cursor.calls[1]
+    assert insert_query == coordinate_config_repository.INSERT_PATROL_AREA_SQL
+    assert insert_params == (
+        "patrol_day_01",
+        "map_test11_0423",
+        "주간 병동 순찰",
+        '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0},'
+        '{"x":1.0,"y":1.0,"yaw":0.0}]}',
+        True,
+    )
+    assert select_query == coordinate_config_repository.FIND_PATROL_AREA_SQL
+    assert select_params == ("patrol_day_01",)
+
+
 def test_coordinate_config_repository_updates_operation_zone_with_revision_lock(
     monkeypatch,
 ):
@@ -818,6 +868,65 @@ def test_coordinate_config_repository_updates_patrol_area_path_with_revision_loc
     assert update_params[0] == (
         '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0},'
         '{"x":1.0,"y":1.0,"yaw":0.0}]}'
+    )
+    assert select_query == coordinate_config_repository.FIND_PATROL_AREA_SQL
+    assert select_params == ("patrol_ward_night_01",)
+
+
+def test_coordinate_config_repository_updates_patrol_area_row_with_revision_lock(
+    monkeypatch,
+):
+    locked_row = {
+        "patrol_area_id": "patrol_ward_night_01",
+        "map_id": "map_test11_0423",
+        "revision": 7,
+    }
+    updated_row = {
+        "patrol_area_id": "patrol_ward_night_01",
+        "map_id": "map_test11_0423",
+        "revision": 8,
+        "is_enabled": False,
+    }
+    cursor = FakeCursor(rows=[locked_row, updated_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_patrol_area(
+        map_id="map_test11_0423",
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        patrol_area_name="야간 병동 순찰",
+        path_json=path_json,
+        is_enabled=False,
+    )
+
+    assert result == {"status": "UPDATED", "patrol_area": updated_row}
+    assert connection.began is True
+    assert connection.committed is True
+    lock_query, lock_params = cursor.calls[0]
+    update_query, update_params = cursor.calls[1]
+    select_query, select_params = cursor.calls[2]
+    assert lock_query == coordinate_config_repository.LOCK_PATROL_AREA_SQL
+    assert lock_params == ("patrol_ward_night_01", "map_test11_0423")
+    assert update_query == coordinate_config_repository.UPDATE_PATROL_AREA_SQL
+    assert update_params == (
+        "야간 병동 순찰",
+        '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0},'
+        '{"x":1.0,"y":1.0,"yaw":0.0}]}',
+        False,
+        "patrol_ward_night_01",
+        "map_test11_0423",
     )
     assert select_query == coordinate_config_repository.FIND_PATROL_AREA_SQL
     assert select_params == ("patrol_ward_night_01",)

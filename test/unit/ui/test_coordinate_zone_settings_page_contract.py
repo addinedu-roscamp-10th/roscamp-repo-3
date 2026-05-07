@@ -219,6 +219,8 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         new_zone_button = page.findChild(QPushButton, "operationZoneNewRowButton")
         assert new_zone_button.text() == "+ 새 row"
         assert page.findChild(QPushButton, "goalPoseNewRowButton") is None
+        new_patrol_button = page.findChild(QPushButton, "patrolAreaNewRowButton")
+        assert new_patrol_button.text() == "+ 새 row"
         new_waypoint_button = page.findChild(QPushButton, "fmsWaypointNewRowButton")
         assert new_waypoint_button.text() == "+ 새 row"
         new_edge_button = page.findChild(QPushButton, "fmsEdgeNewRowButton")
@@ -231,6 +233,14 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         )
         assert (
             page.findChild(QPushButton, "operationZoneRevertRowButton").isEnabled()
+            is False
+        )
+        assert (
+            page.findChild(QPushButton, "patrolAreaDeactivateRowButton").isEnabled()
+            is False
+        )
+        assert (
+            page.findChild(QPushButton, "patrolAreaRevertRowButton").isEnabled()
             is False
         )
         assert (
@@ -1859,6 +1869,104 @@ def test_coordinate_zone_settings_page_deactivates_selected_fms_waypoint_as_draf
         page.close()
 
 
+def test_coordinate_zone_settings_page_creates_patrol_area_draft_operation():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+
+        page.findChild(QPushButton, "patrolAreaNewRowButton").click()
+        page.findChild(QLineEdit, "patrolAreaIdInput").setText("patrol_day_01")
+        page.findChild(QLineEdit, "patrolAreaNameInput").setText("주간 병동 순찰")
+        page.handle_map_click_for_patrol_area({"x": 0.2, "y": 0.2, "yaw": 0.0})
+        page.handle_map_click_for_patrol_area({"x": 1.0, "y": 1.0, "yaw": 0.0})
+
+        operations = page._build_coordinate_batch_save_operations()
+
+        assert operations == [
+            {
+                "table": "patrol_area",
+                "row_id": "patrol_day_01",
+                "method": "create_patrol_area",
+                "payload": {
+                    "patrol_area_id": "patrol_day_01",
+                    "patrol_area_name": "주간 병동 순찰",
+                    "path_json": {
+                        "header": {"frame_id": "map"},
+                        "poses": [
+                            {"x": 0.2, "y": 0.2, "yaw": 0.0},
+                            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+                        ],
+                    },
+                    "is_enabled": True,
+                },
+            }
+        ]
+        assert page.findChild(QTableWidget, "patrolAreaTable").rowCount() == 2
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_deactivates_and_reverts_patrol_area_draft():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    bundle = copy.deepcopy(_sample_bundle())
+    bundle["patrol_areas"][0]["is_enabled"] = True
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": bundle,
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+
+        deactivate_button = page.findChild(
+            QPushButton, "patrolAreaDeactivateRowButton"
+        )
+        assert deactivate_button.isEnabled() is True
+
+        deactivate_button.click()
+
+        assert page.findChild(QCheckBox, "patrolAreaEnabledCheck").isChecked() is False
+        assert page.patrol_area_rows[0]["is_enabled"] is False
+        assert page.patrol_area_dirty_row_ids == {"patrol_ward_night_01"}
+
+        operations = page._build_coordinate_batch_save_operations()
+        assert operations[0]["table"] == "patrol_area"
+        assert operations[0]["method"] == "update_patrol_area"
+        assert operations[0]["payload"]["is_enabled"] is False
+
+        revert_button = page.findChild(QPushButton, "patrolAreaRevertRowButton")
+        assert revert_button.isEnabled() is True
+        revert_button.click()
+
+        assert page.patrol_area_rows[0]["is_enabled"] is True
+        assert page.patrol_area_dirty_row_ids == set()
+        assert page.findChild(QCheckBox, "patrolAreaEnabledCheck").isChecked() is True
+        patrol_table = page.findChild(QTableWidget, "patrolAreaTable")
+        assert patrol_table.item(0, patrol_table.columnCount() - 1).text() == "-"
+    finally:
+        page.close()
+
+
 def test_coordinate_zone_settings_page_batch_zone_save_preserves_boundary_draft():
     _app()
 
@@ -2275,7 +2383,8 @@ def test_coordinate_zone_settings_page_selects_patrol_area_into_waypoint_form():
         assert page.selected_edit_type == "patrol_area"
         assert page.selected_patrol_area["patrol_area_id"] == "patrol_ward_night_01"
         assert (
-            page.findChild(QLabel, "patrolAreaIdLabel").text() == "patrol_ward_night_01"
+            page.findChild(QLineEdit, "patrolAreaIdInput").text()
+            == "patrol_ward_night_01"
         )
         assert page.findChild(QLabel, "patrolAreaRevisionLabel").text() == "7"
 

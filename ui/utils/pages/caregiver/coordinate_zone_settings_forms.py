@@ -186,18 +186,23 @@ def build_patrol_area_form(page):
     summary_layout = QGridLayout()
     summary_layout.setHorizontalSpacing(10)
     summary_layout.setVerticalSpacing(8)
-    page.patrol_area_id_label = readonly_value_label("patrolAreaIdLabel")
-    page.patrol_area_name_label = readonly_value_label("patrolAreaNameLabel")
+    page.patrol_area_id_input = QLineEdit()
+    page.patrol_area_id_input.setObjectName("patrolAreaIdInput")
+    page.patrol_area_name_input = QLineEdit()
+    page.patrol_area_name_input.setObjectName("patrolAreaNameInput")
     page.patrol_area_revision_label = readonly_value_label("patrolAreaRevisionLabel")
     page.patrol_path_frame_label = readonly_value_label("patrolPathFrameLabel")
+    page.patrol_area_enabled_check = QCheckBox("활성")
+    page.patrol_area_enabled_check.setObjectName("patrolAreaEnabledCheck")
 
     _add_grid_rows(
         summary_layout,
         [
-            ("순찰 구역 ID", page.patrol_area_id_label),
-            ("순찰 구역명", page.patrol_area_name_label),
+            ("순찰 구역 ID", page.patrol_area_id_input),
+            ("순찰 구역명", page.patrol_area_name_input),
             ("경로 revision", page.patrol_area_revision_label),
             ("frame_id", page.patrol_path_frame_label),
+            ("사용 여부", page.patrol_area_enabled_check),
         ],
     )
     layout.addLayout(summary_layout)
@@ -250,13 +255,21 @@ def build_patrol_area_form(page):
     layout.addLayout(button_row)
 
     for widget in [
+        page.patrol_area_id_input,
+        page.patrol_area_name_input,
+        page.patrol_area_enabled_check,
         page.patrol_waypoint_x_spin,
         page.patrol_waypoint_y_spin,
         page.patrol_waypoint_yaw_spin,
     ]:
-        widget.valueChanged.connect(
-            lambda _value: page._update_selected_patrol_waypoint_from_form()
-        )
+        if isinstance(widget, QLineEdit):
+            widget.textChanged.connect(lambda _value: page._mark_patrol_area_dirty())
+        elif isinstance(widget, QCheckBox):
+            widget.toggled.connect(lambda _value: page._mark_patrol_area_dirty())
+        else:
+            widget.valueChanged.connect(
+                lambda _value: page._update_selected_patrol_waypoint_from_form()
+            )
 
     return form
 

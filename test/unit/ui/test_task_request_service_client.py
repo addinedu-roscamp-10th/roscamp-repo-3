@@ -560,6 +560,66 @@ def test_coordinate_config_remote_service_exposes_patrol_area_path_update_rpc(
     ]
 
 
+def test_coordinate_config_remote_service_exposes_patrol_area_create_and_update_rpc(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "CREATED" if method == "create_patrol_area" else "UPDATED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+    service = CoordinateConfigRemoteService()
+
+    create_response = service.create_patrol_area(
+        patrol_area_id="patrol_day_01",
+        patrol_area_name="주간 병동 순찰",
+        path_json=path_json,
+        is_enabled=True,
+    )
+    update_response = service.update_patrol_area(
+        patrol_area_id="patrol_day_01",
+        expected_revision=1,
+        patrol_area_name="주간 병동 순찰",
+        path_json=path_json,
+        is_enabled=False,
+    )
+
+    assert create_response["result_code"] == "CREATED"
+    assert update_response["result_code"] == "UPDATED"
+    assert calls == [
+        (
+            "coordinate_config",
+            "create_patrol_area",
+            {
+                "patrol_area_id": "patrol_day_01",
+                "patrol_area_name": "주간 병동 순찰",
+                "path_json": path_json,
+                "is_enabled": True,
+            },
+        ),
+        (
+            "coordinate_config",
+            "update_patrol_area",
+            {
+                "patrol_area_id": "patrol_day_01",
+                "expected_revision": 1,
+                "patrol_area_name": "주간 병동 순찰",
+                "path_json": path_json,
+                "is_enabled": False,
+            },
+        ),
+    ]
+
+
 def test_coordinate_config_remote_service_exposes_map_asset_rpc(monkeypatch):
     calls = []
 

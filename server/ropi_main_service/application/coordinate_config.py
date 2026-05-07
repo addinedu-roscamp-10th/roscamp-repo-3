@@ -17,6 +17,7 @@ from server.ropi_main_service.application.coordinate_config_validators import (
     normalize_goal_pose_input,
     normalize_operation_zone_boundary_input,
     normalize_operation_zone_input,
+    normalize_patrol_area_input,
     normalize_patrol_area_path_input,
     operation_zone_error,
     patrol_area_error,
@@ -565,6 +566,104 @@ class CoordinateConfigService:
 
         return self._format_patrol_area_update_result(result)
 
+    def create_patrol_area(
+        self,
+        *,
+        patrol_area_id,
+        patrol_area_name,
+        path_json,
+        map_id=None,
+        is_enabled=True,
+    ):
+        map_profile, error = self._resolve_active_map(
+            map_id=map_id,
+            error_factory=patrol_area_error,
+        )
+        if error:
+            return error
+
+        normalized, error = normalize_patrol_area_input(
+            patrol_area_id=patrol_area_id,
+            patrol_area_name=patrol_area_name,
+            path_json=path_json,
+            active_frame_id=map_profile["frame_id"],
+            is_enabled=is_enabled,
+        )
+        if error:
+            return error
+
+        existing_patrol_area = self.repository.get_patrol_area(
+            patrol_area_id=normalized["patrol_area_id"],
+        )
+        if existing_patrol_area:
+            return patrol_area_error(
+                result_code="CONFLICT",
+                reason_code="PATROL_AREA_ID_DUPLICATED",
+                result_message="이미 존재하는 순찰 구역 ID입니다.",
+            )
+
+        try:
+            row = self.repository.create_patrol_area(
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return patrol_area_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="순찰 구역 생성 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return {
+            "result_code": "CREATED",
+            "result_message": None,
+            "reason_code": None,
+            "patrol_area": format_patrol_area(
+                row or {},
+                include_patrol_path=True,
+            ),
+        }
+
+    def update_patrol_area(
+        self,
+        *,
+        patrol_area_id,
+        expected_revision,
+        patrol_area_name,
+        path_json,
+        is_enabled,
+    ):
+        map_profile, error = self._resolve_active_map(
+            error_factory=patrol_area_error,
+        )
+        if error:
+            return error
+
+        normalized, error = normalize_patrol_area_input(
+            patrol_area_id=patrol_area_id,
+            expected_revision=expected_revision,
+            patrol_area_name=patrol_area_name,
+            path_json=path_json,
+            active_frame_id=map_profile["frame_id"],
+            is_enabled=is_enabled,
+        )
+        if error:
+            return error
+
+        try:
+            result = self.repository.update_patrol_area(
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return patrol_area_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="순찰 구역 수정 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return self._format_patrol_area_update_result(result)
+
     async def async_update_patrol_area_path(
         self,
         *,
@@ -601,6 +700,110 @@ class CoordinateConfigService:
                 result_code="UNAVAILABLE",
                 reason_code="CONFIG_WRITE_FAILED",
                 result_message="순찰 경로 수정 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return self._format_patrol_area_update_result(result)
+
+    async def async_create_patrol_area(
+        self,
+        *,
+        patrol_area_id,
+        patrol_area_name,
+        path_json,
+        map_id=None,
+        is_enabled=True,
+    ):
+        map_profile, error = await self._async_resolve_active_map(
+            map_id=map_id,
+            error_factory=patrol_area_error,
+        )
+        if error:
+            return error
+
+        normalized, error = normalize_patrol_area_input(
+            patrol_area_id=patrol_area_id,
+            patrol_area_name=patrol_area_name,
+            path_json=path_json,
+            active_frame_id=map_profile["frame_id"],
+            is_enabled=is_enabled,
+        )
+        if error:
+            return error
+
+        existing_patrol_area = await self._call_async_or_thread(
+            "async_get_patrol_area",
+            "get_patrol_area",
+            patrol_area_id=normalized["patrol_area_id"],
+        )
+        if existing_patrol_area:
+            return patrol_area_error(
+                result_code="CONFLICT",
+                reason_code="PATROL_AREA_ID_DUPLICATED",
+                result_message="이미 존재하는 순찰 구역 ID입니다.",
+            )
+
+        try:
+            row = await self._call_async_or_thread(
+                "async_create_patrol_area",
+                "create_patrol_area",
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return patrol_area_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="순찰 구역 생성 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return {
+            "result_code": "CREATED",
+            "result_message": None,
+            "reason_code": None,
+            "patrol_area": format_patrol_area(
+                row or {},
+                include_patrol_path=True,
+            ),
+        }
+
+    async def async_update_patrol_area(
+        self,
+        *,
+        patrol_area_id,
+        expected_revision,
+        patrol_area_name,
+        path_json,
+        is_enabled,
+    ):
+        map_profile, error = await self._async_resolve_active_map(
+            error_factory=patrol_area_error,
+        )
+        if error:
+            return error
+
+        normalized, error = normalize_patrol_area_input(
+            patrol_area_id=patrol_area_id,
+            expected_revision=expected_revision,
+            patrol_area_name=patrol_area_name,
+            path_json=path_json,
+            active_frame_id=map_profile["frame_id"],
+            is_enabled=is_enabled,
+        )
+        if error:
+            return error
+
+        try:
+            result = await self._call_async_or_thread(
+                "async_update_patrol_area",
+                "update_patrol_area",
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return patrol_area_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="순찰 구역 수정 중 DB 쓰기에 실패했습니다.",
             )
 
         return self._format_patrol_area_update_result(result)
