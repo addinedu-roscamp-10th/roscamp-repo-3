@@ -15,6 +15,10 @@ from server.ropi_main_service.application.coordinate_config import (
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_GUIDE_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+    MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+    MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+    MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
@@ -144,15 +148,11 @@ def test_heartbeat_with_ros_check_puts_ros_status_under_payload(control_service_
     }
 
 
-def test_internal_rpc_dispatches_kiosk_visitor_lookup_service(control_service_server):
+def test_if_gui_008_dispatches_kiosk_visitor_lookup_service(control_service_server):
     request = TCPFrame(
-        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        message_code=MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
         sequence_no=41,
-        payload={
-            "service": "kiosk_visitor",
-            "method": "lookup_residents",
-            "kwargs": {"keyword": ""},
-        },
+        payload={"keyword": ""},
     )
 
     response = control_service_server.dispatch_frame(request)
@@ -162,15 +162,32 @@ def test_internal_rpc_dispatches_kiosk_visitor_lookup_service(control_service_se
     assert response.payload["reason_code"] == "KEYWORD_EMPTY"
 
 
-def test_internal_rpc_dispatches_kiosk_visitor_care_history_service(control_service_server):
+def test_if_gui_009_dispatches_kiosk_visitor_registration_service(control_service_server):
     request = TCPFrame(
-        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        message_code=MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
         sequence_no=42,
         payload={
-            "service": "kiosk_visitor",
-            "method": "get_care_history",
-            "kwargs": {"visitor_id": ""},
+            "visitor_name": "김민수",
+            "phone_no": "010-1111-2222",
+            "relationship": "아들",
+            "visit_purpose": "정기 면회",
+            "target_member_id": 1,
+            "privacy_agreed": False,
         },
+    )
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "PRIVACY_CONSENT_REQUIRED"
+
+
+def test_if_gui_010_dispatches_kiosk_visitor_care_history_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+        sequence_no=43,
+        payload={"visitor_id": ""},
     )
 
     response = control_service_server.dispatch_frame(request)
@@ -180,18 +197,14 @@ def test_internal_rpc_dispatches_kiosk_visitor_care_history_service(control_serv
     assert response.payload["reason_code"] == "VISITOR_ID_INVALID"
 
 
-def test_internal_rpc_dispatches_staff_call_service(control_service_server):
+def test_if_gui_011_dispatches_staff_call_service(control_service_server):
     request = TCPFrame(
-        message_code=MESSAGE_CODE_INTERNAL_RPC,
-        sequence_no=43,
+        message_code=MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+        sequence_no=44,
         payload={
-            "service": "staff_call",
-            "method": "submit_staff_call",
-            "kwargs": {
-                "call_type": "",
-                "description": "도움 필요",
-                "idempotency_key": "idem_staff_001",
-            },
+            "call_type": "",
+            "description": "도움 필요",
+            "idempotency_key": "idem_staff_001",
         },
     )
 

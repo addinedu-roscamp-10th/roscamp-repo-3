@@ -1,4 +1,8 @@
 from server.ropi_main_service.transport.tcp_protocol import (
+    MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+    MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+    MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+    MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_STATUS_QUERY,
@@ -111,14 +115,14 @@ def test_inventory_remote_service_exposes_bundle_and_item_id_mutation_rpcs(monke
     ]
 
 
-def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch):
+def test_kiosk_visitor_remote_service_sends_if_gui_008_through_010(monkeypatch):
     calls = []
 
-    def fake_rpc(service, method, **kwargs):
-        calls.append((service, method, kwargs))
-        return {"result_code": "OK"}
+    def fake_send_request(message_code, payload):
+        calls.append((message_code, payload))
+        return {"ok": True, "payload": {"result_code": "OK"}}
 
-    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    monkeypatch.setattr(service_clients, "send_request", fake_send_request)
     service = KioskVisitorRemoteService()
 
     assert service.lookup_residents(keyword="301", limit=5) == {"result_code": "OK"}
@@ -134,16 +138,14 @@ def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch)
     assert service.get_care_history(visitor_id=42) == {"result_code": "OK"}
     assert calls == [
         (
-            "kiosk_visitor",
-            "lookup_residents",
+            MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
             {
                 "keyword": "301",
                 "limit": 5,
             },
         ),
         (
-            "kiosk_visitor",
-            "register_visit",
+            MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
             {
                 "visitor_name": "김민수",
                 "phone_no": "010-1111-2222",
@@ -155,8 +157,7 @@ def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch)
             },
         ),
         (
-            "kiosk_visitor",
-            "get_care_history",
+            MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
             {
                 "visitor_id": 42,
             },
@@ -164,14 +165,14 @@ def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch)
     ]
 
 
-def test_staff_call_remote_service_exposes_if_gui_010_rpc(monkeypatch):
+def test_staff_call_remote_service_sends_if_gui_011(monkeypatch):
     calls = []
 
-    def fake_rpc(service, method, **kwargs):
-        calls.append((service, method, kwargs))
-        return {"result_code": "ACCEPTED"}
+    def fake_send_request(message_code, payload):
+        calls.append((message_code, payload))
+        return {"ok": True, "payload": {"result_code": "ACCEPTED"}}
 
-    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    monkeypatch.setattr(service_clients, "send_request", fake_send_request)
 
     result = StaffCallRemoteService().submit_staff_call(
         call_type="방문 등록 도움",
@@ -185,8 +186,7 @@ def test_staff_call_remote_service_exposes_if_gui_010_rpc(monkeypatch):
     assert result == {"result_code": "ACCEPTED"}
     assert calls == [
         (
-            "staff_call",
-            "submit_staff_call",
+            MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
             {
                 "call_type": "방문 등록 도움",
                 "description": "대상 어르신을 찾는 데 도움이 필요합니다.",

@@ -1,6 +1,10 @@
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_GUIDE_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+    MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+    MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+    MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
     MESSAGE_CODE_PATROL_CREATE_TASK,
@@ -714,12 +718,15 @@ class VisitorRegisterRemoteService:
 
 class KioskVisitorRemoteService:
     def lookup_residents(self, *, keyword: str, limit: int = 10):
-        return _rpc(
-            "kiosk_visitor",
-            "lookup_residents",
-            keyword=keyword,
-            limit=limit,
+        response = send_request(
+            MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+            {"keyword": keyword, "limit": limit},
         )
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+        return response.get("payload")
 
     def register_visit(
         self,
@@ -732,24 +739,34 @@ class KioskVisitorRemoteService:
         privacy_agreed: bool,
         kiosk_id=None,
     ):
-        return _rpc(
-            "kiosk_visitor",
-            "register_visit",
-            visitor_name=visitor_name,
-            phone_no=phone_no,
-            relationship=relationship,
-            visit_purpose=visit_purpose,
-            target_member_id=target_member_id,
-            privacy_agreed=privacy_agreed,
-            kiosk_id=kiosk_id,
+        response = send_request(
+            MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
+            {
+                "visitor_name": visitor_name,
+                "phone_no": phone_no,
+                "relationship": relationship,
+                "visit_purpose": visit_purpose,
+                "target_member_id": target_member_id,
+                "privacy_agreed": privacy_agreed,
+                "kiosk_id": kiosk_id,
+            },
         )
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+        return response.get("payload")
 
     def get_care_history(self, *, visitor_id):
-        return _rpc(
-            "kiosk_visitor",
-            "get_care_history",
-            visitor_id=visitor_id,
+        response = send_request(
+            MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+            {"visitor_id": visitor_id},
         )
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+        return response.get("payload")
 
 
 class StaffCallRemoteService:
@@ -775,4 +792,9 @@ class StaffCallRemoteService:
             kwargs["description"] = description
         if detail is not None:
             kwargs["detail"] = detail
-        return _rpc("staff_call", "submit_staff_call", **kwargs)
+        response = send_request(MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION, kwargs)
+        if not response.get("ok"):
+            raise RemoteServiceError(
+                str(response.get("error", "서버 요청 처리에 실패했습니다."))
+            )
+        return response.get("payload")

@@ -5,6 +5,10 @@ from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
     MESSAGE_CODE_GUIDE_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+    MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+    MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+    MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_CREATE_TASK,
     MESSAGE_CODE_PATROL_RESUME_TASK,
@@ -83,6 +87,13 @@ def test_guide_create_task_message_code_is_if_gui_001():
 
     assert decoded.message_code == 0x4001
     assert decoded.payload["visitor_id"] == 1
+
+
+def test_kiosk_visitor_message_codes_are_if_gui_008_through_011():
+    assert MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY == 0x4008
+    assert MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION == 0x4009
+    assert MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY == 0x400A
+    assert MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION == 0x400B
 
 
 def test_patrol_resume_task_message_code_is_if_pat_002():

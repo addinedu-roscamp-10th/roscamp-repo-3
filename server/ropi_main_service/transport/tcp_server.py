@@ -34,6 +34,10 @@ from server.ropi_main_service.persistence.background_db_writer import (
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_GUIDE_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+    MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+    MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+    MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
@@ -237,6 +241,18 @@ class ControlServiceServer:
                 self.frame_handlers.handle_fall_evidence_image_query
             ),
             MESSAGE_CODE_GUIDE_CREATE_TASK: self.frame_handlers.handle_guide_create_task,
+            MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY: (
+                self.frame_handlers.handle_guide_resident_existence_query
+            ),
+            MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION: (
+                self.frame_handlers.handle_guide_visitor_registration
+            ),
+            MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY: (
+                self.frame_handlers.handle_guide_visitor_care_history_query
+            ),
+            MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION: (
+                self.frame_handlers.handle_guide_staff_call_submission
+            ),
             MESSAGE_CODE_TASK_STATUS_QUERY: (
                 self.frame_handlers.handle_task_status_query
             ),
@@ -261,6 +277,18 @@ class ControlServiceServer:
             ),
             MESSAGE_CODE_GUIDE_CREATE_TASK: (
                 self.frame_handlers.handle_guide_create_task_async
+            ),
+            MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY: (
+                self.frame_handlers.handle_guide_resident_existence_query_async
+            ),
+            MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION: (
+                self.frame_handlers.handle_guide_visitor_registration_async
+            ),
+            MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY: (
+                self.frame_handlers.handle_guide_visitor_care_history_query_async
+            ),
+            MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION: (
+                self.frame_handlers.handle_guide_staff_call_submission_async
             ),
             MESSAGE_CODE_TASK_STATUS_QUERY: (
                 self.frame_handlers.handle_task_status_query_async
