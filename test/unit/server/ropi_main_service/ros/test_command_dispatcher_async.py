@@ -125,6 +125,21 @@ class FakeAsyncFallResponseControlClient:
         }
 
 
+class FakeAsyncGuideCommandClient:
+    def __init__(self):
+        self.calls = []
+
+    def call(self, **kwargs):
+        raise AssertionError("async dispatcher should prefer async_call")
+
+    async def async_call(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "accepted": True,
+            "message": "",
+        }
+
+
 class FakeGuideTrackingUpdatePublisher:
     def __init__(self):
         self.calls = []
@@ -176,6 +191,56 @@ def test_async_dispatch_prefers_async_goal_pose_action_client():
             "result_wait_timeout_sec": 125.0,
         }
     ]
+
+
+def test_async_dispatch_guide_command_uses_int_track_id_and_destination_pose():
+    guide_client = FakeAsyncGuideCommandClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        guide_command_client=guide_client,
+    )
+    destination_pose = {
+        "header": {"frame_id": "map"},
+        "pose": {
+            "position": {"x": 18.4, "y": 7.2, "z": 0.0},
+            "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+        },
+    }
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "guide_command",
+                {
+                    "pinky_id": "pinky1",
+                    "task_id": "3001",
+                    "command_type": "START_GUIDANCE",
+                    "target_track_id": 17,
+                    "destination_id": "delivery_room_301",
+                    "destination_pose": destination_pose,
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["accepted"] is True
+    assert guide_client.calls == [
+        {
+            "service_name": "/ropi/control/pinky1/guide_command",
+            "request": {
+                "task_id": "3001",
+                "command_type": "START_GUIDANCE",
+                "target_track_id": 17,
+                "destination_id": "delivery_room_301",
+                "destination_pose": destination_pose,
+            },
+        }
+    ]
+    request = guide_client.calls[0]["request"]
+    assert "wait_timeout_sec" not in request
+    assert "finish_reason" not in request
 
 
 def test_async_dispatch_publishes_guide_tracking_update():

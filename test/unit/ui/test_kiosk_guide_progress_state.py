@@ -16,8 +16,22 @@ def test_guide_progress_view_state_keeps_wait_target_tracking_before_running_lab
     assert state.header_subtitle == "로봇이 안내 대상을 확인하는 중입니다."
     assert state.active_stage_index == 2
     assert state.progress_fill_width == 260
-    assert state.start_driving_enabled is None
+    assert state.start_driving_enabled is False
     assert state.cancel_enabled is None
+
+
+def test_guide_progress_view_state_enables_start_when_target_ready():
+    state = build_guide_progress_view_state(
+        phase="READY_TO_START_GUIDANCE",
+        task_status="RUNNING",
+    )
+
+    assert state.robot_state_label == "대상 확인 완료"
+    assert state.status_message == "안내 시작을 누르면 로봇이 목적지까지 안내합니다."
+    assert state.header_title == "안내를 시작할 수 있습니다"
+    assert state.header_subtitle == "확인된 안내 대상을 기준으로 주행을 시작합니다."
+    assert state.active_stage_index == 2
+    assert state.start_driving_enabled is True
 
 
 def test_guide_progress_view_state_disables_start_during_guidance_running():
@@ -34,6 +48,19 @@ def test_guide_progress_view_state_disables_start_during_guidance_running():
     assert state.progress_fill_width == 420
     assert state.start_driving_enabled is False
     assert state.cancel_enabled is None
+
+
+def test_guide_progress_view_state_treats_wait_reidentify_as_post_start_observation():
+    state = build_guide_progress_view_state(
+        phase="WAIT_REIDENTIFY",
+        task_status="RUNNING",
+    )
+
+    assert state.robot_state_label == "재확인 중"
+    assert state.status_message == "대상을 다시 확인하고 있습니다."
+    assert state.header_title == "대상을 다시 확인하고 있습니다"
+    assert state.active_stage_index == 3
+    assert state.start_driving_enabled is False
 
 
 def test_guide_progress_view_state_disables_actions_for_terminal_status():

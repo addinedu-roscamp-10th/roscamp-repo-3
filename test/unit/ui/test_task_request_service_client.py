@@ -758,7 +758,7 @@ def test_visit_guide_remote_service_exposes_start_guide_driving_rpc(monkeypatch)
     response = VisitGuideRemoteService().start_guide_driving(
         task_id="3001",
         pinky_id="pinky1",
-        target_track_id="track_17",
+        target_track_id=17,
     )
 
     assert response[0] is True
@@ -768,8 +768,37 @@ def test_visit_guide_remote_service_exposes_start_guide_driving_rpc(monkeypatch)
             "start_guide_driving",
             {
                 "task_id": "3001",
-                "target_track_id": "track_17",
+                "target_track_id": 17,
                 "pinky_id": "pinky1",
+            },
+        )
+    ]
+
+
+def test_visit_guide_remote_service_finish_uses_common_task_cancel_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return True, "취소 요청이 접수되었습니다.", {"result_code": "CANCEL_REQUESTED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = VisitGuideRemoteService().finish_guide_session(
+        task_id="3001",
+        pinky_id="pinky1",
+        finish_reason="USER_CANCELLED",
+    )
+
+    assert response[0] is True
+    assert calls == [
+        (
+            "task_request",
+            "cancel_task",
+            {
+                "task_id": "3001",
+                "caregiver_id": None,
+                "reason": "USER_CANCELLED",
             },
         )
     ]

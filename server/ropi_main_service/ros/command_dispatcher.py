@@ -928,23 +928,47 @@ class RosServiceCommandDispatcher:
             error_code="COMMAND_TYPE_REQUIRED",
             error_message="guide_command requires command_type.",
         )
-        target_track_id = cls._get_optional_identifier(request, "target_track_id")
-        finish_reason = cls._get_optional_identifier(request, "finish_reason")
-        wait_timeout_raw = request.get("wait_timeout_sec", 0)
+        command_type = command_type.strip().upper()
+        if command_type not in {"WAIT_TARGET_TRACKING", "START_GUIDANCE"}:
+            raise RosServiceCommandDispatchError(
+                "COMMAND_TYPE_INVALID",
+                "guide_command supports only WAIT_TARGET_TRACKING or START_GUIDANCE.",
+            )
+
+        target_track_raw = request.get("target_track_id", -1)
         try:
-            wait_timeout_sec = int(wait_timeout_raw)
+            target_track_id = int(str(target_track_raw).strip())
         except (TypeError, ValueError) as exc:
             raise RosServiceCommandDispatchError(
-                "WAIT_TIMEOUT_INVALID",
-                "guide_command requires integer wait_timeout_sec.",
+                "TARGET_TRACK_ID_INVALID",
+                "guide_command requires integer target_track_id.",
             ) from exc
+
+        destination_id = cls._get_optional_identifier(request, "destination_id") or ""
+        destination_pose = request.get("destination_pose") or {}
+        if not isinstance(destination_pose, dict):
+            raise RosServiceCommandDispatchError(
+                "DESTINATION_POSE_INVALID",
+                "guide_command requires object destination_pose.",
+            )
+        if command_type == "START_GUIDANCE":
+            if target_track_id < 0:
+                raise RosServiceCommandDispatchError(
+                    "TARGET_TRACK_ID_REQUIRED",
+                    "START_GUIDANCE requires non-negative target_track_id.",
+                )
+            if not destination_pose:
+                raise RosServiceCommandDispatchError(
+                    "DESTINATION_POSE_REQUIRED",
+                    "START_GUIDANCE requires destination_pose.",
+                )
 
         return {
             "task_id": task_id,
             "command_type": command_type,
-            "target_track_id": target_track_id or "",
-            "wait_timeout_sec": wait_timeout_sec,
-            "finish_reason": finish_reason or "",
+            "target_track_id": target_track_id,
+            "destination_id": destination_id,
+            "destination_pose": destination_pose,
         }
 
     @classmethod

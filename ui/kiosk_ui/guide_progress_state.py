@@ -6,7 +6,7 @@ TERMINAL_TASK_STATUSES = {"COMPLETED", "CANCELLED", "FAILED"}
 PRE_DRIVING_PHASES = {
     "WAIT_GUIDE_START_CONFIRM",
     "WAIT_TARGET_TRACKING",
-    "WAIT_REIDENTIFY",
+    "READY_TO_START_GUIDANCE",
 }
 
 
@@ -67,10 +67,12 @@ def _status_label(phase, task_status):
         return "안내 실패"
     if phase == "WAIT_TARGET_TRACKING":
         return "대상 확인 중"
-    if phase == "GUIDANCE_RUNNING" or task_status == "RUNNING":
-        return "안내 중"
+    if phase == "READY_TO_START_GUIDANCE":
+        return "대상 확인 완료"
     if phase == "WAIT_REIDENTIFY":
         return "재확인 중"
+    if phase == "GUIDANCE_RUNNING" or task_status == "RUNNING":
+        return "안내 중"
     return "안내 준비"
 
 
@@ -83,10 +85,12 @@ def _status_message(phase, task_status):
         return "안내를 시작하지 못했습니다. 직원에게 도움을 요청해주세요."
     if phase == "WAIT_TARGET_TRACKING":
         return "로봇이 안내 대상을 확인하고 있습니다."
-    if phase == "GUIDANCE_RUNNING" or task_status == "RUNNING":
-        return "로봇을 따라 이동해주세요."
+    if phase == "READY_TO_START_GUIDANCE":
+        return "안내 시작을 누르면 로봇이 목적지까지 안내합니다."
     if phase == "WAIT_REIDENTIFY":
         return "대상을 다시 확인하고 있습니다."
+    if phase == "GUIDANCE_RUNNING" or task_status == "RUNNING":
+        return "로봇을 따라 이동해주세요."
     return "안내 요청 상태를 확인하고 있습니다."
 
 
@@ -99,6 +103,10 @@ def _header_text(phase, task_status):
         return "안내를 시작하지 못했습니다", "직원에게 도움을 요청해 주세요."
     if phase == "WAIT_TARGET_TRACKING":
         return "안내를 준비하고 있습니다", "로봇이 안내 대상을 확인하는 중입니다."
+    if phase == "READY_TO_START_GUIDANCE":
+        return "안내를 시작할 수 있습니다", "확인된 안내 대상을 기준으로 주행을 시작합니다."
+    if phase == "WAIT_REIDENTIFY":
+        return "대상을 다시 확인하고 있습니다", "로봇 근처에서 잠시 기다려 주세요."
     if phase == "GUIDANCE_RUNNING" or task_status == "RUNNING":
         return "로봇을 따라 이동해 주세요", "목적지까지 안전하게 안내해 드립니다."
     return "안내 요청을 확인하고 있습니다", "잠시만 기다려 주세요."
@@ -122,6 +130,12 @@ def _start_driving_enabled(phase, task_status):
     if task_status in TERMINAL_TASK_STATUSES:
         return False
     if phase:
+        if phase == "READY_TO_START_GUIDANCE":
+            return True
+        if phase == "WAIT_TARGET_TRACKING":
+            return False
+        if phase == "WAIT_REIDENTIFY":
+            return False
         if phase == "GUIDANCE_RUNNING":
             return False
         return None

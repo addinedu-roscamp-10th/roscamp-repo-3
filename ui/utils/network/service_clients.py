@@ -623,17 +623,13 @@ class VisitGuideRemoteService:
         member_id=None,
         pinky_id=None,
         command_type="WAIT_TARGET_TRACKING",
-        target_track_id="",
-        wait_timeout_sec=0,
-        finish_reason="",
+        target_track_id=-1,
     ):
         kwargs = {
             "patient": patient,
             "member_id": member_id,
             "command_type": command_type,
             "target_track_id": target_track_id,
-            "wait_timeout_sec": wait_timeout_sec,
-            "finish_reason": finish_reason,
         }
         if pinky_id is not None:
             kwargs["pinky_id"] = pinky_id
@@ -644,17 +640,15 @@ class VisitGuideRemoteService:
         *,
         task_id,
         pinky_id=None,
-        target_track_id="",
         finish_reason="",
     ):
-        kwargs = {
-            "task_id": task_id,
-            "target_track_id": target_track_id,
-            "finish_reason": finish_reason,
-        }
-        if pinky_id is not None:
-            kwargs["pinky_id"] = pinky_id
-        return _rpc("visit_guide", "finish_guide_session", **kwargs)
+        return _rpc(
+            "task_request",
+            "cancel_task",
+            task_id=str(task_id).strip(),
+            caregiver_id=None,
+            reason=str(finish_reason or "guide_cancel").strip() or "guide_cancel",
+        )
 
     def start_guide_driving(
         self,
@@ -662,7 +656,6 @@ class VisitGuideRemoteService:
         task_id,
         target_track_id,
         pinky_id=None,
-        navigation_timeout_sec=None,
     ):
         kwargs = {
             "task_id": task_id,
@@ -670,8 +663,6 @@ class VisitGuideRemoteService:
         }
         if pinky_id is not None:
             kwargs["pinky_id"] = pinky_id
-        if navigation_timeout_sec is not None:
-            kwargs["navigation_timeout_sec"] = navigation_timeout_sec
         return _rpc("visit_guide", "start_guide_driving", **kwargs)
 
     def send_guide_command(
@@ -680,16 +671,12 @@ class VisitGuideRemoteService:
         task_id,
         command_type,
         pinky_id=None,
-        target_track_id="",
-        wait_timeout_sec=0,
-        finish_reason="",
+        target_track_id=-1,
     ):
         kwargs = {
             "task_id": task_id,
             "command_type": command_type,
             "target_track_id": target_track_id,
-            "wait_timeout_sec": wait_timeout_sec,
-            "finish_reason": finish_reason,
         }
         if pinky_id is not None:
             kwargs["pinky_id"] = pinky_id

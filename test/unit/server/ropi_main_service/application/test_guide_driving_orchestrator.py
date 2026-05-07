@@ -1,7 +1,6 @@
 import asyncio
 
 from server.ropi_main_service.application.guide_driving_orchestrator import (
-    GUIDE_DESTINATION_NAV_PHASE,
     START_GUIDANCE_COMMAND,
     GuideDrivingOrchestrator,
 )
@@ -43,7 +42,7 @@ class FakeGoalPoseNavigationService:
         self.response = response or {
             "result_code": "ACCEPTED",
             "navigation_started": True,
-            "nav_phase": GUIDE_DESTINATION_NAV_PHASE,
+            "nav_phase": "GUIDE_DESTINATION",
         }
         self.events = events
         self.navigated = []
@@ -73,7 +72,7 @@ class FakeGuideCommandLifecycleService:
             "phase": "GUIDANCE_RUNNING",
             "guide_phase": "GUIDANCE_RUNNING",
             "assigned_robot_id": "pinky1",
-            "target_track_id": "track_17",
+            "target_track_id": 17,
         }
         self.events = events
         self.sent = []
@@ -82,13 +81,21 @@ class FakeGuideCommandLifecycleService:
         self.sent.append(kwargs)
         if self.events is not None:
             self.events.append("command")
-        return True, self.response.get("message") or "accepted", self.response
+        return (
+            bool(self.response.get("accepted", True)),
+            self.response.get("message") or self.response.get("result_message") or "accepted",
+            self.response,
+        )
 
     async def async_send_command(self, **kwargs):
         self.sent.append(kwargs)
         if self.events is not None:
             self.events.append("command")
-        return True, self.response.get("message") or "accepted", self.response
+        return (
+            bool(self.response.get("accepted", True)),
+            self.response.get("message") or self.response.get("result_message") or "accepted",
+            self.response,
+        )
 
 
 class FakeGuideTaskLifecycleRepository:
@@ -120,7 +127,7 @@ class FakeGuideTaskLifecycleRepository:
         }
 
 
-def test_guide_driving_orchestrator_starts_navigation_before_start_guidance():
+def test_guide_driving_orchestrator_sends_start_guidance_without_destination_navigation():
     events = []
     navigation_repository = FakeGuideTaskNavigationRepository()
     navigation_service = FakeGoalPoseNavigationService(events=events)
@@ -134,51 +141,44 @@ def test_guide_driving_orchestrator_starts_navigation_before_start_guidance():
 
     ok, message, response = service.start_guide_driving(
         task_id=3001,
-        target_track_id="track_17",
+        target_track_id=17,
         navigation_timeout_sec=42,
     )
 
     assert ok is True
     assert message == "안내 주행을 시작했습니다."
-    assert events == ["navigate", "command"]
+    assert events == ["command"]
     assert navigation_repository.requested == [{"task_id": 3001}]
-    assert navigation_service.navigated == [
-        {
-            "task_id": 3001,
-            "pinky_id": "pinky1",
-            "nav_phase": GUIDE_DESTINATION_NAV_PHASE,
-            "goal_pose": navigation_repository.response["goal_pose"],
-            "timeout_sec": 42.0,
-        }
-    ]
+    assert navigation_service.navigated == []
     assert command_lifecycle_service.sent == [
         {
             "task_id": 3001,
             "pinky_id": "pinky1",
             "command_type": START_GUIDANCE_COMMAND,
-            "target_track_id": "track_17",
+            "target_track_id": 17,
+            "destination_id": "delivery_room_301",
+            "destination_pose": navigation_repository.response["goal_pose"],
         }
     ]
     assert response["task_status"] == "RUNNING"
     assert response["phase"] == "GUIDANCE_RUNNING"
-    assert response["target_track_id"] == "track_17"
-    assert response["navigation_response"]["navigation_started"] is True
+    assert response["target_track_id"] == 17
+    assert "navigation_response" not in response
 
 
-def test_guide_driving_orchestrator_records_rejection_when_navigation_rejected():
+def test_guide_driving_orchestrator_returns_start_guidance_rejection_without_navigation():
     navigation_repository = FakeGuideTaskNavigationRepository()
-    navigation_service = FakeGoalPoseNavigationService(
+    navigation_service = FakeGoalPoseNavigationService()
+    command_lifecycle_service = FakeGuideCommandLifecycleService(
         response={
+            "accepted": False,
             "result_code": "REJECTED",
-            "result_message": "navigation unavailable",
-            "reason_code": "NAVIGATION_UNAVAILABLE",
+            "result_message": "guide command rejected",
+            "reason_code": "GUIDE_STATE_MISMATCH",
         }
     )
-    command_lifecycle_service = FakeGuideCommandLifecycleService()
-    lifecycle_repository = FakeGuideTaskLifecycleRepository()
     service = GuideDrivingOrchestrator(
         guide_task_navigation_repository=navigation_repository,
-        guide_task_lifecycle_repository=lifecycle_repository,
         guide_command_lifecycle_service=command_lifecycle_service,
         goal_pose_navigation_service=navigation_service,
         default_pinky_id="pinky1",
@@ -186,37 +186,33 @@ def test_guide_driving_orchestrator_records_rejection_when_navigation_rejected()
 
     ok, message, response = service.start_guide_driving(
         task_id=3001,
-        target_track_id="track_17",
+        target_track_id=17,
     )
 
     assert ok is False
-    assert message == "navigation unavailable"
-    assert command_lifecycle_service.sent == []
-    assert lifecycle_repository.recorded[0]["command_type"] == START_GUIDANCE_COMMAND
-    assert lifecycle_repository.recorded[0]["target_track_id"] == "track_17"
-    assert lifecycle_repository.recorded[0]["command_response"]["accepted"] is False
-    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
-        "NAVIGATION_UNAVAILABLE"
+    assert message == "guide command rejected"
+    assert navigation_service.navigated == []
+    assert command_lifecycle_service.sent[0]["destination_pose"] == (
+        navigation_repository.response["goal_pose"]
     )
     assert response["result_code"] == "REJECTED"
-    assert response["phase"] == "WAIT_TARGET_TRACKING"
-    assert response["navigation_response"]["reason_code"] == "NAVIGATION_UNAVAILABLE"
-    assert response["command_response"] is None
+    assert response["reason_code"] == "GUIDE_STATE_MISMATCH"
+    assert "navigation_response" not in response
 
 
-def test_guide_driving_orchestrator_async_stops_before_command_when_navigation_rejected():
-    navigation_service = FakeGoalPoseNavigationService(
+def test_guide_driving_orchestrator_async_sends_start_guidance_without_destination_navigation():
+    navigation_service = FakeGoalPoseNavigationService()
+    command_lifecycle_service = FakeGuideCommandLifecycleService(
         response={
-            "result_code": "REJECTED",
-            "result_message": "navigation unavailable",
-            "reason_code": "NAVIGATION_UNAVAILABLE",
+            "accepted": True,
+            "result_code": "ACCEPTED",
+            "result_message": "안내 제어 명령이 수락되었습니다.",
+            "phase": "GUIDANCE_RUNNING",
+            "target_track_id": 17,
         }
     )
-    command_lifecycle_service = FakeGuideCommandLifecycleService()
-    lifecycle_repository = FakeGuideTaskLifecycleRepository()
     service = GuideDrivingOrchestrator(
         guide_task_navigation_repository=FakeGuideTaskNavigationRepository(),
-        guide_task_lifecycle_repository=lifecycle_repository,
         guide_command_lifecycle_service=command_lifecycle_service,
         goal_pose_navigation_service=navigation_service,
         default_pinky_id="pinky1",
@@ -225,15 +221,14 @@ def test_guide_driving_orchestrator_async_stops_before_command_when_navigation_r
     ok, message, response = asyncio.run(
         service.async_start_guide_driving(
             task_id=3001,
-            target_track_id="track_17",
+            target_track_id=17,
         )
     )
 
-    assert ok is False
-    assert message == "navigation unavailable"
-    assert command_lifecycle_service.sent == []
-    assert lifecycle_repository.recorded[0]["command_type"] == START_GUIDANCE_COMMAND
-    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
-        "NAVIGATION_UNAVAILABLE"
-    )
-    assert response["phase"] == "WAIT_TARGET_TRACKING"
+    assert ok is True
+    assert message == "안내 주행을 시작했습니다."
+    assert navigation_service.navigated == []
+    assert command_lifecycle_service.sent[0]["command_type"] == START_GUIDANCE_COMMAND
+    assert command_lifecycle_service.sent[0]["target_track_id"] == 17
+    assert command_lifecycle_service.sent[0]["destination_id"] == "delivery_room_301"
+    assert response["phase"] == "GUIDANCE_RUNNING"

@@ -179,7 +179,7 @@ class VisitGuideService:
         idempotency_key=None,
         pinky_id=None,
         command_type="WAIT_TARGET_TRACKING",
-        target_track_id="",
+        target_track_id=-1,
         wait_timeout_sec=0,
         finish_reason="",
     ):
@@ -205,8 +205,6 @@ class VisitGuideService:
             command_type=command_type,
             pinky_id=target_pinky_id,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
         )
         payload = {
             "task_id": guide_task_id,
@@ -231,7 +229,7 @@ class VisitGuideService:
         idempotency_key=None,
         pinky_id=None,
         command_type="WAIT_TARGET_TRACKING",
-        target_track_id="",
+        target_track_id=-1,
         wait_timeout_sec=0,
         finish_reason="",
     ):
@@ -257,8 +255,6 @@ class VisitGuideService:
             command_type=command_type,
             pinky_id=target_pinky_id,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
         )
         payload = {
             "task_id": guide_task_id,
@@ -341,17 +337,19 @@ class VisitGuideService:
         task_id,
         command_type,
         pinky_id=None,
-        target_track_id="",
+        target_track_id=-1,
         wait_timeout_sec=0,
         finish_reason="",
+        destination_id="",
+        destination_pose=None,
     ):
         return self.guide_command_lifecycle_service.send_command(
             task_id=task_id,
             pinky_id=pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
+            destination_id=destination_id,
+            destination_pose=destination_pose,
         )
 
     async def async_send_guide_command(
@@ -360,17 +358,19 @@ class VisitGuideService:
         task_id,
         command_type,
         pinky_id=None,
-        target_track_id="",
+        target_track_id=-1,
         wait_timeout_sec=0,
         finish_reason="",
+        destination_id="",
+        destination_pose=None,
     ):
         return await self.guide_command_lifecycle_service.async_send_command(
             task_id=task_id,
             pinky_id=pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
+            destination_id=destination_id,
+            destination_pose=destination_pose,
         )
 
     def get_tracking_status(self, *, task_id=None, pinky_id=None):

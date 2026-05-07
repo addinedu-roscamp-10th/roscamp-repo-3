@@ -76,49 +76,14 @@ class GuideDrivingOrchestrator:
             )
 
         target_pinky_id = self._resolve_guide_driving_pinky_id(pinky_id, context)
-        try:
-            navigation_response = self._start_guide_destination_navigation(
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                goal_pose=context.get("goal_pose"),
-                timeout_sec=navigation_timeout_sec,
-            )
-        except Exception as exc:
-            response = self._build_guide_navigation_failure_response(
-                context=context,
-                navigation_response=self._build_guide_navigation_transport_error_response(exc),
-                target_track_id=target_track_id,
-                pinky_id=target_pinky_id,
-            )
-            self._record_guide_driving_start_rejection(
-                response=response,
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                target_track_id=target_track_id,
-            )
-            return False, response["result_message"], response
-
-        if not self._navigation_dispatch_accepted(navigation_response):
-            response = self._build_guide_navigation_failure_response(
-                context=context,
-                navigation_response=navigation_response,
-                target_track_id=target_track_id,
-                pinky_id=target_pinky_id,
-            )
-            self._record_guide_driving_start_rejection(
-                response=response,
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                target_track_id=target_track_id,
-            )
-            return False, response["result_message"], response
-
         command_ok, command_message, command_response = (
             self.guide_command_lifecycle_service.send_command(
                 task_id=task_id,
                 pinky_id=target_pinky_id,
                 command_type=START_GUIDANCE_COMMAND,
                 target_track_id=target_track_id,
+                destination_id=context.get("destination_id"),
+                destination_pose=context.get("goal_pose"),
             )
         )
         response = self._build_guide_driving_response(
@@ -128,10 +93,8 @@ class GuideDrivingOrchestrator:
             pinky_id=target_pinky_id,
         )
         if not command_ok:
-            response["navigation_response"] = navigation_response
             return False, command_message, response
 
-        response["navigation_response"] = navigation_response
         response["result_code"] = "ACCEPTED"
         response["result_message"] = "안내 주행을 시작했습니다."
         return True, response["result_message"], response
@@ -162,49 +125,14 @@ class GuideDrivingOrchestrator:
             )
 
         target_pinky_id = self._resolve_guide_driving_pinky_id(pinky_id, context)
-        try:
-            navigation_response = await self._async_start_guide_destination_navigation(
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                goal_pose=context.get("goal_pose"),
-                timeout_sec=navigation_timeout_sec,
-            )
-        except Exception as exc:
-            response = self._build_guide_navigation_failure_response(
-                context=context,
-                navigation_response=self._build_guide_navigation_transport_error_response(exc),
-                target_track_id=target_track_id,
-                pinky_id=target_pinky_id,
-            )
-            await self._async_record_guide_driving_start_rejection(
-                response=response,
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                target_track_id=target_track_id,
-            )
-            return False, response["result_message"], response
-
-        if not self._navigation_dispatch_accepted(navigation_response):
-            response = self._build_guide_navigation_failure_response(
-                context=context,
-                navigation_response=navigation_response,
-                target_track_id=target_track_id,
-                pinky_id=target_pinky_id,
-            )
-            await self._async_record_guide_driving_start_rejection(
-                response=response,
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                target_track_id=target_track_id,
-            )
-            return False, response["result_message"], response
-
         command_ok, command_message, command_response = (
             await self.guide_command_lifecycle_service.async_send_command(
                 task_id=task_id,
                 pinky_id=target_pinky_id,
                 command_type=START_GUIDANCE_COMMAND,
                 target_track_id=target_track_id,
+                destination_id=context.get("destination_id"),
+                destination_pose=context.get("goal_pose"),
             )
         )
         response = self._build_guide_driving_response(
@@ -214,10 +142,8 @@ class GuideDrivingOrchestrator:
             pinky_id=target_pinky_id,
         )
         if not command_ok:
-            response["navigation_response"] = navigation_response
             return False, command_message, response
 
-        response["navigation_response"] = navigation_response
         response["result_code"] = "ACCEPTED"
         response["result_message"] = "안내 주행을 시작했습니다."
         return True, response["result_message"], response
@@ -376,6 +302,9 @@ class GuideDrivingOrchestrator:
 
     @staticmethod
     def _build_guide_driving_response(*, context, command_response, target_track_id, pinky_id):
+        response_target_track_id = command_response.get("target_track_id")
+        if response_target_track_id is None:
+            response_target_track_id = target_track_id
         response = {
             "result_code": command_response.get("result_code"),
             "result_message": command_response.get("result_message"),
@@ -386,7 +315,7 @@ class GuideDrivingOrchestrator:
             "phase": command_response.get("phase") or context.get("phase"),
             "guide_phase": command_response.get("guide_phase"),
             "assigned_robot_id": command_response.get("assigned_robot_id") or pinky_id,
-            "target_track_id": command_response.get("target_track_id") or target_track_id,
+            "target_track_id": response_target_track_id,
             "destination_id": context.get("destination_id"),
             "command_response": command_response,
         }
@@ -402,6 +331,13 @@ class GuideDrivingOrchestrator:
         if cls._is_blank(target_track_id):
             return cls._build_guide_driving_invalid_response(
                 result_message="target_track_id가 필요합니다.",
+                reason_code="TARGET_TRACK_ID_REQUIRED",
+                task_id=task_id,
+            )
+        normalized_target_track_id = cls._normalize_non_negative_int(target_track_id)
+        if normalized_target_track_id is None:
+            return cls._build_guide_driving_invalid_response(
+                result_message="target_track_id는 0 이상의 정수여야 합니다.",
                 reason_code="TARGET_TRACK_ID_REQUIRED",
                 task_id=task_id,
             )
@@ -424,6 +360,16 @@ class GuideDrivingOrchestrator:
         except (TypeError, ValueError):
             return None
         if normalized <= 0:
+            return None
+        return normalized
+
+    @staticmethod
+    def _normalize_non_negative_int(value):
+        try:
+            normalized = int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+        if normalized < 0:
             return None
         return normalized
 

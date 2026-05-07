@@ -59,23 +59,6 @@ class FakeGuideTaskLifecycleRepository:
 
     def record_command_result(self, **kwargs):
         self.recorded.append(kwargs)
-        if (
-            kwargs["command_type"] == "FINISH_GUIDANCE"
-            and kwargs["finish_reason"] == "USER_CANCELLED"
-            and (kwargs.get("command_response") or {}).get("reason_code")
-            == "GUIDE_COMMAND_TRANSPORT_ERROR"
-        ):
-            return {
-                "result_code": "ACCEPTED",
-                "result_message": "안내 시작 전 취소가 접수되었습니다.",
-                "reason_code": "USER_CANCELLED",
-                "task_id": int(kwargs["task_id"]),
-                "task_status": "CANCELLED",
-                "phase": "GUIDANCE_CANCELLED",
-                "guide_phase": "CANCELLED",
-                "assigned_robot_id": kwargs["pinky_id"],
-                "accepted": True,
-            }
         if not (kwargs.get("command_response") or {}).get("accepted"):
             return {
                 "result_code": "REJECTED",
@@ -108,15 +91,7 @@ class FakeGuideTaskLifecycleRepository:
         }
 
     async def async_record_command_result(self, **kwargs):
-        self.recorded.append(kwargs)
-        return {
-            "result_code": "ACCEPTED",
-            "task_id": int(kwargs["task_id"]),
-            "task_status": "CANCELLED",
-            "phase": "GUIDANCE_CANCELLED",
-            "guide_phase": "CANCELLED",
-            "assigned_robot_id": kwargs["pinky_id"],
-        }
+        return self.record_command_result(**kwargs)
 
 
 class FakeGuideTaskNavigationRepository:
@@ -295,9 +270,7 @@ def test_visit_guide_service_records_guide_command_lifecycle_after_command_succe
             "task_id": 3001,
             "pinky_id": "pinky1",
             "command_type": "WAIT_TARGET_TRACKING",
-            "target_track_id": "",
-            "wait_timeout_sec": 0,
-            "finish_reason": "",
+            "target_track_id": -1,
             "command_response": {"accepted": True, "message": ""},
         }
     ]
@@ -326,9 +299,7 @@ def test_visit_guide_service_records_rejected_lifecycle_when_guide_command_trans
             "task_id": 3001,
             "pinky_id": "pinky1",
             "command_type": "WAIT_TARGET_TRACKING",
-            "target_track_id": "",
-            "wait_timeout_sec": 0,
-            "finish_reason": "",
+            "target_track_id": -1,
             "command_response": {
                 "accepted": False,
                 "result_code": "REJECTED",
@@ -342,7 +313,7 @@ def test_visit_guide_service_records_rejected_lifecycle_when_guide_command_trans
     assert response["reason_code"] == "GUIDE_COMMAND_TRANSPORT_ERROR"
 
 
-def test_visit_guide_service_treats_pre_driving_cancel_transport_failure_as_cancelled():
+def test_visit_guide_service_rejects_finish_guide_session_command_boundary():
     command_service = FailingGuideCommandService(
         "/ropi/control/pinky1/guide_command service is not available."
     )
@@ -358,18 +329,13 @@ def test_visit_guide_service_treats_pre_driving_cancel_transport_failure_as_canc
         finish_reason="USER_CANCELLED",
     )
 
-    assert ok is True
-    assert message == "안내 시작 전 취소가 접수되었습니다."
-    assert response["accepted"] is True
-    assert response["result_code"] == "ACCEPTED"
-    assert response["reason_code"] == "USER_CANCELLED"
-    assert response["task_status"] == "CANCELLED"
-    assert response["phase"] == "GUIDANCE_CANCELLED"
-    assert response["lifecycle_result"]["accepted"] is True
+    assert ok is False
+    assert message == "지원하지 않는 안내 제어 명령입니다."
+    assert response["accepted"] is False
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "COMMAND_TYPE_INVALID"
     assert lifecycle_repository.recorded[0]["command_type"] == "FINISH_GUIDANCE"
-    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
-        "GUIDE_COMMAND_TRANSPORT_ERROR"
-    )
+    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == "COMMAND_TYPE_INVALID"
 
 
 def test_visit_guide_service_async_records_rejected_lifecycle_when_guide_command_transport_fails():
@@ -397,7 +363,7 @@ def test_visit_guide_service_async_records_rejected_lifecycle_when_guide_command
     assert response["reason_code"] == "GUIDE_COMMAND_TRANSPORT_ERROR"
 
 
-def test_visit_guide_service_async_finish_records_cancelled_lifecycle():
+def test_visit_guide_service_async_finish_rejects_command_boundary():
     command_service = FakeGuideCommandService(response={"accepted": True, "message": "finished"})
     lifecycle_repository = FakeGuideTaskLifecycleRepository()
     service = VisitGuideService(
@@ -413,15 +379,14 @@ def test_visit_guide_service_async_finish_records_cancelled_lifecycle():
         )
     )
 
-    assert ok is True
-    assert message == "finished"
+    assert ok is False
+    assert message == "지원하지 않는 안내 제어 명령입니다."
     assert lifecycle_repository.recorded[0]["command_type"] == "FINISH_GUIDANCE"
-    assert lifecycle_repository.recorded[0]["finish_reason"] == "USER_CANCELLED"
-    assert response["task_status"] == "CANCELLED"
-    assert response["phase"] == "GUIDANCE_CANCELLED"
+    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == "COMMAND_TYPE_INVALID"
+    assert response["reason_code"] == "COMMAND_TYPE_INVALID"
 
 
-def test_visit_guide_service_start_guide_driving_sends_start_guidance_and_navigation():
+def test_visit_guide_service_start_guide_driving_sends_start_guidance_without_navigation():
     command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
     lifecycle_repository = FakeGuideTaskLifecycleRepository()
     navigation_repository = FakeGuideTaskNavigationRepository()
@@ -435,29 +400,32 @@ def test_visit_guide_service_start_guide_driving_sends_start_guidance_and_naviga
 
     ok, message, response = service.start_guide_driving(
         task_id=3001,
-        target_track_id="track_17",
+        target_track_id=17,
     )
 
     assert ok is True
     assert message == "안내 주행을 시작했습니다."
     assert command_service.sent[0]["command_type"] == "START_GUIDANCE"
-    assert command_service.sent[0]["target_track_id"] == "track_17"
-    assert navigation_starter.started == [
-        {
-            "task_id": 3001,
-            "pinky_id": "pinky1",
-            "goal_pose": navigation_repository.response["goal_pose"],
-            "timeout_sec": 120.0,
-        }
-    ]
+    assert command_service.sent[0]["target_track_id"] == 17
+    assert command_service.sent[0]["destination_id"] == "delivery_room_301"
+    assert command_service.sent[0]["destination_pose"] == navigation_repository.response["goal_pose"]
+    assert navigation_starter.started == []
     assert response["task_status"] == "RUNNING"
     assert response["phase"] == "GUIDANCE_RUNNING"
-    assert response["target_track_id"] == "track_17"
-    assert response["navigation_response"]["navigation_started"] is True
+    assert response["target_track_id"] == 17
+    assert "navigation_response" not in response
 
 
-def test_visit_guide_service_start_guide_driving_does_not_record_running_when_navigation_rejected():
-    command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
+def test_visit_guide_service_start_guide_driving_returns_command_rejection_without_navigation():
+    command_service = FakeGuideCommandService(
+        response={
+            "accepted": False,
+            "result_code": "REJECTED",
+            "result_message": "guide command rejected",
+            "reason_code": "GUIDE_STATE_MISMATCH",
+            "message": "guide command rejected",
+        }
+    )
     lifecycle_repository = FakeGuideTaskLifecycleRepository()
     navigation_repository = FakeGuideTaskNavigationRepository()
     navigation_starter = FakeGuideNavigationStarter(
@@ -476,33 +444,24 @@ def test_visit_guide_service_start_guide_driving_does_not_record_running_when_na
 
     ok, message, response = service.start_guide_driving(
         task_id=3001,
-        target_track_id="track_17",
+        target_track_id=17,
     )
 
     assert ok is False
-    assert message == "navigation unavailable"
-    assert navigation_starter.started == [
-        {
-            "task_id": 3001,
-            "pinky_id": "pinky1",
-            "goal_pose": navigation_repository.response["goal_pose"],
-            "timeout_sec": 120.0,
-        }
-    ]
-    assert command_service.sent == []
+    assert message == "guide command rejected"
+    assert navigation_starter.started == []
+    assert command_service.sent[0]["target_track_id"] == 17
     assert lifecycle_repository.recorded[0]["command_type"] == "START_GUIDANCE"
-    assert lifecycle_repository.recorded[0]["target_track_id"] == "track_17"
+    assert lifecycle_repository.recorded[0]["target_track_id"] == 17
     assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
-        "NAVIGATION_UNAVAILABLE"
+        "GUIDE_STATE_MISMATCH"
     )
     assert response["result_code"] == "REJECTED"
-    assert response["reason_code"] == "NAVIGATION_UNAVAILABLE"
-    assert response["task_status"] == "RUNNING"
-    assert response["phase"] == "WAIT_TARGET_TRACKING"
-    assert response["navigation_response"]["result_code"] == "REJECTED"
+    assert response["reason_code"] == "GUIDE_STATE_MISMATCH"
+    assert "navigation_response" not in response
 
 
-def test_visit_guide_service_start_guide_driving_does_not_record_running_when_navigation_transport_fails():
+def test_visit_guide_service_start_guide_driving_ignores_legacy_navigation_starter():
     command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
     lifecycle_repository = FakeGuideTaskLifecycleRepository()
     navigation_starter = FailingGuideNavigationStarter("UDS navigation socket missing")
@@ -515,19 +474,16 @@ def test_visit_guide_service_start_guide_driving_does_not_record_running_when_na
 
     ok, message, response = service.start_guide_driving(
         task_id=3001,
-        target_track_id="track_17",
+        target_track_id=17,
     )
 
-    assert ok is False
-    assert "UDS navigation socket missing" in message
-    assert command_service.sent == []
+    assert ok is True
+    assert message == "안내 주행을 시작했습니다."
+    assert navigation_starter.started == []
+    assert command_service.sent[0]["target_track_id"] == 17
     assert lifecycle_repository.recorded[0]["command_type"] == "START_GUIDANCE"
-    assert lifecycle_repository.recorded[0]["target_track_id"] == "track_17"
-    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
-        "GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR"
-    )
-    assert response["reason_code"] == "GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR"
-    assert response["phase"] == "WAIT_TARGET_TRACKING"
+    assert response["phase"] == "GUIDANCE_RUNNING"
+    assert "navigation_response" not in response
 
 
 def test_visit_guide_service_start_guide_driving_requires_target_track_id():
@@ -545,7 +501,7 @@ def test_visit_guide_service_start_guide_driving_requires_target_track_id():
     assert response["reason_code"] == "TARGET_TRACK_ID_REQUIRED"
 
 
-def test_visit_guide_service_async_start_guide_driving_delegates_navigation():
+def test_visit_guide_service_async_start_guide_driving_sends_start_guidance():
     command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
     lifecycle_repository = FakeGuideTaskLifecycleRepository()
     navigation_repository = FakeGuideTaskNavigationRepository()
@@ -560,17 +516,26 @@ def test_visit_guide_service_async_start_guide_driving_delegates_navigation():
     ok, _message, response = asyncio.run(
         service.async_start_guide_driving(
             task_id=3001,
-            target_track_id="track_17",
+            target_track_id=17,
         )
     )
 
     assert ok is True
-    assert navigation_starter.started[0]["pinky_id"] == "pinky1"
-    assert response["navigation_response"]["result_code"] == "ACCEPTED"
+    assert navigation_starter.started == []
+    assert command_service.sent[0]["target_track_id"] == 17
+    assert response["phase"] == "GUIDANCE_RUNNING"
 
 
-def test_visit_guide_service_async_start_guide_driving_stops_before_command_when_navigation_rejected():
-    command_service = FakeGuideCommandService(response={"accepted": True, "message": ""})
+def test_visit_guide_service_async_start_guide_driving_returns_command_rejection():
+    command_service = FakeGuideCommandService(
+        response={
+            "accepted": False,
+            "result_code": "REJECTED",
+            "result_message": "guide command rejected",
+            "reason_code": "GUIDE_STATE_MISMATCH",
+            "message": "guide command rejected",
+        }
+    )
     lifecycle_repository = FakeGuideTaskLifecycleRepository()
     navigation_starter = FakeGuideNavigationStarter(
         response={
@@ -589,17 +554,17 @@ def test_visit_guide_service_async_start_guide_driving_stops_before_command_when
     ok, message, response = asyncio.run(
         service.async_start_guide_driving(
             task_id=3001,
-            target_track_id="track_17",
+            target_track_id=17,
         )
     )
 
     assert ok is False
-    assert message == "navigation unavailable"
-    assert command_service.sent == []
+    assert message == "guide command rejected"
+    assert navigation_starter.started == []
     assert lifecycle_repository.recorded[0]["command_type"] == "START_GUIDANCE"
-    assert lifecycle_repository.recorded[0]["target_track_id"] == "track_17"
+    assert lifecycle_repository.recorded[0]["target_track_id"] == 17
     assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
-        "NAVIGATION_UNAVAILABLE"
+        "GUIDE_STATE_MISMATCH"
     )
-    assert response["phase"] == "WAIT_TARGET_TRACKING"
-    assert response["navigation_response"]["reason_code"] == "NAVIGATION_UNAVAILABLE"
+    assert response["reason_code"] == "GUIDE_STATE_MISMATCH"
+    assert "navigation_response" not in response
