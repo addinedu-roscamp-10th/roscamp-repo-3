@@ -1,5 +1,6 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS `ropi_schema_migration`;
 DROP TABLE IF EXISTS `idempotency_record`;
 DROP TABLE IF EXISTS `kiosk_staff_call_log`;
 DROP TABLE IF EXISTS `stream_metrics_log`;
@@ -148,6 +149,12 @@ CREATE TABLE `item` (
     `created_at` DATETIME NOT NULL,
     `updated_at` DATETIME NOT NULL,
     CONSTRAINT `pk_item` PRIMARY KEY (`item_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `ropi_schema_migration` (
+    `migration_id` VARCHAR(100) NOT NULL,
+    `applied_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_ropi_schema_migration` PRIMARY KEY (`migration_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `map_profile` (
