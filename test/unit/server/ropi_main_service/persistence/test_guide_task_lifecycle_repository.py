@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from server.ropi_main_service.persistence.repositories.guide_task_lifecycle_repository import (
     GuideTaskLifecycleRepository,
@@ -175,6 +176,37 @@ def test_record_post_start_command_rejects_without_state_change_even_when_transp
     )
     assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[2][0]
     assert len(connection.cursor_instance.calls) == 3
+
+
+def test_record_start_guidance_keeps_numeric_target_track_id():
+    connection = FakeConnection(
+        row={
+            "task_id": 3001,
+            "task_type": "GUIDE",
+            "task_status": "RUNNING",
+            "phase": "WAIT_TARGET_TRACKING",
+            "assigned_robot_id": "pinky1",
+            "guide_phase": "WAIT_TARGET_TRACKING",
+            "target_track_id": None,
+        }
+    )
+    repository = GuideTaskLifecycleRepository(connection_factory=lambda: connection)
+
+    response = repository.record_command_result(
+        task_id=3001,
+        pinky_id="pinky1",
+        command_type="START_GUIDANCE",
+        target_track_id=17,
+        command_response={"accepted": True, "message": ""},
+    )
+
+    detail_params = connection.cursor_instance.calls[2][1]
+    event_payload = json.loads(connection.cursor_instance.calls[4][1][-1])
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["target_track_id"] == 17
+    assert detail_params[1] == 17
+    assert event_payload["target_track_id"] == 17
 
 
 def test_async_record_finish_guidance_rejects_without_state_change():

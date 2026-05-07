@@ -9,6 +9,8 @@
 | `init_tables.sql` | 기존 테이블을 drop하고 현재 설계 기준 테이블을 다시 생성한다. |
 | `insert_dummies.sql` | 개발/통합 테스트용 seed 데이터를 넣는다. |
 | `ropi-db-migrate-multimap` | 기존 DB를 멀티맵 좌표 설정 계약으로 보정하는 CLI. |
+| `ropi-db-migrate-guide-location` | 기존 DB에 phase-1 안내 목적지 좌표를 보강하는 CLI. |
+| `ropi-db-migrate-guide-tracking` | 기존 DB의 안내 tracking 컬럼을 현재 정수 계약으로 보정하는 CLI. |
 
 ## 실행 방법
 
@@ -48,6 +50,24 @@ uv run ropi-db-migrate-multimap --apply
 - 기존 `map_test11_0423` map profile 삭제
 
 마이그레이션 성공 후 `ropi_schema_migration`에 적용 이력을 남긴다. 이미 적용된 DB에서는 기본 실행이 no-op이며, 재실행이 꼭 필요할 때만 `--force --apply`를 사용한다.
+
+## 기존 DB 안내 목적지 마이그레이션
+
+기존 DB에 `map_0504`의 `room_301`, `room_302`, `room_305` zone은 있지만 `GUIDE_DESTINATION` goal pose가 없으면 `IF-GUI-001` 안내 태스크 생성은 `GUIDE_DESTINATION_NOT_CONFIGURED`로 거절된다. 아래 CLI는 기존 좌표를 덮어쓰지 않는 방식으로 phase-1 기본 안내 목적지 `guide_room_301`, `guide_room_302`, `guide_room_305`를 보강한다.
+
+```bash
+uv run ropi-db-migrate-guide-location
+uv run ropi-db-migrate-guide-location --apply
+```
+
+## 기존 DB 안내 tracking 마이그레이션
+
+`guide_task_detail.target_track_id`가 예전 DB에서 `VARCHAR`로 남아 있으면 현재 안내 계약의 `int` tracking ID와 맞지 않는다. 기존 데이터를 유지하되 숫자가 아닌 legacy 값은 `NULL`로 정리한 뒤 컬럼을 `INT NULL`로 변경한다.
+
+```bash
+uv run ropi-db-migrate-guide-tracking
+uv run ropi-db-migrate-guide-tracking --apply
+```
 
 ## 주의사항
 

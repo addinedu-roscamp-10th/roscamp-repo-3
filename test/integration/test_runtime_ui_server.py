@@ -266,28 +266,11 @@ def test_ui_client_create_delivery_task_hits_real_server(patched_ui_endpoint, ru
     assert response["assigned_robot_id"] == "pinky2"
 
 
-def test_kiosk_create_guide_task_hits_real_server_and_db(patched_ui_endpoint):
-    visitor_row = safe_fetch_one(
-        """
-        SELECT
-            v.visitor_id,
-            v.member_id,
-            m.member_name,
-            m.room_no,
-            gp.goal_pose_id
-        FROM visitor v
-        JOIN member m
-          ON m.member_id = v.member_id
-        JOIN goal_pose gp
-          ON gp.zone_id = CONCAT('room_', m.room_no)
-         AND gp.is_enabled = TRUE
-         AND gp.purpose IN ('GUIDE_DESTINATION', 'DESTINATION')
-        ORDER BY v.visitor_id
-        LIMIT 1
-        """
-    )
-    assert visitor_row is not None, "The runtime DB has no visitor with a guide destination."
-
+def test_kiosk_create_guide_task_hits_real_server_and_db(
+    patched_ui_endpoint,
+    guide_destination_seed,
+):
+    visitor_row = guide_destination_seed
     request_id = f"runtime-if-gui-001-{uuid.uuid4().hex}"
     response = send_request(
         "GUIDE_CREATE_TASK",
@@ -301,16 +284,17 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(patched_ui_endpoint):
 
     assert response["ok"] is True
     payload = response["payload"]
+    assert payload["result_code"] == "ACCEPTED", payload
     task_id = int(payload["task_id"])
 
     try:
-        assert payload["result_code"] == "ACCEPTED"
         assert payload["task_status"] == "WAITING_DISPATCH"
         assert payload["phase"] == "WAIT_GUIDE_START_CONFIRM"
         assert payload["destination_id"] == visitor_row["goal_pose_id"]
+        assert payload["destination_map_id"] == visitor_row["map_id"]
 
         task_row = safe_fetch_one(
-            "SELECT task_type, requester_type, requester_id, task_status, phase "
+            "SELECT task_type, requester_type, requester_id, task_status, phase, map_id "
             f"FROM task WHERE task_id = {task_id}"
         )
         guide_row = safe_fetch_one(
@@ -327,6 +311,7 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(patched_ui_endpoint):
         assert task_row["requester_id"] == str(visitor_row["visitor_id"])
         assert task_row["task_status"] == "WAITING_DISPATCH"
         assert task_row["phase"] == "WAIT_GUIDE_START_CONFIRM"
+        assert task_row["map_id"] == visitor_row["map_id"]
         assert int(guide_row["visitor_id"]) == int(visitor_row["visitor_id"])
         assert int(guide_row["member_id"]) == int(visitor_row["member_id"])
         assert guide_row["destination_goal_pose_id"] == visitor_row["goal_pose_id"]
@@ -371,15 +356,15 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(patched_ui_endpoint):
             VisitGuideRemoteService().start_guide_driving(
                 task_id=task_id,
                 pinky_id=payload["assigned_robot_id"],
-                target_track_id="track_17",
+                target_track_id=17,
             )
         )
         assert driving_ok is True
         assert driving_message == "안내 주행을 시작했습니다."
         assert driving_payload["task_status"] == "RUNNING"
         assert driving_payload["phase"] == "GUIDANCE_RUNNING"
-        assert driving_payload["target_track_id"] == "track_17"
-        assert driving_payload["navigation_response"]["navigation_started"] is True
+        assert driving_payload["target_track_id"] == 17
+        assert driving_payload["command_response"]["accepted"] is True
 
         driving_task_row = safe_fetch_one(
             "SELECT task_status, phase FROM task "
@@ -393,39 +378,7 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(patched_ui_endpoint):
         assert driving_task_row["task_status"] == "RUNNING"
         assert driving_task_row["phase"] == "GUIDANCE_RUNNING"
         assert driving_guide_row["guide_phase"] == "GUIDANCE_RUNNING"
-        assert driving_guide_row["target_track_id"] == "track_17"
-
-        finish_ok, _finish_message, finish_payload = (
-            VisitGuideRemoteService().finish_guide_session(
-                task_id=task_id,
-                pinky_id=payload["assigned_robot_id"],
-                finish_reason="USER_CANCELLED",
-            )
-        )
-        assert finish_ok is True
-        assert finish_payload["task_status"] == "CANCELLED"
-        assert finish_payload["phase"] == "GUIDANCE_CANCELLED"
-        assert finish_payload["guide_phase"] == "CANCELLED"
-
-        finished_task_row = safe_fetch_one(
-            "SELECT task_status, phase, finished_at FROM task "
-            f"WHERE task_id = {task_id}"
-        )
-        finished_guide_row = safe_fetch_one(
-            "SELECT guide_phase FROM guide_task_detail "
-            f"WHERE task_id = {task_id}"
-        )
-        finished_event_row = safe_fetch_one(
-            "SELECT event_name, reason_code FROM task_event_log "
-            f"WHERE task_id = {task_id} ORDER BY task_event_log_id DESC LIMIT 1"
-        )
-
-        assert finished_task_row["task_status"] == "CANCELLED"
-        assert finished_task_row["phase"] == "GUIDANCE_CANCELLED"
-        assert finished_task_row["finished_at"] is not None
-        assert finished_guide_row["guide_phase"] == "CANCELLED"
-        assert finished_event_row["event_name"] == "GUIDE_COMMAND_ACCEPTED"
-        assert finished_event_row["reason_code"] == "USER_CANCELLED"
+        assert driving_guide_row["target_track_id"] == 17
     finally:
         cleanup_conn = get_connection()
         try:

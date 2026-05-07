@@ -226,8 +226,20 @@ def test_db_runbook_documents_multimap_coordinate_migration_cli():
         'ropi-db-migrate-multimap = "server.ropi_db.multimap_coordinate_migration:main"'
         in pyproject
     )
+    assert (
+        'ropi-db-migrate-guide-tracking = "server.ropi_db.guide_tracking_schema_migration:main"'
+        in pyproject
+    )
+    assert (
+        'ropi-db-migrate-guide-location = "server.ropi_db.guide_location_config_migration:main"'
+        in pyproject
+    )
     assert "uv run ropi-db-migrate-multimap" in readme
     assert "uv run ropi-db-migrate-multimap --apply" in readme
+    assert "uv run ropi-db-migrate-guide-location" in readme
+    assert "uv run ropi-db-migrate-guide-location --apply" in readme
+    assert "uv run ropi-db-migrate-guide-tracking" in readme
+    assert "uv run ropi-db-migrate-guide-tracking --apply" in readme
     assert "`operation_zone` primary key를 `(map_id, zone_id)`로 보정" in readme
     assert "`goal_pose(map_id, zone_id)` -> `operation_zone(map_id, zone_id)`" in readme
 

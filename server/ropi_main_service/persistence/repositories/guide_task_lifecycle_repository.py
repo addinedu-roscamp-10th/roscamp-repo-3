@@ -179,7 +179,7 @@ class GuideTaskLifecycleRepository:
     ):
         command_response = self._normalize_command_response(command_response)
         command_type = self._normalize_token(command_type)
-        target_track_id = str(target_track_id or "").strip()
+        target_track_id = self._normalize_target_track_id(target_track_id)
         finish_reason = self._normalize_token(finish_reason)
         command_supported = command_type in ALLOWED_CONTROL_GUIDE_COMMAND_TYPES
         accepted = bool(command_response.get("accepted")) and command_supported
@@ -330,10 +330,14 @@ class GuideTaskLifecycleRepository:
         if not accepted:
             return row.get("target_track_id")
         if command_type == "START_GUIDANCE":
-            return target_track_id or row.get("target_track_id")
+            if target_track_id is not None and target_track_id >= 0:
+                return target_track_id
+            return row.get("target_track_id")
         if command_type == "WAIT_TARGET_TRACKING":
             return None
-        return target_track_id or row.get("target_track_id")
+        if target_track_id is not None and target_track_id >= 0:
+            return target_track_id
+        return row.get("target_track_id")
 
     @classmethod
     def _guard(cls, row, *, task_id):
@@ -400,6 +404,13 @@ class GuideTaskLifecycleRepository:
     @staticmethod
     def _normalize_token(value):
         return str(value or "").strip().upper()
+
+    @staticmethod
+    def _normalize_target_track_id(value):
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _begin(conn):
