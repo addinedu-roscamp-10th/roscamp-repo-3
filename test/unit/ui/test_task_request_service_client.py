@@ -567,7 +567,9 @@ def test_coordinate_config_remote_service_exposes_patrol_area_create_and_update_
 
     def fake_rpc(service, method, **kwargs):
         calls.append((service, method, kwargs))
-        return {"result_code": "CREATED" if method == "create_patrol_area" else "UPDATED"}
+        return {
+            "result_code": "CREATED" if method == "create_patrol_area" else "UPDATED"
+        }
 
     monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
     path_json = {
@@ -581,12 +583,14 @@ def test_coordinate_config_remote_service_exposes_patrol_area_create_and_update_
 
     create_response = service.create_patrol_area(
         patrol_area_id="patrol_day_01",
+        map_id="map_test12_0506",
         patrol_area_name="주간 병동 순찰",
         path_json=path_json,
         is_enabled=True,
     )
     update_response = service.update_patrol_area(
         patrol_area_id="patrol_day_01",
+        map_id="map_test12_0506",
         expected_revision=1,
         patrol_area_name="주간 병동 순찰",
         path_json=path_json,
@@ -601,6 +605,7 @@ def test_coordinate_config_remote_service_exposes_patrol_area_create_and_update_
             "create_patrol_area",
             {
                 "patrol_area_id": "patrol_day_01",
+                "map_id": "map_test12_0506",
                 "patrol_area_name": "주간 병동 순찰",
                 "path_json": path_json,
                 "is_enabled": True,
@@ -611,6 +616,7 @@ def test_coordinate_config_remote_service_exposes_patrol_area_create_and_update_
             "update_patrol_area",
             {
                 "patrol_area_id": "patrol_day_01",
+                "map_id": "map_test12_0506",
                 "expected_revision": 1,
                 "patrol_area_name": "주간 병동 순찰",
                 "path_json": path_json,

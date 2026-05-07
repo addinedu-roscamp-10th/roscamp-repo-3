@@ -2022,6 +2022,7 @@ def test_coordinate_zone_settings_page_creates_patrol_area_draft_operation():
                         ],
                     },
                     "is_enabled": True,
+                    "map_id": "map_test",
                 },
             }
         ]
@@ -2050,9 +2051,7 @@ def test_coordinate_zone_settings_page_deactivates_and_reverts_patrol_area_draft
         )
         page.select_patrol_area(0)
 
-        deactivate_button = page.findChild(
-            QPushButton, "patrolAreaDeactivateRowButton"
-        )
+        deactivate_button = page.findChild(QPushButton, "patrolAreaDeactivateRowButton")
         assert deactivate_button.isEnabled() is True
 
         deactivate_button.click()
@@ -2064,6 +2063,7 @@ def test_coordinate_zone_settings_page_deactivates_and_reverts_patrol_area_draft
         operations = page._build_coordinate_batch_save_operations()
         assert operations[0]["table"] == "patrol_area"
         assert operations[0]["method"] == "update_patrol_area"
+        assert operations[0]["payload"]["map_id"] == "map_test"
         assert operations[0]["payload"]["is_enabled"] is False
 
         revert_button = page.findChild(QPushButton, "patrolAreaRevertRowButton")
@@ -3406,6 +3406,43 @@ def test_coordinate_zone_settings_page_switches_selected_map_without_dirty_draft
 
         assert page.selected_map_id == "map_test12_0506"
         assert load_calls == ["map_test12_0506"]
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_switching_map_clears_stale_bundle_rows_before_load():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    load_calls = []
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        page.load_coordinate_bundle = lambda: load_calls.append(page.selected_map_id)
+
+        combo = page.findChild(QComboBox, "coordinateMapSelectorCombo")
+        combo.setCurrentIndex(1)
+
+        assert page.selected_map_id == "map_test12_0506"
+        assert load_calls == ["map_test12_0506"]
+        assert page.active_map_labels["map_id"].text() == "map_test12_0506"
+        assert page.map_canvas.map_loaded is False
+        assert page.findChild(QTableWidget, "operationZoneTable").rowCount() == 0
+        assert page.findChild(QTableWidget, "goalPoseTable").rowCount() == 0
+        assert page.findChild(QTableWidget, "patrolAreaTable").rowCount() == 0
+        assert page.selected_edit_type is None
+        assert page.save_button.isEnabled() is False
+        assert page.discard_button.isEnabled() is False
     finally:
         page.close()
 

@@ -346,22 +346,29 @@ class CoordinateConfigRemoteService:
         self,
         *,
         patrol_area_id,
+        map_id=None,
         patrol_area_name,
         path_json,
         is_enabled=True,
     ):
         return self._rpc(
             "create_patrol_area",
-            patrol_area_id=patrol_area_id,
-            patrol_area_name=patrol_area_name,
-            path_json=path_json,
-            is_enabled=is_enabled,
+            **self._without_none(
+                {
+                    "patrol_area_id": patrol_area_id,
+                    "map_id": map_id,
+                    "patrol_area_name": patrol_area_name,
+                    "path_json": path_json,
+                    "is_enabled": is_enabled,
+                }
+            ),
         )
 
     def update_patrol_area(
         self,
         *,
         patrol_area_id,
+        map_id=None,
         expected_revision,
         patrol_area_name,
         path_json,
@@ -369,11 +376,16 @@ class CoordinateConfigRemoteService:
     ):
         return self._rpc(
             "update_patrol_area",
-            patrol_area_id=patrol_area_id,
-            expected_revision=expected_revision,
-            patrol_area_name=patrol_area_name,
-            path_json=path_json,
-            is_enabled=is_enabled,
+            **self._without_none(
+                {
+                    "patrol_area_id": patrol_area_id,
+                    "map_id": map_id,
+                    "expected_revision": expected_revision,
+                    "patrol_area_name": patrol_area_name,
+                    "path_json": path_json,
+                    "is_enabled": is_enabled,
+                }
+            ),
         )
 
     def update_patrol_area_path(

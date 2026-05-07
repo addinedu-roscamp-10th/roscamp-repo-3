@@ -65,7 +65,9 @@ class CoordinateConfigService:
             return self._not_found_response(
                 result_code=error.get("result_code", "NOT_FOUND"),
                 reason_code=error.get("reason_code", "ACTIVE_MAP_NOT_FOUND"),
-                result_message=error.get("result_message", "활성 map_profile이 없습니다."),
+                result_message=error.get(
+                    "result_message", "활성 map_profile이 없습니다."
+                ),
             )
 
         map_id = map_profile["map_id"]
@@ -634,12 +636,14 @@ class CoordinateConfigService:
         self,
         *,
         patrol_area_id,
+        map_id=None,
         expected_revision,
         patrol_area_name,
         path_json,
         is_enabled,
     ):
         map_profile, error = self._resolve_active_map(
+            map_id=map_id,
             error_factory=patrol_area_error,
         )
         if error:
@@ -776,12 +780,14 @@ class CoordinateConfigService:
         self,
         *,
         patrol_area_id,
+        map_id=None,
         expected_revision,
         patrol_area_name,
         path_json,
         is_enabled,
     ):
         map_profile, error = await self._async_resolve_active_map(
+            map_id=map_id,
             error_factory=patrol_area_error,
         )
         if error:
@@ -845,7 +851,9 @@ class CoordinateConfigService:
             return self._not_found_response(
                 result_code=error.get("result_code", "NOT_FOUND"),
                 reason_code=error.get("reason_code", "ACTIVE_MAP_NOT_FOUND"),
-                result_message=error.get("result_message", "활성 map_profile이 없습니다."),
+                result_message=error.get(
+                    "result_message", "활성 map_profile이 없습니다."
+                ),
             )
 
         map_id = map_profile["map_id"]
@@ -940,7 +948,9 @@ class CoordinateConfigService:
     ):
         error_factory = error_factory or operation_zone_error
         if not row:
-            reason_code = "MAP_NOT_FOUND" if requested_map_id else "ACTIVE_MAP_NOT_FOUND"
+            reason_code = (
+                "MAP_NOT_FOUND" if requested_map_id else "ACTIVE_MAP_NOT_FOUND"
+            )
             result_message = (
                 "요청한 map_id를 찾을 수 없습니다."
                 if requested_map_id
@@ -1214,5 +1224,6 @@ class CoordinateConfigService:
                 result_message="연결할 구역을 찾을 수 없습니다.",
             )
         return None
+
 
 __all__ = ["CoordinateConfigService"]

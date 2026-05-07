@@ -181,12 +181,12 @@ class FakeCoordinateConfigRepository:
             "zone_id": zone_id,
             "map_id": map_id,
             "zone_name": zone_name,
-                "zone_type": zone_type,
-                "revision": 1,
-                "boundary_json": None,
-                "is_enabled": is_enabled,
-                "created_at": datetime(2026, 5, 2, 12, 2, 0),
-                "updated_at": datetime(2026, 5, 2, 12, 2, 0),
+            "zone_type": zone_type,
+            "revision": 1,
+            "boundary_json": None,
+            "is_enabled": is_enabled,
+            "created_at": datetime(2026, 5, 2, 12, 2, 0),
+            "updated_at": datetime(2026, 5, 2, 12, 2, 0),
         }
 
     async def async_create_operation_zone(self, **kwargs):
@@ -204,12 +204,12 @@ class FakeCoordinateConfigRepository:
             "zone_id": kwargs["zone_id"],
             "map_id": kwargs["map_id"],
             "zone_name": kwargs["zone_name"],
-                "zone_type": kwargs["zone_type"],
-                "revision": 1,
-                "boundary_json": None,
-                "is_enabled": kwargs["is_enabled"],
-                "created_at": datetime(2026, 5, 2, 12, 2, 0),
-                "updated_at": datetime(2026, 5, 2, 12, 2, 0),
+            "zone_type": kwargs["zone_type"],
+            "revision": 1,
+            "boundary_json": None,
+            "is_enabled": kwargs["is_enabled"],
+            "created_at": datetime(2026, 5, 2, 12, 2, 0),
+            "updated_at": datetime(2026, 5, 2, 12, 2, 0),
         }
 
     def update_operation_zone(
@@ -292,7 +292,9 @@ class FakeCoordinateConfigRepository:
                 boundary_json,
             )
         )
-        stored_boundary = json.dumps(boundary_json) if boundary_json is not None else None
+        stored_boundary = (
+            json.dumps(boundary_json) if boundary_json is not None else None
+        )
         return self.boundary_update_result or {
             "status": "UPDATED",
             "operation_zone": {
@@ -1385,6 +1387,43 @@ def test_create_patrol_area_creates_active_map_row_with_initial_path():
     ]
 
 
+def test_create_patrol_area_uses_requested_map_id_when_selected_map_is_not_active():
+    repository = FakeCoordinateConfigRepository()
+    map_profile = dict(repository.map_profile)
+    map_profile["map_id"] = "map_test12_0506"
+    repository.map_profiles_by_id["map_test12_0506"] = map_profile
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    response = _service(repository).create_patrol_area(
+        patrol_area_id="transport_patrol_test",
+        map_id="map_test12_0506",
+        patrol_area_name="운반 맵 점검",
+        path_json=path_json,
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "CREATED"
+    assert response["patrol_area"]["map_id"] == "map_test12_0506"
+    assert repository.calls == [
+        ("get_map_profile", "map_test12_0506"),
+        ("get_patrol_area", "transport_patrol_test"),
+        (
+            "create_patrol_area",
+            "map_test12_0506",
+            "transport_patrol_test",
+            "운반 맵 점검",
+            path_json,
+            True,
+        ),
+    ]
+
+
 def test_update_patrol_area_updates_name_path_and_enabled_state():
     repository = FakeCoordinateConfigRepository()
     path_json = {
@@ -1414,6 +1453,44 @@ def test_update_patrol_area_updates_name_path_and_enabled_state():
             "patrol_ward_night_01",
             7,
             "야간 병동 순찰",
+            path_json,
+            False,
+        ),
+    ]
+
+
+def test_update_patrol_area_uses_requested_map_id_when_selected_map_is_not_active():
+    repository = FakeCoordinateConfigRepository()
+    map_profile = dict(repository.map_profile)
+    map_profile["map_id"] = "map_test12_0506"
+    repository.map_profiles_by_id["map_test12_0506"] = map_profile
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    response = _service(repository).update_patrol_area(
+        patrol_area_id="transport_patrol_test",
+        map_id="map_test12_0506",
+        expected_revision="3",
+        patrol_area_name="운반 맵 점검",
+        path_json=path_json,
+        is_enabled=False,
+    )
+
+    assert response["result_code"] == "UPDATED"
+    assert response["patrol_area"]["map_id"] == "map_test12_0506"
+    assert repository.calls == [
+        ("get_map_profile", "map_test12_0506"),
+        (
+            "update_patrol_area",
+            "map_test12_0506",
+            "transport_patrol_test",
+            3,
+            "운반 맵 점검",
             path_json,
             False,
         ),
