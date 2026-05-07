@@ -1,8 +1,8 @@
 string task_id
 string command_type
-string target_track_id
-int32 wait_timeout_sec
-string finish_reason
+int32 target_track_id
+string destination_id
+geometry_msgs/PoseStamped destination_pose
 ---
 bool accepted
 string reason_code
