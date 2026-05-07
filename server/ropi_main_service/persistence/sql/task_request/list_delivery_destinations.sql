@@ -13,6 +13,6 @@ JOIN map_profile mp
 LEFT JOIN operation_zone oz
     ON oz.zone_id = gp.zone_id
 WHERE gp.is_enabled = TRUE
-  AND mp.is_active = TRUE
+  AND gp.map_id = %s
   AND gp.purpose = 'DESTINATION'
 ORDER BY destination_name, destination_id

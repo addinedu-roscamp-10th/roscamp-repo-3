@@ -1,3 +1,5 @@
+import inspect
+
 from server.ropi_main_service.application.delivery_config import (
     DEFAULT_DELIVERY_PINKY_ID,
     get_delivery_runtime_config,
@@ -110,22 +112,40 @@ class TaskRequestRepository:
         return await self.lookup_repository.async_get_all_products()
 
     def get_enabled_goal_poses(self):
-        return self.lookup_repository.get_enabled_goal_poses()
+        return self._call_lookup_with_optional_map_id(
+            self.lookup_repository.get_enabled_goal_poses,
+            self.runtime_config.map_id,
+        )
 
     async def async_get_enabled_goal_poses(self):
-        return await self.lookup_repository.async_get_enabled_goal_poses()
+        return await self._async_call_lookup_with_optional_map_id(
+            self.lookup_repository.async_get_enabled_goal_poses,
+            self.runtime_config.map_id,
+        )
 
     def get_delivery_destinations(self):
-        return self.lookup_repository.get_delivery_destinations()
+        return self._call_lookup_with_optional_map_id(
+            self.lookup_repository.get_delivery_destinations,
+            self.runtime_config.map_id,
+        )
 
     async def async_get_delivery_destinations(self):
-        return await self.lookup_repository.async_get_delivery_destinations()
+        return await self._async_call_lookup_with_optional_map_id(
+            self.lookup_repository.async_get_delivery_destinations,
+            self.runtime_config.map_id,
+        )
 
     def get_patrol_areas(self):
-        return self.lookup_repository.get_patrol_areas()
+        return self._call_lookup_with_optional_map_id(
+            self.lookup_repository.get_patrol_areas,
+            self.patrol_runtime_config.map_id,
+        )
 
     async def async_get_patrol_areas(self):
-        return await self.lookup_repository.async_get_patrol_areas()
+        return await self._async_call_lookup_with_optional_map_id(
+            self.lookup_repository.async_get_patrol_areas,
+            self.patrol_runtime_config.map_id,
+        )
 
     def get_product_by_id(self, item_id, conn=None):
         numeric_item_id = self._parse_numeric_identifier(item_id)
@@ -139,6 +159,26 @@ class TaskRequestRepository:
 
     async def async_get_product_by_name(self, item_name):
         return await self.lookup_repository.async_get_product_by_name(item_name)
+
+    @staticmethod
+    def _accepts_map_id(method):
+        parameters = inspect.signature(method).parameters
+        return "map_id" in parameters or any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+
+    @classmethod
+    def _call_lookup_with_optional_map_id(cls, method, map_id):
+        if cls._accepts_map_id(method):
+            return method(map_id=map_id)
+        return method()
+
+    @classmethod
+    async def _async_call_lookup_with_optional_map_id(cls, method, map_id):
+        if cls._accepts_map_id(method):
+            return await method(map_id=map_id)
+        return await method()
 
     def create_delivery_task(
         self,
@@ -643,19 +683,32 @@ class TaskRequestRepository:
     async def _async_caregiver_exists(self, cur, caregiver_id) -> bool:
         return await self.lookup_repository.async_caregiver_exists(cur, caregiver_id)
 
-    def _goal_pose_exists(self, cur, goal_pose_id) -> bool:
-        return self.lookup_repository.goal_pose_exists(cur, goal_pose_id)
+    def _goal_pose_exists(self, cur, goal_pose_id, *, map_id=None) -> bool:
+        return self.lookup_repository.goal_pose_exists(
+            cur,
+            goal_pose_id,
+            map_id=map_id or self.runtime_config.map_id,
+        )
 
-    async def _async_goal_pose_exists(self, cur, goal_pose_id) -> bool:
-        return await self.lookup_repository.async_goal_pose_exists(cur, goal_pose_id)
+    async def _async_goal_pose_exists(self, cur, goal_pose_id, *, map_id=None) -> bool:
+        return await self.lookup_repository.async_goal_pose_exists(
+            cur,
+            goal_pose_id,
+            map_id=map_id or self.runtime_config.map_id,
+        )
 
     def _fetch_patrol_area_by_id(self, cur, patrol_area_id):
-        return self.lookup_repository.fetch_patrol_area_by_id(cur, patrol_area_id)
+        return self.lookup_repository.fetch_patrol_area_by_id(
+            cur,
+            patrol_area_id,
+            map_id=self.patrol_runtime_config.map_id,
+        )
 
     async def _async_fetch_patrol_area_by_id(self, cur, patrol_area_id):
         return await self.lookup_repository.async_fetch_patrol_area_by_id(
             cur,
             patrol_area_id,
+            map_id=self.patrol_runtime_config.map_id,
         )
 
     @classmethod
