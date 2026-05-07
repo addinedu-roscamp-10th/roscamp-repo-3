@@ -29,6 +29,7 @@ SELECT
     ptd.patrol_area_id,
     pa.patrol_area_name,
     ptd.patrol_area_revision,
+    ptd.patrol_status,
     ptd.frame_id AS patrol_path_frame_id,
     ptd.waypoint_count,
     ptd.current_waypoint_index,

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 from datetime import date, datetime, timezone
 
 from server.ropi_main_service.persistence.repositories.task_monitor_repository import (
@@ -235,12 +236,15 @@ class TaskMonitorService:
             "patrol_area_id": row.get("patrol_area_id"),
             "patrol_area_name": row.get("patrol_area_name"),
             "patrol_area_revision": row.get("patrol_area_revision"),
+            "patrol_status": row.get("patrol_status"),
             "patrol_map": cls._format_patrol_map(row) if is_patrol else None,
             "patrol_path": cls._format_patrol_path(row) if is_patrol else None,
             "guide_detail": cls._format_guide_detail(row) if is_guide else None,
             "cancellable": task_status in CANCELLABLE_TASK_STATUSES,
             "latest_reason_code": row.get("latest_reason_code"),
-            "requested_at": cls._isoformat(row.get("requested_at") or row.get("created_at")),
+            "requested_at": cls._isoformat(
+                row.get("requested_at") or row.get("created_at")
+            ),
             "started_at": cls._isoformat(row.get("started_at")),
             "finished_at": cls._isoformat(row.get("finished_at")),
             "updated_at": cls._isoformat(row.get("updated_at")),
@@ -337,7 +341,9 @@ class TaskMonitorService:
         if not isinstance(poses, list):
             poses = []
 
-        header = path_json.get("header") if isinstance(path_json.get("header"), dict) else {}
+        header = (
+            path_json.get("header") if isinstance(path_json.get("header"), dict) else {}
+        )
         waypoint_count = cls._optional_int(row_waypoint_count)
         if waypoint_count is None:
             waypoint_count = len(poses)
@@ -356,9 +362,19 @@ class TaskMonitorService:
     def _format_latest_feedback(cls, row):
         nested = row.get("latest_feedback")
         if isinstance(nested, dict):
+            pose = nested.get("current_pose") or nested.get("pose")
             return {
-                "feedback_summary": nested.get("feedback_summary") or nested.get("summary"),
-                "pose": nested.get("pose"),
+                "feedback_summary": nested.get("feedback_summary")
+                or nested.get("summary"),
+                "pose": cls._normalize_pose_payload(pose),
+                "patrol_status": nested.get("patrol_status"),
+                "current_waypoint_index": cls._optional_int(
+                    nested.get("current_waypoint_index")
+                ),
+                "total_waypoints": cls._optional_int(nested.get("total_waypoints")),
+                "distance_remaining_m": cls._optional_float(
+                    nested.get("distance_remaining_m")
+                ),
                 "updated_at": cls._isoformat(nested.get("updated_at")),
             }
 
@@ -366,7 +382,13 @@ class TaskMonitorService:
         if not payload:
             return None
 
-        pose = payload.get("pose")
+        nested_payload = (
+            payload.get("payload")
+            if isinstance(payload.get("payload"), dict)
+            else payload
+        )
+
+        pose = nested_payload.get("current_pose") or nested_payload.get("pose")
         if pose is None:
             pose = cls._pose_from_row(
                 row,
@@ -381,7 +403,15 @@ class TaskMonitorService:
                 payload=payload,
                 feedback_type=row.get("latest_feedback_type"),
             ),
-            "pose": pose,
+            "pose": cls._normalize_pose_payload(pose),
+            "patrol_status": nested_payload.get("patrol_status"),
+            "current_waypoint_index": cls._optional_int(
+                nested_payload.get("current_waypoint_index")
+            ),
+            "total_waypoints": cls._optional_int(nested_payload.get("total_waypoints")),
+            "distance_remaining_m": cls._optional_float(
+                nested_payload.get("distance_remaining_m")
+            ),
             "updated_at": cls._isoformat(row.get("latest_feedback_updated_at")),
         }
 
@@ -429,7 +459,9 @@ class TaskMonitorService:
                 alert["command_response"] = payload.get("command_response")
 
         alert.setdefault("alert_id", row.get("latest_alert_id"))
-        alert.setdefault("occurred_at", cls._isoformat(row.get("latest_alert_occurred_at")))
+        alert.setdefault(
+            "occurred_at", cls._isoformat(row.get("latest_alert_occurred_at"))
+        )
         return alert
 
     @classmethod
@@ -444,13 +476,22 @@ class TaskMonitorService:
             if isinstance(payload.get("payload"), dict)
             else payload
         )
-        normalized_type = str(feedback_type or payload.get("feedback_type") or "").strip()
+        normalized_type = str(
+            feedback_type or payload.get("feedback_type") or ""
+        ).strip()
         if normalized_type == "NAVIGATION_FEEDBACK":
             nav_status = nested_payload.get("nav_status") or "NAVIGATION"
             distance = nested_payload.get("distance_remaining_m")
             if distance is None:
                 return str(nav_status)
             return f"{nav_status} / 남은 거리 {float(distance):.2f}m"
+
+        if normalized_type == "PATROL_FEEDBACK":
+            patrol_status = nested_payload.get("patrol_status") or "PATROL"
+            distance = nested_payload.get("distance_remaining_m")
+            if distance is None:
+                return str(patrol_status)
+            return f"{patrol_status} / 남은 거리 {float(distance):.2f}m"
 
         if normalized_type == "MANIPULATION_FEEDBACK":
             processed_quantity = nested_payload.get("processed_quantity")
@@ -491,6 +532,45 @@ class TaskMonitorService:
         if frame_id is not None:
             pose["frame_id"] = frame_id
         return pose
+
+    @classmethod
+    def _normalize_pose_payload(cls, pose):
+        if not isinstance(pose, dict):
+            return pose
+        if "x" in pose and "y" in pose:
+            return pose
+
+        stamped_pose = pose.get("pose")
+        if not isinstance(stamped_pose, dict):
+            return pose
+        position = stamped_pose.get("position")
+        if not isinstance(position, dict):
+            return pose
+
+        normalized = {
+            "x": position.get("x"),
+            "y": position.get("y"),
+        }
+        orientation = stamped_pose.get("orientation")
+        if isinstance(orientation, dict):
+            normalized["yaw"] = cls._yaw_from_quaternion(orientation)
+        header = pose.get("header")
+        if isinstance(header, dict) and header.get("frame_id") not in (None, ""):
+            normalized["frame_id"] = header.get("frame_id")
+        return normalized
+
+    @staticmethod
+    def _yaw_from_quaternion(orientation):
+        try:
+            x = float(orientation.get("x", 0.0))
+            y = float(orientation.get("y", 0.0))
+            z = float(orientation.get("z", 0.0))
+            w = float(orientation.get("w", 1.0))
+        except (TypeError, ValueError):
+            return 0.0
+        siny_cosp = 2.0 * ((w * z) + (x * y))
+        cosy_cosp = 1.0 - (2.0 * ((y * y) + (z * z)))
+        return math.atan2(siny_cosp, cosy_cosp)
 
     @staticmethod
     def _normalize_text_tuple(values):
@@ -537,6 +617,15 @@ class TaskMonitorService:
             return None
         try:
             return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _optional_float(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
         except (TypeError, ValueError):
             return None
 

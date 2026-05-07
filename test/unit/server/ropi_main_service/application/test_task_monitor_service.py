@@ -29,6 +29,7 @@ class FakeTaskMonitorRepository:
                     "patrol_area_id": "ward_3f",
                     "patrol_area_name": "3층 병동",
                     "patrol_area_revision": 2,
+                    "patrol_status": "MOVING",
                     "patrol_path_frame_id": "map",
                     "waypoint_count": 3,
                     "current_waypoint_index": 1,
@@ -45,9 +46,14 @@ class FakeTaskMonitorRepository:
                     "started_at": datetime(2026, 4, 30, 10, 1, 0),
                     "finished_at": None,
                     "updated_at": datetime(2026, 4, 30, 10, 2, 0),
+                    "latest_feedback_type": "PATROL_FEEDBACK",
                     "latest_feedback_payload_json": {
                         "feedback_summary": "MOVING / 남은 거리 1.25m",
-                        "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
+                        "patrol_status": "MOVING",
+                        "current_waypoint_index": 1,
+                        "total_waypoints": 3,
+                        "current_pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
+                        "distance_remaining_m": 1.25,
                     },
                     "latest_feedback_updated_at": datetime(2026, 4, 30, 10, 1, 30),
                     "latest_robot_id": "pinky3",
@@ -91,6 +97,7 @@ class FakeTaskMonitorRepository:
         self.calls.append(kwargs)
         return self.status_row
 
+
 def test_task_monitor_snapshot_formats_nested_feedback_robot_and_alert():
     repository = FakeTaskMonitorRepository()
     service = TaskMonitorService(repository=repository)
@@ -126,6 +133,7 @@ def test_task_monitor_snapshot_formats_nested_feedback_robot_and_alert():
     assert task["assigned_robot_id"] == "pinky3"
     assert task["cancellable"] is True
     assert task["patrol_area_name"] == "3층 병동"
+    assert task["patrol_status"] == "MOVING"
     assert task["patrol_map"] == {
         "map_id": "map_test11_0423",
         "map_name": "map_test11_0423",
@@ -147,6 +155,10 @@ def test_task_monitor_snapshot_formats_nested_feedback_robot_and_alert():
     assert task["latest_feedback"] == {
         "feedback_summary": "MOVING / 남은 거리 1.25m",
         "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
+        "patrol_status": "MOVING",
+        "current_waypoint_index": 1,
+        "total_waypoints": 3,
+        "distance_remaining_m": 1.25,
         "updated_at": "2026-04-30T10:01:30",
     }
     assert task["latest_robot"] == {
@@ -196,7 +208,9 @@ def test_task_monitor_snapshot_async_uses_async_repository_method():
     repository = FakeTaskMonitorRepository()
     service = TaskMonitorService(repository=repository)
 
-    response = asyncio.run(service.async_get_task_monitor_snapshot(task_types=["patrol"]))
+    response = asyncio.run(
+        service.async_get_task_monitor_snapshot(task_types=["patrol"])
+    )
 
     assert response["result_code"] == "ACCEPTED"
     assert repository.calls[0]["task_types"] == ("PATROL",)

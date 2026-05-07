@@ -1,5 +1,14 @@
+import math
+
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ui.utils.widgets.admin_common import make_key_value_row
 from ui.utils.widgets.map_overlay import PatrolMapOverlay
@@ -39,6 +48,7 @@ def _metric_row(label_text, value_text="-", value_object_name="sideMetricValue")
 
 
 def _format_pose(pose):
+    pose = _normalize_pose(pose)
     if not isinstance(pose, dict):
         return _display(pose)
 
@@ -50,6 +60,45 @@ def _format_pose(pose):
         return _display(pose)
 
     return f"x={x:.2f}, y={y:.2f}, yaw={yaw:.2f}"
+
+
+def _normalize_pose(pose):
+    if not isinstance(pose, dict):
+        return pose
+    if "x" in pose and "y" in pose:
+        return pose
+
+    stamped_pose = pose.get("pose")
+    if not isinstance(stamped_pose, dict):
+        return pose
+    position = stamped_pose.get("position")
+    if not isinstance(position, dict):
+        return pose
+
+    normalized = {
+        "x": position.get("x"),
+        "y": position.get("y"),
+    }
+    orientation = stamped_pose.get("orientation")
+    if isinstance(orientation, dict):
+        normalized["yaw"] = _yaw_from_quaternion(orientation)
+    header = pose.get("header")
+    if isinstance(header, dict) and header.get("frame_id") not in (None, ""):
+        normalized["frame_id"] = header.get("frame_id")
+    return normalized
+
+
+def _yaw_from_quaternion(orientation):
+    try:
+        x = float(orientation.get("x", 0.0))
+        y = float(orientation.get("y", 0.0))
+        z = float(orientation.get("z", 0.0))
+        w = float(orientation.get("w", 1.0))
+    except (TypeError, ValueError):
+        return 0.0
+    siny_cosp = 2.0 * ((w * z) + (x * y))
+    cosy_cosp = 1.0 - (2.0 * ((y * y) + (z * z)))
+    return math.atan2(siny_cosp, cosy_cosp)
 
 
 class TaskResultInfoPanel(QFrame):
@@ -134,7 +183,9 @@ class GuideRuntimePanel(QWidget):
         ) = _metric_row("추적 ID")
         visitor_row, _visitor_text, self.visitor_label = _metric_row("방문자")
         resident_row, _resident_text, self.resident_label = _metric_row("어르신")
-        destination_row, _destination_text, self.destination_label = _metric_row("목적지")
+        destination_row, _destination_text, self.destination_label = _metric_row(
+            "목적지"
+        )
 
         panel_layout.addWidget(title)
         panel_layout.addWidget(guide_phase_row)
@@ -241,6 +292,33 @@ class PatrolRuntimePanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(12)
 
+        self.progress_panel = QFrame()
+        self.progress_panel.setObjectName("patrolRuntimeInfoPanel")
+        progress_layout = QVBoxLayout(self.progress_panel)
+        progress_layout.setContentsMargins(14, 14, 14, 14)
+        progress_layout.setSpacing(8)
+
+        progress_title = QLabel("순찰 진행")
+        progress_title.setObjectName("sectionTitle")
+        area_row, _area_text, self.patrol_area_label = _metric_row("구역")
+        robot_row, _robot_text, self.patrol_robot_label = _metric_row("로봇")
+        status_row, _status_text, self.patrol_status_label = _metric_row("상태")
+        waypoint_row, _waypoint_text, self.patrol_waypoint_label = _metric_row(
+            "waypoint"
+        )
+        distance_row, _distance_text, self.patrol_distance_label = _metric_row(
+            "남은 거리"
+        )
+        location_row, _location_text, self.patrol_location_label = _metric_row("위치")
+
+        progress_layout.addWidget(progress_title)
+        progress_layout.addWidget(area_row)
+        progress_layout.addWidget(robot_row)
+        progress_layout.addWidget(status_row)
+        progress_layout.addWidget(waypoint_row)
+        progress_layout.addWidget(distance_row)
+        progress_layout.addWidget(location_row)
+
         self.patrol_map_placeholder = QFrame()
         self.patrol_map_placeholder.setObjectName("patrolMapPlaceholder")
         map_layout = QVBoxLayout(self.patrol_map_placeholder)
@@ -306,6 +384,7 @@ class PatrolRuntimePanel(QWidget):
         alert_layout.addWidget(self.resume_status_label)
         self.alert_panel.setHidden(True)
 
+        root.addWidget(self.progress_panel)
         root.addWidget(self.patrol_map_placeholder)
         root.addWidget(self.alert_panel)
 
@@ -322,6 +401,7 @@ class PatrolRuntimePanel(QWidget):
         alert = task.get("fall_alert") or {}
         has_alert = bool(alert)
         should_show = has_alert or bool(can_resume)
+        self._render_progress(task)
         self.patrol_map_overlay.render(task)
         self.alert_panel.setHidden(not should_show)
         self.evidence_status_label.setHidden(True)
@@ -351,7 +431,21 @@ class PatrolRuntimePanel(QWidget):
         self.resume_patrol_btn.setEnabled(bool(can_resume))
         self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
 
+    def _render_progress(self, task):
+        self.patrol_area_label.setText(self._format_patrol_area(task))
+        self.patrol_robot_label.setText(_display(task.get("assigned_robot_id")))
+        self.patrol_status_label.setText(self._format_patrol_status(task))
+        self.patrol_waypoint_label.setText(self._format_waypoint(task))
+        self.patrol_distance_label.setText(self._format_distance(task))
+        self.patrol_location_label.setText(self._format_location(task))
+
     def _reset_inactive_state(self):
+        self.patrol_area_label.setText("-")
+        self.patrol_robot_label.setText("-")
+        self.patrol_status_label.setText("feedback 수신 전")
+        self.patrol_waypoint_label.setText("미수신")
+        self.patrol_distance_label.setText("미수신")
+        self.patrol_location_label.setText("미수신")
         self.alert_panel.setHidden(True)
         self.evidence_status_label.setHidden(True)
         self.resume_status_label.setHidden(True)
@@ -360,6 +454,114 @@ class PatrolRuntimePanel(QWidget):
         self.evidence_image_btn.setText("증거사진 조회")
         self.resume_patrol_btn.setEnabled(False)
         self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
+
+    @classmethod
+    def _format_patrol_area(cls, task):
+        parts = [
+            task.get("patrol_area_name"),
+            task.get("patrol_area_id"),
+        ]
+        revision = task.get("patrol_area_revision")
+        if revision not in (None, ""):
+            parts.append(f"rev {revision}")
+        values = [str(part).strip() for part in parts if part not in (None, "")]
+        return " / ".join(values) if values else "-"
+
+    @classmethod
+    def _format_patrol_status(cls, task):
+        return _display(
+            cls._first_present(
+                task.get("patrol_status"),
+                cls._latest_feedback(task).get("patrol_status"),
+            )
+            or "feedback 수신 전"
+        )
+
+    @classmethod
+    def _format_waypoint(cls, task):
+        current_index = cls._optional_int(
+            cls._first_present(
+                task.get("current_waypoint_index"),
+                cls._latest_feedback(task).get("current_waypoint_index"),
+                cls._patrol_path(task).get("current_waypoint_index"),
+            )
+        )
+        total = cls._optional_int(
+            cls._first_present(
+                task.get("total_waypoints"),
+                task.get("waypoint_count"),
+                cls._latest_feedback(task).get("total_waypoints"),
+                cls._patrol_path(task).get("waypoint_count"),
+            )
+        )
+        if current_index is None or total is None or total <= 0:
+            return "미수신"
+        return f"{current_index + 1} / {total}"
+
+    @classmethod
+    def _format_distance(cls, task):
+        distance = cls._optional_float(
+            cls._first_present(
+                task.get("distance_remaining_m"),
+                cls._latest_feedback(task).get("distance_remaining_m"),
+            )
+        )
+        if distance is None or distance < 0:
+            return "미수신"
+        return f"{distance:.2f}m"
+
+    @classmethod
+    def _format_location(cls, task):
+        pose = cls._first_present(
+            task.get("current_pose"),
+            task.get("pose"),
+            cls._latest_feedback(task).get("current_pose"),
+            cls._latest_feedback(task).get("pose"),
+            cls._latest_robot(task).get("pose"),
+        )
+        if pose in (None, ""):
+            return "미수신"
+        return _format_pose(pose)
+
+    @staticmethod
+    def _latest_feedback(task):
+        feedback = task.get("latest_feedback")
+        return feedback if isinstance(feedback, dict) else {}
+
+    @staticmethod
+    def _latest_robot(task):
+        robot = task.get("latest_robot")
+        return robot if isinstance(robot, dict) else {}
+
+    @staticmethod
+    def _patrol_path(task):
+        path = task.get("patrol_path")
+        return path if isinstance(path, dict) else {}
+
+    @staticmethod
+    def _first_present(*values):
+        for value in values:
+            if value not in (None, ""):
+                return value
+        return None
+
+    @staticmethod
+    def _optional_int(value):
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _optional_float(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
 
 __all__ = [

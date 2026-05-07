@@ -66,11 +66,27 @@ def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
                 "task_id": "2001",
                 "task_type": "PATROL",
                 "phase": "WAIT_FALL_RESPONSE",
+                "assigned_robot_id": "pinky3",
+                "patrol_area_id": "ward_3f",
+                "patrol_area_name": "3층 병동",
+                "patrol_area_revision": 2,
+                "patrol_status": "MOVING",
+                "distance_remaining_m": 1.25,
+                "pose": {"x": 0.8, "y": 0.3, "yaw": 0.0},
                 "patrol_map": {
                     "map_id": "map_0504",
                     "frame_id": "map",
                     "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml",
                     "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm",
+                },
+                "patrol_path": {
+                    "frame_id": "map",
+                    "waypoint_count": 3,
+                    "current_waypoint_index": 1,
+                    "poses": [
+                        {"x": 0.2, "y": 0.2, "yaw": 1.57},
+                        {"x": 1.0, "y": 0.5, "yaw": 0.0},
+                    ],
                 },
                 "fall_alert": {
                     "result_seq": 44,
@@ -92,6 +108,12 @@ def test_patrol_runtime_panel_renders_map_marker_actions_and_hidden_state():
         assert panel.evidence_image_id_label.text() == "fall-2001-44"
         assert panel.evidence_image_btn.isEnabled() is True
         assert panel.resume_patrol_btn.isEnabled() is True
+        assert panel.patrol_area_label.text() == "3층 병동 / ward_3f / rev 2"
+        assert panel.patrol_robot_label.text() == "pinky3"
+        assert panel.patrol_status_label.text() == "MOVING"
+        assert panel.patrol_waypoint_label.text() == "2 / 3"
+        assert panel.patrol_distance_label.text() == "1.25m"
+        assert panel.patrol_location_label.text() == "x=0.80, y=0.30, yaw=0.00"
         assert "3층 복도" in panel.fall_marker_label.text()
         assert "x=0.60" in panel.fall_marker_label.text()
         assert panel.patrol_map_overlay.fall_alert_pixel_point is not None
