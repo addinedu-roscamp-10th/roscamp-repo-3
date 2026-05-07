@@ -78,6 +78,9 @@ class PinkyStatusRuntimePublisher(Node):
         self.declare_parameter("fallback_fail_code", "")
         self.declare_parameter("use_pinkylib_battery", False)
         self.declare_parameter("battery_poll_period_sec", 2.0)
+        self.declare_parameter("infer_battery_percent_from_voltage", False)
+        self.declare_parameter("battery_empty_voltage", 6.0)
+        self.declare_parameter("battery_full_voltage", 7.6442)
         self.declare_parameter("infer_charging_from_pose", False)
         self.declare_parameter("dock_x_min", 0.0)
         self.declare_parameter("dock_x_max", 0.15)
@@ -299,6 +302,25 @@ class PinkyStatusRuntimePublisher(Node):
         self._snapshot.charging_state = charging_state
         return changed
 
+    def _infer_battery_percent_from_voltage_enabled(self) -> bool:
+        return bool(self.get_parameter("infer_battery_percent_from_voltage").value)
+
+    def _infer_battery_percent_from_voltage(self, voltage: float) -> float | None:
+        if not self._infer_battery_percent_from_voltage_enabled():
+            return None
+
+        empty_voltage = float(self.get_parameter("battery_empty_voltage").value)
+        full_voltage = float(self.get_parameter("battery_full_voltage").value)
+        voltage_range = full_voltage - empty_voltage
+        if voltage_range <= 0:
+            self.get_logger().warning(
+                "battery_full_voltage must be greater than battery_empty_voltage"
+            )
+            return None
+
+        percent = ((float(voltage) - empty_voltage) / voltage_range) * 100.0
+        return max(0.0, min(100.0, percent))
+
     def _mark_measured_now(self):
         self._last_measurement = self.get_clock().now().to_msg()
 
@@ -339,6 +361,9 @@ class PinkyStatusRuntimePublisher(Node):
             self._snapshot.battery_percent = float(msg.percentage) * 100.0
         if not math.isnan(float(msg.voltage)):
             self._snapshot.battery_voltage = float(msg.voltage)
+            inferred_percent = self._infer_battery_percent_from_voltage(float(msg.voltage))
+            if inferred_percent is not None:
+                self._snapshot.battery_percent = inferred_percent
         self._mark_measured_now()
 
     def _on_battery_percent(self, msg: Float32):
@@ -347,6 +372,9 @@ class PinkyStatusRuntimePublisher(Node):
 
     def _on_battery_voltage(self, msg: Float32):
         self._snapshot.battery_voltage = float(msg.data)
+        inferred_percent = self._infer_battery_percent_from_voltage(float(msg.data))
+        if inferred_percent is not None:
+            self._snapshot.battery_percent = inferred_percent
         self._mark_measured_now()
 
     def _on_state(self, msg: String):
@@ -442,6 +470,9 @@ class PinkyStatusRuntimePublisher(Node):
             elif param.name == "frame_id":
                 self._default_frame_id = str(param.value)
             elif param.name in {
+                "infer_battery_percent_from_voltage",
+                "battery_empty_voltage",
+                "battery_full_voltage",
                 "infer_charging_from_pose",
                 "dock_x_min",
                 "dock_x_max",
