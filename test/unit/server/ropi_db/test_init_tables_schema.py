@@ -176,9 +176,9 @@ def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
     assert "'device/ropi_mobile/src/ropi_nav_config/maps/map_test12_0506.pgm'" in seed_sql
     assert "('room_301', 'map_0504', '301호', 'ROOM'," in seed_sql
     assert "('room_301', 'map_test12_0506', '301호', 'ROOM'," in seed_sql
-    assert "('pickup_supply', 'map_test12_0506', 'supply_station', 'PICKUP', 0.1665755137108074, -0.4496830900440016, 1.5707963267948966," in seed_sql
-    assert "('delivery_room_301', 'map_test12_0506', 'room_301', 'DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0," in seed_sql
-    assert "('dock_home', 'map_test12_0506', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0," in seed_sql
+    assert "('pickup_supply', 'map_test12_0506', 'supply_station', 'PICKUP', 0.64, -0.44, 3.141592653589793," in seed_sql
+    assert "('delivery_room_301', 'map_test12_0506', 'room_301', 'DESTINATION', 1.6838363409042358, -0.4915957748889923, 1.5707963267948966," in seed_sql
+    assert "('dock_home', 'map_test12_0506', 'dock', 'DOCK', -0.009538442827761173, -0.006931785028427839, 0.0," in seed_sql
 
 
 def test_goal_pose_queries_join_operation_zone_by_map_and_zone():
