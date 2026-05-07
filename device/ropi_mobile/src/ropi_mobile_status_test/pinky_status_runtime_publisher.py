@@ -78,6 +78,14 @@ class PinkyStatusRuntimePublisher(Node):
         self.declare_parameter("fallback_fail_code", "")
         self.declare_parameter("use_pinkylib_battery", False)
         self.declare_parameter("battery_poll_period_sec", 2.0)
+        self.declare_parameter("infer_battery_percent_from_voltage", False)
+        self.declare_parameter("battery_empty_voltage", 6.0)
+        self.declare_parameter("battery_full_voltage", 7.6442)
+        self.declare_parameter("infer_charging_from_pose", False)
+        self.declare_parameter("dock_x_min", 0.0)
+        self.declare_parameter("dock_x_max", 0.15)
+        self.declare_parameter("dock_y_min", 0.4)
+        self.declare_parameter("dock_y_max", 1.0)
 
         self._pinky_id = str(self.get_parameter("pinky_id").value)
         self._default_frame_id = str(self.get_parameter("frame_id").value)
@@ -257,6 +265,62 @@ class PinkyStatusRuntimePublisher(Node):
     def _yaw_from_quaternion(z: float, w: float) -> float:
         return 2.0 * math.atan2(z, w)
 
+    @staticmethod
+    def _inside_bounds(value: float, first: float, second: float) -> bool:
+        lower = min(first, second)
+        upper = max(first, second)
+        return lower <= value <= upper
+
+    def _infer_charging_from_pose_enabled(self) -> bool:
+        return bool(self.get_parameter("infer_charging_from_pose").value)
+
+    def _pose_inside_dock(self) -> bool:
+        return (
+            self._inside_bounds(
+                self._snapshot.x,
+                float(self.get_parameter("dock_x_min").value),
+                float(self.get_parameter("dock_x_max").value),
+            )
+            and self._inside_bounds(
+                self._snapshot.y,
+                float(self.get_parameter("dock_y_min").value),
+                float(self.get_parameter("dock_y_max").value),
+            )
+        )
+
+    def _apply_pose_charging_inference(self) -> bool:
+        if not self._infer_charging_from_pose_enabled():
+            return False
+
+        docked = self._pose_inside_dock()
+        charging_state = "CHARGING" if docked else "NOT_CHARGING"
+        changed = (
+            docked != self._snapshot.docked
+            or charging_state != self._snapshot.charging_state
+        )
+        self._snapshot.docked = docked
+        self._snapshot.charging_state = charging_state
+        return changed
+
+    def _infer_battery_percent_from_voltage_enabled(self) -> bool:
+        return bool(self.get_parameter("infer_battery_percent_from_voltage").value)
+
+    def _infer_battery_percent_from_voltage(self, voltage: float) -> float | None:
+        if not self._infer_battery_percent_from_voltage_enabled():
+            return None
+
+        empty_voltage = float(self.get_parameter("battery_empty_voltage").value)
+        full_voltage = float(self.get_parameter("battery_full_voltage").value)
+        voltage_range = full_voltage - empty_voltage
+        if voltage_range <= 0:
+            self.get_logger().warning(
+                "battery_full_voltage must be greater than battery_empty_voltage"
+            )
+            return None
+
+        percent = ((float(voltage) - empty_voltage) / voltage_range) * 100.0
+        return max(0.0, min(100.0, percent))
+
     def _mark_measured_now(self):
         self._last_measurement = self.get_clock().now().to_msg()
 
@@ -276,7 +340,8 @@ class PinkyStatusRuntimePublisher(Node):
         )
         self._snapshot.pose_stamp_sec = int(msg.header.stamp.sec)
         self._snapshot.pose_stamp_nanosec = int(msg.header.stamp.nanosec)
-        self._mark_measured_now()
+        changed = self._apply_pose_charging_inference()
+        self._publish_if_changed(changed)
 
     def _on_odom(self, msg: Odometry):
         self._snapshot.frame_id = msg.header.frame_id or self._default_frame_id
@@ -288,13 +353,17 @@ class PinkyStatusRuntimePublisher(Node):
         )
         self._snapshot.pose_stamp_sec = int(msg.header.stamp.sec)
         self._snapshot.pose_stamp_nanosec = int(msg.header.stamp.nanosec)
-        self._mark_measured_now()
+        changed = self._apply_pose_charging_inference()
+        self._publish_if_changed(changed)
 
     def _on_battery(self, msg: BatteryState):
         if not math.isnan(float(msg.percentage)):
             self._snapshot.battery_percent = float(msg.percentage) * 100.0
         if not math.isnan(float(msg.voltage)):
             self._snapshot.battery_voltage = float(msg.voltage)
+            inferred_percent = self._infer_battery_percent_from_voltage(float(msg.voltage))
+            if inferred_percent is not None:
+                self._snapshot.battery_percent = inferred_percent
         self._mark_measured_now()
 
     def _on_battery_percent(self, msg: Float32):
@@ -303,6 +372,9 @@ class PinkyStatusRuntimePublisher(Node):
 
     def _on_battery_voltage(self, msg: Float32):
         self._snapshot.battery_voltage = float(msg.data)
+        inferred_percent = self._infer_battery_percent_from_voltage(float(msg.data))
+        if inferred_percent is not None:
+            self._snapshot.battery_percent = inferred_percent
         self._mark_measured_now()
 
     def _on_state(self, msg: String):
@@ -397,6 +469,18 @@ class PinkyStatusRuntimePublisher(Node):
                 self._snapshot.fail_code = str(param.value)
             elif param.name == "frame_id":
                 self._default_frame_id = str(param.value)
+            elif param.name in {
+                "infer_battery_percent_from_voltage",
+                "battery_empty_voltage",
+                "battery_full_voltage",
+                "infer_charging_from_pose",
+                "dock_x_min",
+                "dock_x_max",
+                "dock_y_min",
+                "dock_y_max",
+            }:
+                pass
+        self._apply_pose_charging_inference()
         self._mark_measured_now()
         self._reset_timer_if_needed()
         self._publish_snapshot()
