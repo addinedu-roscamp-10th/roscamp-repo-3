@@ -522,6 +522,47 @@ def test_coordinate_config_remote_service_exposes_goal_pose_update_rpc(monkeypat
     ]
 
 
+def test_coordinate_config_remote_service_exposes_goal_pose_create_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "CREATED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = CoordinateConfigRemoteService().create_goal_pose(
+        goal_pose_id="delivery_room_302",
+        map_id="map_test",
+        zone_id="room_302",
+        purpose="DESTINATION",
+        pose_x=2.1,
+        pose_y=0.12,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "CREATED"
+    assert calls == [
+        (
+            "coordinate_config",
+            "create_goal_pose",
+            {
+                "goal_pose_id": "delivery_room_302",
+                "map_id": "map_test",
+                "zone_id": "room_302",
+                "purpose": "DESTINATION",
+                "pose_x": 2.1,
+                "pose_y": 0.12,
+                "pose_yaw": 0.0,
+                "frame_id": "map",
+                "is_enabled": True,
+            },
+        )
+    ]
+
+
 def test_coordinate_config_remote_service_exposes_patrol_area_path_update_rpc(
     monkeypatch,
 ):

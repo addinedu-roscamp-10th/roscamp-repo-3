@@ -98,6 +98,28 @@ def test_coordinate_config_repository_fetches_operation_zone_by_map_and_zone(mon
     ]
 
 
+def test_coordinate_config_repository_fetches_goal_pose_by_id(monkeypatch):
+    calls = []
+
+    def fake_fetch_one(query, params=None):
+        calls.append((query, params))
+        return {"goal_pose_id": "delivery_room_301"}
+
+    monkeypatch.setattr(coordinate_config_repository, "fetch_one", fake_fetch_one)
+
+    row = coordinate_config_repository.CoordinateConfigRepository().get_goal_pose(
+        goal_pose_id="delivery_room_301",
+    )
+
+    assert row == {"goal_pose_id": "delivery_room_301"}
+    assert calls == [
+        (
+            coordinate_config_repository.FIND_GOAL_POSE_SQL,
+            ("delivery_room_301",),
+        )
+    ]
+
+
 def test_coordinate_config_repository_exposes_async_fetch_methods(monkeypatch):
     calls = []
 
@@ -330,6 +352,56 @@ def test_coordinate_config_repository_creates_patrol_area_in_transaction(
     )
     assert select_query == coordinate_config_repository.FIND_PATROL_AREA_SQL
     assert select_params == ("patrol_day_01",)
+
+
+def test_coordinate_config_repository_creates_goal_pose_in_transaction(
+    monkeypatch,
+):
+    inserted_row = {
+        "goal_pose_id": "delivery_room_302",
+        "map_id": "map_test11_0423",
+        "zone_id": "room_301",
+        "purpose": "DESTINATION",
+    }
+    cursor = FakeCursor(rows=[inserted_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    row = coordinate_config_repository.CoordinateConfigRepository().create_goal_pose(
+        map_id="map_test11_0423",
+        goal_pose_id="delivery_room_302",
+        zone_id="room_301",
+        purpose="DESTINATION",
+        pose_x=2.1,
+        pose_y=0.12,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert row == inserted_row
+    assert connection.began is True
+    assert connection.committed is True
+    insert_query, insert_params = cursor.calls[0]
+    select_query, select_params = cursor.calls[1]
+    assert insert_query == coordinate_config_repository.INSERT_GOAL_POSE_SQL
+    assert insert_params == (
+        "delivery_room_302",
+        "map_test11_0423",
+        "room_301",
+        "DESTINATION",
+        2.1,
+        0.12,
+        0.0,
+        "map",
+        True,
+    )
+    assert select_query == coordinate_config_repository.FIND_GOAL_POSE_SQL
+    assert select_params == ("delivery_room_302",)
 
 
 def test_coordinate_config_repository_updates_operation_zone_with_revision_lock(
@@ -848,6 +920,75 @@ def test_coordinate_config_repository_exposes_async_goal_pose_update(monkeypatch
         (
             coordinate_config_repository.FIND_GOAL_POSE_SQL,
             ("delivery_room_301",),
+        ),
+    ]
+
+
+def test_coordinate_config_repository_exposes_async_goal_pose_create(monkeypatch):
+    calls = []
+    rows = [
+        {
+            "goal_pose_id": "delivery_room_302",
+            "map_id": "map_test11_0423",
+            "purpose": "DESTINATION",
+        }
+    ]
+
+    class AsyncCursor:
+        async def execute(self, query, params=None):
+            calls.append((query, params))
+
+        async def fetchone(self):
+            return rows.pop(0)
+
+    @asynccontextmanager
+    async def fake_async_transaction():
+        yield AsyncCursor()
+
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "async_transaction",
+        fake_async_transaction,
+    )
+
+    async def scenario():
+        return await coordinate_config_repository.CoordinateConfigRepository().async_create_goal_pose(
+            map_id="map_test11_0423",
+            goal_pose_id="delivery_room_302",
+            zone_id=None,
+            purpose="DESTINATION",
+            pose_x=2.1,
+            pose_y=0.12,
+            pose_yaw=0.0,
+            frame_id="map",
+            is_enabled=True,
+        )
+
+    result = asyncio.run(scenario())
+
+    assert result == {
+        "goal_pose_id": "delivery_room_302",
+        "map_id": "map_test11_0423",
+        "purpose": "DESTINATION",
+    }
+    assert calls == [
+        (
+            coordinate_config_repository.INSERT_GOAL_POSE_SQL,
+            (
+                "delivery_room_302",
+                "map_test11_0423",
+                None,
+                "DESTINATION",
+                2.1,
+                0.12,
+                0.0,
+                "map",
+                True,
+            ),
+        ),
+        (
+            coordinate_config_repository.FIND_GOAL_POSE_SQL,
+            ("delivery_room_302",),
         ),
     ]
 

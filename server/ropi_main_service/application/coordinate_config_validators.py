@@ -239,7 +239,7 @@ def normalize_goal_pose_input(
     ):
         return None, goal_pose_error(
             result_code="INVALID_REQUEST",
-            reason_code="GOAL_POSE_NOT_FOUND",
+            reason_code="GOAL_POSE_ID_INVALID",
             result_message="goal_pose_id가 유효하지 않습니다.",
         )
 

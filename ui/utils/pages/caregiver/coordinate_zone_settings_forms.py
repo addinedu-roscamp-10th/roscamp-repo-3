@@ -136,7 +136,8 @@ def build_goal_pose_form(page):
     layout.setHorizontalSpacing(10)
     layout.setVerticalSpacing(10)
 
-    page.goal_pose_id_label = readonly_value_label("goalPoseIdLabel")
+    page.goal_pose_id_input = QLineEdit()
+    page.goal_pose_id_input.setObjectName("goalPoseIdInput")
     page.goal_pose_zone_combo = QComboBox()
     page.goal_pose_zone_combo.setObjectName("goalPoseZoneCombo")
     page.goal_pose_purpose_combo = QComboBox()
@@ -152,7 +153,7 @@ def build_goal_pose_form(page):
     _add_grid_rows(
         layout,
         [
-            ("좌표 ID", page.goal_pose_id_label),
+            ("좌표 ID", page.goal_pose_id_input),
             ("연결 구역", page.goal_pose_zone_combo),
             ("목적", page.goal_pose_purpose_combo),
             ("x", page.goal_pose_x_spin),
@@ -164,6 +165,7 @@ def build_goal_pose_form(page):
     )
 
     for widget in [
+        page.goal_pose_id_input,
         page.goal_pose_zone_combo,
         page.goal_pose_purpose_combo,
         page.goal_pose_x_spin,

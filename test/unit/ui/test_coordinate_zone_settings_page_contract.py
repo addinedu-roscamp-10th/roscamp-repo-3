@@ -235,7 +235,8 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert edit_panel.findChild(QPushButton, "fmsWaypointNewRowButton") is None
         new_zone_button = page.findChild(QPushButton, "operationZoneNewRowButton")
         assert new_zone_button.text() == "+ 새 row"
-        assert page.findChild(QPushButton, "goalPoseNewRowButton") is None
+        new_goal_pose_button = page.findChild(QPushButton, "goalPoseNewRowButton")
+        assert new_goal_pose_button.text() == "+ 새 row"
         new_patrol_button = page.findChild(QPushButton, "patrolAreaNewRowButton")
         assert new_patrol_button.text() == "+ 새 row"
         new_waypoint_button = page.findChild(QPushButton, "fmsWaypointNewRowButton")
@@ -1539,7 +1540,9 @@ def test_coordinate_zone_settings_page_selects_goal_pose_into_edit_form():
 
         assert page.selected_edit_type == "goal_pose"
         assert page.selected_goal_pose["goal_pose_id"] == "delivery_room_301"
-        assert page.findChild(QLabel, "goalPoseIdLabel").text() == "delivery_room_301"
+        goal_pose_id_input = page.findChild(QLineEdit, "goalPoseIdInput")
+        assert goal_pose_id_input.text() == "delivery_room_301"
+        assert goal_pose_id_input.isReadOnly() is True
         assert (
             page.findChild(QComboBox, "goalPoseZoneCombo").currentData() == "room_301"
         )
@@ -1651,6 +1654,60 @@ def test_coordinate_zone_settings_page_goal_pose_heading_drag_updates_yaw_only()
         assert yaw_spin.value() == 1.5708
         assert page.goal_pose_dirty is True
         assert page.map_canvas.selected_goal_pose_heading_yaw == 1.5708
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_creates_goal_pose_draft_operation():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+
+        page.findChild(QPushButton, "goalPoseNewRowButton").click()
+        goal_pose_id_input = page.findChild(QLineEdit, "goalPoseIdInput")
+        assert goal_pose_id_input.isReadOnly() is False
+
+        goal_pose_id_input.setText("delivery_room_302")
+        page.findChild(QComboBox, "goalPoseZoneCombo").setCurrentIndex(1)
+        page.findChild(QComboBox, "goalPosePurposeCombo").setCurrentText(
+            "DESTINATION"
+        )
+        page.handle_map_click_for_goal_pose({"x": 2.1, "y": 0.12})
+        page.findChild(QDoubleSpinBox, "goalPoseYawSpin").setValue(0.0)
+
+        operations = page._build_coordinate_batch_save_operations()
+
+        assert operations == [
+            {
+                "table": "goal_pose",
+                "row_id": "delivery_room_302",
+                "method": "create_goal_pose",
+                "payload": {
+                    "goal_pose_id": "delivery_room_302",
+                    "zone_id": "room_301",
+                    "purpose": "DESTINATION",
+                    "pose_x": 2.1,
+                    "pose_y": 0.12,
+                    "pose_yaw": 0.0,
+                    "frame_id": "map",
+                    "is_enabled": True,
+                    "map_id": "map_test",
+                },
+            }
+        ]
+        assert page.findChild(QTableWidget, "goalPoseTable").rowCount() == 2
     finally:
         page.close()
 

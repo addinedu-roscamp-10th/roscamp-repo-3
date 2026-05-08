@@ -342,6 +342,36 @@ class CoordinateConfigRemoteService:
             ),
         )
 
+    def create_goal_pose(
+        self,
+        *,
+        goal_pose_id,
+        zone_id=None,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled=True,
+        map_id=None,
+    ):
+        return self._rpc(
+            "create_goal_pose",
+            **self._without_none(
+                {
+                    "goal_pose_id": goal_pose_id,
+                    "zone_id": zone_id,
+                    "purpose": purpose,
+                    "pose_x": pose_x,
+                    "pose_y": pose_y,
+                    "pose_yaw": pose_yaw,
+                    "frame_id": frame_id,
+                    "is_enabled": is_enabled,
+                    "map_id": map_id,
+                }
+            ),
+        )
+
     def create_patrol_area(
         self,
         *,

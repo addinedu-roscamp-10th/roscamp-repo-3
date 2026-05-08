@@ -30,6 +30,7 @@ from ui.utils.pages.caregiver.coordinate_boundary_editing import (
     selected_boundary_vertex,
 )
 from ui.utils.pages.caregiver.coordinate_goal_pose_editing import (
+    build_goal_pose_save_payload,
     build_goal_pose_update_payload,
     goal_pose_from_save_response,
     goal_pose_world_point_from_payload,
@@ -194,6 +195,8 @@ TABLE_CARD_ACTIONS = {
     },
     "goalPoseTable": {
         "table_name": "goal_pose",
+        "create_object_name": "goalPoseNewRowButton",
+        "create_handler": "start_goal_pose_create",
         "deactivate_object_name": "goalPoseDeactivateRowButton",
         "revert_object_name": "goalPoseRevertRowButton",
     },
@@ -291,6 +294,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self._syncing_operation_zone_boundary_form = False
         self.selected_goal_pose = None
         self.selected_goal_pose_index = None
+        self.goal_pose_mode = None
         self.goal_pose_dirty = False
         self._syncing_goal_pose_form = False
         self.selected_patrol_area = None
@@ -1018,7 +1022,9 @@ class CoordinateZoneSettingsPage(QWidget):
             if self.operation_zone_mode == "create" or not self.selected_operation_zone:
                 return None
             return ("operation_zone", self.selected_operation_zone.get("zone_id"))
-        if self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
+        if self.selected_edit_type == "goal_pose":
+            if self.goal_pose_mode == "create" or not self.selected_goal_pose:
+                return None
             return ("goal_pose", self.selected_goal_pose.get("goal_pose_id"))
         if self.selected_edit_type == "patrol_area":
             if self.patrol_area_mode == "create" or not self.selected_patrol_area:
@@ -1045,7 +1051,7 @@ class CoordinateZoneSettingsPage(QWidget):
                 or self._operation_zone_form_has_metadata_change()
             )
         if self.selected_edit_type == "goal_pose":
-            return self.goal_pose_dirty
+            return self.goal_pose_mode != "create" and self.goal_pose_dirty
         if self.selected_edit_type == "patrol_area":
             return self.patrol_area_mode != "create" and self.patrol_area_dirty
         if self.selected_edit_type == "fms_waypoint":
@@ -1326,6 +1332,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.selected_operation_zone_boundary_vertex_index = None
         self.selected_goal_pose = None
         self.selected_goal_pose_index = None
+        self.goal_pose_mode = None
         self.goal_pose_dirty = False
         self.selected_patrol_area = None
         self.selected_patrol_area_index = None
@@ -1544,16 +1551,21 @@ class CoordinateZoneSettingsPage(QWidget):
         self._update_coordinate_draft_status_views()
 
     def _capture_goal_pose_form_to_draft(self):
-        if (
-            not self.goal_pose_dirty
-            or self.selected_goal_pose_index is None
-            or not self.selected_goal_pose
-        ):
+        if not self.goal_pose_dirty:
             return
         payload = self._build_goal_pose_update_payload()
+        row_id = payload.get("goal_pose_id")
+        if not row_id:
+            return
+
         row = {
-            **self.selected_goal_pose,
-            "goal_pose_id": payload.get("goal_pose_id"),
+            **(
+                self.selected_goal_pose
+                if isinstance(self.selected_goal_pose, dict)
+                else {}
+            ),
+            "goal_pose_id": row_id,
+            "map_id": self.current_bundle.get("map_profile", {}).get("map_id"),
             "zone_id": payload.get("zone_id"),
             "zone_name": self._zone_name_for_id(payload.get("zone_id")),
             "purpose": payload.get("purpose"),
@@ -1563,10 +1575,39 @@ class CoordinateZoneSettingsPage(QWidget):
             "frame_id": payload.get("frame_id"),
             "is_enabled": payload.get("is_enabled"),
         }
-        self.goal_pose_rows[self.selected_goal_pose_index] = row
+        if self.goal_pose_mode == "create":
+            row["_draft_mode"] = "create"
+
+        old_row_id = (
+            self.selected_goal_pose.get("goal_pose_id")
+            if isinstance(self.selected_goal_pose, dict)
+            else None
+        )
+        if (
+            self.goal_pose_mode == "create"
+            and self.selected_goal_pose_index is not None
+            and 0 <= self.selected_goal_pose_index < len(self.goal_pose_rows)
+        ):
+            self.goal_pose_rows[self.selected_goal_pose_index] = row
+            if old_row_id and old_row_id != row_id:
+                self.goal_pose_dirty_row_ids.discard(old_row_id)
+                self._clear_failed_coordinate_row_error("goal_pose", old_row_id)
+        else:
+            existing_index = find_row_index_by_value(
+                self.goal_pose_rows,
+                "goal_pose_id",
+                row_id,
+            )
+            if existing_index is None:
+                self.goal_pose_rows.append(row)
+                self.selected_goal_pose_index = len(self.goal_pose_rows) - 1
+            else:
+                self.goal_pose_rows[existing_index] = row
+                self.selected_goal_pose_index = existing_index
+
         self.selected_goal_pose = dict(row)
-        self.goal_pose_dirty_row_ids.add(row["goal_pose_id"])
-        self._clear_failed_coordinate_row_error("goal_pose", row["goal_pose_id"])
+        self.goal_pose_dirty_row_ids.add(row_id)
+        self._clear_failed_coordinate_row_error("goal_pose", row_id)
         self.current_bundle["goal_poses"] = self.goal_pose_rows
         set_table_rows(
             self.tables["goalPoseTable"],
@@ -1725,6 +1766,7 @@ class CoordinateZoneSettingsPage(QWidget):
             return
 
         self.selected_edit_type = "goal_pose"
+        self.goal_pose_mode = "edit"
         self.selected_goal_pose_index = row_index
         self.selected_goal_pose = dict(goal_pose)
         self.edit_placeholder_label.setHidden(True)
@@ -1736,8 +1778,42 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("목표 좌표 편집 모드")
         self._clear_patrol_overlay()
-        self._set_goal_pose_form(goal_pose)
+        self._set_goal_pose_form(goal_pose, mode="edit")
         self.goal_pose_dirty = False
+        self._sync_goal_pose_save_state()
+
+    def start_goal_pose_create(self):
+        self._capture_current_form_to_draft()
+        self.selected_edit_type = "goal_pose"
+        self.goal_pose_mode = "create"
+        self.selected_goal_pose = None
+        self.selected_goal_pose_index = None
+        self.edit_placeholder_label.setHidden(True)
+        self.operation_zone_form.setHidden(True)
+        self.goal_pose_form.setHidden(False)
+        self.patrol_area_form.setHidden(True)
+        self.fms_waypoint_form.setHidden(True)
+        self.fms_edge_form.setHidden(True)
+        self.fms_route_form.setHidden(True)
+        self.edit_mode_label.setText("목표 좌표 생성 모드")
+        self._clear_patrol_overlay()
+        self._set_goal_pose_form(
+            {
+                "goal_pose_id": "",
+                "zone_id": None,
+                "purpose": "DESTINATION",
+                "pose_x": 0.0,
+                "pose_y": 0.0,
+                "pose_yaw": 0.0,
+                "frame_id": self._active_map_frame_id(),
+                "is_enabled": True,
+            },
+            mode="create",
+        )
+        self.goal_pose_dirty = False
+        self.validation_message_label.setText(
+            "새 목표 좌표 ID와 위치를 입력하세요."
+        )
         self._sync_goal_pose_save_state()
 
     def select_patrol_area(self, row_index):
@@ -2163,8 +2239,12 @@ class CoordinateZoneSettingsPage(QWidget):
             self.operation_zone_enabled_check.setChecked(False)
             self._mark_operation_zone_dirty()
         elif self.selected_edit_type == "goal_pose":
+            if self.goal_pose_mode == "create":
+                self._clear_current_edit_selection()
+                return
             self.goal_pose_enabled_check.setChecked(False)
             self._mark_goal_pose_dirty()
+            self._capture_goal_pose_form_to_draft()
         elif self.selected_edit_type == "patrol_area":
             if self.patrol_area_mode == "create":
                 self._clear_current_edit_selection()
@@ -2218,8 +2298,9 @@ class CoordinateZoneSettingsPage(QWidget):
         elif table_name == "goal_pose":
             self._replace_goal_pose_row(original_row)
             self.selected_goal_pose = dict(original_row)
+            self.goal_pose_mode = "edit"
             self.goal_pose_dirty = False
-            self._set_goal_pose_form(original_row)
+            self._set_goal_pose_form(original_row, mode="edit")
         elif table_name == "patrol_area":
             self._replace_patrol_area_row(original_row)
             self.selected_patrol_area = dict(original_row)
@@ -2319,23 +2400,27 @@ class CoordinateZoneSettingsPage(QWidget):
             )
             if row is None:
                 continue
+            is_create = row.get("_draft_mode") == "create"
+            payload = self._with_current_map_id(
+                build_goal_pose_save_payload(
+                    mode="create" if is_create else "edit",
+                    selected_goal_pose=row,
+                    goal_pose_id=row.get("goal_pose_id"),
+                    zone_id=row.get("zone_id"),
+                    purpose=row.get("purpose"),
+                    pose_x=row.get("pose_x"),
+                    pose_y=row.get("pose_y"),
+                    pose_yaw=row.get("pose_yaw"),
+                    frame_id=row.get("frame_id"),
+                    is_enabled=bool(row.get("is_enabled")),
+                )
+            )
             operations.append(
                 {
                     "table": "goal_pose",
                     "row_id": goal_pose_id,
-                    "method": "update_goal_pose",
-                    "payload": {
-                        "goal_pose_id": row.get("goal_pose_id"),
-                        "expected_updated_at": row.get("updated_at"),
-                        "zone_id": row.get("zone_id"),
-                        "purpose": row.get("purpose"),
-                        "pose_x": row.get("pose_x"),
-                        "pose_y": row.get("pose_y"),
-                        "pose_yaw": row.get("pose_yaw"),
-                        "frame_id": row.get("frame_id"),
-                        "is_enabled": bool(row.get("is_enabled")),
-                        **({"map_id": map_id} if map_id else {}),
-                    },
+                    "method": "create_goal_pose" if is_create else "update_goal_pose",
+                    "payload": payload,
                 }
             )
         for patrol_area_id in sorted(self.patrol_area_dirty_row_ids):
@@ -2483,11 +2568,20 @@ class CoordinateZoneSettingsPage(QWidget):
             self.operation_zone_dirty = False
             self.operation_zone_boundary_dirty = False
             self._sync_operation_zone_save_state()
-        elif self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
-            self._set_goal_pose_form(self.selected_goal_pose)
-            self.goal_pose_dirty = False
-            self.validation_message_label.setText("목표 좌표 변경을 취소했습니다.")
-            self._sync_goal_pose_save_state()
+        elif self.selected_edit_type == "goal_pose":
+            if self.goal_pose_mode == "create":
+                self._clear_current_edit_selection()
+                self.validation_message_label.setText(
+                    "새 목표 좌표 입력을 취소했습니다."
+                )
+                return
+            if self.selected_goal_pose:
+                self._set_goal_pose_form(self.selected_goal_pose, mode="edit")
+                self.goal_pose_dirty = False
+                self.validation_message_label.setText(
+                    "목표 좌표 변경을 취소했습니다."
+                )
+                self._sync_goal_pose_save_state()
         elif self.selected_edit_type == "patrol_area" and self.selected_patrol_area:
             self._set_patrol_area_form(self.selected_patrol_area)
             self.patrol_area_dirty = False
@@ -3345,11 +3439,13 @@ class CoordinateZoneSettingsPage(QWidget):
             clear_handler=self._clear_goal_pose_save_thread,
         )
 
-    def _set_goal_pose_form(self, goal_pose):
+    def _set_goal_pose_form(self, goal_pose, mode=None):
         goal_pose = goal_pose if isinstance(goal_pose, dict) else {}
+        mode = mode or self.goal_pose_mode or "edit"
         self._syncing_goal_pose_form = True
         try:
-            self.goal_pose_id_label.setText(_display(goal_pose.get("goal_pose_id")))
+            self.goal_pose_id_input.setReadOnly(mode != "create")
+            self.goal_pose_id_input.setText(_display(goal_pose.get("goal_pose_id")))
             self._set_combo_data(
                 self.goal_pose_zone_combo,
                 goal_pose.get("zone_id"),
@@ -3402,7 +3498,7 @@ class CoordinateZoneSettingsPage(QWidget):
         return self._with_current_map_id(
             build_goal_pose_update_payload(
                 selected_goal_pose=self.selected_goal_pose,
-                goal_pose_id=self.goal_pose_id_label.text(),
+                goal_pose_id=self.goal_pose_id_input.text(),
                 zone_id=self.goal_pose_zone_combo.currentData(),
                 purpose=self.goal_pose_purpose_combo.currentText(),
                 pose_x=self.goal_pose_x_spin.value(),
@@ -3431,7 +3527,8 @@ class CoordinateZoneSettingsPage(QWidget):
 
         self._replace_goal_pose_row(updated_goal_pose)
         self.selected_goal_pose = dict(updated_goal_pose)
-        self._set_goal_pose_form(updated_goal_pose)
+        self.goal_pose_mode = "edit"
+        self._set_goal_pose_form(updated_goal_pose, mode="edit")
         self.goal_pose_dirty = False
         self.validation_message_label.setText("목표 좌표를 저장했습니다.")
         self._sync_goal_pose_save_state()
@@ -4153,8 +4250,9 @@ class CoordinateZoneSettingsPage(QWidget):
                     self.selected_goal_pose.get("goal_pose_id") == row_id
                 ):
                     self.selected_goal_pose = dict(row)
+                    self.goal_pose_mode = "edit"
                     self.goal_pose_dirty = False
-                    self._set_goal_pose_form(row)
+                    self._set_goal_pose_form(row, mode="edit")
         elif table == "patrol_area":
             row = patrol_area_from_save_response(response)
             if row is not None:
@@ -4342,6 +4440,7 @@ class CoordinateZoneSettingsPage(QWidget):
             },
             "modes": {
                 "operation_zone": self.operation_zone_mode,
+                "goal_pose": self.goal_pose_mode,
                 "patrol_area": self.patrol_area_mode,
                 "fms_waypoint": self.fms_waypoint_mode,
                 "fms_edge": self.fms_edge_mode,
@@ -4376,6 +4475,8 @@ class CoordinateZoneSettingsPage(QWidget):
             return ("operation_zone_create", None)
         if self.selected_edit_type == "operation_zone" and self.selected_operation_zone:
             return ("operation_zone", self.selected_operation_zone.get("zone_id"))
+        if self.selected_edit_type == "goal_pose" and self.goal_pose_mode == "create":
+            return ("goal_pose_create", None)
         if self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
             return ("goal_pose", self.selected_goal_pose.get("goal_pose_id"))
         if self.selected_edit_type == "patrol_area" and self.selected_patrol_area:
@@ -4404,6 +4505,7 @@ class CoordinateZoneSettingsPage(QWidget):
             }
         if self.selected_edit_type == "goal_pose":
             return {
+                "goal_pose_id": self.goal_pose_id_input.text(),
                 "zone_id": self.goal_pose_zone_combo.currentData(),
                 "purpose": self.goal_pose_purpose_combo.currentText(),
                 "pose_x": self.goal_pose_x_spin.value(),
@@ -4458,6 +4560,7 @@ class CoordinateZoneSettingsPage(QWidget):
             self.fms_route_dirty_row_ids = set(dirty_row_ids.get("fms_route", []))
             modes = snapshot.get("modes", {})
             self.operation_zone_mode = modes.get("operation_zone")
+            self.goal_pose_mode = modes.get("goal_pose")
             self.patrol_area_mode = modes.get("patrol_area")
             self.fms_waypoint_mode = modes.get("fms_waypoint")
             self.fms_edge_mode = modes.get("fms_edge")
@@ -4560,6 +4663,8 @@ class CoordinateZoneSettingsPage(QWidget):
             "fms_route": "FMS route 편집 모드",
         }
         self.edit_mode_label.setText(labels.get(edit_type, "선택 모드"))
+        if edit_type == "goal_pose" and self.goal_pose_mode == "create":
+            self.edit_mode_label.setText("목표 좌표 생성 모드")
 
     def _restore_current_edit_form_values(self, form):
         if self.selected_edit_type == "operation_zone" and self.selected_operation_zone:
@@ -4598,10 +4703,35 @@ class CoordinateZoneSettingsPage(QWidget):
                 self.selected_operation_zone_boundary_vertex_index
             )
             self._sync_operation_zone_overlay()
-        elif self.selected_edit_type == "goal_pose" and self.selected_goal_pose:
-            self._set_goal_pose_form(self.selected_goal_pose)
+        elif self.selected_edit_type == "goal_pose":
+            base_goal_pose = (
+                self.selected_goal_pose
+                if isinstance(self.selected_goal_pose, dict)
+                else {}
+            )
+            self._set_goal_pose_form(
+                {
+                    **base_goal_pose,
+                    "goal_pose_id": form.get(
+                        "goal_pose_id",
+                        base_goal_pose.get("goal_pose_id"),
+                    ),
+                },
+                mode=self.goal_pose_mode or "edit",
+            )
             self._syncing_goal_pose_form = True
             try:
+                self.goal_pose_id_input.setReadOnly(
+                    self.goal_pose_mode != "create"
+                )
+                self.goal_pose_id_input.setText(
+                    _display_empty(
+                        form.get(
+                            "goal_pose_id",
+                            base_goal_pose.get("goal_pose_id"),
+                        )
+                    )
+                )
                 self._set_combo_data(self.goal_pose_zone_combo, form.get("zone_id"))
                 self._set_combo_text(
                     self.goal_pose_purpose_combo,

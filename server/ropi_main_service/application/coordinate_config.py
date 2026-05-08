@@ -536,6 +536,154 @@ class CoordinateConfigService:
 
         return self._format_goal_pose_update_result(result)
 
+    def create_goal_pose(
+        self,
+        *,
+        goal_pose_id,
+        zone_id=None,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled=True,
+        map_id=None,
+    ):
+        map_profile, error = self._resolve_map_profile(
+            map_id=map_id,
+            error_factory=goal_pose_error,
+        )
+        if error:
+            return error
+
+        normalized, error = normalize_goal_pose_input(
+            goal_pose_id=goal_pose_id,
+            expected_updated_at=None,
+            zone_id=zone_id,
+            purpose=purpose,
+            pose_x=pose_x,
+            pose_y=pose_y,
+            pose_yaw=pose_yaw,
+            frame_id=frame_id,
+            is_enabled=is_enabled,
+            active_frame_id=map_profile["frame_id"],
+        )
+        if error:
+            return error
+
+        zone_error = self._validate_goal_pose_zone(
+            map_id=map_profile["map_id"],
+            zone_id=normalized["zone_id"],
+        )
+        if zone_error:
+            return zone_error
+
+        existing_goal_pose = self.repository.get_goal_pose(
+            goal_pose_id=normalized["goal_pose_id"],
+        )
+        if existing_goal_pose:
+            return goal_pose_error(
+                result_code="CONFLICT",
+                reason_code="GOAL_POSE_ID_DUPLICATED",
+                result_message="이미 존재하는 목표 좌표 ID입니다.",
+            )
+
+        normalized.pop("expected_updated_at", None)
+        try:
+            row = self.repository.create_goal_pose(
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return goal_pose_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="목적지 좌표 생성 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return {
+            "result_code": "CREATED",
+            "result_message": None,
+            "reason_code": None,
+            "goal_pose": format_goal_pose(row or {}),
+        }
+
+    async def async_create_goal_pose(
+        self,
+        *,
+        goal_pose_id,
+        zone_id=None,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled=True,
+        map_id=None,
+    ):
+        map_profile, error = await self._async_resolve_map_profile(
+            map_id=map_id,
+            error_factory=goal_pose_error,
+        )
+        if error:
+            return error
+
+        normalized, error = normalize_goal_pose_input(
+            goal_pose_id=goal_pose_id,
+            expected_updated_at=None,
+            zone_id=zone_id,
+            purpose=purpose,
+            pose_x=pose_x,
+            pose_y=pose_y,
+            pose_yaw=pose_yaw,
+            frame_id=frame_id,
+            is_enabled=is_enabled,
+            active_frame_id=map_profile["frame_id"],
+        )
+        if error:
+            return error
+
+        zone_error = await self._async_validate_goal_pose_zone(
+            map_id=map_profile["map_id"],
+            zone_id=normalized["zone_id"],
+        )
+        if zone_error:
+            return zone_error
+
+        existing_goal_pose = await self._call_async_or_thread(
+            "async_get_goal_pose",
+            "get_goal_pose",
+            goal_pose_id=normalized["goal_pose_id"],
+        )
+        if existing_goal_pose:
+            return goal_pose_error(
+                result_code="CONFLICT",
+                reason_code="GOAL_POSE_ID_DUPLICATED",
+                result_message="이미 존재하는 목표 좌표 ID입니다.",
+            )
+
+        normalized.pop("expected_updated_at", None)
+        try:
+            row = await self._call_async_or_thread(
+                "async_create_goal_pose",
+                "create_goal_pose",
+                map_id=map_profile["map_id"],
+                **normalized,
+            )
+        except Exception:
+            return goal_pose_error(
+                result_code="UNAVAILABLE",
+                reason_code="CONFIG_WRITE_FAILED",
+                result_message="목적지 좌표 생성 중 DB 쓰기에 실패했습니다.",
+            )
+
+        return {
+            "result_code": "CREATED",
+            "result_message": None,
+            "reason_code": None,
+            "goal_pose": format_goal_pose(row or {}),
+        }
+
     def update_patrol_area_path(
         self,
         *,

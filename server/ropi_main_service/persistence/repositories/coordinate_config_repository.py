@@ -18,6 +18,7 @@ FIND_GOAL_POSE_SQL = load_sql("coordinate_config/find_goal_pose.sql")
 FIND_MAP_PROFILE_SQL = load_sql("coordinate_config/find_map_profile.sql")
 FIND_OPERATION_ZONE_SQL = load_sql("coordinate_config/find_operation_zone.sql")
 FIND_PATROL_AREA_SQL = load_sql("coordinate_config/find_patrol_area.sql")
+INSERT_GOAL_POSE_SQL = load_sql("coordinate_config/insert_goal_pose.sql")
 INSERT_OPERATION_ZONE_SQL = load_sql("coordinate_config/insert_operation_zone.sql")
 LIST_MAP_PROFILES_SQL = load_sql("coordinate_config/list_map_profiles.sql")
 INSERT_PATROL_AREA_SQL = load_sql("coordinate_config/insert_patrol_area.sql")
@@ -142,6 +143,84 @@ class CoordinateConfigRepository:
             LIST_GOAL_POSES_SQL,
             (str(map_id), bool(include_disabled)),
         )
+
+    def get_goal_pose(self, *, goal_pose_id):
+        return fetch_one(FIND_GOAL_POSE_SQL, (str(goal_pose_id),))
+
+    async def async_get_goal_pose(self, *, goal_pose_id):
+        return await async_fetch_one(FIND_GOAL_POSE_SQL, (str(goal_pose_id),))
+
+    def create_goal_pose(
+        self,
+        *,
+        map_id,
+        goal_pose_id,
+        zone_id,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled=True,
+    ):
+        conn = get_connection()
+        try:
+            conn.begin()
+            with conn.cursor() as cur:
+                cur.execute(
+                    INSERT_GOAL_POSE_SQL,
+                    (
+                        str(goal_pose_id),
+                        str(map_id),
+                        None if zone_id is None else str(zone_id),
+                        str(purpose),
+                        float(pose_x),
+                        float(pose_y),
+                        float(pose_yaw),
+                        str(frame_id),
+                        bool(is_enabled),
+                    ),
+                )
+                cur.execute(FIND_GOAL_POSE_SQL, (str(goal_pose_id),))
+                row = cur.fetchone()
+            conn.commit()
+            return row
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    async def async_create_goal_pose(
+        self,
+        *,
+        map_id,
+        goal_pose_id,
+        zone_id,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled=True,
+    ):
+        async with async_transaction() as cur:
+            await cur.execute(
+                INSERT_GOAL_POSE_SQL,
+                (
+                    str(goal_pose_id),
+                    str(map_id),
+                    None if zone_id is None else str(zone_id),
+                    str(purpose),
+                    float(pose_x),
+                    float(pose_y),
+                    float(pose_yaw),
+                    str(frame_id),
+                    bool(is_enabled),
+                ),
+            )
+            await cur.execute(FIND_GOAL_POSE_SQL, (str(goal_pose_id),))
+            return await cur.fetchone()
 
     def update_goal_pose(
         self,
@@ -854,6 +933,7 @@ __all__ = [
     "FIND_MAP_PROFILE_SQL",
     "FIND_OPERATION_ZONE_SQL",
     "FIND_PATROL_AREA_SQL",
+    "INSERT_GOAL_POSE_SQL",
     "INSERT_OPERATION_ZONE_SQL",
     "LIST_GOAL_POSES_SQL",
     "LIST_OPERATION_ZONES_SQL",
