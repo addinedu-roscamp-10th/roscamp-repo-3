@@ -27,6 +27,7 @@ dev = [
 
 [project.scripts]
 ropi-control-server = "server.ropi_main_service.transport.tcp_server:main"
+ropi-db-migrate-delivery-items = "server.ropi_db.delivery_item_catalog_migration:main"
 ropi-db-migrate-guide-location = "server.ropi_db.guide_location_config_migration:main"
 ropi-db-migrate-guide-tracking = "server.ropi_db.guide_tracking_schema_migration:main"
 ropi-db-migrate-multimap = "server.ropi_db.multimap_coordinate_migration:main"
