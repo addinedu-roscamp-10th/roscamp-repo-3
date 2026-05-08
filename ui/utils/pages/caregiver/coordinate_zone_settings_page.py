@@ -758,6 +758,7 @@ class CoordinateZoneSettingsPage(QWidget):
     def _build_table_tabs(self):
         tabs = QTabWidget()
         tabs.setObjectName("coordinateTableTabs")
+        tabs.setMaximumHeight(320)
         tabs.addTab(
             self._build_table_card(
                 "operation_zone",

@@ -20,6 +20,7 @@ class RecordingAsyncCursor:
     def __init__(self, rows=None):
         self.calls = []
         self.rows = list(rows or [])
+        self.lastrowid = 17
 
     async def execute(self, query, params):
         self.calls.append((query, params))
@@ -94,6 +95,11 @@ def test_repository_marks_patrol_waiting_fall_response(monkeypatch):
 
     assert response["result_code"] == "ACCEPTED"
     assert response["phase"] == "WAIT_FALL_RESPONSE"
+    assert response["fall_alert"]["alert_id"] == "17"
+    assert response["fall_alert"]["task_id"] == 2001
+    assert response["fall_alert"]["pinky_id"] == "pinky3"
+    assert response["fall_alert"]["result_seq"] == 541
+    assert response["fall_alert"]["evidence_image_available"] is False
     assert [call[0].split()[0] for call in cursor.calls] == [
         "SELECT",
         "UPDATE",

@@ -102,6 +102,34 @@ def test_task_update_event_publisher_builds_guide_detail_payload():
     }
 
 
+def test_task_update_event_publisher_keeps_patrol_fall_alert_payload():
+    payload = TaskUpdateEventPublisher.build_payload(
+        {
+            "result_code": "ACCEPTED",
+            "result_message": "낙상 대응 대기 상태로 전환했습니다.",
+            "task_id": 2001,
+            "task_type": "PATROL",
+            "task_status": "RUNNING",
+            "phase": "WAIT_FALL_RESPONSE",
+            "assigned_robot_id": "pinky3",
+            "fall_alert": {
+                "alert_id": "17",
+                "evidence_image_id": "fall_evidence_pinky3_541",
+                "evidence_image_available": True,
+            },
+        },
+        source="FALL_ALERT",
+        task_type="PATROL",
+    )
+
+    assert payload["task_type"] == "PATROL"
+    assert payload["fall_alert"] == {
+        "alert_id": "17",
+        "evidence_image_id": "fall_evidence_pinky3_541",
+        "evidence_image_available": True,
+    }
+
+
 def test_task_update_event_publisher_skips_invalid_response():
     published = []
 

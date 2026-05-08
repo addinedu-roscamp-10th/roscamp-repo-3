@@ -1045,7 +1045,7 @@ class TaskMonitorPage(QWidget):
             return False
         return bool(
             alert.get("evidence_image_id")
-            and alert.get("evidence_image_available") is not False
+            and alert.get("evidence_image_available") is True
         )
 
     def open_patrol_resume_dialog(self):

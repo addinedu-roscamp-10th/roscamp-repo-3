@@ -431,6 +431,11 @@ class PatrolRuntimePanel(QWidget):
         )
         self.fall_marker_label.setText(f"{zone_text}\n{pose_text}")
         self.evidence_image_btn.setEnabled(bool(evidence_available))
+        if evidence_available:
+            self.evidence_status_label.setHidden(True)
+        else:
+            self.evidence_status_label.setText("증거사진을 사용할 수 없습니다.")
+            self.evidence_status_label.setHidden(False)
         self.resume_patrol_btn.setEnabled(bool(can_resume))
         self.resume_patrol_btn.setText("현장 조치 후 순찰 재개")
 

@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import zlib
+from base64 import b64encode
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ TCP_HOST = "0.0.0.0"
 TCP_PORT = 6000
 TCP_SUBSCRIBE_TIMEOUT_SEC = 5.0
 MESSAGE_CODE_FALL_RESULT_SUBSCRIBE = 0x5001
+MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY = 0x5003
 
 MODEL_PATH = "/home/addinedu/Documents/fallen_detection/models/yolo26x_gen_v1_weights/best.pt"
 
@@ -47,6 +49,8 @@ SHOW_WINDOW = True
 
 # subscribe 재접속 직후 last_seq 이후 결과를 replay하기 위한 작은 메모리 버퍼.
 RESULT_BUFFER_SIZE = 256
+EVIDENCE_RETENTION_MAX_ITEMS = 100
+EVIDENCE_RETENTION_SEC = 60.0
 
 # MVP에서는 stream_name이 Pinky 한 대의 단일 순찰 카메라를 대표한다고 본다.
 # 팀 naming이 확정되면 이 매핑을 설정 파일/env로 분리하는 편이 좋다.
@@ -93,6 +97,22 @@ class FallResultSubscriber:
     next_push_sequence_no: int = 1
 
 
+@dataclass
+class EvidenceImage:
+    evidence_image_id: str
+    result_seq: int
+    pinky_id: str | None
+    frame_id: str
+    frame_ts: str
+    image_format: str
+    image_encoding: str
+    image_data: str
+    image_width_px: int
+    image_height_px: int
+    detections: list[dict]
+    created_at_monotonic: float
+
+
 class FallenDetectionServer:
     RUDP_MAGIC = b"RUDP"
     RUDP_VERSION = 1
@@ -121,6 +141,11 @@ class FallenDetectionServer:
         self.result_seq = 0
         self.result_buffer = deque(maxlen=RESULT_BUFFER_SIZE)
         self.fall_streak_start_monotonic = {}
+        self.fall_streak_evidence_ids = {}
+        self.evidence_images = {}
+        self.evidence_order = deque()
+        self.expired_evidence_ids = set()
+        self.evidence_lock = threading.Lock()
         self.stream_states = {}
 
         self.accept_thread = threading.Thread(target=self.accept_tcp_client_loop, daemon=True)
@@ -315,6 +340,11 @@ class FallenDetectionServer:
             return
 
         if request_frame.message_code != MESSAGE_CODE_FALL_RESULT_SUBSCRIBE:
+            if request_frame.message_code == MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY:
+                self.send_evidence_image_response(client_sock, request_frame)
+                client_sock.close()
+                return
+
             self.send_subscribe_ack(
                 client_sock,
                 request_frame.sequence_no,
@@ -405,11 +435,27 @@ class FallenDetectionServer:
         replay_results = [
             result
             for result in self.result_buffer
-            if result["result_seq"] > last_seq and self.result_matches_subscriber(result, subscriber)
+            if result["result_seq"] > last_seq
+            and self.result_matches_subscriber(result, subscriber)
         ]
 
         if replay_results:
             self.send_result_push(subscriber, replay_results)
+
+    def send_evidence_image_response(self, sock, request_frame):
+        payload = self.query_evidence_image_payload(request_frame.payload or {})
+        frame = build_frame(
+            MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
+            request_frame.sequence_no,
+            payload,
+            is_response=True,
+            is_error=payload.get("result_code") == "INVALID_REQUEST",
+        )
+
+        try:
+            sock.sendall(encode_frame(frame))
+        except Exception as e:
+            print(f"[TCP] Evidence image response send error: {e}")
 
     def result_matches_subscriber(self, result, subscriber):
         if subscriber.pinky_id is None:
@@ -491,7 +537,200 @@ class FallenDetectionServer:
         dt = datetime.fromtimestamp(ts_us / 1_000_000, tz=timezone.utc)
         return dt.isoformat().replace("+00:00", "Z")
 
-    def build_positive_result(self, frame_meta, confidence):
+    def _ensure_evidence_store(self):
+        if not hasattr(self, "fall_streak_evidence_ids"):
+            self.fall_streak_evidence_ids = {}
+        if not hasattr(self, "evidence_images"):
+            self.evidence_images = {}
+        if not hasattr(self, "evidence_order"):
+            self.evidence_order = deque()
+        if not hasattr(self, "expired_evidence_ids"):
+            self.expired_evidence_ids = set()
+        if not hasattr(self, "evidence_lock"):
+            self.evidence_lock = threading.Lock()
+
+    @staticmethod
+    def _evidence_id_part(value):
+        text = str(value or "unknown").strip() or "unknown"
+        safe = "".join(char if char.isalnum() else "_" for char in text)
+        parts = [part for part in safe.split("_") if part]
+        return "_".join(parts) or "unknown"
+
+    def _evict_expired_evidence(self, now=None):
+        self._ensure_evidence_store()
+        now = time.monotonic() if now is None else now
+
+        while self.evidence_order:
+            evidence_id = self.evidence_order[0]
+            evidence = self.evidence_images.get(evidence_id)
+            if evidence is None:
+                self.evidence_order.popleft()
+                continue
+            if now - evidence.created_at_monotonic <= EVIDENCE_RETENTION_SEC:
+                break
+            self.evidence_order.popleft()
+            self.evidence_images.pop(evidence_id, None)
+            self.expired_evidence_ids.add(evidence_id)
+
+        while len(self.evidence_images) > EVIDENCE_RETENTION_MAX_ITEMS and self.evidence_order:
+            evidence_id = self.evidence_order.popleft()
+            if self.evidence_images.pop(evidence_id, None) is not None:
+                self.expired_evidence_ids.add(evidence_id)
+
+    def create_evidence_image(self, result, frame_meta, annotated_frame, detections=None):
+        if annotated_frame is None:
+            return None
+
+        self._ensure_evidence_store()
+        try:
+            encoded_ok, encoded_image = cv2.imencode(".jpg", annotated_frame)
+        except Exception as e:
+            print(f"[EVIDENCE] Image encode error: {e}")
+            return None
+
+        if not encoded_ok:
+            return None
+
+        shape = getattr(annotated_frame, "shape", None)
+        if not shape or len(shape) < 2:
+            return None
+
+        image_height_px = int(shape[0])
+        image_width_px = int(shape[1])
+        if image_height_px <= 0 or image_width_px <= 0:
+            return None
+
+        image_bytes = encoded_image.tobytes()
+        evidence_source_id = self._evidence_id_part(
+            result.get("pinky_id") or frame_meta.get("stream_name")
+        )
+        evidence_image_id = f"fall_evidence_{evidence_source_id}_{int(result['result_seq'])}"
+        evidence = EvidenceImage(
+            evidence_image_id=evidence_image_id,
+            result_seq=int(result["result_seq"]),
+            pinky_id=result.get("pinky_id"),
+            frame_id=str(result["frame_id"]),
+            frame_ts=str(result["frame_ts"]),
+            image_format="jpeg",
+            image_encoding="base64",
+            image_data=b64encode(image_bytes).decode("ascii"),
+            image_width_px=image_width_px,
+            image_height_px=image_height_px,
+            detections=list(detections or []),
+            created_at_monotonic=time.monotonic(),
+        )
+
+        with self.evidence_lock:
+            self._evict_expired_evidence(evidence.created_at_monotonic)
+            self.evidence_images[evidence_image_id] = evidence
+            self.evidence_order.append(evidence_image_id)
+            self._evict_expired_evidence(evidence.created_at_monotonic)
+
+        return evidence_image_id
+
+    def attach_evidence_to_result(self, result, frame_meta, annotated_frame, detections=None):
+        self._ensure_evidence_store()
+        if not result.get("alert_candidate"):
+            return result
+
+        streak_key = result.get("pinky_id") or frame_meta.get("stream_name")
+        if streak_key in self.fall_streak_evidence_ids:
+            result["alert_candidate"] = False
+            return result
+
+        evidence_image_id = self.create_evidence_image(
+            result,
+            frame_meta,
+            annotated_frame,
+            detections=detections,
+        )
+        self.fall_streak_evidence_ids[streak_key] = evidence_image_id or ""
+
+        result["evidence_image_id"] = evidence_image_id
+        result["evidence_image_available"] = bool(evidence_image_id)
+        return result
+
+    def query_evidence_image_payload(self, payload):
+        self._ensure_evidence_store()
+        payload = payload or {}
+        evidence_image_id = str(payload.get("evidence_image_id") or "").strip()
+        if not evidence_image_id:
+            return {
+                "result_code": "INVALID_REQUEST",
+                "result_message": "evidence_image_id is required.",
+                "evidence_image_id": evidence_image_id,
+            }
+
+        with self.evidence_lock:
+            self._evict_expired_evidence()
+            evidence = self.evidence_images.get(evidence_image_id)
+
+        if evidence is None:
+            result_code = (
+                "EXPIRED"
+                if evidence_image_id in self.expired_evidence_ids
+                else "NOT_FOUND"
+            )
+            return {
+                "result_code": result_code,
+                "result_message": (
+                    "evidence image expired"
+                    if result_code == "EXPIRED"
+                    else "evidence image not found"
+                ),
+                "evidence_image_id": evidence_image_id,
+            }
+
+        requested_result_seq = payload.get("result_seq")
+        if requested_result_seq not in (None, ""):
+            try:
+                requested_result_seq = int(requested_result_seq)
+            except (TypeError, ValueError):
+                return {
+                    "result_code": "INVALID_REQUEST",
+                    "result_message": "result_seq must be an integer.",
+                    "evidence_image_id": evidence_image_id,
+                }
+            if requested_result_seq != evidence.result_seq:
+                return {
+                    "result_code": "NOT_FOUND",
+                    "result_message": "evidence image not found",
+                    "evidence_image_id": evidence_image_id,
+                }
+
+        requested_pinky_id = payload.get("pinky_id")
+        if requested_pinky_id not in (None, "") and str(requested_pinky_id) != str(
+            evidence.pinky_id
+        ):
+            return {
+                "result_code": "NOT_FOUND",
+                "result_message": "evidence image not found",
+                "evidence_image_id": evidence_image_id,
+                "result_seq": evidence.result_seq,
+            }
+
+        return {
+            "result_code": "OK",
+            "result_message": None,
+            "evidence_image_id": evidence.evidence_image_id,
+            "result_seq": evidence.result_seq,
+            "frame_id": evidence.frame_id,
+            "frame_ts": evidence.frame_ts,
+            "image_format": evidence.image_format,
+            "image_encoding": evidence.image_encoding,
+            "image_data": evidence.image_data,
+            "image_width_px": evidence.image_width_px,
+            "image_height_px": evidence.image_height_px,
+            "detections": list(evidence.detections),
+        }
+
+    def build_positive_result(
+        self,
+        frame_meta,
+        confidence,
+        annotated_frame=None,
+        detections=None,
+    ):
         stream_name = frame_meta["stream_name"]
         pinky_id = self.stream_name_to_pinky_id(stream_name)
         now = time.monotonic()
@@ -503,7 +742,7 @@ class FallenDetectionServer:
 
         self.result_seq = (self.result_seq + 1) & 0xFFFFFFFF or 1
 
-        return {
+        result = {
             "result_seq": self.result_seq,
             "pinky_id": pinky_id,
             "frame_id": str(frame_meta["frame_id"]),
@@ -515,12 +754,21 @@ class FallenDetectionServer:
             "evidence_image_id": None,
             "evidence_image_available": False,
         }
+        self.attach_evidence_to_result(
+            result,
+            frame_meta,
+            annotated_frame,
+            detections=detections,
+        )
+        return result
 
     def clear_fall_streak(self, frame_meta):
         stream_name = frame_meta["stream_name"]
         pinky_id = self.stream_name_to_pinky_id(stream_name)
         streak_key = pinky_id or stream_name
         self.fall_streak_start_monotonic.pop(streak_key, None)
+        self._ensure_evidence_store()
+        self.fall_streak_evidence_ids.pop(streak_key, None)
 
     def close_subscriber(self):
         with self.tcp_lock:
@@ -539,10 +787,31 @@ class FallenDetectionServer:
     def decode_udp_image(jpeg_bytes):
         return cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
 
+    @staticmethod
+    def _box_xyxy(box):
+        raw_xyxy = getattr(box, "xyxy", None)
+        if raw_xyxy is None:
+            return None
+
+        coords = raw_xyxy[0]
+        if hasattr(coords, "tolist"):
+            coords = coords.tolist()
+
+        try:
+            values = [
+                int(round(float(value.item() if hasattr(value, "item") else value)))
+                for value in list(coords)[:4]
+            ]
+        except (TypeError, ValueError):
+            return None
+
+        return values if len(values) == 4 else None
+
     def detect_fall(self, frame):
         result = self.model(frame, verbose=False)[0]
         fall_detected = False
         best_confidence = 0.0
+        detections = []
 
         if result.boxes is not None:
             for box in result.boxes:
@@ -550,9 +819,19 @@ class FallenDetectionServer:
 
                 if cls_id == FALL_CLASS_ID:
                     fall_detected = True
-                    best_confidence = max(best_confidence, float(box.conf[0].item()))
+                    confidence = float(box.conf[0].item())
+                    best_confidence = max(best_confidence, confidence)
+                    bbox_xyxy = self._box_xyxy(box)
+                    if bbox_xyxy is not None:
+                        detections.append(
+                            {
+                                "class_name": "fall",
+                                "confidence": confidence,
+                                "bbox_xyxy": bbox_xyxy,
+                            }
+                        )
 
-        return fall_detected, best_confidence, result.plot()
+        return fall_detected, best_confidence, result.plot(), detections
 
     def run(self):
         """
@@ -577,10 +856,17 @@ class FallenDetectionServer:
                     print(f"[UDP] Failed to decode frame: stream={frame_meta['stream_name']}")
                     continue
 
-                fall_detected, confidence, visualized_frame = self.detect_fall(frame)
+                fall_detected, confidence, visualized_frame, detections = self.detect_fall(
+                    frame
+                )
 
                 if fall_detected:
-                    result = self.build_positive_result(frame_meta, confidence)
+                    result = self.build_positive_result(
+                        frame_meta,
+                        confidence,
+                        annotated_frame=visualized_frame,
+                        detections=detections,
+                    )
                     if result["alert_candidate"]:
                         self.publish_fall_result(result)
                 else:

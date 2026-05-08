@@ -27,6 +27,7 @@ from ui.utils.network.service_clients import (
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.admin_common import (
     StatusChip,
+    battery_text as _battery_text,
     display_text as _display,
     operator_datetime_text as _datetime,
 )
@@ -344,7 +345,7 @@ class RobotBoardCard(QFrame):
             ("지원 기능", capabilities),
             ("현재 작업", current_task),
             ("위치", location),
-            ("배터리", _display(battery, "배터리 미수신")),
+            ("배터리", _battery_text(battery)),
             ("마지막 수신", last_seen),
         )
         for row in rows:

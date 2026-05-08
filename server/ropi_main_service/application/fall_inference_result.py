@@ -165,23 +165,28 @@ class FallInferenceResultProcessor:
         if self.task_event_publisher is None:
             return
 
+        payload = {
+            "source": "FALL_ALERT",
+            "task_id": alert_response.get("task_id"),
+            "task_type": "PATROL",
+            "task_status": alert_response.get("task_status"),
+            "phase": alert_response.get("phase"),
+            "assigned_robot_id": alert_response.get("assigned_robot_id"),
+            "latest_reason_code": alert_response.get("latest_reason_code")
+            or FALL_DETECTED_REASON,
+            "result_code": alert_response.get("result_code"),
+            "result_message": alert_response.get("result_message")
+            or FALL_RESPONSE_MESSAGE,
+            "cancel_requested": None,
+            "cancellable": alert_response.get("cancellable", True),
+        }
+        fall_alert = alert_response.get("fall_alert")
+        if isinstance(fall_alert, dict):
+            payload["fall_alert"] = dict(fall_alert)
+
         await self.task_event_publisher.publish(
             "TASK_UPDATED",
-            {
-                "source": "FALL_ALERT",
-                "task_id": alert_response.get("task_id"),
-                "task_type": "PATROL",
-                "task_status": alert_response.get("task_status"),
-                "phase": alert_response.get("phase"),
-                "assigned_robot_id": alert_response.get("assigned_robot_id"),
-                "latest_reason_code": alert_response.get("latest_reason_code")
-                or FALL_DETECTED_REASON,
-                "result_code": alert_response.get("result_code"),
-                "result_message": alert_response.get("result_message")
-                or FALL_RESPONSE_MESSAGE,
-                "cancel_requested": None,
-                "cancellable": alert_response.get("cancellable", True),
-            },
+            payload,
         )
 
     @staticmethod

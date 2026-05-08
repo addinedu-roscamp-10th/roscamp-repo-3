@@ -131,6 +131,80 @@ def test_task_monitor_page_tracks_patrol_events_and_fall_marker():
         page.close()
 
 
+def test_task_monitor_page_enables_evidence_action_from_task_updated_fall_alert():
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+
+    try:
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "2001",
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_FALL_RESPONSE",
+                    "assigned_robot_id": "pinky3",
+                    "cancellable": True,
+                    "fall_alert": {
+                        "alert_id": "17",
+                        "alert_type": "FALL_DETECTED",
+                        "result_seq": 541,
+                        "frame_id": "front_cam_frame_541",
+                        "evidence_image_id": "fall_evidence_pinky3_541",
+                        "evidence_image_available": True,
+                        "zone_name": "3층 복도",
+                        "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                    },
+                },
+            }
+        )
+
+        assert page.fall_alert_panel.isHidden() is False
+        assert page.evidence_image_id_label.text() == "fall_evidence_pinky3_541"
+        assert page.evidence_image_btn.isEnabled() is True
+        assert page.resume_patrol_btn.isEnabled() is True
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_task_monitor_page_requires_explicit_evidence_available_flag():
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+
+    try:
+        page.apply_stream_event(
+            {
+                "event_type": "ALERT_CREATED",
+                "payload": {
+                    "task_id": "2001",
+                    "alert_id": "17",
+                    "result_seq": 541,
+                    "frame_id": "frame-541",
+                    "evidence_image_id": "fall_evidence_pinky3_541",
+                    "zone_name": "3층 복도",
+                    "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                },
+            }
+        )
+
+        assert page.fall_alert_panel.isHidden() is False
+        assert page.evidence_image_id_label.text() == "fall_evidence_pinky3_541"
+        assert page.evidence_image_btn.isEnabled() is False
+        assert page.evidence_status_label.isHidden() is False
+        assert page.evidence_status_label.text() == "증거사진을 사용할 수 없습니다."
+    finally:
+        page.shutdown()
+        page.close()
+
+
 def test_task_monitor_page_exposes_cancel_action_by_task_type_and_status(monkeypatch):
     _app()
 
