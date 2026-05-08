@@ -10,6 +10,9 @@ KIOSK_GUIDE_CONFIRMATION_PAGE = (
 )
 KIOSK_GUIDE_PROGRESS_PAGE = REPO_ROOT / "ui" / "kiosk_ui" / "guide_progress_page.py"
 KIOSK_STAFF_CALL_MODAL = REPO_ROOT / "ui" / "kiosk_ui" / "staff_call_modal.py"
+KIOSK_STAFF_CALL_CONTROLLER = (
+    REPO_ROOT / "ui" / "kiosk_ui" / "staff_call_controller.py"
+)
 KIOSK_SHARED_WIDGETS = REPO_ROOT / "ui" / "kiosk_ui" / "shared_widgets.py"
 
 
@@ -112,3 +115,17 @@ def test_kiosk_main_window_does_not_keep_unused_navigation_button():
 
     assert "class KioskNavigationActionButton" not in main_source
     assert 'setProperty("iconName", "navigation")' not in main_source
+
+
+def test_kiosk_staff_call_controller_is_split_from_main_window():
+    from ui.kiosk_ui.staff_call_controller import KioskStaffCallController
+
+    main_source = KIOSK_MAIN_WINDOW.read_text(encoding="utf-8")
+
+    assert KioskStaffCallController.__module__.endswith("staff_call_controller")
+    assert KIOSK_STAFF_CALL_CONTROLLER.exists()
+    assert "def _staff_call_context" not in main_source
+    assert "def _staff_call_description" not in main_source
+    assert "def _normalize_optional_id" not in main_source
+    assert "StaffCallRemoteService" not in main_source
+    assert "from uuid import uuid4" not in main_source

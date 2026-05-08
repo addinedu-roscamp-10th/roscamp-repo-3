@@ -1,6 +1,5 @@
 import sys
 from pathlib import Path
-from uuid import uuid4
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -18,9 +17,9 @@ from ui.kiosk_ui.guide_confirmation_page import KioskGuideConfirmationPage  # no
 from ui.kiosk_ui.guide_progress_page import KioskRobotGuidanceProgressPage  # noqa: E402
 from ui.kiosk_ui.home_page import KioskHomePage  # noqa: E402
 from ui.kiosk_ui.registration_page import KioskVisitorRegistrationPage  # noqa: E402
+from ui.kiosk_ui.staff_call_controller import KioskStaffCallController  # noqa: E402
 from ui.kiosk_ui.staff_call_modal import KioskStaffCallModal  # noqa: E402
 from ui.utils.core.styles import load_stylesheet  # noqa: E402
-from ui.utils.network.service_clients import StaffCallRemoteService  # noqa: E402
 
 
 KIOSK_ID = "lobby_kiosk_01"
@@ -31,8 +30,11 @@ class KioskHomeWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("ROPI Kiosk")
         self.resize(1440, 960)
-        self.staff_call_service = staff_call_service or StaffCallRemoteService()
         self.kiosk_id = KIOSK_ID
+        self.staff_call_controller = KioskStaffCallController(
+            staff_call_service=staff_call_service,
+            kiosk_id=self.kiosk_id,
+        )
         self.current_patient = None
         self.current_visitor_session = None
         self._build_ui()
@@ -120,65 +122,23 @@ class KioskHomeWindow(QMainWindow):
         self.stack.setCurrentWidget(self.progress_page)
 
     def _submit_staff_call(self, source_screen):
-        context = self._staff_call_context()
-        try:
-            response = self.staff_call_service.submit_staff_call(
-                call_type="직원 호출",
-                description=self._staff_call_description(source_screen, context),
-                idempotency_key=f"kiosk_staff_call_{uuid4().hex}",
-                visitor_id=context.get("visitor_id"),
-                member_id=context.get("member_id"),
-                kiosk_id=self.kiosk_id,
-            )
-        except Exception as exc:
-            self._show_staff_call_modal(
-                success=False,
-                message=f"서버 연결 중 오류가 발생했습니다: {exc}",
-            )
-            return
-
-        success = (response or {}).get("result_code") == "ACCEPTED"
+        result = self.staff_call_controller.submit(
+            source_screen=source_screen,
+            current_patient=self.current_patient,
+            current_visitor_session=self.current_visitor_session,
+            selected_patient=self._current_staff_call_patient(),
+        )
         self._show_staff_call_modal(
-            success=success,
-            message=(
-                (response or {}).get("result_message")
-                or ("직원이 곧 도착합니다." if success else "데스크에 문의해 주세요.")
-            ),
+            success=result.success,
+            message=result.message,
         )
 
-    def _staff_call_context(self):
-        current_patient = self.current_patient
+    def _current_staff_call_patient(self):
         if self.stack.currentWidget() is self.confirmation_page:
-            current_patient = self.confirmation_page.selected_patient
-        elif self.stack.currentWidget() is self.progress_page:
-            current_patient = self.progress_page.selected_patient
-
-        visitor_id = self._normalize_optional_id(
-            (current_patient or {}).get("visitor_id")
-            or (self.current_visitor_session or {}).get("visitor_id")
-        )
-        member_id = self._normalize_optional_id(
-            (current_patient or {}).get("member_id")
-            or (self.current_visitor_session or {}).get("member_id")
-        )
-        return {
-            "visitor_id": visitor_id,
-            "member_id": member_id,
-            "name": str((current_patient or {}).get("name") or "").strip(),
-            "room": str((current_patient or {}).get("room") or "").strip(),
-        }
-
-    def _staff_call_description(self, source_screen, context):
-        parts = [f"{source_screen}에서 직원 호출을 요청했습니다."]
-        if context.get("name"):
-            parts.append(f"대상={context['name']}")
-        if context.get("room"):
-            parts.append(f"호실={context['room']}")
-        if context.get("visitor_id"):
-            parts.append(f"visitor_id={context['visitor_id']}")
-        if context.get("member_id"):
-            parts.append(f"member_id={context['member_id']}")
-        return " ".join(parts)
+            return self.confirmation_page.selected_patient
+        if self.stack.currentWidget() is self.progress_page:
+            return self.progress_page.selected_patient
+        return None
 
     def _show_staff_call_modal(self, *, success, message):
         self._sync_staff_call_modal_geometry()
@@ -191,19 +151,6 @@ class KioskHomeWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._sync_staff_call_modal_geometry()
-
-    @staticmethod
-    def _normalize_optional_id(value):
-        if value is None:
-            return None
-        raw = str(value).strip()
-        if not raw:
-            return None
-        try:
-            normalized = int(raw)
-        except (TypeError, ValueError):
-            return None
-        return normalized if normalized > 0 else None
 
 
 __all__ = ["KioskHomeWindow", "KioskVisitorRegistrationPage", "load_stylesheet"]
