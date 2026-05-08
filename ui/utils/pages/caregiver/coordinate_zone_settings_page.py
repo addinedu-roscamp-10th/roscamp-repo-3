@@ -30,6 +30,7 @@ from ui.utils.pages.caregiver.coordinate_boundary_editing import (
     selected_boundary_vertex,
 )
 from ui.utils.pages.caregiver.coordinate_goal_pose_editing import (
+    GoalPoseEditorController,
     build_goal_pose_save_payload,
     build_goal_pose_update_payload,
     goal_pose_from_save_response,
@@ -292,6 +293,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.selected_operation_zone_boundary_vertex_index = None
         self._syncing_operation_zone_form = False
         self._syncing_operation_zone_boundary_form = False
+        self.goal_pose_editor = GoalPoseEditorController()
         self.selected_goal_pose = None
         self.selected_goal_pose_index = None
         self.goal_pose_mode = None
@@ -339,6 +341,48 @@ class CoordinateZoneSettingsPage(QWidget):
         self._build_shortcuts()
         self._install_shortcut_event_filters()
         self._sync_shortcuts_enabled_state()
+
+    @property
+    def selected_goal_pose(self):
+        return self.goal_pose_editor.selected_row
+
+    @selected_goal_pose.setter
+    def selected_goal_pose(self, value):
+        self.goal_pose_editor.selected_row = (
+            dict(value) if isinstance(value, dict) else value
+        )
+
+    @property
+    def selected_goal_pose_index(self):
+        return self.goal_pose_editor.selected_index
+
+    @selected_goal_pose_index.setter
+    def selected_goal_pose_index(self, value):
+        self.goal_pose_editor.selected_index = value
+
+    @property
+    def goal_pose_mode(self):
+        return self.goal_pose_editor.mode
+
+    @goal_pose_mode.setter
+    def goal_pose_mode(self, value):
+        self.goal_pose_editor.mode = value
+
+    @property
+    def goal_pose_dirty(self):
+        return self.goal_pose_editor.dirty
+
+    @goal_pose_dirty.setter
+    def goal_pose_dirty(self, value):
+        self.goal_pose_editor.dirty = bool(value)
+
+    @property
+    def _syncing_goal_pose_form(self):
+        return self.goal_pose_editor.syncing_form
+
+    @_syncing_goal_pose_form.setter
+    def _syncing_goal_pose_form(self, value):
+        self.goal_pose_editor.syncing_form = bool(value)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -1760,15 +1804,11 @@ class CoordinateZoneSettingsPage(QWidget):
     def select_goal_pose(self, row_index):
         self._capture_current_form_to_draft()
         try:
-            row_index = int(row_index)
-            goal_pose = self.goal_pose_rows[row_index]
+            goal_pose = self.goal_pose_editor.select(row_index, self.goal_pose_rows)
         except (IndexError, TypeError, ValueError):
             return
 
         self.selected_edit_type = "goal_pose"
-        self.goal_pose_mode = "edit"
-        self.selected_goal_pose_index = row_index
-        self.selected_goal_pose = dict(goal_pose)
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(False)
@@ -1779,15 +1819,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_mode_label.setText("목표 좌표 편집 모드")
         self._clear_patrol_overlay()
         self._set_goal_pose_form(goal_pose, mode="edit")
-        self.goal_pose_dirty = False
         self._sync_goal_pose_save_state()
 
     def start_goal_pose_create(self):
         self._capture_current_form_to_draft()
         self.selected_edit_type = "goal_pose"
-        self.goal_pose_mode = "create"
-        self.selected_goal_pose = None
-        self.selected_goal_pose_index = None
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(False)
@@ -1798,19 +1834,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_mode_label.setText("목표 좌표 생성 모드")
         self._clear_patrol_overlay()
         self._set_goal_pose_form(
-            {
-                "goal_pose_id": "",
-                "zone_id": None,
-                "purpose": "DESTINATION",
-                "pose_x": 0.0,
-                "pose_y": 0.0,
-                "pose_yaw": 0.0,
-                "frame_id": self._active_map_frame_id(),
-                "is_enabled": True,
-            },
+            self.goal_pose_editor.start_create(frame_id=self._active_map_frame_id()),
             mode="create",
         )
-        self.goal_pose_dirty = False
         self.validation_message_label.setText(
             "새 목표 좌표 ID와 위치를 입력하세요."
         )
@@ -3480,9 +3506,10 @@ class CoordinateZoneSettingsPage(QWidget):
             self.goal_pose_zone_combo.blockSignals(False)
 
     def _mark_goal_pose_dirty(self):
-        if self._syncing_goal_pose_form or self.selected_edit_type != "goal_pose":
+        if not self.goal_pose_editor.mark_dirty(
+            selected_edit_type=self.selected_edit_type,
+        ):
             return
-        self.goal_pose_dirty = True
         self._clear_failed_coordinate_error_for_selected_row()
         self.validation_message_label.setText("목표 좌표 변경 사항이 저장 전입니다.")
         self._sync_goal_pose_overlay()
@@ -3526,10 +3553,8 @@ class CoordinateZoneSettingsPage(QWidget):
             return
 
         self._replace_goal_pose_row(updated_goal_pose)
-        self.selected_goal_pose = dict(updated_goal_pose)
-        self.goal_pose_mode = "edit"
+        self.goal_pose_editor.apply_saved_row(updated_goal_pose)
         self._set_goal_pose_form(updated_goal_pose, mode="edit")
-        self.goal_pose_dirty = False
         self.validation_message_label.setText("목표 좌표를 저장했습니다.")
         self._sync_goal_pose_save_state()
 
