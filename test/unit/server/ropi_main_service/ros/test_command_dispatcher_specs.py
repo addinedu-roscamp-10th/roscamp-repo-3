@@ -1,4 +1,5 @@
 from server.ropi_main_service.ros.command_dispatcher import (
+    ACTION_CLIENT_SPECS,
     ACTION_COMMAND_SPECS,
     SERVICE_COMMAND_SPECS,
 )
@@ -47,3 +48,21 @@ def test_service_command_specs_define_ros_service_contracts():
     assert guide.pinky_id_getter == "_get_guide_pinky_id"
     assert guide.request_builder == "_build_guide_command_request"
     assert guide.service_name_builder == "_build_guide_command_service_name"
+
+
+def test_action_client_specs_define_cancel_and_feedback_client_order():
+    assert [spec.client_name for spec in ACTION_CLIENT_SPECS] == [
+        "navigation",
+        "manipulation",
+        "patrol",
+    ]
+    assert [spec.client_attr for spec in ACTION_CLIENT_SPECS] == [
+        "goal_pose_action_client",
+        "manipulation_action_client",
+        "patrol_path_action_client",
+    ]
+    assert [spec.required for spec in ACTION_CLIENT_SPECS] == [
+        True,
+        False,
+        False,
+    ]

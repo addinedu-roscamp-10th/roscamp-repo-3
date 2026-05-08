@@ -35,6 +35,30 @@ class ServiceCommandSpec:
     missing_client_error_message: str
 
 
+@dataclass(frozen=True)
+class ActionClientSpec:
+    client_attr: str
+    client_name: str
+    required: bool = False
+
+
+ACTION_CLIENT_SPECS = (
+    ActionClientSpec(
+        client_attr="goal_pose_action_client",
+        client_name="navigation",
+        required=True,
+    ),
+    ActionClientSpec(
+        client_attr="manipulation_action_client",
+        client_name="manipulation",
+    ),
+    ActionClientSpec(
+        client_attr="patrol_path_action_client",
+        client_name="patrol",
+    ),
+)
+
+
 ACTION_COMMAND_SPECS = {
     "navigate_to_goal": ActionCommandSpec(
         client_attr="goal_pose_action_client",
@@ -321,36 +345,15 @@ class RosServiceCommandDispatcher:
             error_message="cancel_action command requires task_id.",
         )
         action_name = self._get_optional_identifier(payload, "action_name")
-        details = []
-
-        details.append(
+        details = [
             self._cancel_goal(
-                self.goal_pose_action_client,
-                client_name="navigation",
+                action_client,
+                client_name=spec.client_name,
                 task_id=task_id,
                 action_name=action_name,
             )
-        )
-
-        if self.manipulation_action_client is not None:
-            details.append(
-                self._cancel_goal(
-                    self.manipulation_action_client,
-                    client_name="manipulation",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
-
-        if self.patrol_path_action_client is not None:
-            details.append(
-                self._cancel_goal(
-                    self.patrol_path_action_client,
-                    client_name="patrol",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
+            for spec, action_client in self._iter_action_clients()
+        ]
 
         return self._build_cancel_action_response(
             task_id=task_id,
@@ -368,30 +371,11 @@ class RosServiceCommandDispatcher:
         action_name = self._get_optional_identifier(payload, "action_name")
         feedback = []
 
-        feedback.extend(
-            self._get_latest_feedback(
-                self.goal_pose_action_client,
-                client_name="navigation",
-                task_id=task_id,
-                action_name=action_name,
-            )
-        )
-
-        if self.manipulation_action_client is not None:
+        for spec, action_client in self._iter_action_clients():
             feedback.extend(
                 self._get_latest_feedback(
-                    self.manipulation_action_client,
-                    client_name="manipulation",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
-
-        if self.patrol_path_action_client is not None:
-            feedback.extend(
-                self._get_latest_feedback(
-                    self.patrol_path_action_client,
-                    client_name="patrol",
+                    action_client,
+                    client_name=spec.client_name,
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -443,30 +427,11 @@ class RosServiceCommandDispatcher:
         action_name = self._get_optional_identifier(payload, "action_name")
         details = []
 
-        details.append(
-            await self._async_cancel_goal(
-                self.goal_pose_action_client,
-                client_name="navigation",
-                task_id=task_id,
-                action_name=action_name,
-            )
-        )
-
-        if self.manipulation_action_client is not None:
+        for spec, action_client in self._iter_action_clients():
             details.append(
                 await self._async_cancel_goal(
-                    self.manipulation_action_client,
-                    client_name="manipulation",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
-
-        if self.patrol_path_action_client is not None:
-            details.append(
-                await self._async_cancel_goal(
-                    self.patrol_path_action_client,
-                    client_name="patrol",
+                    action_client,
+                    client_name=spec.client_name,
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -488,30 +453,11 @@ class RosServiceCommandDispatcher:
         action_name = self._get_optional_identifier(payload, "action_name")
         feedback = []
 
-        feedback.extend(
-            self._get_latest_feedback(
-                self.goal_pose_action_client,
-                client_name="navigation",
-                task_id=task_id,
-                action_name=action_name,
-            )
-        )
-
-        if self.manipulation_action_client is not None:
+        for spec, action_client in self._iter_action_clients():
             feedback.extend(
                 self._get_latest_feedback(
-                    self.manipulation_action_client,
-                    client_name="manipulation",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
-
-        if self.patrol_path_action_client is not None:
-            feedback.extend(
-                self._get_latest_feedback(
-                    self.patrol_path_action_client,
-                    client_name="patrol",
+                    action_client,
+                    client_name=spec.client_name,
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -795,6 +741,13 @@ class RosServiceCommandDispatcher:
             partial(service_client.call, **kwargs),
         )
 
+    def _iter_action_clients(self):
+        for spec in ACTION_CLIENT_SPECS:
+            action_client = getattr(self, spec.client_attr)
+            if action_client is None and not spec.required:
+                continue
+            yield spec, action_client
+
     def _cancel_goal(self, action_client, *, client_name, **kwargs):
         cancel_goal = getattr(action_client, "cancel_goal", None)
         if cancel_goal is None:
@@ -1053,8 +1006,10 @@ class RosServiceCommandDispatcher:
 
 
 __all__ = [
+    "ACTION_CLIENT_SPECS",
     "ACTION_COMMAND_SPECS",
     "SERVICE_COMMAND_SPECS",
+    "ActionClientSpec",
     "ActionCommandSpec",
     "RosServiceCommandDispatchError",
     "RosServiceCommandDispatcher",
