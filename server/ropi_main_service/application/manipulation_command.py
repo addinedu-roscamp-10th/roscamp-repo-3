@@ -8,6 +8,10 @@ from server.ropi_main_service.application.delivery_config import (
     DEFAULT_DELIVERY_ROBOT_SLOT_ID,
     get_delivery_runtime_config,
 )
+from server.ropi_main_service.application.manipulation_timeout import (
+    DEFAULT_MANIPULATION_ACTION_TIMEOUT_SEC,
+    get_manipulation_action_timeout_sec,
+)
 from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
 
 
@@ -16,7 +20,7 @@ ALLOWED_TRANSFER_DIRECTIONS = {
     "TO_ROBOT",
     "FROM_ROBOT",
 }
-DEFAULT_COMMAND_TIMEOUT_SEC = 30.0
+DEFAULT_COMMAND_TIMEOUT_SEC = DEFAULT_MANIPULATION_ACTION_TIMEOUT_SEC
 
 
 class ManipulationCommandService:
@@ -25,12 +29,16 @@ class ManipulationCommandService:
         command_client=None,
         runtime_config=None,
         command_execution_recorder=None,
-        command_timeout_sec=DEFAULT_COMMAND_TIMEOUT_SEC,
+        command_timeout_sec=None,
     ):
         self.command_client = command_client or UnixDomainSocketCommandClient()
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.command_execution_recorder = command_execution_recorder or CommandExecutionRecorder()
-        self.command_timeout_sec = float(command_timeout_sec)
+        self.command_timeout_sec = (
+            get_manipulation_action_timeout_sec()
+            if command_timeout_sec is None
+            else float(command_timeout_sec)
+        )
 
     def execute(
         self,

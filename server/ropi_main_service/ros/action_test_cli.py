@@ -6,6 +6,10 @@ from server.ropi_main_service.application.goal_pose import (
     normalize_goal_pose_spec,
     parse_goal_pose_string,
 )
+from server.ropi_main_service.application.manipulation_timeout import (
+    DEFAULT_MANIPULATION_ACTION_TIMEOUT_SEC,
+    get_manipulation_action_timeout_sec,
+)
 from server.ropi_main_service.ipc.uds_client import (
     RosServiceCommandError,
     UnixDomainSocketCommandClient,
@@ -14,7 +18,7 @@ from server.ropi_main_service.ipc.uds_client import (
 
 DEFAULT_NAVIGATION_TIMEOUT_SEC = 120
 DEFAULT_NAVIGATION_IPC_TIMEOUT_BUFFER_SEC = 2.0
-DEFAULT_ARM_IPC_TIMEOUT_SEC = 30.0
+DEFAULT_ARM_IPC_TIMEOUT_SEC = DEFAULT_MANIPULATION_ACTION_TIMEOUT_SEC
 DEFAULT_STATUS_IPC_TIMEOUT_SEC = 2.0
 ALLOWED_NAV_PHASES = (
     "DELIVERY_PICKUP",
@@ -83,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     arm_parser.add_argument(
         "--ipc-timeout-sec",
         type=float,
-        default=DEFAULT_ARM_IPC_TIMEOUT_SEC,
+        default=get_manipulation_action_timeout_sec(),
     )
     arm_parser.set_defaults(handler=_run_arm)
 

@@ -97,7 +97,7 @@ def test_execute_sends_if_del_003_command_with_phase1_default_slot_id():
                     "robot_slot_id": FIXED_PHASE1_ROBOT_SLOT_ID,
                 },
             },
-            "timeout": 30.0,
+            "timeout": 90.0,
         }
     ]
     assert len(command_execution_recorder.specs) == 1
@@ -142,7 +142,7 @@ def test_async_execute_uses_async_ros_service_command_client():
                     "robot_slot_id": FIXED_PHASE1_ROBOT_SLOT_ID,
                 },
             },
-            "timeout": 30.0,
+            "timeout": 90.0,
         }
     ]
     assert command_execution_recorder.specs[0].command_type == "ARM_MANIPULATION"
@@ -165,6 +165,25 @@ def test_execute_uses_runtime_config_robot_slot_id():
     )
 
     assert command_client.calls[0]["payload"]["goal"]["robot_slot_id"] == "slot_b2"
+
+
+def test_execute_uses_env_manipulation_action_timeout(monkeypatch):
+    monkeypatch.setenv("ROPI_MANIPULATION_ACTION_TIMEOUT_SEC", "123.5")
+    command_client = FakeCommandClient()
+    service = ManipulationCommandService(
+        command_client=command_client,
+        command_execution_recorder=RecordingCommandExecutionRecorder(),
+    )
+
+    service.execute(
+        arm_id="arm1",
+        task_id="task_delivery_001",
+        transfer_direction="TO_ROBOT",
+        item_id="med_acetaminophen_500",
+        quantity=2,
+    )
+
+    assert command_client.calls[0]["timeout"] == 123.5
 
 
 def test_execute_rejects_invalid_transfer_direction():

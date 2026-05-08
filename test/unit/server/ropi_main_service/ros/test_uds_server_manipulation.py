@@ -86,7 +86,7 @@ def test_ros_service_uds_server_dispatches_execute_manipulation_command(tmp_path
                 "quantity": 2,
                 "robot_slot_id": "robot_slot_a1",
             },
-            "result_wait_timeout_sec": 30.0,
+            "result_wait_timeout_sec": 90.0,
         }
     ]
     assert response == {

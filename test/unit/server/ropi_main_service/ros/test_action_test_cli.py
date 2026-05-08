@@ -110,7 +110,7 @@ def test_action_test_cli_arm_sends_single_manipulation_action_without_pinky():
                     "robot_slot_id": "robot_slot_a1",
                 },
             },
-            "timeout": 30.0,
+            "timeout": 90.0,
         }
     ]
     assert json.loads(stdout.getvalue()) == {"result_code": "SUCCESS", "result_message": "ok"}
