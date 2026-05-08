@@ -310,7 +310,6 @@ class RobotBoardCard(QFrame):
         self.setObjectName("homeRobotCard")
 
         robot_id = _display(robot.get("robot_id") or robot.get("robot_name"))
-        display_name = _display(robot.get("display_name"), robot_id)
         robot_type = _display(robot.get("robot_type") or robot.get("robot_type_name"))
         capabilities = _capabilities_text(robot.get("capabilities"))
         status = _display(robot.get("connection_status") or robot.get("status"))
@@ -332,7 +331,7 @@ class RobotBoardCard(QFrame):
         root.setSpacing(10)
 
         top = QHBoxLayout()
-        name = QLabel(f"{display_name} · {robot_id}")
+        name = QLabel(robot_id)
         name.setObjectName("homeRobotTitle")
         chip = StatusChip(status, chip_type)
 

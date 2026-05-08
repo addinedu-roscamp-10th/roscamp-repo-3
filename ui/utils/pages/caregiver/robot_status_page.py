@@ -79,7 +79,11 @@ class RobotStatusCard(QFrame):
     def __init__(self, robot: dict):
         super().__init__()
         self.robot_id = robot.get("robot_id")
-        self.setObjectName("card")
+        self.setObjectName("robotStatusCard")
+        self.setProperty(
+            "connection_status",
+            str(robot.get("connection_status") or "").lower(),
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
@@ -96,20 +100,17 @@ class RobotStatusCard(QFrame):
         title_row.addStretch()
         title_row.addWidget(chip)
 
-        display_name = QLabel(_display(robot.get("display_name")))
-        display_name.setObjectName("mutedText")
-
         details = [
             ("구분", _display(robot.get("robot_type"))),
             ("지원 기능", _capabilities_text(robot.get("capabilities"))),
             ("현재 작업", _display(robot.get("current_task_id"))),
             ("단계", _display(robot.get("current_phase"))),
+            ("위치", _display(robot.get("current_location"))),
             ("배터리", _battery_text(robot.get("battery_percent"))),
             ("마지막 수신", _datetime(robot.get("last_seen_at"))),
         ]
 
         layout.addLayout(title_row)
-        layout.addWidget(display_name)
         for key, value in details:
             layout.addWidget(KeyValueRow(key, value))
 
@@ -164,13 +165,28 @@ class RobotStatusPage(QWidget):
         self.card_grid.setVerticalSpacing(16)
 
         cards_wrap = QFrame()
-        cards_wrap.setObjectName("card")
+        cards_wrap.setObjectName("robotCardsPanel")
+        self.robot_cards_panel = cards_wrap
         cards_layout = QVBoxLayout(cards_wrap)
         cards_layout.setContentsMargins(20, 20, 20, 20)
         cards_layout.setSpacing(14)
         cards_title = QLabel("로봇 카드")
         cards_title.setObjectName("sectionTitle")
         cards_layout.addWidget(cards_title)
+        self.location_panel = QFrame()
+        self.location_panel.setObjectName("robotLocationPanel")
+        self.location_panel.setMinimumHeight(180)
+        location_layout = QVBoxLayout(self.location_panel)
+        location_layout.setContentsMargins(18, 18, 18, 18)
+        location_layout.setSpacing(12)
+        location_title = QLabel("로봇 위치 요약")
+        location_title.setObjectName("sectionTitle")
+        self.location_grid = QGridLayout()
+        self.location_grid.setHorizontalSpacing(12)
+        self.location_grid.setVerticalSpacing(10)
+        location_layout.addWidget(location_title)
+        location_layout.addLayout(self.location_grid, 1)
+        cards_layout.addWidget(self.location_panel)
         cards_layout.addLayout(self.card_grid)
 
         bottom_row = QHBoxLayout()
@@ -206,22 +222,6 @@ class RobotStatusPage(QWidget):
         detail_layout.addWidget(detail_title)
         detail_layout.addWidget(self.detail_list)
 
-        map_card = QFrame()
-        map_card.setObjectName("noticeCard")
-        map_layout = QVBoxLayout(map_card)
-        map_layout.setContentsMargins(20, 20, 20, 20)
-        map_layout.setSpacing(10)
-        map_title = QLabel("맵/위치 시각화")
-        map_title.setObjectName("sectionTitle")
-        map_body = QLabel(
-            "현재 phase 1에서는 좌표 텍스트를 표시합니다. 지도 기반 위치 시각화는 "
-            "좌표/구역 설정의 맵 렌더링 컴포넌트를 재사용해 확장합니다."
-        )
-        map_body.setObjectName("mutedText")
-        map_body.setWordWrap(True)
-        map_layout.addWidget(map_title)
-        map_layout.addWidget(map_body)
-
         composition_card = QFrame()
         composition_card.setObjectName("noticeCard")
         composition_layout = QVBoxLayout(composition_card)
@@ -233,7 +233,6 @@ class RobotStatusPage(QWidget):
         composition_layout.addWidget(composition_title)
 
         side_column.addWidget(detail_card)
-        side_column.addWidget(map_card)
         side_column.addWidget(composition_card)
         side_column.addStretch()
 
@@ -282,6 +281,7 @@ class RobotStatusPage(QWidget):
 
         self._apply_summary(summary)
         self._apply_robot_cards(self.robots)
+        self._apply_location_panel(self.robots)
         self._apply_robot_table(self.robots)
         self._apply_delivery_composition(bundle.get("delivery_composition") or [])
 
@@ -305,6 +305,24 @@ class RobotStatusPage(QWidget):
 
         for index, robot in enumerate(robots):
             self.card_grid.addWidget(RobotStatusCard(robot), index // 3, index % 3)
+
+    def _apply_location_panel(self, robots):
+        self._clear_layout(self.location_grid)
+        if not robots:
+            empty = QLabel("표시할 로봇 위치가 없습니다.")
+            empty.setObjectName("mutedText")
+            self.location_grid.addWidget(empty, 0, 0)
+            return
+
+        for index, robot in enumerate(robots):
+            robot_id = _display(robot.get("robot_id"))
+            location = _display(robot.get("current_location"), "위치 미수신")
+            row = KeyValueRow(
+                robot_id,
+                location,
+                row_object_name="robotLocationRow",
+            )
+            self.location_grid.addWidget(row, index // 2, index % 2)
 
     def _apply_robot_table(self, robots):
         self.table.setRowCount(len(robots))

@@ -152,6 +152,17 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
                     "battery_percent": 87.5,
                     "last_seen_at": "2026-05-03T12:00:00",
                     "chip_type": "red",
+                },
+                {
+                    "robot_id": "jetcobot1",
+                    "display_name": "JetCobot",
+                    "robot_type": "ARM",
+                    "capabilities": ["MANIPULATION"],
+                    "connection_status": "ONLINE",
+                    "current_location": "-",
+                    "battery_percent": None,
+                    "last_seen_at": "2026-05-03T12:01:00",
+                    "chip_type": "green",
                 }
             ]
         )
@@ -162,9 +173,12 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
             for frame in page.findChildren(QFrame)
             if frame.objectName() == "homeRobotCard"
         ]
-        assert len(cards) == 1
+        assert len(cards) == 2
         assert cards[0].property("connection_status") == "offline"
-        assert "Pinky Pro · pinky2" in labels
+        assert "pinky2" in labels
+        assert "jetcobot1" in labels
+        assert "Pinky Pro · pinky2" not in labels
+        assert "JetCobot · jetcobot1" not in labels
         assert "구분" in labels
         assert "MOBILE" in labels
         assert "지원 기능" in labels

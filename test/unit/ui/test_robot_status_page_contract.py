@@ -92,7 +92,14 @@ def test_robot_status_page_matches_phase1_layout_contract():
         assert "오프라인" in labels
         assert "주의" in labels
         assert "로봇 상세" in labels
-        assert "맵/위치 시각화" in labels
+        robot_cards_panel = page.findChild(QFrame, "robotCardsPanel")
+        location_panel = page.findChild(QFrame, "robotLocationPanel")
+        assert robot_cards_panel is not None
+        assert location_panel is not None
+        assert location_panel.parentWidget() is robot_cards_panel
+        assert location_panel.minimumHeight() >= 180
+        assert "로봇 위치 요약" in labels
+        assert "맵/위치 시각화" not in labels
         assert page.findChild(QFrame, "pageTimeCard") is not None
         assert "새로고침" in [button.text() for button in refresh_buttons]
     finally:
@@ -120,6 +127,8 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert "pinky2" in labels
         assert "ROS adapter arm_id" in labels
         assert "arm1 / arm2" in labels
+        assert "로봇 위치 요약" in labels
+        assert "x=1.2, y=0.8" in labels
         assert not any("Delivery Mobile Robot: pinky2" in text for text in labels)
         assert not any("유형/역할" in text for text in labels)
         assert not any("PICKUP_ARM" in text for text in labels)
@@ -134,6 +143,21 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert page.table.item(0, 4).text() == "ONLINE"
         assert page.table.item(0, 8).text() == "2026.05.03 12:00"
         assert "T12:00:00" not in page.table.item(0, 8).text()
+
+        robot_cards = [
+            frame
+            for frame in page.findChildren(QFrame)
+            if frame.objectName() == "robotStatusCard"
+        ]
+        assert len(robot_cards) == 2
+        first_card_labels = _label_texts(robot_cards[0])
+        second_card_labels = _label_texts(robot_cards[1])
+        assert "pinky2" in first_card_labels
+        assert "Pinky Pro" not in first_card_labels
+        assert "jetcobot1" in second_card_labels
+        assert "JetCobot" not in second_card_labels
+        assert not any("Pinky Pro · pinky2" in text for text in labels)
+        assert not any("JetCobot · jetcobot1" in text for text in labels)
 
         page.table.selectRow(1)
         page._handle_table_selection()

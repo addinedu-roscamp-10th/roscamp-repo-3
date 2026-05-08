@@ -276,6 +276,8 @@ QFrame#formCard,
 QFrame#timeCard,
 QFrame#actionCard,
 QFrame#robotStatusCard,
+QFrame#robotCardsPanel,
+QFrame#robotLocationPanel,
 QFrame#noticeCard {
     background: #FFFFFF;
     border: 1px solid #D8E0E8;
@@ -911,6 +913,12 @@ QFrame#robotStatusCard {
     background: #F8FAFC;
     border: 1px solid #D8E0E8;
     border-radius: 18px;
+}
+
+QFrame#robotLocationPanel {
+    background: #F8FAFC;
+    border: 1px solid #B9D8D3;
+    border-radius: 16px;
 }
 
 QFrame#robotMapPlaceholder,
