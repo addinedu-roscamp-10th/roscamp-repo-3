@@ -76,7 +76,7 @@ class FakeKioskVisitorRepository:
         return self.care_history_result
 
 
-def test_lookup_residents_returns_if_gui_007_shape():
+def test_lookup_residents_returns_if_gui_008_shape():
     repository = FakeKioskVisitorRepository()
     service = KioskVisitorService(repository=repository)
 
@@ -160,7 +160,7 @@ def test_register_visit_requires_privacy_consent():
     assert "visitor_id" not in result
 
 
-def test_get_care_history_returns_if_gui_009_visitor_safe_payload():
+def test_get_care_history_returns_if_gui_010_visitor_safe_payload():
     repository = FakeKioskVisitorRepository()
     service = KioskVisitorService(repository=repository)
 

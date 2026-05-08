@@ -1,12 +1,14 @@
 import math
 
-from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtCore import QPointF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainterPath, QPen
 
 from ui.utils.widgets.map_canvas import MapCanvasWidget, MapTransform
 
 
 class OperationalMapOverlay(MapCanvasWidget):
+    fall_alert_clicked = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("patrolMapOverlay")
@@ -32,6 +34,7 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.fms_route_labels = []
         self.selected_fms_route_index = None
         self._heading_drag_active = False
+        self.fall_alert_click_radius_px = 14.0
         self.status_text = "순찰 맵 미수신"
 
     def render(self, task):
@@ -378,6 +381,13 @@ class OperationalMapOverlay(MapCanvasWidget):
         self._draw_fall_alert(painter, target)
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._is_fall_alert_hit(
+            event.position()
+        ):
+            self.fall_alert_clicked.emit()
+            event.accept()
+            return
+
         if event.button() == Qt.MouseButton.LeftButton and self._is_heading_handle_hit(
             event.position()
         ):
@@ -388,6 +398,18 @@ class OperationalMapOverlay(MapCanvasWidget):
 
         self._heading_drag_active = False
         super().mousePressEvent(event)
+
+    def _is_fall_alert_hit(self, view_point):
+        if self.fall_alert_pixel_point is None:
+            return False
+        target = self.image_target_rect()
+        point = self.to_view_point(self.fall_alert_pixel_point, target)
+        if point is None:
+            return False
+        return (
+            abs(float(view_point.x()) - point.x()) <= self.fall_alert_click_radius_px
+            and abs(float(view_point.y()) - point.y()) <= self.fall_alert_click_radius_px
+        )
 
     def mouseMoveEvent(self, event):
         if self._heading_drag_active and event.buttons() & Qt.MouseButton.LeftButton:

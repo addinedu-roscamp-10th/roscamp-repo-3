@@ -1,12 +1,12 @@
 from .caregiver_repository import CaregiverRepository
 from .coordinate_config_repository import CoordinateConfigRepository
+from .delivery_task_create_repository import DeliveryTaskCreateRepository
 from .delivery_request_event_repository import DeliveryRequestEventRepository
 from .fms_config_repository import FmsConfigRepository
 from .inventory_repository import InventoryRepository
 from .guide_task_repository import GuideTaskRepository
 from .guide_task_lifecycle_repository import GuideTaskLifecycleRepository
 from .guide_task_navigation_repository import GuideTaskNavigationRepository
-from .guide_tracking_repository import GuideTrackingRepository
 from .kiosk_visitor_repository import KioskVisitorRepository
 from .patient_repository import PatientRepository
 from .patrol_task_create_repository import (
@@ -34,11 +34,11 @@ __all__ = [
     "TaskMonitorRepository",
     "DeliveryRequestRepository",
     "DeliveryRequestEventRepository",
+    "DeliveryTaskCreateRepository",
     "FmsConfigRepository",
     "GuideTaskRepository",
     "GuideTaskLifecycleRepository",
     "GuideTaskNavigationRepository",
-    "GuideTrackingRepository",
     "InventoryRepository",
     "KioskVisitorRepository",
     "PatientRepository",

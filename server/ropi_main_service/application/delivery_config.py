@@ -1,5 +1,6 @@
 import json
 import os
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,7 @@ DEFAULT_DELIVERY_DESTINATION_ARM_ROBOT_ID = "jetcobot2"
 DEFAULT_DELIVERY_ROBOT_SLOT_ID = "robot_slot_a1"
 DEFAULT_DELIVERY_NAVIGATION_TIMEOUT_SEC = 120.0
 DEFAULT_DELIVERY_GOAL_POSE_SOURCE = "db"
+DEFAULT_DELIVERY_MAP_ID = "map_test12_0506"
 DEFAULT_DELIVERY_PICKUP_GOAL_POSE_ID = "pickup_supply"
 DEFAULT_DELIVERY_RETURN_TO_DOCK_GOAL_POSE_ID = "dock_home"
 
@@ -33,6 +35,7 @@ DEFAULT_DELIVERY_RETURN_TO_DOCK_GOAL_POSE_ID = "dock_home"
 @dataclass(frozen=True)
 class DeliveryRuntimeConfig:
     pinky_id: str = DEFAULT_DELIVERY_PINKY_ID
+    map_id: str = DEFAULT_DELIVERY_MAP_ID
     pickup_arm_id: str = DEFAULT_DELIVERY_PICKUP_ARM_ID
     destination_arm_id: str = DEFAULT_DELIVERY_DESTINATION_ARM_ID
     pickup_arm_robot_id: str = DEFAULT_DELIVERY_PICKUP_ARM_ROBOT_ID
@@ -66,6 +69,7 @@ def _load_float_env(name: str, *, default: float) -> float:
 def get_delivery_runtime_config() -> DeliveryRuntimeConfig:
     return DeliveryRuntimeConfig(
         pinky_id=_load_text_env("ROPI_DELIVERY_PINKY_ID", default=DEFAULT_DELIVERY_PINKY_ID),
+        map_id=_load_text_env("ROPI_DELIVERY_MAP_ID", default=DEFAULT_DELIVERY_MAP_ID),
         pickup_arm_id=_load_text_env("ROPI_DELIVERY_PICKUP_ARM_ID", default=DEFAULT_DELIVERY_PICKUP_ARM_ID),
         destination_arm_id=_load_text_env(
             "ROPI_DELIVERY_DESTINATION_ARM_ID",
@@ -102,7 +106,7 @@ def _load_raw_env(name: str) -> str:
     return str(os.getenv(name, "")).strip()
 
 
-def get_delivery_navigation_config(*, repository=None, source=None) -> dict:
+def get_delivery_navigation_config(*, repository=None, source=None, map_id=None) -> dict:
     normalized_source = str(
         source
         or os.getenv("ROPI_DELIVERY_GOAL_POSE_SOURCE")
@@ -112,14 +116,17 @@ def get_delivery_navigation_config(*, repository=None, source=None) -> dict:
     if normalized_source == "env":
         return _get_delivery_navigation_config_from_env()
     if normalized_source == "db":
-        return _get_delivery_navigation_config_from_db(repository=repository)
+        return _get_delivery_navigation_config_from_db(
+            repository=repository,
+            map_id=map_id,
+        )
 
     raise RuntimeError(
         "ROPI_DELIVERY_GOAL_POSE_SOURCE는 'db' 또는 'env'여야 합니다."
     )
 
 
-def _get_delivery_navigation_config_from_db(*, repository=None) -> dict:
+def _get_delivery_navigation_config_from_db(*, repository=None, map_id=None) -> dict:
     if repository is None:
         from server.ropi_main_service.persistence.repositories.task_request_repository import (
             TaskRequestRepository,
@@ -127,8 +134,17 @@ def _get_delivery_navigation_config_from_db(*, repository=None) -> dict:
 
         repository = TaskRequestRepository()
 
+    target_map_id = str(
+        map_id or os.getenv("ROPI_DELIVERY_MAP_ID") or DEFAULT_DELIVERY_MAP_ID
+    ).strip()
+    get_enabled_goal_poses = repository.get_enabled_goal_poses
+    signature = inspect.signature(get_enabled_goal_poses)
+    if "map_id" in signature.parameters:
+        rows = get_enabled_goal_poses(map_id=target_map_id)
+    else:
+        rows = get_enabled_goal_poses()
     return _build_delivery_navigation_config_from_db_rows(
-        repository.get_enabled_goal_poses()
+        rows
     )
 
 

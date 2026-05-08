@@ -10,5 +10,5 @@ FROM patrol_area pa
 JOIN map_profile mp
     ON mp.map_id = pa.map_id
 WHERE pa.is_enabled = TRUE
-  AND mp.is_active = TRUE
+  AND pa.map_id = %s
 ORDER BY pa.patrol_area_name, pa.patrol_area_id

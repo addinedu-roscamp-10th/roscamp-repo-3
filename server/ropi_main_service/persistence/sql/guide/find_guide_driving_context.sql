@@ -14,4 +14,5 @@ JOIN guide_task_detail gtd
   ON gtd.task_id = t.task_id
 JOIN goal_pose gp
   ON gp.goal_pose_id = gtd.destination_goal_pose_id
+ AND gp.map_id = t.map_id
 WHERE t.task_id = %s

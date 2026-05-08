@@ -1,10 +1,16 @@
 import asyncio
+import os
 
 from server.ropi_main_service.ipc.uds_client import UnixDomainSocketCommandClient
 
 
 DEFAULT_GUIDE_PINKY_ID = "pinky1"
+DEFAULT_GUIDE_MAP_ID = "map_0504"
 DEFAULT_GUIDE_RUNTIME_TIMEOUT_SEC = 2.0
+
+
+def get_guide_map_id() -> str:
+    return os.getenv("ROPI_GUIDE_MAP_ID", DEFAULT_GUIDE_MAP_ID).strip() or DEFAULT_GUIDE_MAP_ID
 
 
 class GuideRuntimeService:
@@ -52,4 +58,9 @@ class GuideRuntimeService:
         }
 
 
-__all__ = ["DEFAULT_GUIDE_PINKY_ID", "GuideRuntimeService"]
+__all__ = [
+    "DEFAULT_GUIDE_MAP_ID",
+    "DEFAULT_GUIDE_PINKY_ID",
+    "GuideRuntimeService",
+    "get_guide_map_id",
+]

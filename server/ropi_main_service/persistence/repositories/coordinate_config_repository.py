@@ -18,7 +18,10 @@ FIND_GOAL_POSE_SQL = load_sql("coordinate_config/find_goal_pose.sql")
 FIND_MAP_PROFILE_SQL = load_sql("coordinate_config/find_map_profile.sql")
 FIND_OPERATION_ZONE_SQL = load_sql("coordinate_config/find_operation_zone.sql")
 FIND_PATROL_AREA_SQL = load_sql("coordinate_config/find_patrol_area.sql")
+INSERT_GOAL_POSE_SQL = load_sql("coordinate_config/insert_goal_pose.sql")
 INSERT_OPERATION_ZONE_SQL = load_sql("coordinate_config/insert_operation_zone.sql")
+LIST_MAP_PROFILES_SQL = load_sql("coordinate_config/list_map_profiles.sql")
+INSERT_PATROL_AREA_SQL = load_sql("coordinate_config/insert_patrol_area.sql")
 LIST_OPERATION_ZONES_SQL = load_sql("coordinate_config/list_operation_zones.sql")
 LIST_GOAL_POSES_SQL = load_sql("coordinate_config/list_goal_poses.sql")
 LIST_PATROL_AREAS_SQL = load_sql("coordinate_config/list_patrol_areas.sql")
@@ -30,6 +33,7 @@ UPDATE_OPERATION_ZONE_SQL = load_sql("coordinate_config/update_operation_zone.sq
 UPDATE_OPERATION_ZONE_BOUNDARY_SQL = load_sql(
     "coordinate_config/update_operation_zone_boundary.sql"
 )
+UPDATE_PATROL_AREA_SQL = load_sql("coordinate_config/update_patrol_area.sql")
 UPDATE_PATROL_AREA_PATH_SQL = load_sql(
     "coordinate_config/update_patrol_area_path.sql"
 )
@@ -41,6 +45,12 @@ class CoordinateConfigRepository:
 
     async def async_get_active_map_profile(self):
         return await async_fetch_one(ACTIVE_MAP_PROFILE_SQL)
+
+    def list_map_profiles(self):
+        return fetch_all(LIST_MAP_PROFILES_SQL)
+
+    async def async_list_map_profiles(self):
+        return await async_fetch_all(LIST_MAP_PROFILES_SQL)
 
     def get_map_profile(self, *, map_id):
         return fetch_one(FIND_MAP_PROFILE_SQL, (str(map_id),))
@@ -60,11 +70,11 @@ class CoordinateConfigRepository:
             (str(map_id), bool(include_disabled)),
         )
 
-    def get_operation_zone(self, *, zone_id):
-        return fetch_one(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+    def get_operation_zone(self, *, map_id, zone_id):
+        return fetch_one(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
 
-    async def async_get_operation_zone(self, *, zone_id):
-        return await async_fetch_one(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+    async def async_get_operation_zone(self, *, map_id, zone_id):
+        return await async_fetch_one(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
 
     def create_operation_zone(
         self,
@@ -89,7 +99,7 @@ class CoordinateConfigRepository:
                         bool(is_enabled),
                     ),
                 )
-                cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+                cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
                 row = cur.fetchone()
             conn.commit()
             return row
@@ -119,7 +129,7 @@ class CoordinateConfigRepository:
                     bool(is_enabled),
                 ),
             )
-            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
             return await cur.fetchone()
 
     def get_goal_poses(self, *, map_id, include_disabled=True):
@@ -133,6 +143,84 @@ class CoordinateConfigRepository:
             LIST_GOAL_POSES_SQL,
             (str(map_id), bool(include_disabled)),
         )
+
+    def get_goal_pose(self, *, goal_pose_id):
+        return fetch_one(FIND_GOAL_POSE_SQL, (str(goal_pose_id),))
+
+    async def async_get_goal_pose(self, *, goal_pose_id):
+        return await async_fetch_one(FIND_GOAL_POSE_SQL, (str(goal_pose_id),))
+
+    def create_goal_pose(
+        self,
+        *,
+        map_id,
+        goal_pose_id,
+        zone_id,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled=True,
+    ):
+        conn = get_connection()
+        try:
+            conn.begin()
+            with conn.cursor() as cur:
+                cur.execute(
+                    INSERT_GOAL_POSE_SQL,
+                    (
+                        str(goal_pose_id),
+                        str(map_id),
+                        None if zone_id is None else str(zone_id),
+                        str(purpose),
+                        float(pose_x),
+                        float(pose_y),
+                        float(pose_yaw),
+                        str(frame_id),
+                        bool(is_enabled),
+                    ),
+                )
+                cur.execute(FIND_GOAL_POSE_SQL, (str(goal_pose_id),))
+                row = cur.fetchone()
+            conn.commit()
+            return row
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    async def async_create_goal_pose(
+        self,
+        *,
+        map_id,
+        goal_pose_id,
+        zone_id,
+        purpose,
+        pose_x,
+        pose_y,
+        pose_yaw,
+        frame_id,
+        is_enabled=True,
+    ):
+        async with async_transaction() as cur:
+            await cur.execute(
+                INSERT_GOAL_POSE_SQL,
+                (
+                    str(goal_pose_id),
+                    str(map_id),
+                    None if zone_id is None else str(zone_id),
+                    str(purpose),
+                    float(pose_x),
+                    float(pose_y),
+                    float(pose_yaw),
+                    str(frame_id),
+                    bool(is_enabled),
+                ),
+            )
+            await cur.execute(FIND_GOAL_POSE_SQL, (str(goal_pose_id),))
+            return await cur.fetchone()
 
     def update_goal_pose(
         self,
@@ -233,6 +321,137 @@ class CoordinateConfigRepository:
             LIST_PATROL_AREAS_SQL,
             (str(map_id), bool(include_disabled)),
         )
+
+    def get_patrol_area(self, *, patrol_area_id):
+        return fetch_one(FIND_PATROL_AREA_SQL, (str(patrol_area_id),))
+
+    async def async_get_patrol_area(self, *, patrol_area_id):
+        return await async_fetch_one(FIND_PATROL_AREA_SQL, (str(patrol_area_id),))
+
+    def create_patrol_area(
+        self,
+        *,
+        map_id,
+        patrol_area_id,
+        patrol_area_name,
+        path_json,
+        is_enabled=True,
+    ):
+        conn = get_connection()
+        try:
+            conn.begin()
+            with conn.cursor() as cur:
+                cur.execute(
+                    INSERT_PATROL_AREA_SQL,
+                    (
+                        str(patrol_area_id),
+                        str(map_id),
+                        str(patrol_area_name),
+                        self._json_dumps(path_json),
+                        bool(is_enabled),
+                    ),
+                )
+                cur.execute(FIND_PATROL_AREA_SQL, (str(patrol_area_id),))
+                row = cur.fetchone()
+            conn.commit()
+            return row
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    async def async_create_patrol_area(
+        self,
+        *,
+        map_id,
+        patrol_area_id,
+        patrol_area_name,
+        path_json,
+        is_enabled=True,
+    ):
+        async with async_transaction() as cur:
+            await cur.execute(
+                INSERT_PATROL_AREA_SQL,
+                (
+                    str(patrol_area_id),
+                    str(map_id),
+                    str(patrol_area_name),
+                    self._json_dumps(path_json),
+                    bool(is_enabled),
+                ),
+            )
+            await cur.execute(FIND_PATROL_AREA_SQL, (str(patrol_area_id),))
+            return await cur.fetchone()
+
+    def update_patrol_area(
+        self,
+        *,
+        map_id,
+        patrol_area_id,
+        expected_revision,
+        patrol_area_name,
+        path_json,
+        is_enabled,
+    ):
+        conn = get_connection()
+        try:
+            conn.begin()
+            with conn.cursor() as cur:
+                result = self._update_patrol_area_with_cursor(
+                    cur,
+                    map_id=map_id,
+                    patrol_area_id=patrol_area_id,
+                    expected_revision=expected_revision,
+                    patrol_area_name=patrol_area_name,
+                    path_json=path_json,
+                    is_enabled=is_enabled,
+                )
+            conn.commit()
+            return result
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    async def async_update_patrol_area(
+        self,
+        *,
+        map_id,
+        patrol_area_id,
+        expected_revision,
+        patrol_area_name,
+        path_json,
+        is_enabled,
+    ):
+        async with async_transaction() as cur:
+            await cur.execute(
+                LOCK_PATROL_AREA_SQL,
+                (str(patrol_area_id), str(map_id)),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return {"status": "NOT_FOUND", "patrol_area": None}
+
+            if int(row.get("revision") or 0) != int(expected_revision):
+                return {"status": "REVISION_CONFLICT", "patrol_area": row}
+
+            await cur.execute(
+                UPDATE_PATROL_AREA_SQL,
+                self._build_update_patrol_area_params(
+                    map_id=map_id,
+                    patrol_area_id=patrol_area_id,
+                    patrol_area_name=patrol_area_name,
+                    path_json=path_json,
+                    is_enabled=is_enabled,
+                ),
+            )
+            await cur.execute(FIND_PATROL_AREA_SQL, (str(patrol_area_id),))
+            return {
+                "status": "UPDATED",
+                "patrol_area": await cur.fetchone(),
+            }
 
     def update_patrol_area_path(
         self,
@@ -339,7 +558,7 @@ class CoordinateConfigRepository:
         async with async_transaction() as cur:
             await cur.execute(
                 LOCK_OPERATION_ZONE_SQL,
-                (str(zone_id), str(map_id)),
+                (str(map_id), str(zone_id)),
             )
             row = await cur.fetchone()
             if not row:
@@ -354,11 +573,11 @@ class CoordinateConfigRepository:
                     str(zone_name),
                     str(zone_type),
                     bool(is_enabled),
-                    str(zone_id),
                     str(map_id),
+                    str(zone_id),
                 ),
             )
-            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
             return {
                 "status": "UPDATED",
                 "operation_zone": await cur.fetchone(),
@@ -402,7 +621,7 @@ class CoordinateConfigRepository:
         async with async_transaction() as cur:
             await cur.execute(
                 LOCK_OPERATION_ZONE_SQL,
-                (str(zone_id), str(map_id)),
+                (str(map_id), str(zone_id)),
             )
             row = await cur.fetchone()
             if not row:
@@ -419,7 +638,7 @@ class CoordinateConfigRepository:
                     boundary_json=boundary_json,
                 ),
             )
-            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+            await cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
             return {
                 "status": "UPDATED",
                 "operation_zone": await cur.fetchone(),
@@ -436,7 +655,7 @@ class CoordinateConfigRepository:
         zone_type,
         is_enabled,
     ):
-        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(zone_id), str(map_id)))
+        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
         row = cur.fetchone()
         if not row:
             return {"status": "NOT_FOUND", "operation_zone": None}
@@ -450,11 +669,11 @@ class CoordinateConfigRepository:
                 str(zone_name),
                 str(zone_type),
                 bool(is_enabled),
-                str(zone_id),
                 str(map_id),
+                str(zone_id),
             ),
         )
-        cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+        cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
         return {
             "status": "UPDATED",
             "operation_zone": cur.fetchone(),
@@ -470,7 +689,7 @@ class CoordinateConfigRepository:
         expected_revision,
         boundary_json,
     ):
-        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(zone_id), str(map_id)))
+        cur.execute(LOCK_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
         row = cur.fetchone()
         if not row:
             return {"status": "NOT_FOUND", "operation_zone": None}
@@ -486,7 +705,7 @@ class CoordinateConfigRepository:
                 boundary_json=boundary_json,
             ),
         )
-        cur.execute(FIND_OPERATION_ZONE_SQL, (str(zone_id),))
+        cur.execute(FIND_OPERATION_ZONE_SQL, (str(map_id), str(zone_id)))
         return {
             "status": "UPDATED",
             "operation_zone": cur.fetchone(),
@@ -534,6 +753,42 @@ class CoordinateConfigRepository:
         return {
             "status": "UPDATED",
             "goal_pose": cur.fetchone(),
+        }
+
+    @classmethod
+    def _update_patrol_area_with_cursor(
+        cls,
+        cur,
+        *,
+        map_id,
+        patrol_area_id,
+        expected_revision,
+        patrol_area_name,
+        path_json,
+        is_enabled,
+    ):
+        cur.execute(LOCK_PATROL_AREA_SQL, (str(patrol_area_id), str(map_id)))
+        row = cur.fetchone()
+        if not row:
+            return {"status": "NOT_FOUND", "patrol_area": None}
+
+        if int(row.get("revision") or 0) != int(expected_revision):
+            return {"status": "REVISION_CONFLICT", "patrol_area": row}
+
+        cur.execute(
+            UPDATE_PATROL_AREA_SQL,
+            cls._build_update_patrol_area_params(
+                map_id=map_id,
+                patrol_area_id=patrol_area_id,
+                patrol_area_name=patrol_area_name,
+                path_json=path_json,
+                is_enabled=is_enabled,
+            ),
+        )
+        cur.execute(FIND_PATROL_AREA_SQL, (str(patrol_area_id),))
+        return {
+            "status": "UPDATED",
+            "patrol_area": cur.fetchone(),
         }
 
     @classmethod
@@ -594,6 +849,24 @@ class CoordinateConfigRepository:
         )
 
     @classmethod
+    def _build_update_patrol_area_params(
+        cls,
+        *,
+        map_id,
+        patrol_area_id,
+        patrol_area_name,
+        path_json,
+        is_enabled,
+    ):
+        return (
+            str(patrol_area_name),
+            cls._json_dumps(path_json),
+            bool(is_enabled),
+            str(patrol_area_id),
+            str(map_id),
+        )
+
+    @classmethod
     def _build_update_patrol_area_path_params(
         cls,
         *,
@@ -617,8 +890,8 @@ class CoordinateConfigRepository:
     ):
         return (
             cls._json_dumps(boundary_json) if boundary_json is not None else None,
-            str(zone_id),
             str(map_id),
+            str(zone_id),
         )
 
     @staticmethod
@@ -660,6 +933,7 @@ __all__ = [
     "FIND_MAP_PROFILE_SQL",
     "FIND_OPERATION_ZONE_SQL",
     "FIND_PATROL_AREA_SQL",
+    "INSERT_GOAL_POSE_SQL",
     "INSERT_OPERATION_ZONE_SQL",
     "LIST_GOAL_POSES_SQL",
     "LIST_OPERATION_ZONES_SQL",

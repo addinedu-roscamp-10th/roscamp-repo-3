@@ -125,21 +125,37 @@ class FakeAsyncFallResponseControlClient:
         }
 
 
-class FakeGuideTrackingUpdatePublisher:
+class FakeAsyncGuideCommandClient:
     def __init__(self):
         self.calls = []
 
-    def publish(self, *, pinky_id, update):
-        raise AssertionError("async dispatcher should prefer async_publish")
+    def call(self, **kwargs):
+        raise AssertionError("async dispatcher should prefer async_call")
 
-    async def async_publish(self, *, pinky_id, update):
-        self.calls.append(
-            {
-                "pinky_id": pinky_id,
-                "update": update,
-            }
-        )
-        return {"accepted": True, "message": "published"}
+    async def async_call(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "accepted": True,
+            "message": "",
+        }
+
+
+class FakeGuidePhaseSnapshotView:
+    pinky_id = "pinky1"
+    task_id = "3001"
+    guide_phase = "READY_TO_START_GUIDANCE"
+    target_track_id = 17
+    reason_code = ""
+    seq = 42
+    occurred_at_sec = 1776602110
+    occurred_at_nanosec = 0
+    received_at_sec = 1776602111
+    received_at_nanosec = 0
+    stale = False
+
+
+class FakeGuideRuntimeSubscriber:
+    latest_updates = {"pinky1": FakeGuidePhaseSnapshotView()}
 
 
 def test_async_dispatch_prefers_async_goal_pose_action_client():
@@ -178,29 +194,31 @@ def test_async_dispatch_prefers_async_goal_pose_action_client():
     ]
 
 
-def test_async_dispatch_publishes_guide_tracking_update():
-    publisher = FakeGuideTrackingUpdatePublisher()
+def test_async_dispatch_guide_command_uses_int_track_id_and_destination_pose():
+    guide_client = FakeAsyncGuideCommandClient()
     dispatcher = RosServiceCommandDispatcher(
         goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
-        guide_tracking_update_publisher=publisher,
+        guide_command_client=guide_client,
     )
+    destination_pose = {
+        "header": {"frame_id": "map"},
+        "pose": {
+            "position": {"x": 18.4, "y": 7.2, "z": 0.0},
+            "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+        },
+    }
 
     async def scenario():
         try:
             return await dispatcher.async_dispatch(
-                "publish_guide_tracking_update",
+                "guide_command",
                 {
                     "pinky_id": "pinky1",
                     "task_id": "3001",
-                    "target_track_id": "track_17",
-                    "tracking_status": "TRACKING",
-                    "tracking_result_seq": 881,
-                    "frame_ts_sec": 1776602110,
-                    "frame_ts_nanosec": 0,
-                    "bbox_valid": True,
-                    "bbox_xyxy": [120, 80, 300, 420],
-                    "image_width_px": 640,
-                    "image_height_px": 480,
+                    "command_type": "START_GUIDANCE",
+                    "target_track_id": 17,
+                    "destination_id": "delivery_room_301",
+                    "destination_pose": destination_pose,
                 },
             )
         finally:
@@ -208,35 +226,25 @@ def test_async_dispatch_publishes_guide_tracking_update():
 
     response = asyncio.run(scenario())
 
-    assert response == {
-        "result_code": "ACCEPTED",
-        "result_message": "guide tracking update publish accepted.",
-        "pinky_id": "pinky1",
-        "task_id": "3001",
-        "target_track_id": "track_17",
-        "tracking_status": "TRACKING",
-        "tracking_result_seq": 881,
-    }
-    assert publisher.calls == [
+    assert response["accepted"] is True
+    assert guide_client.calls == [
         {
-            "pinky_id": "pinky1",
-            "update": {
+            "service_name": "/ropi/control/pinky1/guide_command",
+            "request": {
                 "task_id": "3001",
-                "target_track_id": "track_17",
-                "tracking_status": "TRACKING",
-                "tracking_result_seq": 881,
-                "frame_ts_sec": 1776602110,
-                "frame_ts_nanosec": 0,
-                "bbox_valid": True,
-                "bbox_xyxy": [120, 80, 300, 420],
-                "image_width_px": 640,
-                "image_height_px": 480,
+                "command_type": "START_GUIDANCE",
+                "target_track_id": 17,
+                "destination_id": "delivery_room_301",
+                "destination_pose": destination_pose,
             },
         }
     ]
+    request = guide_client.calls[0]["request"]
+    assert "wait_timeout_sec" not in request
+    assert "finish_reason" not in request
 
 
-def test_async_dispatch_guide_tracking_update_requires_publisher():
+def test_async_dispatch_rejects_retired_guide_tracking_update_command():
     dispatcher = RosServiceCommandDispatcher(
         goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
     )
@@ -245,31 +253,16 @@ def test_async_dispatch_guide_tracking_update_requires_publisher():
         try:
             with pytest.raises(
                 RosServiceCommandDispatchError,
-                match="guide tracking update publisher",
+                match="Unsupported ROS service command",
             ) as exc_info:
-                await dispatcher.async_dispatch(
-                    "publish_guide_tracking_update",
-                    {
-                        "pinky_id": "pinky1",
-                        "task_id": "3001",
-                        "target_track_id": "track_17",
-                        "tracking_status": "TRACKING",
-                        "tracking_result_seq": 881,
-                        "frame_ts_sec": 1776602110,
-                        "frame_ts_nanosec": 0,
-                        "bbox_valid": True,
-                        "bbox_xyxy": [120, 80, 300, 420],
-                        "image_width_px": 640,
-                        "image_height_px": 480,
-                    },
-                )
+                await dispatcher.async_dispatch("publish_guide_tracking_update", {})
             return exc_info.value.error_code
         finally:
             dispatcher.close()
 
     error_code = asyncio.run(scenario())
 
-    assert error_code == "GUIDE_TRACKING_UPDATE_PUBLISHER_UNAVAILABLE"
+    assert error_code == "UNKNOWN_COMMAND"
 
 
 def test_async_dispatch_prefers_async_manipulation_action_client():
@@ -464,6 +457,50 @@ def test_async_dispatch_runtime_status_prefers_async_readiness_checks():
             "wait_timeout_sec": 0.0,
         }
     ]
+
+
+def test_async_dispatch_runtime_status_exposes_guide_phase_snapshot():
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        guide_runtime_subscriber=FakeGuideRuntimeSubscriber(),
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "get_runtime_status",
+                {
+                    "pinky_id": "pinky1",
+                    "include_navigation": False,
+                    "include_guide": True,
+                    "arm_ids": [],
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["guide_runtime"] == {
+        "pinky_id": "pinky1",
+        "connected": True,
+        "stale": False,
+        "last_update": {
+            "task_id": "3001",
+            "pinky_id": "pinky1",
+            "guide_phase": "READY_TO_START_GUIDANCE",
+            "target_track_id": 17,
+            "reason_code": "",
+            "seq": 42,
+            "occurred_at_sec": 1776602110,
+            "occurred_at_nanosec": 0,
+            "received_at_sec": 1776602111,
+            "received_at_nanosec": 0,
+        },
+    }
+    last_update = response["guide_runtime"]["last_update"]
+    assert "tracking_status" not in last_update
+    assert "bbox_xyxy" not in last_update
 
 
 def test_async_dispatch_runtime_status_checks_patrol_only_when_requested():

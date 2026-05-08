@@ -16,11 +16,9 @@ _EXPORTS = {
     "FallResponseCommandService": ("fall_response_command", "FallResponseCommandService"),
     "GuideCommandService": ("guide_command", "GuideCommandService"),
     "GuideRuntimeService": ("guide_runtime", "GuideRuntimeService"),
-    "GuideTrackingResultProcessor": ("guide_tracking_result", "GuideTrackingResultProcessor"),
-    "GuideTrackingSnapshotStore": ("guide_tracking_snapshot", "GuideTrackingSnapshotStore"),
-    "GuideTrackingUpdatePublisherService": (
-        "guide_tracking_update",
-        "GuideTrackingUpdatePublisherService",
+    "GuidePhaseSnapshotRuntimePoller": (
+        "guide_phase_snapshot_runtime",
+        "GuidePhaseSnapshotRuntimePoller",
     ),
     "GoalPoseNavigationService": ("goal_pose_navigation", "GoalPoseNavigationService"),
     "InventoryService": ("inventory", "InventoryService"),
@@ -49,6 +47,10 @@ _EXPORTS = {
     "get_default_workflow_task_manager": (
         "workflow_task_manager",
         "get_default_workflow_task_manager",
+    ),
+    "start_guide_phase_snapshot_polling_if_enabled": (
+        "guide_phase_snapshot_runtime",
+        "start_guide_phase_snapshot_polling_if_enabled",
     ),
 }
 

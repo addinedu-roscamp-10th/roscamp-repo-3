@@ -4,6 +4,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 INIT_TABLES_SQL = REPO_ROOT / "server" / "ropi_db" / "init_tables.sql"
 INSERT_DUMMIES_SQL = REPO_ROOT / "server" / "ropi_db" / "insert_dummies.sql"
+ROPI_DB_README = REPO_ROOT / "server" / "ropi_db" / "README.md"
+PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"
 
 
 def _ddl() -> str:
@@ -12,6 +14,18 @@ def _ddl() -> str:
 
 def _seed_sql() -> str:
     return INSERT_DUMMIES_SQL.read_text(encoding="utf-8")
+
+
+def _db_readme() -> str:
+    return ROPI_DB_README.read_text(encoding="utf-8")
+
+
+def _pyproject() -> str:
+    return PYPROJECT_TOML.read_text(encoding="utf-8")
+
+
+def _sql(relative_path: str) -> str:
+    return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
 
 def test_schema_uses_member_event_without_legacy_event_type_tables():
@@ -49,6 +63,7 @@ def test_schema_contains_control_task_and_log_tables():
     ddl = _ddl()
 
     for table_name in (
+        "ropi_schema_migration",
         "task",
         "delivery_task_detail",
         "delivery_task_item",
@@ -69,6 +84,16 @@ def test_schema_contains_control_task_and_log_tables():
 
     assert "CREATE TABLE `robot_event`" not in ddl
     assert "CREATE TABLE `map_table`" not in ddl
+
+
+def test_schema_migration_history_table_is_reset_with_schema_init():
+    ddl = _ddl()
+
+    assert "DROP TABLE IF EXISTS `ropi_schema_migration`;" in ddl
+    assert "CREATE TABLE `ropi_schema_migration`" in ddl
+    assert "`migration_id` VARCHAR(100) NOT NULL" in ddl
+    assert "`applied_at` DATETIME NOT NULL" in ddl
+    assert "CONSTRAINT `pk_ropi_schema_migration` PRIMARY KEY (`migration_id`)" in ddl
 
 
 def test_ai_inference_log_uses_string_frame_id_for_pat_005():
@@ -144,14 +169,92 @@ def test_operation_zone_supports_optional_boundary_polygon():
     assert "`path_json`" not in operation_zone_section
 
 
+def test_operation_zone_identity_is_scoped_by_map():
+    ddl = _ddl()
+
+    operation_zone_section = ddl.split("CREATE TABLE `operation_zone`", 1)[1].split(
+        "CREATE TABLE `patrol_area`",
+        1,
+    )[0]
+    goal_pose_section = ddl.split("CREATE TABLE `goal_pose`", 1)[1].split(
+        "CREATE TABLE `fms_waypoint`",
+        1,
+    )[0]
+
+    assert (
+        "CONSTRAINT `pk_operation_zone` PRIMARY KEY (`map_id`, `zone_id`)"
+        in operation_zone_section
+    )
+    assert "CONSTRAINT `fk_goal_pose_operation_zone`" in goal_pose_section
+    assert "FOREIGN KEY (`map_id`, `zone_id`)" in goal_pose_section
+    assert "REFERENCES `operation_zone` (`map_id`, `zone_id`)" in goal_pose_section
+    assert "FOREIGN KEY (`zone_id`)" not in goal_pose_section
+
+
 def test_dummy_goal_pose_seed_maps_delivery_team_coordinates_to_operator_ids():
     seed_sql = _seed_sql()
 
     assert "delivery_room_301" in seed_sql
     assert "room2" not in seed_sql
-    assert "('pickup_supply', 'map_test11_0423', 'supply_station', 'PICKUP', 0.1665755137108074, -0.4496830900440016, 1.5707963267948966," in seed_sql
-    assert "('delivery_room_301', 'map_test11_0423', 'room_301', 'DESTINATION', 1.6946025435218914, 0.0043433854992070454, 0.0," in seed_sql
-    assert "('dock_home', 'map_test11_0423', 'dock', 'DOCK', 0.8577123880386353, 0.25597259402275085, 0.0," in seed_sql
+    assert (
+        "'device/ropi_mobile/src/ropi_nav_config/maps/map_test12_0506.yaml'" in seed_sql
+    )
+    assert (
+        "'device/ropi_mobile/src/ropi_nav_config/maps/map_test12_0506.pgm'" in seed_sql
+    )
+    assert "('room_301', 'map_0504', '301호', 'ROOM'," in seed_sql
+    assert "('room_301', 'map_test12_0506', '301호', 'ROOM'," in seed_sql
+    assert (
+        "('pickup_supply', 'map_test12_0506', 'supply_station', 'PICKUP', 0.64, -0.44, 3.141592653589793,"
+        in seed_sql
+    )
+    assert (
+        "('delivery_room_301', 'map_test12_0506', 'room_301', 'DESTINATION', 1.6838363409042358, -0.4915957748889923, 1.5707963267948966,"
+        in seed_sql
+    )
+    assert (
+        "('dock_home', 'map_test12_0506', 'dock', 'DOCK', -0.009538442827761173, -0.006931785028427839, 0.0,"
+        in seed_sql
+    )
+
+
+def test_db_runbook_documents_multimap_coordinate_migration_cli():
+    readme = _db_readme()
+    pyproject = _pyproject()
+
+    assert (
+        'ropi-db-migrate-multimap = "server.ropi_db.multimap_coordinate_migration:main"'
+        in pyproject
+    )
+    assert (
+        'ropi-db-migrate-guide-tracking = "server.ropi_db.guide_tracking_schema_migration:main"'
+        in pyproject
+    )
+    assert (
+        'ropi-db-migrate-guide-location = "server.ropi_db.guide_location_config_migration:main"'
+        in pyproject
+    )
+    assert "uv run ropi-db-migrate-multimap" in readme
+    assert "uv run ropi-db-migrate-multimap --apply" in readme
+    assert "uv run ropi-db-migrate-guide-location" in readme
+    assert "uv run ropi-db-migrate-guide-location --apply" in readme
+    assert "uv run ropi-db-migrate-guide-tracking" in readme
+    assert "uv run ropi-db-migrate-guide-tracking --apply" in readme
+    assert "`operation_zone` primary key를 `(map_id, zone_id)`로 보정" in readme
+    assert "`goal_pose(map_id, zone_id)` -> `operation_zone(map_id, zone_id)`" in readme
+
+
+def test_goal_pose_queries_join_operation_zone_by_map_and_zone():
+    for relative_path in (
+        "server/ropi_main_service/persistence/sql/coordinate_config/find_goal_pose.sql",
+        "server/ropi_main_service/persistence/sql/coordinate_config/list_goal_poses.sql",
+        "server/ropi_main_service/persistence/sql/task_request/list_delivery_destinations.sql",
+        "server/ropi_main_service/persistence/sql/task_request/list_enabled_goal_poses.sql",
+        "server/ropi_main_service/persistence/sql/guide/find_destination_goal_pose.sql",
+    ):
+        sql = _sql(relative_path)
+        assert "ON oz.map_id = gp.map_id" in sql
+        assert "AND oz.zone_id = gp.zone_id" in sql
 
 
 def test_dummy_patrol_area_contains_path_backed_route():

@@ -48,9 +48,24 @@ def _sample_bundle():
             "pgm_path": "maps/map_test.pgm",
             "is_active": True,
         },
+        "map_profiles": [
+            {
+                "map_id": "map_test",
+                "map_name": "테스트 맵",
+                "map_revision": 3,
+                "is_active": True,
+            },
+            {
+                "map_id": "map_test12_0506",
+                "map_name": "운반 맵",
+                "map_revision": 1,
+                "is_active": False,
+            },
+        ],
         "operation_zones": [
             {
                 "zone_id": "room_301",
+                "map_id": "map_test",
                 "zone_name": "301호",
                 "zone_type": "ROOM",
                 "revision": 1,
@@ -71,6 +86,7 @@ def _sample_bundle():
         "goal_poses": [
             {
                 "goal_pose_id": "delivery_room_301",
+                "map_id": "map_test",
                 "zone_id": "room_301",
                 "zone_name": "301호",
                 "purpose": "DESTINATION",
@@ -85,6 +101,7 @@ def _sample_bundle():
         "patrol_areas": [
             {
                 "patrol_area_id": "patrol_ward_night_01",
+                "map_id": "map_test",
                 "patrol_area_name": "야간 병동 순찰",
                 "revision": 7,
                 "waypoint_count": 2,
@@ -218,7 +235,10 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert edit_panel.findChild(QPushButton, "fmsWaypointNewRowButton") is None
         new_zone_button = page.findChild(QPushButton, "operationZoneNewRowButton")
         assert new_zone_button.text() == "+ 새 row"
-        assert page.findChild(QPushButton, "goalPoseNewRowButton") is None
+        new_goal_pose_button = page.findChild(QPushButton, "goalPoseNewRowButton")
+        assert new_goal_pose_button.text() == "+ 새 row"
+        new_patrol_button = page.findChild(QPushButton, "patrolAreaNewRowButton")
+        assert new_patrol_button.text() == "+ 새 row"
         new_waypoint_button = page.findChild(QPushButton, "fmsWaypointNewRowButton")
         assert new_waypoint_button.text() == "+ 새 row"
         new_edge_button = page.findChild(QPushButton, "fmsEdgeNewRowButton")
@@ -231,6 +251,14 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         )
         assert (
             page.findChild(QPushButton, "operationZoneRevertRowButton").isEnabled()
+            is False
+        )
+        assert (
+            page.findChild(QPushButton, "patrolAreaDeactivateRowButton").isEnabled()
+            is False
+        )
+        assert (
+            page.findChild(QPushButton, "patrolAreaRevertRowButton").isEnabled()
             is False
         )
         assert (
@@ -284,7 +312,7 @@ def test_coordinate_zone_settings_page_exposes_phase1_layout_contract():
         assert goal_table.maximumHeight() >= 220
 
         labels = _label_texts(page)
-        assert "Active Map" in labels
+        assert "선택 맵" in labels
         assert "operation_zone" in labels
         assert "goal_pose" in labels
         assert "patrol_area.path_json" in labels
@@ -755,6 +783,100 @@ def test_coordinate_config_load_worker_fetches_bundle_and_assets():
     )
     assert emitted[0][1]["pgm_bytes"] == pgm_bytes
     assert emitted[0][1]["yaml_sha256"] == "yaml-sha"
+
+
+def test_coordinate_config_load_worker_fetches_selected_map_bundle_and_assets():
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateConfigLoadWorker,
+    )
+
+    calls = []
+    pgm_bytes = b"P5\n2 1\n255\n\x00\xff"
+
+    class FakeCoordinateService:
+        def get_map_bundle(
+            self,
+            *,
+            map_id,
+            include_disabled,
+            include_zone_boundaries,
+            include_patrol_paths,
+        ):
+            calls.append(
+                (
+                    "get_map_bundle",
+                    map_id,
+                    include_disabled,
+                    include_zone_boundaries,
+                    include_patrol_paths,
+                )
+            )
+            bundle = copy.deepcopy(_sample_bundle())
+            bundle["map_profile"] = bundle["map_profiles"][1]
+            return bundle
+
+        def get_map_asset(self, *, asset_type, map_id=None, encoding=None):
+            calls.append(("get_map_asset", asset_type, map_id, encoding))
+            if asset_type == "YAML":
+                return {
+                    "result_code": "OK",
+                    "content_text": (
+                        "image: map.pgm\nresolution: 0.02\norigin: [0, 0, 0]\n"
+                    ),
+                    "sha256": "yaml-sha",
+                }
+            return {
+                "result_code": "OK",
+                "content_base64": base64.b64encode(pgm_bytes).decode("ascii"),
+                "sha256": "pgm-sha",
+            }
+
+    class FakeFmsService:
+        def get_graph_bundle(
+            self,
+            *,
+            map_id,
+            include_disabled,
+            include_edges,
+            include_routes,
+            include_reservations,
+        ):
+            calls.append(
+                (
+                    "get_graph_bundle",
+                    map_id,
+                    include_disabled,
+                    include_edges,
+                    include_routes,
+                    include_reservations,
+                )
+            )
+            return {
+                "result_code": "OK",
+                "waypoints": [],
+                "edges": [],
+                "routes": [],
+                "reservations": [],
+            }
+
+    emitted = []
+    worker = CoordinateConfigLoadWorker(
+        map_id="map_test12_0506",
+        service_factory=FakeCoordinateService,
+        fms_service_factory=FakeFmsService,
+    )
+    worker.finished.connect(lambda ok, payload: emitted.append((ok, payload)))
+
+    worker.run()
+
+    assert calls == [
+        ("get_map_bundle", "map_test12_0506", True, True, True),
+        ("get_graph_bundle", "map_test12_0506", True, True, True, False),
+        ("get_map_asset", "YAML", "map_test12_0506", "TEXT"),
+        ("get_map_asset", "PGM", "map_test12_0506", "BASE64"),
+    ]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["bundle"]["map_profile"]["map_id"] == "map_test12_0506"
 
 
 def test_coordinate_zone_settings_page_applies_loaded_bundle_and_map_assets():
@@ -1418,7 +1540,9 @@ def test_coordinate_zone_settings_page_selects_goal_pose_into_edit_form():
 
         assert page.selected_edit_type == "goal_pose"
         assert page.selected_goal_pose["goal_pose_id"] == "delivery_room_301"
-        assert page.findChild(QLabel, "goalPoseIdLabel").text() == "delivery_room_301"
+        goal_pose_id_input = page.findChild(QLineEdit, "goalPoseIdInput")
+        assert goal_pose_id_input.text() == "delivery_room_301"
+        assert goal_pose_id_input.isReadOnly() is True
         assert (
             page.findChild(QComboBox, "goalPoseZoneCombo").currentData() == "room_301"
         )
@@ -1530,6 +1654,60 @@ def test_coordinate_zone_settings_page_goal_pose_heading_drag_updates_yaw_only()
         assert yaw_spin.value() == 1.5708
         assert page.goal_pose_dirty is True
         assert page.map_canvas.selected_goal_pose_heading_yaw == 1.5708
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_creates_goal_pose_draft_operation():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+
+        page.findChild(QPushButton, "goalPoseNewRowButton").click()
+        goal_pose_id_input = page.findChild(QLineEdit, "goalPoseIdInput")
+        assert goal_pose_id_input.isReadOnly() is False
+
+        goal_pose_id_input.setText("delivery_room_302")
+        page.findChild(QComboBox, "goalPoseZoneCombo").setCurrentIndex(1)
+        page.findChild(QComboBox, "goalPosePurposeCombo").setCurrentText(
+            "DESTINATION"
+        )
+        page.handle_map_click_for_goal_pose({"x": 2.1, "y": 0.12})
+        page.findChild(QDoubleSpinBox, "goalPoseYawSpin").setValue(0.0)
+
+        operations = page._build_coordinate_batch_save_operations()
+
+        assert operations == [
+            {
+                "table": "goal_pose",
+                "row_id": "delivery_room_302",
+                "method": "create_goal_pose",
+                "payload": {
+                    "goal_pose_id": "delivery_room_302",
+                    "zone_id": "room_301",
+                    "purpose": "DESTINATION",
+                    "pose_x": 2.1,
+                    "pose_y": 0.12,
+                    "pose_yaw": 0.0,
+                    "frame_id": "map",
+                    "is_enabled": True,
+                    "map_id": "map_test",
+                },
+            }
+        ]
+        assert page.findChild(QTableWidget, "goalPoseTable").rowCount() == 2
     finally:
         page.close()
 
@@ -1779,6 +1957,7 @@ def test_coordinate_zone_settings_page_preserves_dirty_rows_when_switching_selec
                     "pose_yaw": 0.0,
                     "frame_id": "map",
                     "is_enabled": True,
+                    "map_id": "map_test",
                 },
             }
         ]
@@ -1855,6 +2034,104 @@ def test_coordinate_zone_settings_page_deactivates_selected_fms_waypoint_as_draf
         assert operations[0]["table"] == "fms_waypoint"
         assert operations[0]["payload"]["waypoint_id"] == "corridor_01"
         assert operations[0]["payload"]["is_enabled"] is False
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_creates_patrol_area_draft_operation():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+
+        page.findChild(QPushButton, "patrolAreaNewRowButton").click()
+        page.findChild(QLineEdit, "patrolAreaIdInput").setText("patrol_day_01")
+        page.findChild(QLineEdit, "patrolAreaNameInput").setText("주간 병동 순찰")
+        page.handle_map_click_for_patrol_area({"x": 0.2, "y": 0.2, "yaw": 0.0})
+        page.handle_map_click_for_patrol_area({"x": 1.0, "y": 1.0, "yaw": 0.0})
+
+        operations = page._build_coordinate_batch_save_operations()
+
+        assert operations == [
+            {
+                "table": "patrol_area",
+                "row_id": "patrol_day_01",
+                "method": "create_patrol_area",
+                "payload": {
+                    "patrol_area_id": "patrol_day_01",
+                    "patrol_area_name": "주간 병동 순찰",
+                    "path_json": {
+                        "header": {"frame_id": "map"},
+                        "poses": [
+                            {"x": 0.2, "y": 0.2, "yaw": 0.0},
+                            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+                        ],
+                    },
+                    "is_enabled": True,
+                    "map_id": "map_test",
+                },
+            }
+        ]
+        assert page.findChild(QTableWidget, "patrolAreaTable").rowCount() == 2
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_deactivates_and_reverts_patrol_area_draft():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    bundle = copy.deepcopy(_sample_bundle())
+    bundle["patrol_areas"][0]["is_enabled"] = True
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": bundle,
+                **_sample_map_assets(),
+            }
+        )
+        page.select_patrol_area(0)
+
+        deactivate_button = page.findChild(QPushButton, "patrolAreaDeactivateRowButton")
+        assert deactivate_button.isEnabled() is True
+
+        deactivate_button.click()
+
+        assert page.findChild(QCheckBox, "patrolAreaEnabledCheck").isChecked() is False
+        assert page.patrol_area_rows[0]["is_enabled"] is False
+        assert page.patrol_area_dirty_row_ids == {"patrol_ward_night_01"}
+
+        operations = page._build_coordinate_batch_save_operations()
+        assert operations[0]["table"] == "patrol_area"
+        assert operations[0]["method"] == "update_patrol_area"
+        assert operations[0]["payload"]["map_id"] == "map_test"
+        assert operations[0]["payload"]["is_enabled"] is False
+
+        revert_button = page.findChild(QPushButton, "patrolAreaRevertRowButton")
+        assert revert_button.isEnabled() is True
+        revert_button.click()
+
+        assert page.patrol_area_rows[0]["is_enabled"] is True
+        assert page.patrol_area_dirty_row_ids == set()
+        assert page.findChild(QCheckBox, "patrolAreaEnabledCheck").isChecked() is True
+        patrol_table = page.findChild(QTableWidget, "patrolAreaTable")
+        assert patrol_table.item(0, patrol_table.columnCount() - 1).text() == "-"
     finally:
         page.close()
 
@@ -1975,6 +2252,7 @@ def test_coordinate_zone_settings_page_saves_operation_zone_form_diff_without_di
                     "zone_name": "301호 수정",
                     "zone_type": "ROOM",
                     "is_enabled": True,
+                    "map_id": "map_test",
                 },
             }
         ]
@@ -2106,6 +2384,7 @@ def test_coordinate_zone_settings_page_saves_dragged_boundary_with_legacy_out_of
             {
                 "zone_id": "room_301",
                 "expected_revision": 1,
+                "map_id": "map_test",
                 "boundary_json": {
                     "type": "POLYGON",
                     "header": {"frame_id": "map"},
@@ -2275,7 +2554,8 @@ def test_coordinate_zone_settings_page_selects_patrol_area_into_waypoint_form():
         assert page.selected_edit_type == "patrol_area"
         assert page.selected_patrol_area["patrol_area_id"] == "patrol_ward_night_01"
         assert (
-            page.findChild(QLabel, "patrolAreaIdLabel").text() == "patrol_ward_night_01"
+            page.findChild(QLineEdit, "patrolAreaIdInput").text()
+            == "patrol_ward_night_01"
         )
         assert page.findChild(QLabel, "patrolAreaRevisionLabel").text() == "7"
 
@@ -3161,6 +3441,69 @@ def test_coordinate_zone_settings_page_shutdown_stops_running_load_thread():
         page.close()
 
 
+def test_coordinate_zone_settings_page_switches_selected_map_without_dirty_drafts():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    load_calls = []
+
+    try:
+        page.apply_bundle(_sample_bundle())
+        page.load_coordinate_bundle = lambda: load_calls.append(page.selected_map_id)
+
+        combo = page.findChild(QComboBox, "coordinateMapSelectorCombo")
+        assert combo.count() == 2
+        assert combo.currentData() == "map_test"
+
+        combo.setCurrentIndex(1)
+
+        assert page.selected_map_id == "map_test12_0506"
+        assert load_calls == ["map_test12_0506"]
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_switching_map_clears_stale_bundle_rows_before_load():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    load_calls = []
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.select_goal_pose(0)
+        page.load_coordinate_bundle = lambda: load_calls.append(page.selected_map_id)
+
+        combo = page.findChild(QComboBox, "coordinateMapSelectorCombo")
+        combo.setCurrentIndex(1)
+
+        assert page.selected_map_id == "map_test12_0506"
+        assert load_calls == ["map_test12_0506"]
+        assert page.active_map_labels["map_id"].text() == "map_test12_0506"
+        assert page.map_canvas.map_loaded is False
+        assert page.findChild(QTableWidget, "operationZoneTable").rowCount() == 0
+        assert page.findChild(QTableWidget, "goalPoseTable").rowCount() == 0
+        assert page.findChild(QTableWidget, "patrolAreaTable").rowCount() == 0
+        assert page.selected_edit_type is None
+        assert page.save_button.isEnabled() is False
+        assert page.discard_button.isEnabled() is False
+    finally:
+        page.close()
+
+
 def test_coordinate_zone_settings_page_accepts_active_map_summary():
     _app()
 
@@ -3173,18 +3516,18 @@ def test_coordinate_zone_settings_page_accepts_active_map_summary():
     try:
         page.apply_active_map(
             {
-                "map_id": "map_test11_0423",
-                "map_name": "map_test11_0423",
+                "map_id": "map_test12_0506",
+                "map_name": "map_test12_0506",
                 "map_revision": 1,
                 "frame_id": "map",
-                "yaml_path": "maps/map_test11_0423.yaml",
-                "pgm_path": "maps/map_test11_0423.pgm",
+                "yaml_path": "maps/map_test12_0506.yaml",
+                "pgm_path": "maps/map_test12_0506.pgm",
             }
         )
 
-        assert page.active_map_labels["map_id"].text() == "map_test11_0423"
+        assert page.active_map_labels["map_id"].text() == "map_test12_0506"
         assert page.active_map_labels["map_revision"].text() == "1"
         assert page.active_map_labels["frame_id"].text() == "map"
-        assert page.active_map_labels["yaml_path"].text() == "maps/map_test11_0423.yaml"
+        assert page.active_map_labels["yaml_path"].text() == "maps/map_test12_0506.yaml"
     finally:
         page.close()

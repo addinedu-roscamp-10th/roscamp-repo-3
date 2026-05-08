@@ -9,18 +9,8 @@ CONTROL_SERVICE_COMPONENT = "control_service"
 GUIDE_COMMAND_ACCEPTED = "GUIDE_COMMAND_ACCEPTED"
 GUIDE_COMMAND_REJECTED = "GUIDE_COMMAND_REJECTED"
 TERMINAL_GUIDE_STATUSES = {"COMPLETED", "CANCELLED", "FAILED"}
-CANCEL_FINISH_REASONS = {"USER_CANCELLED", "OPERATOR_CANCELLED"}
-PRE_DRIVING_CANCEL_PHASES = {
-    "WAIT_GUIDE_START_CONFIRM",
-    "WAIT_TARGET_TRACKING",
-    "WAIT_REIDENTIFY",
-}
-PRE_DRIVING_CANCEL_REJECT_REASON_CODES = {
-    "GUIDE_COMMAND_TRANSPORT_ERROR",
-    "GUIDE_SESSION_NOT_FOUND",
-    "GUIDE_STATE_MISMATCH",
-}
-PRE_DRIVING_CANCEL_MESSAGE = "안내 시작 전 취소가 접수되었습니다."
+ALLOWED_CONTROL_GUIDE_COMMAND_TYPES = {"WAIT_TARGET_TRACKING", "START_GUIDANCE"}
+UNSUPPORTED_GUIDE_COMMAND_MESSAGE = "지원하지 않는 안내 제어 명령입니다."
 
 
 class GuideTaskLifecycleRepository:
@@ -189,21 +179,18 @@ class GuideTaskLifecycleRepository:
     ):
         command_response = self._normalize_command_response(command_response)
         command_type = self._normalize_token(command_type)
-        target_track_id = str(target_track_id or "").strip()
+        target_track_id = self._normalize_target_track_id(target_track_id)
         finish_reason = self._normalize_token(finish_reason)
-        accepted = bool(command_response.get("accepted"))
+        command_supported = command_type in ALLOWED_CONTROL_GUIDE_COMMAND_TYPES
+        accepted = bool(command_response.get("accepted")) and command_supported
         current_status = str(row.get("task_status") or "").strip()
         current_phase = str(row.get("phase") or "").strip() or None
-        message = self._extract_message(command_response, accepted=accepted)
-        rejected_reason_code = self._rejected_reason_code(command_response)
-        pre_driving_cancel_fallback = self._is_pre_driving_cancel_fallback(
-            accepted=accepted,
-            command_type=command_type,
-            finish_reason=finish_reason,
-            current_phase=current_phase,
-            rejected_reason_code=rejected_reason_code,
-        )
-        accepted = accepted or pre_driving_cancel_fallback
+        if command_supported:
+            message = self._extract_message(command_response, accepted=accepted)
+            rejected_reason_code = self._rejected_reason_code(command_response)
+        else:
+            message = UNSUPPORTED_GUIDE_COMMAND_MESSAGE
+            rejected_reason_code = "COMMAND_TYPE_INVALID"
 
         if accepted:
             result_code = "ACCEPTED"
@@ -211,8 +198,6 @@ class GuideTaskLifecycleRepository:
                 command_type=command_type,
                 finish_reason=finish_reason,
             )
-            if pre_driving_cancel_fallback:
-                message = PRE_DRIVING_CANCEL_MESSAGE
             task_status, phase, guide_phase, is_terminal = self._accepted_target_state(
                 command_type=command_type,
                 finish_reason=finish_reason,
@@ -307,43 +292,18 @@ class GuideTaskLifecycleRepository:
     def _accepted_target_state(cls, *, command_type, finish_reason):
         if command_type == "WAIT_TARGET_TRACKING":
             return "RUNNING", "WAIT_TARGET_TRACKING", "WAIT_TARGET_TRACKING", False
-        if command_type in {"START_GUIDANCE", "RESUME_GUIDANCE"}:
+        if command_type == "START_GUIDANCE":
             return "RUNNING", "GUIDANCE_RUNNING", "GUIDANCE_RUNNING", False
-        if command_type == "WAIT_REIDENTIFY":
-            return "RUNNING", "WAIT_REIDENTIFY", "WAIT_REIDENTIFY", False
-        if command_type == "FINISH_GUIDANCE":
-            if finish_reason in CANCEL_FINISH_REASONS:
-                return "CANCELLED", "GUIDANCE_CANCELLED", "CANCELLED", True
-            return "COMPLETED", "GUIDANCE_FINISHED", "FINISHED", True
         return "RUNNING", command_type or "GUIDE_COMMAND_ACCEPTED", command_type or "RUNNING", False
 
     @staticmethod
     def _accepted_reason_code(*, command_type, finish_reason):
-        if command_type == "FINISH_GUIDANCE":
-            return finish_reason or "GUIDE_FINISHED"
         return "GUIDE_COMMAND_ACCEPTED"
 
     @staticmethod
     def _rejected_reason_code(command_response):
         reason_code = str((command_response or {}).get("reason_code") or "").strip()
         return reason_code or "GUIDE_COMMAND_REJECTED"
-
-    @staticmethod
-    def _is_pre_driving_cancel_fallback(
-        *,
-        accepted,
-        command_type,
-        finish_reason,
-        current_phase,
-        rejected_reason_code,
-    ):
-        return (
-            not accepted
-            and command_type == "FINISH_GUIDANCE"
-            and finish_reason in CANCEL_FINISH_REASONS
-            and current_phase in PRE_DRIVING_CANCEL_PHASES
-            and rejected_reason_code in PRE_DRIVING_CANCEL_REJECT_REASON_CODES
-        )
 
     @staticmethod
     def _extract_message(command_response, *, accepted):
@@ -369,11 +329,15 @@ class GuideTaskLifecycleRepository:
     def _next_target_track_id(*, row, command_type, target_track_id, accepted):
         if not accepted:
             return row.get("target_track_id")
-        if command_type in {"START_GUIDANCE", "RESUME_GUIDANCE"}:
-            return target_track_id or row.get("target_track_id")
-        if command_type in {"WAIT_TARGET_TRACKING", "WAIT_REIDENTIFY", "FINISH_GUIDANCE"}:
+        if command_type == "START_GUIDANCE":
+            if target_track_id is not None and target_track_id >= 0:
+                return target_track_id
+            return row.get("target_track_id")
+        if command_type == "WAIT_TARGET_TRACKING":
             return None
-        return target_track_id or row.get("target_track_id")
+        if target_track_id is not None and target_track_id >= 0:
+            return target_track_id
+        return row.get("target_track_id")
 
     @classmethod
     def _guard(cls, row, *, task_id):
@@ -440,6 +404,13 @@ class GuideTaskLifecycleRepository:
     @staticmethod
     def _normalize_token(value):
         return str(value or "").strip().upper()
+
+    @staticmethod
+    def _normalize_target_track_id(value):
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _begin(conn):

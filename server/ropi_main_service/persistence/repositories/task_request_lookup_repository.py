@@ -7,33 +7,58 @@ from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 class TaskRequestLookupRepository:
+    def __init__(self, *, delivery_map_id=None, patrol_map_id=None):
+        from server.ropi_main_service.application.delivery_config import (
+            DEFAULT_DELIVERY_MAP_ID,
+        )
+        from server.ropi_main_service.application.patrol_config import (
+            DEFAULT_PATROL_MAP_ID,
+        )
+
+        self.delivery_map_id = str(delivery_map_id or DEFAULT_DELIVERY_MAP_ID).strip()
+        self.patrol_map_id = str(patrol_map_id or DEFAULT_PATROL_MAP_ID).strip()
+
     def get_all_products(self):
         return fetch_all(load_sql("task_request/list_items.sql"))
 
     async def async_get_all_products(self):
         return await async_fetch_all(load_sql("task_request/list_items.sql"))
 
-    def get_enabled_goal_poses(self):
-        return fetch_all(load_sql("task_request/list_enabled_goal_poses.sql"))
-
-    async def async_get_enabled_goal_poses(self):
-        return await async_fetch_all(
-            load_sql("task_request/list_enabled_goal_poses.sql")
+    def get_enabled_goal_poses(self, *, map_id=None):
+        return fetch_all(
+            load_sql("task_request/list_enabled_goal_poses.sql"),
+            (str(map_id or self.delivery_map_id),),
         )
 
-    def get_delivery_destinations(self):
-        return fetch_all(load_sql("task_request/list_delivery_destinations.sql"))
-
-    async def async_get_delivery_destinations(self):
+    async def async_get_enabled_goal_poses(self, *, map_id=None):
         return await async_fetch_all(
-            load_sql("task_request/list_delivery_destinations.sql")
+            load_sql("task_request/list_enabled_goal_poses.sql"),
+            (str(map_id or self.delivery_map_id),),
         )
 
-    def get_patrol_areas(self):
-        return fetch_all(load_sql("task_request/list_patrol_areas.sql"))
+    def get_delivery_destinations(self, *, map_id=None):
+        return fetch_all(
+            load_sql("task_request/list_delivery_destinations.sql"),
+            (str(map_id or self.delivery_map_id),),
+        )
 
-    async def async_get_patrol_areas(self):
-        return await async_fetch_all(load_sql("task_request/list_patrol_areas.sql"))
+    async def async_get_delivery_destinations(self, *, map_id=None):
+        return await async_fetch_all(
+            load_sql("task_request/list_delivery_destinations.sql"),
+            (str(map_id or self.delivery_map_id),),
+        )
+
+    def get_patrol_areas(self, *, map_id=None):
+        return fetch_all(
+            load_sql("task_request/list_patrol_areas.sql"),
+            (str(map_id or self.patrol_map_id),),
+        )
+
+    async def async_get_patrol_areas(self, *, map_id=None):
+        return await async_fetch_all(
+            load_sql("task_request/list_patrol_areas.sql"),
+            (str(map_id or self.patrol_map_id),),
+        )
 
     def get_product_by_id(self, item_id, conn=None):
         return self.fetch_product("item_id = %s", (item_id,), conn=conn)
@@ -86,35 +111,31 @@ class TaskRequestLookupRepository:
         )
         return await cur.fetchone() is not None
 
-    @staticmethod
-    def goal_pose_exists(cur, goal_pose_id) -> bool:
+    def goal_pose_exists(self, cur, goal_pose_id, *, map_id=None) -> bool:
         cur.execute(
             load_sql("task_request/goal_pose_exists.sql"),
-            (goal_pose_id,),
+            (goal_pose_id, str(map_id or self.delivery_map_id)),
         )
         return cur.fetchone() is not None
 
-    @staticmethod
-    async def async_goal_pose_exists(cur, goal_pose_id) -> bool:
+    async def async_goal_pose_exists(self, cur, goal_pose_id, *, map_id=None) -> bool:
         await cur.execute(
             load_sql("task_request/goal_pose_exists.sql"),
-            (goal_pose_id,),
+            (goal_pose_id, str(map_id or self.delivery_map_id)),
         )
         return await cur.fetchone() is not None
 
-    @staticmethod
-    def fetch_patrol_area_by_id(cur, patrol_area_id):
+    def fetch_patrol_area_by_id(self, cur, patrol_area_id, *, map_id=None):
         cur.execute(
             load_sql("task_request/find_patrol_area_by_id.sql"),
-            (patrol_area_id,),
+            (patrol_area_id, str(map_id or self.patrol_map_id)),
         )
         return cur.fetchone()
 
-    @staticmethod
-    async def async_fetch_patrol_area_by_id(cur, patrol_area_id):
+    async def async_fetch_patrol_area_by_id(self, cur, patrol_area_id, *, map_id=None):
         await cur.execute(
             load_sql("task_request/find_patrol_area_by_id.sql"),
-            (patrol_area_id,),
+            (patrol_area_id, str(map_id or self.patrol_map_id)),
         )
         return await cur.fetchone()
 

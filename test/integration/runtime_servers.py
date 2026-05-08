@@ -12,7 +12,6 @@ from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, enco
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
-    MESSAGE_CODE_GUIDE_TRACKING_RESULT_SUBSCRIBE,
     build_frame,
     encode_frame,
     read_frame_from_socket,
@@ -52,7 +51,7 @@ def wait_for_server_ready(server_process, server_port: int, app, timeout: float 
 
 
 @pytest.fixture(scope="session")
-def ros_service_stub(tmp_path_factory):
+def runtime_ros_service_stub(tmp_path_factory):
     del tmp_path_factory
     socket_dir = PROJECT_ROOT / ".pytest_tmp" / "ros-runtime"
     socket_dir.mkdir(parents=True, exist_ok=True)
@@ -62,7 +61,6 @@ def ros_service_stub(tmp_path_factory):
     finished = threading.Event()
     requests = []
     request_lock = threading.Lock()
-    guide_tracking_published = threading.Event()
 
     def run_server():
         if socket_path.exists():
@@ -138,16 +136,6 @@ def ros_service_stub(tmp_path_factory):
                                     "cancel_requested": True,
                                 },
                             }
-                        elif request.get("command") == "publish_guide_tracking_update":
-                            guide_tracking_published.set()
-                            response = {
-                                "ok": True,
-                                "payload": {
-                                    "accepted": True,
-                                    "result_code": "ACCEPTED",
-                                    "result_message": "guide tracking update accepted.",
-                                },
-                            }
                         else:
                             response = {
                                 "ok": True,
@@ -175,7 +163,6 @@ def ros_service_stub(tmp_path_factory):
             "socket_path": str(socket_path),
             "requests": requests,
             "request_lock": request_lock,
-            "guide_tracking_published": guide_tracking_published,
         }
     finally:
         stop_requested.set()
@@ -188,135 +175,6 @@ def ros_service_stub(tmp_path_factory):
         server_thread.join(timeout=5)
         if socket_path.exists():
             socket_path.unlink()
-        assert finished.is_set()
-
-
-@pytest.fixture
-def ai_guide_tracking_stream_server():
-    server_port = find_free_port()
-    ready = threading.Event()
-    subscribed = threading.Event()
-    push_requested = threading.Event()
-    stop_requested = threading.Event()
-    finished = threading.Event()
-    requests = []
-    request_lock = threading.Lock()
-
-    def run_server():
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
-                server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                server_sock.bind((SERVER_HOST, server_port))
-                server_sock.listen(1)
-                server_sock.settimeout(0.2)
-                ready.set()
-
-                while not stop_requested.is_set():
-                    try:
-                        conn, _ = server_sock.accept()
-                    except TimeoutError:
-                        continue
-                    except OSError:
-                        break
-
-                    with conn:
-                        try:
-                            request_frame = read_frame_from_socket(conn)
-                        except Exception:
-                            continue
-
-                        payload = (
-                            request_frame.payload
-                            if isinstance(request_frame.payload, dict)
-                            else {}
-                        )
-                        with request_lock:
-                            requests.append(payload)
-
-                        ack_frame = build_frame(
-                            MESSAGE_CODE_GUIDE_TRACKING_RESULT_SUBSCRIBE,
-                            request_frame.sequence_no,
-                            {
-                                "result_code": "ACCEPTED",
-                                "result_message": None,
-                                "accepted_consumer_id": payload.get("consumer_id"),
-                                "subscribed_pinky_id": payload.get("pinky_id"),
-                                "subscribed_tracking_mode": payload.get("tracking_mode"),
-                            },
-                            is_response=True,
-                        )
-                        try:
-                            conn.sendall(encode_frame(ack_frame))
-                        except BrokenPipeError:
-                            continue
-
-                        subscribed.set()
-                        while not stop_requested.is_set():
-                            if push_requested.wait(timeout=0.1):
-                                break
-
-                        if stop_requested.is_set():
-                            break
-
-                        push_frame = build_frame(
-                            MESSAGE_CODE_GUIDE_TRACKING_RESULT_SUBSCRIBE,
-                            881,
-                            {
-                                "batch_end_seq": 881,
-                                "results": [
-                                    {
-                                        "result_seq": 881,
-                                        "pinky_id": "pinky1",
-                                        "frame_ts": "2026-04-19T12:35:10Z",
-                                        "tracking_status": "TRACKING",
-                                        "active_track_id": "track_17",
-                                        "confidence": 0.91,
-                                        "image_width_px": 640,
-                                        "image_height_px": 480,
-                                        "candidate_tracks": [
-                                            {
-                                                "track_id": "track_17",
-                                                "bbox_xyxy": [120, 80, 300, 420],
-                                                "score": 0.91,
-                                            }
-                                        ],
-                                    }
-                                ],
-                            },
-                            is_push=True,
-                        )
-                        try:
-                            conn.sendall(encode_frame(push_frame))
-                        except BrokenPipeError:
-                            continue
-
-                        while not stop_requested.wait(timeout=0.1):
-                            pass
-        finally:
-            finished.set()
-
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-    assert ready.wait(timeout=5), "fake AI guide tracking stream server did not become ready"
-
-    try:
-        yield {
-            "host": SERVER_HOST,
-            "port": server_port,
-            "requests": requests,
-            "request_lock": request_lock,
-            "subscribed": subscribed,
-            "push_requested": push_requested,
-        }
-    finally:
-        stop_requested.set()
-        push_requested.set()
-        try:
-            with socket.create_connection((SERVER_HOST, server_port), timeout=0.2):
-                pass
-        except OSError:
-            pass
-        server_thread.join(timeout=5)
         assert finished.is_set()
 
 
@@ -538,11 +396,15 @@ def ai_evidence_server():
 
 
 @pytest.fixture
-def control_server_with_ai_fall_stream(qapp, ros_service_stub, ai_fall_stream_server):
+def control_server_with_ai_fall_stream(
+    qapp,
+    runtime_ros_service_stub,
+    ai_fall_stream_server,
+):
     server_port = find_free_port()
     server_process = _start_control_server(
         server_port=server_port,
-        ros_socket_path=ros_service_stub["socket_path"],
+        ros_socket_path=runtime_ros_service_stub["socket_path"],
         extra_env={
             "AI_FALL_STREAM_ENABLED": "true",
             "AI_FALL_STREAM_HOST": ai_fall_stream_server["host"],
@@ -558,37 +420,12 @@ def control_server_with_ai_fall_stream(qapp, ros_service_stub, ai_fall_stream_se
     yield from _yield_control_server(server_process, server_port)
 
 
-@pytest.fixture
-def control_server_with_ai_guide_tracking(
-    qapp,
-    ros_service_stub,
-    ai_guide_tracking_stream_server,
-):
-    server_port = find_free_port()
-    server_process = _start_control_server(
-        server_port=server_port,
-        ros_socket_path=ros_service_stub["socket_path"],
-        extra_env={
-            "AI_GUIDE_TRACKING_STREAM_ENABLED": "true",
-            "AI_GUIDE_TRACKING_STREAM_HOST": ai_guide_tracking_stream_server["host"],
-            "AI_GUIDE_TRACKING_STREAM_PORT": str(ai_guide_tracking_stream_server["port"]),
-            "AI_GUIDE_TRACKING_STREAM_CONSUMER_ID": "control_service_ai_guide",
-            "AI_GUIDE_TRACKING_STREAM_LAST_SEQ": "0",
-            "AI_GUIDE_TRACKING_STREAM_CONNECT_TIMEOUT_SEC": "5.0",
-            "AI_GUIDE_TRACKING_STREAM_RECONNECT_DELAY_SEC": "0.2",
-        },
-    )
-
-    wait_for_server_ready(server_process, server_port, qapp)
-    yield from _yield_control_server(server_process, server_port)
-
-
 @pytest.fixture(scope="session")
-def control_server(qapp, ros_service_stub, ai_evidence_server):
+def runtime_control_server(qapp, runtime_ros_service_stub, ai_evidence_server):
     server_port = find_free_port()
     server_process = _start_control_server(
         server_port=server_port,
-        ros_socket_path=ros_service_stub["socket_path"],
+        ros_socket_path=runtime_ros_service_stub["socket_path"],
         extra_env={
             "AI_FALL_EVIDENCE_HOST": ai_evidence_server["host"],
             "AI_FALL_EVIDENCE_PORT": str(ai_evidence_server["port"]),
@@ -620,6 +457,9 @@ def _start_control_server(*, server_port, ros_socket_path, extra_env):
             "PYTHONUNBUFFERED": "1",
             "ROPI_ROS_SERVICE_SOCKET_PATH": ros_socket_path,
             "ROPI_DELIVERY_GOAL_POSE_SOURCE": "db",
+            "AI_FALL_STREAM_ENABLED": "false",
+            "GUIDE_PHASE_SNAPSHOT_POLL_ENABLED": "false",
+            "ACTION_FEEDBACK_EVENT_POLL_ENABLED": "false",
             **extra_env,
         },
     )

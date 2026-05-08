@@ -1,5 +1,6 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS `ropi_schema_migration`;
 DROP TABLE IF EXISTS `idempotency_record`;
 DROP TABLE IF EXISTS `kiosk_staff_call_log`;
 DROP TABLE IF EXISTS `stream_metrics_log`;
@@ -150,6 +151,12 @@ CREATE TABLE `item` (
     CONSTRAINT `pk_item` PRIMARY KEY (`item_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `ropi_schema_migration` (
+    `migration_id` VARCHAR(100) NOT NULL,
+    `applied_at` DATETIME NOT NULL,
+    CONSTRAINT `pk_ropi_schema_migration` PRIMARY KEY (`migration_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `map_profile` (
     `map_id` VARCHAR(100) NOT NULL,
     `map_name` VARCHAR(100) NOT NULL,
@@ -175,7 +182,7 @@ CREATE TABLE `operation_zone` (
     `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
     `created_at` DATETIME NOT NULL,
     `updated_at` DATETIME NOT NULL,
-    CONSTRAINT `pk_operation_zone` PRIMARY KEY (`zone_id`),
+    CONSTRAINT `pk_operation_zone` PRIMARY KEY (`map_id`, `zone_id`),
     CONSTRAINT `fk_operation_zone_map_profile`
         FOREIGN KEY (`map_id`)
         REFERENCES `map_profile` (`map_id`)
@@ -214,8 +221,8 @@ CREATE TABLE `goal_pose` (
         FOREIGN KEY (`map_id`)
         REFERENCES `map_profile` (`map_id`),
     CONSTRAINT `fk_goal_pose_operation_zone`
-        FOREIGN KEY (`zone_id`)
-        REFERENCES `operation_zone` (`zone_id`),
+        FOREIGN KEY (`map_id`, `zone_id`)
+        REFERENCES `operation_zone` (`map_id`, `zone_id`),
     KEY `idx_goal_pose_map_purpose` (`map_id`, `purpose`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -414,7 +421,7 @@ CREATE TABLE `guide_task_detail` (
     `member_id` BIGINT UNSIGNED NOT NULL,
     `destination_goal_pose_id` VARCHAR(100) NOT NULL,
     `guide_phase` VARCHAR(50) NULL,
-    `target_track_id` VARCHAR(100) NULL,
+    `target_track_id` INT NULL,
     `notes` TEXT NULL,
     CONSTRAINT `pk_guide_task_detail` PRIMARY KEY (`task_id`),
     CONSTRAINT `fk_guide_task_detail_task`

@@ -59,6 +59,33 @@ def test_create_patrol_task_validates_and_starts_workflow_after_acceptance():
     assert workflow_starter.calls == [{"task_id": "2001"}]
 
 
+def test_create_patrol_task_rejects_runtime_not_ready_before_repository_call():
+    repository = FakePatrolTaskRepository(response={"result_code": "ACCEPTED"})
+    workflow_starter = FakeWorkflowStarter()
+
+    def runtime_precheck(**_kwargs):
+        return PatrolTaskCreateService._build_patrol_task_response(
+            result_code="REJECTED",
+            result_message="순찰 ROS runtime이 준비되지 않았습니다.",
+            reason_code="PATROL_RUNTIME_NOT_READY",
+            assigned_robot_id="pinky3",
+        )
+
+    service = PatrolTaskCreateService(
+        repository=repository,
+        patrol_workflow_starter=workflow_starter,
+        patrol_request_precheck=runtime_precheck,
+    )
+
+    response = service.create_patrol_task(**build_patrol_payload())
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "PATROL_RUNTIME_NOT_READY"
+    assert response["assigned_robot_id"] == "pinky3"
+    assert repository.calls == []
+    assert workflow_starter.calls == []
+
+
 def test_async_create_patrol_task_uses_async_repository_and_starts_workflow():
     repository = FakePatrolTaskRepository(
         response={
@@ -79,6 +106,33 @@ def test_async_create_patrol_task_uses_async_repository_and_starts_workflow():
     assert response["result_code"] == "ACCEPTED"
     assert repository.calls == [build_patrol_payload()]
     assert workflow_starter.calls == [{"task_id": "2001"}]
+
+
+def test_async_create_patrol_task_rejects_runtime_not_ready_before_repository_call():
+    repository = FakePatrolTaskRepository(response={"result_code": "ACCEPTED"})
+    workflow_starter = FakeWorkflowStarter()
+
+    async def async_runtime_precheck(**_kwargs):
+        return PatrolTaskCreateService._build_patrol_task_response(
+            result_code="REJECTED",
+            result_message="순찰 ROS runtime이 준비되지 않았습니다.",
+            reason_code="PATROL_RUNTIME_NOT_READY",
+            assigned_robot_id="pinky3",
+        )
+
+    service = PatrolTaskCreateService(
+        repository=repository,
+        patrol_workflow_starter=workflow_starter,
+        async_patrol_request_precheck=async_runtime_precheck,
+    )
+
+    response = asyncio.run(service.async_create_patrol_task(**build_patrol_payload()))
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "PATROL_RUNTIME_NOT_READY"
+    assert response["assigned_robot_id"] == "pinky3"
+    assert repository.calls == []
+    assert workflow_starter.calls == []
 
 
 def test_create_patrol_task_rejects_invalid_payload_before_repository_call():

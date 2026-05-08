@@ -9,6 +9,6 @@ SELECT
     created_at,
     updated_at
 FROM operation_zone
-WHERE zone_id = %s
-  AND map_id = %s
+WHERE map_id = %s
+  AND zone_id = %s
 FOR UPDATE

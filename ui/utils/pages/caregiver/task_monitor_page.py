@@ -26,6 +26,7 @@ from ui.utils.pages.caregiver.task_monitor_detail_panels import (
     _display,
     _format_pose,
     _metric_row,
+    _normalize_pose,
 )
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_workers import PatrolResumeWorker
@@ -144,7 +145,9 @@ class PatrolResumeDialog(QDialog):
     def _sync_submit_button(self):
         member_id = self.member_id_input.text().strip()
         action_memo = self.action_memo_input.toPlainText().strip()
-        self.submit_btn.setEnabled(bool(self.task_id) and member_id.isdigit() and bool(action_memo))
+        self.submit_btn.setEnabled(
+            bool(self.task_id) and member_id.isdigit() and bool(action_memo)
+        )
 
     def build_payload(self, *, caregiver_id):
         member_id = self.member_id_input.text().strip()
@@ -256,9 +259,8 @@ class FallEvidenceImageDialog(QDialog):
         return f"{width} x {height}px"
 
     def _build_pixmap(self):
-        image_data = (
-            self.response.get("annotated_image_data")
-            or self.response.get("image_data")
+        image_data = self.response.get("annotated_image_data") or self.response.get(
+            "image_data"
         )
         if not image_data:
             return None
@@ -307,7 +309,9 @@ class FallEvidenceImageDialog(QDialog):
         for detection in detections:
             if not isinstance(detection, dict):
                 continue
-            class_name = detection.get("class_name") or detection.get("label") or "object"
+            class_name = (
+                detection.get("class_name") or detection.get("label") or "object"
+            )
             confidence = detection.get("confidence")
             if confidence is None:
                 parts.append(str(class_name))
@@ -474,10 +478,16 @@ class TaskMonitorPage(QWidget):
             ["task_id", "유형", "상태", "단계", "로봇"]
         )
         self.task_table.horizontalHeader().setStretchLastSection(True)
-        self.task_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.task_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.task_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.task_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
         self.task_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.task_table.itemSelectionChanged.connect(self._handle_table_selection_changed)
+        self.task_table.itemSelectionChanged.connect(
+            self._handle_table_selection_changed
+        )
 
         list_layout.addLayout(list_header)
         list_layout.addWidget(self.empty_state_label)
@@ -493,7 +503,9 @@ class TaskMonitorPage(QWidget):
         detail_title.setObjectName("sectionTitle")
 
         task_id_row, _task_id_text, self.detail_task_id_label = _metric_row("task_id")
-        task_type_row, _task_type_text, self.detail_task_type_label = _metric_row("유형")
+        task_type_row, _task_type_text, self.detail_task_type_label = _metric_row(
+            "유형"
+        )
         status_row, _status_text, self.detail_task_status_label = _metric_row(
             "상태",
             "-",
@@ -531,17 +543,28 @@ class TaskMonitorPage(QWidget):
         self.guide_destination_label = self.guide_runtime_section.destination_label
 
         self.patrol_runtime_section = PatrolRuntimePanel()
+        self.patrol_area_label = self.patrol_runtime_section.patrol_area_label
+        self.patrol_robot_label = self.patrol_runtime_section.patrol_robot_label
+        self.patrol_status_label = self.patrol_runtime_section.patrol_status_label
+        self.patrol_waypoint_label = self.patrol_runtime_section.patrol_waypoint_label
+        self.patrol_distance_label = self.patrol_runtime_section.patrol_distance_label
+        self.patrol_location_label = self.patrol_runtime_section.patrol_location_label
         self.patrol_map_placeholder = self.patrol_runtime_section.patrol_map_placeholder
         self.patrol_map_overlay = self.patrol_runtime_section.patrol_map_overlay
         self.fall_marker_label = self.patrol_runtime_section.fall_marker_label
         self.fall_alert_panel = self.patrol_runtime_section.alert_panel
         self.fall_alert_task_label = self.patrol_runtime_section.fall_alert_task_label
-        self.evidence_image_id_label = self.patrol_runtime_section.evidence_image_id_label
+        self.evidence_image_id_label = (
+            self.patrol_runtime_section.evidence_image_id_label
+        )
         self.fall_frame_id_label = self.patrol_runtime_section.fall_frame_id_label
         self.fall_streak_label = self.patrol_runtime_section.fall_streak_label
         self.evidence_image_btn = self.patrol_runtime_section.evidence_image_btn
         self.evidence_status_label = self.patrol_runtime_section.evidence_status_label
         self.evidence_image_btn.clicked.connect(self.open_fall_evidence_dialog)
+        self.patrol_map_overlay.fall_alert_clicked.connect(
+            self._handle_fall_alert_marker_clicked
+        )
         self.resume_patrol_btn = self.patrol_runtime_section.resume_patrol_btn
         self.resume_status_label = self.patrol_runtime_section.resume_status_label
         self.resume_patrol_btn.clicked.connect(self.open_patrol_resume_dialog)
@@ -628,39 +651,88 @@ class TaskMonitorPage(QWidget):
                 or latest_feedback.get("summary")
                 or normalized.get("feedback_summary")
             )
-            if latest_feedback.get("pose") is not None:
-                normalized["pose"] = latest_feedback.get("pose")
+            pose = latest_feedback.get("current_pose") or latest_feedback.get("pose")
+            if pose is not None:
+                normalized["pose"] = _normalize_pose(pose)
+                normalized["current_pose"] = normalized["pose"]
+            for key in (
+                "patrol_status",
+                "current_waypoint_index",
+                "total_waypoints",
+                "distance_remaining_m",
+            ):
+                if latest_feedback.get(key) is not None:
+                    normalized[key] = latest_feedback.get(key)
 
         latest_robot = normalized.get("latest_robot")
         if isinstance(latest_robot, dict):
             if not normalized.get("assigned_robot_id"):
                 normalized["assigned_robot_id"] = latest_robot.get("robot_id")
             if latest_robot.get("pose") is not None and not normalized.get("pose"):
-                normalized["pose"] = latest_robot.get("pose")
+                normalized["pose"] = _normalize_pose(latest_robot.get("pose"))
 
         latest_alert = normalized.get("latest_alert")
         if isinstance(latest_alert, dict):
             normalized["fall_alert"] = latest_alert
 
+        TaskMonitorPage._sync_patrol_path_progress(normalized)
         return normalized
+
+    @staticmethod
+    def _sync_patrol_path_progress(task):
+        if not isinstance(task, dict):
+            return
+
+        current_index = task.get("current_waypoint_index")
+        total_waypoints = task.get("total_waypoints")
+        if current_index is None and total_waypoints is None:
+            return
+
+        path = task.get("patrol_path")
+        if not isinstance(path, dict):
+            path = {}
+        else:
+            path = dict(path)
+
+        if current_index is not None:
+            path["current_waypoint_index"] = current_index
+        if total_waypoints is not None:
+            path["waypoint_count"] = total_waypoints
+        task["patrol_path"] = path
 
     def _apply_task_updated(self, payload):
         task = self._merge_task_payload(payload)
         if task is None:
             return
+        self._sync_patrol_path_progress(task)
         self._upsert_task_row(task)
         self._select_task_if_needed(task["task_id"])
 
     def _apply_action_feedback_updated(self, payload):
-        task = self._merge_task_payload(
-            {
-                "task_id": payload.get("task_id"),
-                "feedback_summary": payload.get("feedback_summary"),
-                "pose": payload.get("pose"),
-            }
-        )
+        pose = payload.get("current_pose") or payload.get("pose")
+        normalized_pose = _normalize_pose(pose) if pose is not None else None
+        normalized_payload = {
+            "task_id": payload.get("task_id"),
+            "feedback_summary": payload.get("feedback_summary"),
+            "pose": normalized_pose,
+            "current_pose": normalized_pose,
+            "patrol_status": payload.get("patrol_status"),
+            "current_waypoint_index": payload.get("current_waypoint_index"),
+            "total_waypoints": payload.get("total_waypoints"),
+            "distance_remaining_m": payload.get("distance_remaining_m"),
+        }
+        latest_feedback = {
+            key: value
+            for key, value in normalized_payload.items()
+            if key != "task_id" and value is not None
+        }
+        if latest_feedback:
+            normalized_payload["latest_feedback"] = latest_feedback
+
+        task = self._merge_task_payload(normalized_payload)
         if task is None:
             return
+        self._sync_patrol_path_progress(task)
         self._upsert_task_row(task)
         self._select_task_if_needed(task["task_id"])
 
@@ -874,6 +946,14 @@ class TaskMonitorPage(QWidget):
             evidence_available=self._is_evidence_image_available(alert),
         )
 
+    def _handle_fall_alert_marker_clicked(self):
+        task = self._current_task()
+        if not task or not task.get("fall_alert"):
+            return
+        self.patrol_runtime_section.focus_fall_alert(
+            evidence_available=self._has_current_evidence_image(),
+        )
+
     def _can_resume_patrol(self, task):
         task_type = str(task.get("task_type") or "").strip().upper()
         phase = str(task.get("phase") or "").strip().upper()
@@ -1018,7 +1098,9 @@ class TaskMonitorPage(QWidget):
         if response.get("task_id"):
             self._apply_task_updated(response)
         else:
-            self._render_detail(self._tasks.get("task_id:" + str(self._selected_task_id)))
+            self._render_detail(
+                self._tasks.get("task_id:" + str(self._selected_task_id))
+            )
         self._mark_last_update("patrol resume")
 
     def _clear_patrol_resume_thread(self):
@@ -1093,7 +1175,9 @@ class TaskMonitorPage(QWidget):
             return
 
         try:
-            self._last_event_seq = int(batch.get("batch_end_seq") or self._last_event_seq)
+            self._last_event_seq = int(
+                batch.get("batch_end_seq") or self._last_event_seq
+            )
         except (TypeError, ValueError):
             pass
 
@@ -1161,7 +1245,9 @@ class TaskMonitorPage(QWidget):
 
     def reset_page(self):
         if self.task_table.rowCount() > 0:
-            self._render_detail(self._tasks.get("task_id:" + str(self._selected_task_id)))
+            self._render_detail(
+                self._tasks.get("task_id:" + str(self._selected_task_id))
+            )
 
     def shutdown(self):
         self._stop_snapshot_thread()

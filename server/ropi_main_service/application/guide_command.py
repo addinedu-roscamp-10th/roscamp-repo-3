@@ -30,17 +30,17 @@ class GuideCommandService:
         task_id,
         pinky_id,
         command_type,
-        target_track_id="",
-        wait_timeout_sec=0,
-        finish_reason="",
+        target_track_id=-1,
+        destination_id="",
+        destination_pose=None,
     ):
         payload = self.build_payload(
             task_id=task_id,
             pinky_id=pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
+            destination_id=destination_id,
+            destination_pose=destination_pose,
         )
         spec = self.build_command_execution_spec(task_id=task_id, pinky_id=pinky_id, payload=payload)
         return self.command_execution_recorder.record(
@@ -58,17 +58,17 @@ class GuideCommandService:
         task_id,
         pinky_id,
         command_type,
-        target_track_id="",
-        wait_timeout_sec=0,
-        finish_reason="",
+        target_track_id=-1,
+        destination_id="",
+        destination_pose=None,
     ):
         payload = self.build_payload(
             task_id=task_id,
             pinky_id=pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
+            destination_id=destination_id,
+            destination_pose=destination_pose,
         )
         spec = self.build_command_execution_spec(task_id=task_id, pinky_id=pinky_id, payload=payload)
         async_send_command = getattr(self.command_client, "async_send_command", None)
@@ -99,18 +99,27 @@ class GuideCommandService:
         task_id,
         pinky_id,
         command_type,
-        target_track_id="",
-        wait_timeout_sec=0,
-        finish_reason="",
+        target_track_id=-1,
+        destination_id="",
+        destination_pose=None,
     ):
         return {
             "pinky_id": str(pinky_id or "").strip(),
             "task_id": str(task_id or "").strip(),
             "command_type": str(command_type or "").strip(),
-            "target_track_id": str(target_track_id or "").strip(),
-            "wait_timeout_sec": int(wait_timeout_sec),
-            "finish_reason": str(finish_reason or "").strip(),
+            "target_track_id": GuideCommandService._normalize_target_track_id(
+                target_track_id
+            ),
+            "destination_id": str(destination_id or "").strip(),
+            "destination_pose": destination_pose or {},
         }
+
+    @staticmethod
+    def _normalize_target_track_id(value):
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return -1
 
     @staticmethod
     def build_command_execution_spec(*, task_id, pinky_id, payload):

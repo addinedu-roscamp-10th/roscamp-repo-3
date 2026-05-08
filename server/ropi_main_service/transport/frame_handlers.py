@@ -302,6 +302,118 @@ class ControlFrameHandlers:
         )
         return self._success_response(frame, result)
 
+    def handle_guide_resident_existence_query(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+        *,
+        loop=None,
+    ) -> TCPFrame:
+        try:
+            service = self.service_registry["kiosk_visitor"]()
+            result = service.lookup_residents(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_RESIDENT_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def handle_guide_resident_existence_query_async(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+    ) -> TCPFrame:
+        try:
+            service = self.service_registry["kiosk_visitor"]()
+            result = await service.async_lookup_residents(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_RESIDENT_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    def handle_guide_visitor_registration(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+        *,
+        loop=None,
+    ) -> TCPFrame:
+        try:
+            service = self.service_registry["kiosk_visitor"]()
+            result = service.register_visit(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_VISITOR_REGISTRATION_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def handle_guide_visitor_registration_async(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+    ) -> TCPFrame:
+        try:
+            service = self.service_registry["kiosk_visitor"]()
+            result = await service.async_register_visit(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_VISITOR_REGISTRATION_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    def handle_guide_visitor_care_history_query(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+        *,
+        loop=None,
+    ) -> TCPFrame:
+        try:
+            service = self.service_registry["kiosk_visitor"]()
+            result = service.get_care_history(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_CARE_HISTORY_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def handle_guide_visitor_care_history_query_async(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+    ) -> TCPFrame:
+        try:
+            service = self.service_registry["kiosk_visitor"]()
+            result = await service.async_get_care_history(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_CARE_HISTORY_QUERY_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    def handle_guide_staff_call_submission(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+        *,
+        loop=None,
+    ) -> TCPFrame:
+        try:
+            service = self.service_registry["staff_call"]()
+            result = service.submit_staff_call(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_STAFF_CALL_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
+    async def handle_guide_staff_call_submission_async(
+        self,
+        frame: TCPFrame,
+        payload: dict,
+    ) -> TCPFrame:
+        try:
+            service = self.service_registry["staff_call"]()
+            result = await service.async_submit_staff_call(**payload)
+        except Exception as exc:
+            return self._error_response(frame, "GUIDE_STAFF_CALL_ERROR", str(exc))
+
+        return self._success_response(frame, result)
+
     def handle_fall_evidence_image_query(
         self,
         frame: TCPFrame,

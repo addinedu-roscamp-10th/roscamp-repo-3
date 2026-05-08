@@ -28,6 +28,37 @@ def test_build_goal_pose_update_payload_uses_if_loc_004_fields():
     }
 
 
+def test_build_goal_pose_save_payload_omits_stale_check_for_create():
+    from ui.utils.pages.caregiver.coordinate_goal_pose_editing import (
+        build_goal_pose_save_payload,
+    )
+
+    payload = build_goal_pose_save_payload(
+        mode="create",
+        selected_goal_pose={"updated_at": "2026-05-02T03:00:00Z"},
+        goal_pose_id=" delivery_room_302 ",
+        zone_id=None,
+        purpose=" destination ",
+        pose_x="2.1",
+        pose_y="0.12",
+        pose_yaw="0",
+        frame_id=" map ",
+        is_enabled=True,
+    )
+
+    assert payload == {
+        "goal_pose_id": "delivery_room_302",
+        "zone_id": None,
+        "purpose": "destination",
+        "pose_x": 2.1,
+        "pose_y": 0.12,
+        "pose_yaw": 0.0,
+        "frame_id": "map",
+        "is_enabled": True,
+    }
+    assert "expected_updated_at" not in payload
+
+
 def test_goal_pose_save_response_requires_goal_pose_dict():
     from ui.utils.pages.caregiver.coordinate_goal_pose_editing import (
         goal_pose_from_save_response,

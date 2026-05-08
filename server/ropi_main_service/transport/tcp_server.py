@@ -9,15 +9,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from server.ropi_main_service.application.auth import AuthService
+from server.ropi_main_service.application.action_feedback_event_runtime import (
+    start_action_feedback_event_polling_if_enabled,
+)
 from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
-from server.ropi_main_service.application.guide_tracking_runtime import (
-    start_guide_tracking_stream_if_enabled,
-)
-from server.ropi_main_service.application.guide_navigation_runtime import (
-    GuideNavigationRuntimeStarter,
+from server.ropi_main_service.application.guide_phase_snapshot_runtime import (
+    start_guide_phase_snapshot_polling_if_enabled,
 )
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
@@ -25,7 +25,6 @@ from server.ropi_main_service.application.workflow_task_manager import (
 from server.ropi_main_service.application.patrol_runtime import build_patrol_request_service
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.rpc_service_registry import SERVICE_REGISTRY
-from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.observability import configure_logging, log_event
 from server.ropi_main_service.persistence.async_connection import close_pool
 from server.ropi_main_service.persistence.background_db_writer import (
@@ -34,6 +33,10 @@ from server.ropi_main_service.persistence.background_db_writer import (
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_GUIDE_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+    MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+    MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+    MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
@@ -87,7 +90,6 @@ def _serialize(value):
 def _ai_server_endpoint():
     host = (
         os.getenv("AI_FALL_EVIDENCE_HOST")
-        or os.getenv("AI_GUIDE_TRACKING_STREAM_HOST")
         or os.getenv("AI_FALL_STREAM_HOST")
         or os.getenv("AI_SERVER_HOST")
     )
@@ -97,7 +99,6 @@ def _ai_server_endpoint():
 
     port = (
         os.getenv("AI_FALL_EVIDENCE_PORT")
-        or os.getenv("AI_GUIDE_TRACKING_STREAM_PORT")
         or os.getenv("AI_FALL_STREAM_PORT")
         or "6000"
     )
@@ -156,9 +157,6 @@ class ControlServiceServer:
         self._server = None
         self.db_writer = get_default_background_db_writer()
         self.delivery_workflow_task_manager = get_default_workflow_task_manager()
-        self.guide_navigation_runtime_starter = GuideNavigationRuntimeStarter(
-            workflow_task_manager=self.delivery_workflow_task_manager,
-        )
         self.task_event_stream_hub = TaskEventStreamHub()
         self.task_event_subscription_handler = TaskEventSubscriptionHandler(
             stream_hub=self.task_event_stream_hub,
@@ -208,7 +206,8 @@ class ControlServiceServer:
             async_stream_required_codes={MESSAGE_CODE_TASK_EVENT_SUBSCRIBE},
         )
         self.fall_inference_stream_task = None
-        self.guide_tracking_stream_task = None
+        self.action_feedback_event_poll_task = None
+        self.guide_phase_snapshot_poll_task = None
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         result = self.frame_router.dispatch(frame, loop=loop)
@@ -239,6 +238,18 @@ class ControlServiceServer:
                 self.frame_handlers.handle_fall_evidence_image_query
             ),
             MESSAGE_CODE_GUIDE_CREATE_TASK: self.frame_handlers.handle_guide_create_task,
+            MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY: (
+                self.frame_handlers.handle_guide_resident_existence_query
+            ),
+            MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION: (
+                self.frame_handlers.handle_guide_visitor_registration
+            ),
+            MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY: (
+                self.frame_handlers.handle_guide_visitor_care_history_query
+            ),
+            MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION: (
+                self.frame_handlers.handle_guide_staff_call_submission
+            ),
             MESSAGE_CODE_TASK_STATUS_QUERY: (
                 self.frame_handlers.handle_task_status_query
             ),
@@ -264,6 +275,18 @@ class ControlServiceServer:
             MESSAGE_CODE_GUIDE_CREATE_TASK: (
                 self.frame_handlers.handle_guide_create_task_async
             ),
+            MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY: (
+                self.frame_handlers.handle_guide_resident_existence_query_async
+            ),
+            MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION: (
+                self.frame_handlers.handle_guide_visitor_registration_async
+            ),
+            MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY: (
+                self.frame_handlers.handle_guide_visitor_care_history_query_async
+            ),
+            MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION: (
+                self.frame_handlers.handle_guide_staff_call_submission_async
+            ),
             MESSAGE_CODE_TASK_STATUS_QUERY: (
                 self.frame_handlers.handle_task_status_query_async
             ),
@@ -271,12 +294,6 @@ class ControlServiceServer:
         }
 
     def _build_runtime_service(self, service_name, factory):
-        if service_name == "visit_guide" and factory is VisitGuideService:
-            return VisitGuideService(
-                guide_navigation_starter=(
-                    self.guide_navigation_runtime_starter.start_destination_navigation
-                ),
-            )
         return factory()
 
     async def start(self):
@@ -286,10 +303,19 @@ class ControlServiceServer:
             task_event_publisher=self.task_event_stream_hub,
             workflow_task_manager=self.delivery_workflow_task_manager,
         )
-        self.guide_tracking_stream_task = start_guide_tracking_stream_if_enabled(
-            loop=asyncio.get_running_loop(),
-            task_event_publisher=self.task_event_stream_hub,
-            workflow_task_manager=self.delivery_workflow_task_manager,
+        self.action_feedback_event_poll_task = (
+            start_action_feedback_event_polling_if_enabled(
+                loop=asyncio.get_running_loop(),
+                task_event_publisher=self.task_event_stream_hub,
+                workflow_task_manager=self.delivery_workflow_task_manager,
+            )
+        )
+        self.guide_phase_snapshot_poll_task = (
+            start_guide_phase_snapshot_polling_if_enabled(
+                loop=asyncio.get_running_loop(),
+                task_update_publisher=self.task_update_event_publisher,
+                workflow_task_manager=self.delivery_workflow_task_manager,
+            )
         )
         try:
             self._server = await asyncio.start_server(

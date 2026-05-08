@@ -229,3 +229,4 @@ wireframes/
 /test/local/*
 !/test/local/README.md
 /local_refs/
+reference/

@@ -1,6 +1,9 @@
 import json
 
-from server.ropi_main_service.application.guide_runtime import DEFAULT_GUIDE_PINKY_ID
+from server.ropi_main_service.application.guide_runtime import (
+    DEFAULT_GUIDE_PINKY_ID,
+    get_guide_map_id,
+)
 from server.ropi_main_service.persistence.async_connection import async_transaction
 from server.ropi_main_service.persistence.connection import get_connection
 from server.ropi_main_service.persistence.repositories.idempotency_repository import (
@@ -21,11 +24,13 @@ class GuideTaskRepository:
         connection_factory=None,
         async_transaction_factory=None,
         default_pinky_id=DEFAULT_GUIDE_PINKY_ID,
+        guide_map_id=None,
     ):
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
         self.connection_factory = connection_factory or get_connection
         self.async_transaction_factory = async_transaction_factory or async_transaction
         self.default_pinky_id = str(default_pinky_id or "").strip() or DEFAULT_GUIDE_PINKY_ID
+        self.guide_map_id = str(guide_map_id or get_guide_map_id()).strip()
 
     def create_guide_task(
         self,
@@ -156,7 +161,11 @@ class GuideTaskRepository:
         if guard is not None:
             return guard
 
-        destination = self._find_destination_goal_pose(cur, context["room_no"])
+        destination = self._find_destination_goal_pose(
+            cur,
+            context["room_no"],
+            map_id=self.guide_map_id,
+        )
         guard = self._validate_destination(destination)
         if guard is not None:
             return guard
@@ -193,7 +202,11 @@ class GuideTaskRepository:
         if guard is not None:
             return guard
 
-        destination = await self._async_find_destination_goal_pose(cur, context["room_no"])
+        destination = await self._async_find_destination_goal_pose(
+            cur,
+            context["room_no"],
+            map_id=self.guide_map_id,
+        )
         guard = self._validate_destination(destination)
         if guard is not None:
             return guard
@@ -227,15 +240,18 @@ class GuideTaskRepository:
         return await cur.fetchone()
 
     @classmethod
-    def _find_destination_goal_pose(cls, cur, room_no):
-        cur.execute(load_sql("guide/find_destination_goal_pose.sql"), (cls._zone_id_from_room(room_no),))
+    def _find_destination_goal_pose(cls, cur, room_no, *, map_id=None):
+        cur.execute(
+            load_sql("guide/find_destination_goal_pose.sql"),
+            (cls._zone_id_from_room(room_no), str(map_id or get_guide_map_id())),
+        )
         return cur.fetchone()
 
     @classmethod
-    async def _async_find_destination_goal_pose(cls, cur, room_no):
+    async def _async_find_destination_goal_pose(cls, cur, room_no, *, map_id=None):
         await cur.execute(
             load_sql("guide/find_destination_goal_pose.sql"),
-            (cls._zone_id_from_room(room_no),),
+            (cls._zone_id_from_room(room_no), str(map_id or get_guide_map_id())),
         )
         return await cur.fetchone()
 

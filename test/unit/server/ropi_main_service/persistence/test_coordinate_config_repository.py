@@ -75,6 +75,51 @@ def test_coordinate_config_repository_fetches_map_profile_by_id(monkeypatch):
     ]
 
 
+def test_coordinate_config_repository_fetches_operation_zone_by_map_and_zone(monkeypatch):
+    calls = []
+
+    def fake_fetch_one(query, params=None):
+        calls.append((query, params))
+        return {"map_id": "map_test12_0506", "zone_id": "room_301"}
+
+    monkeypatch.setattr(coordinate_config_repository, "fetch_one", fake_fetch_one)
+
+    row = coordinate_config_repository.CoordinateConfigRepository().get_operation_zone(
+        map_id="map_test12_0506",
+        zone_id="room_301",
+    )
+
+    assert row == {"map_id": "map_test12_0506", "zone_id": "room_301"}
+    assert calls == [
+        (
+            coordinate_config_repository.FIND_OPERATION_ZONE_SQL,
+            ("map_test12_0506", "room_301"),
+        )
+    ]
+
+
+def test_coordinate_config_repository_fetches_goal_pose_by_id(monkeypatch):
+    calls = []
+
+    def fake_fetch_one(query, params=None):
+        calls.append((query, params))
+        return {"goal_pose_id": "delivery_room_301"}
+
+    monkeypatch.setattr(coordinate_config_repository, "fetch_one", fake_fetch_one)
+
+    row = coordinate_config_repository.CoordinateConfigRepository().get_goal_pose(
+        goal_pose_id="delivery_room_301",
+    )
+
+    assert row == {"goal_pose_id": "delivery_room_301"}
+    assert calls == [
+        (
+            coordinate_config_repository.FIND_GOAL_POSE_SQL,
+            ("delivery_room_301",),
+        )
+    ]
+
+
 def test_coordinate_config_repository_exposes_async_fetch_methods(monkeypatch):
     calls = []
 
@@ -256,7 +301,107 @@ def test_coordinate_config_repository_creates_operation_zone_in_transaction(
         True,
     )
     assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
-    assert select_params == ("caregiver_room",)
+    assert select_params == ("map_test11_0423", "caregiver_room")
+
+
+def test_coordinate_config_repository_creates_patrol_area_in_transaction(
+    monkeypatch,
+):
+    inserted_row = {
+        "patrol_area_id": "patrol_day_01",
+        "map_id": "map_test11_0423",
+        "patrol_area_name": "주간 병동 순찰",
+        "revision": 1,
+    }
+    cursor = FakeCursor(rows=[inserted_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    row = coordinate_config_repository.CoordinateConfigRepository().create_patrol_area(
+        map_id="map_test11_0423",
+        patrol_area_id="patrol_day_01",
+        patrol_area_name="주간 병동 순찰",
+        path_json=path_json,
+        is_enabled=True,
+    )
+
+    assert row == inserted_row
+    assert connection.began is True
+    assert connection.committed is True
+    insert_query, insert_params = cursor.calls[0]
+    select_query, select_params = cursor.calls[1]
+    assert insert_query == coordinate_config_repository.INSERT_PATROL_AREA_SQL
+    assert insert_params == (
+        "patrol_day_01",
+        "map_test11_0423",
+        "주간 병동 순찰",
+        '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0},'
+        '{"x":1.0,"y":1.0,"yaw":0.0}]}',
+        True,
+    )
+    assert select_query == coordinate_config_repository.FIND_PATROL_AREA_SQL
+    assert select_params == ("patrol_day_01",)
+
+
+def test_coordinate_config_repository_creates_goal_pose_in_transaction(
+    monkeypatch,
+):
+    inserted_row = {
+        "goal_pose_id": "delivery_room_302",
+        "map_id": "map_test11_0423",
+        "zone_id": "room_301",
+        "purpose": "DESTINATION",
+    }
+    cursor = FakeCursor(rows=[inserted_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+
+    row = coordinate_config_repository.CoordinateConfigRepository().create_goal_pose(
+        map_id="map_test11_0423",
+        goal_pose_id="delivery_room_302",
+        zone_id="room_301",
+        purpose="DESTINATION",
+        pose_x=2.1,
+        pose_y=0.12,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert row == inserted_row
+    assert connection.began is True
+    assert connection.committed is True
+    insert_query, insert_params = cursor.calls[0]
+    select_query, select_params = cursor.calls[1]
+    assert insert_query == coordinate_config_repository.INSERT_GOAL_POSE_SQL
+    assert insert_params == (
+        "delivery_room_302",
+        "map_test11_0423",
+        "room_301",
+        "DESTINATION",
+        2.1,
+        0.12,
+        0.0,
+        "map",
+        True,
+    )
+    assert select_query == coordinate_config_repository.FIND_GOAL_POSE_SQL
+    assert select_params == ("delivery_room_302",)
 
 
 def test_coordinate_config_repository_updates_operation_zone_with_revision_lock(
@@ -293,11 +438,11 @@ def test_coordinate_config_repository_updates_operation_zone_with_revision_lock(
     update_query, update_params = cursor.calls[1]
     select_query, select_params = cursor.calls[2]
     assert lock_query == coordinate_config_repository.LOCK_OPERATION_ZONE_SQL
-    assert lock_params == ("room_301", "map_test11_0423")
+    assert lock_params == ("map_test11_0423", "room_301")
     assert "revision = revision + 1" in update_query
-    assert update_params == ("301호", "ROOM", False, "room_301", "map_test11_0423")
+    assert update_params == ("301호", "ROOM", False, "map_test11_0423", "room_301")
     assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
-    assert select_params == ("room_301",)
+    assert select_params == ("map_test11_0423", "room_301")
 
 
 def test_coordinate_config_repository_reports_operation_zone_revision_conflict(
@@ -368,16 +513,16 @@ def test_coordinate_config_repository_updates_operation_zone_boundary_with_revis
     update_query, update_params = cursor.calls[1]
     select_query, select_params = cursor.calls[2]
     assert lock_query == coordinate_config_repository.LOCK_OPERATION_ZONE_SQL
-    assert lock_params == ("room_301", "map_test11_0423")
+    assert lock_params == ("map_test11_0423", "room_301")
     assert update_query == coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL
     assert update_params == (
         '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.0,"y":0.0},'
         '{"x":1.0,"y":0.0},{"x":1.0,"y":1.0}]}',
-        "room_301",
         "map_test11_0423",
+        "room_301",
     )
     assert select_query == coordinate_config_repository.FIND_OPERATION_ZONE_SQL
-    assert select_params == ("room_301",)
+    assert select_params == ("map_test11_0423", "room_301")
 
 
 def test_coordinate_config_repository_clears_operation_zone_boundary(
@@ -408,7 +553,7 @@ def test_coordinate_config_repository_clears_operation_zone_boundary(
     assert result == {"status": "UPDATED", "operation_zone": updated_row}
     assert cursor.calls[1] == (
         coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL,
-        (None, "room_301", "map_test11_0423"),
+        (None, "map_test11_0423", "room_301"),
     )
 
 
@@ -509,16 +654,22 @@ def test_coordinate_config_repository_exposes_async_operation_zone_mutations(
                 True,
             ),
         ),
-        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("caregiver_room",)),
+        (
+            coordinate_config_repository.FIND_OPERATION_ZONE_SQL,
+            ("map_test11_0423", "caregiver_room"),
+        ),
         (
             coordinate_config_repository.LOCK_OPERATION_ZONE_SQL,
-            ("room_301", "map_test11_0423"),
+            ("map_test11_0423", "room_301"),
         ),
         (
             coordinate_config_repository.UPDATE_OPERATION_ZONE_SQL,
-            ("301호", "ROOM", False, "room_301", "map_test11_0423"),
+            ("301호", "ROOM", False, "map_test11_0423", "room_301"),
         ),
-        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("room_301",)),
+        (
+            coordinate_config_repository.FIND_OPERATION_ZONE_SQL,
+            ("map_test11_0423", "room_301"),
+        ),
     ]
 
 
@@ -577,18 +728,21 @@ def test_coordinate_config_repository_exposes_async_operation_zone_boundary_upda
     assert calls == [
         (
             coordinate_config_repository.LOCK_OPERATION_ZONE_SQL,
-            ("room_301", "map_test11_0423"),
+            ("map_test11_0423", "room_301"),
         ),
         (
             coordinate_config_repository.UPDATE_OPERATION_ZONE_BOUNDARY_SQL,
             (
                 '{"type":"POLYGON","header":{"frame_id":"map"},"vertices":[{"x":0.0,"y":0.0},'
                 '{"x":1.0,"y":0.0},{"x":1.0,"y":1.0}]}',
-                "room_301",
                 "map_test11_0423",
+                "room_301",
             ),
         ),
-        (coordinate_config_repository.FIND_OPERATION_ZONE_SQL, ("room_301",)),
+        (
+            coordinate_config_repository.FIND_OPERATION_ZONE_SQL,
+            ("map_test11_0423", "room_301"),
+        ),
     ]
 
 
@@ -770,6 +924,75 @@ def test_coordinate_config_repository_exposes_async_goal_pose_update(monkeypatch
     ]
 
 
+def test_coordinate_config_repository_exposes_async_goal_pose_create(monkeypatch):
+    calls = []
+    rows = [
+        {
+            "goal_pose_id": "delivery_room_302",
+            "map_id": "map_test11_0423",
+            "purpose": "DESTINATION",
+        }
+    ]
+
+    class AsyncCursor:
+        async def execute(self, query, params=None):
+            calls.append((query, params))
+
+        async def fetchone(self):
+            return rows.pop(0)
+
+    @asynccontextmanager
+    async def fake_async_transaction():
+        yield AsyncCursor()
+
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "async_transaction",
+        fake_async_transaction,
+    )
+
+    async def scenario():
+        return await coordinate_config_repository.CoordinateConfigRepository().async_create_goal_pose(
+            map_id="map_test11_0423",
+            goal_pose_id="delivery_room_302",
+            zone_id=None,
+            purpose="DESTINATION",
+            pose_x=2.1,
+            pose_y=0.12,
+            pose_yaw=0.0,
+            frame_id="map",
+            is_enabled=True,
+        )
+
+    result = asyncio.run(scenario())
+
+    assert result == {
+        "goal_pose_id": "delivery_room_302",
+        "map_id": "map_test11_0423",
+        "purpose": "DESTINATION",
+    }
+    assert calls == [
+        (
+            coordinate_config_repository.INSERT_GOAL_POSE_SQL,
+            (
+                "delivery_room_302",
+                "map_test11_0423",
+                None,
+                "DESTINATION",
+                2.1,
+                0.12,
+                0.0,
+                "map",
+                True,
+            ),
+        ),
+        (
+            coordinate_config_repository.FIND_GOAL_POSE_SQL,
+            ("delivery_room_302",),
+        ),
+    ]
+
+
 def test_coordinate_config_repository_updates_patrol_area_path_with_revision_lock(
     monkeypatch,
 ):
@@ -818,6 +1041,65 @@ def test_coordinate_config_repository_updates_patrol_area_path_with_revision_loc
     assert update_params[0] == (
         '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0},'
         '{"x":1.0,"y":1.0,"yaw":0.0}]}'
+    )
+    assert select_query == coordinate_config_repository.FIND_PATROL_AREA_SQL
+    assert select_params == ("patrol_ward_night_01",)
+
+
+def test_coordinate_config_repository_updates_patrol_area_row_with_revision_lock(
+    monkeypatch,
+):
+    locked_row = {
+        "patrol_area_id": "patrol_ward_night_01",
+        "map_id": "map_test11_0423",
+        "revision": 7,
+    }
+    updated_row = {
+        "patrol_area_id": "patrol_ward_night_01",
+        "map_id": "map_test11_0423",
+        "revision": 8,
+        "is_enabled": False,
+    }
+    cursor = FakeCursor(rows=[locked_row, updated_row])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(
+        coordinate_config_repository,
+        "get_connection",
+        lambda: connection,
+    )
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+
+    result = coordinate_config_repository.CoordinateConfigRepository().update_patrol_area(
+        map_id="map_test11_0423",
+        patrol_area_id="patrol_ward_night_01",
+        expected_revision=7,
+        patrol_area_name="야간 병동 순찰",
+        path_json=path_json,
+        is_enabled=False,
+    )
+
+    assert result == {"status": "UPDATED", "patrol_area": updated_row}
+    assert connection.began is True
+    assert connection.committed is True
+    lock_query, lock_params = cursor.calls[0]
+    update_query, update_params = cursor.calls[1]
+    select_query, select_params = cursor.calls[2]
+    assert lock_query == coordinate_config_repository.LOCK_PATROL_AREA_SQL
+    assert lock_params == ("patrol_ward_night_01", "map_test11_0423")
+    assert update_query == coordinate_config_repository.UPDATE_PATROL_AREA_SQL
+    assert update_params == (
+        "야간 병동 순찰",
+        '{"header":{"frame_id":"map"},"poses":[{"x":0.0,"y":0.0,"yaw":0.0},'
+        '{"x":1.0,"y":1.0,"yaw":0.0}]}',
+        False,
+        "patrol_ward_night_01",
+        "map_test11_0423",
     )
     assert select_query == coordinate_config_repository.FIND_PATROL_AREA_SQL
     assert select_params == ("patrol_ward_night_01",)

@@ -5,6 +5,8 @@ from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
 from server.ropi_main_service.application.patrol_orchestrator import PatrolOrchestrator
+from server.ropi_main_service.application.patrol_config import get_patrol_runtime_config
+from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.observability import log_event
 from server.ropi_main_service.persistence.repositories.patrol_task_execution_repository import (
@@ -19,6 +21,107 @@ DeliveryRequestService = TaskRequestService
 DeliveryRequestRepository = TaskRequestRepository
 _DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
 logger = logging.getLogger(__name__)
+
+
+def _build_patrol_request_precheck(*, runtime_config):
+    def _precheck(**_kwargs):
+        try:
+            ros_status = RosRuntimeReadinessService(
+                runtime_config=runtime_config,
+                arm_ids=[],
+                include_navigation=False,
+                include_patrol=True,
+            ).get_status()
+        except Exception as exc:
+            return _build_patrol_runtime_rejection(
+                runtime_config=runtime_config,
+                reason_code="PATROL_PATH_SERVICE_UNAVAILABLE",
+                message=f"순찰 ROS service가 준비되지 않았습니다: {exc}",
+            )
+
+        if not _patrol_runtime_ready(ros_status, runtime_config=runtime_config):
+            return _build_patrol_runtime_rejection(
+                runtime_config=runtime_config,
+                reason_code="PATROL_RUNTIME_NOT_READY",
+                message="순찰 ROS runtime이 준비되지 않았습니다.",
+                ros_detail=ros_status,
+            )
+
+        return None
+
+    return _precheck
+
+
+def _build_async_patrol_request_precheck(*, runtime_config):
+    async def _async_precheck(**_kwargs):
+        try:
+            ros_status = await RosRuntimeReadinessService(
+                runtime_config=runtime_config,
+                arm_ids=[],
+                include_navigation=False,
+                include_patrol=True,
+            ).async_get_status()
+        except Exception as exc:
+            return _build_patrol_runtime_rejection(
+                runtime_config=runtime_config,
+                reason_code="PATROL_PATH_SERVICE_UNAVAILABLE",
+                message=f"순찰 ROS service가 준비되지 않았습니다: {exc}",
+            )
+
+        if not _patrol_runtime_ready(ros_status, runtime_config=runtime_config):
+            return _build_patrol_runtime_rejection(
+                runtime_config=runtime_config,
+                reason_code="PATROL_RUNTIME_NOT_READY",
+                message="순찰 ROS runtime이 준비되지 않았습니다.",
+                ros_detail=ros_status,
+            )
+
+        return None
+
+    return _async_precheck
+
+
+def _patrol_runtime_ready(ros_status, *, runtime_config):
+    if not isinstance(ros_status, dict):
+        return False
+
+    checks = ros_status.get("checks")
+    if not isinstance(checks, list):
+        return False
+
+    required_endpoint = f"/ropi/control/{runtime_config.pinky_id}/execute_patrol_path"
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if check.get("action_name") != required_endpoint:
+            continue
+        return check.get("ready") is True
+
+    return False
+
+
+def _build_patrol_runtime_rejection(
+    *,
+    runtime_config,
+    reason_code,
+    message,
+    ros_detail=None,
+):
+    log_event(
+        logger,
+        logging.WARNING,
+        "patrol_request_precheck_failed",
+        reason_code=reason_code,
+        message=message,
+        pinky_id=runtime_config.pinky_id,
+        ros_detail=ros_detail,
+    )
+    return TaskRequestService._build_patrol_task_response(
+        result_code="REJECTED",
+        result_message=message,
+        reason_code=reason_code,
+        assigned_robot_id=runtime_config.pinky_id,
+    )
 
 
 def _normalize_workflow_response(result):
@@ -46,13 +149,24 @@ def build_patrol_request_service(
     patrol_orchestrator=None,
     task_request_repository=None,
 ) -> TaskRequestService:
+    runtime_config = get_patrol_runtime_config()
     task_request_repository = task_request_repository or _new_task_request_repository()
     patrol_workflow_starter = None
+    patrol_request_precheck = None
+    async_patrol_request_precheck = None
 
     if loop is not None:
+        patrol_request_precheck = _build_patrol_request_precheck(
+            runtime_config=runtime_config,
+        )
+        async_patrol_request_precheck = _build_async_patrol_request_precheck(
+            runtime_config=runtime_config,
+        )
         workflow_task_manager = workflow_task_manager or get_default_workflow_task_manager()
         patrol_execution_repository = patrol_execution_repository or PatrolTaskExecutionRepository()
-        patrol_orchestrator = patrol_orchestrator or PatrolOrchestrator()
+        patrol_orchestrator = patrol_orchestrator or PatrolOrchestrator(
+            runtime_config=runtime_config,
+        )
 
         async def _run_patrol_workflow(*, task_id):
             snapshot = await patrol_execution_repository.async_get_patrol_execution_snapshot(task_id)
@@ -139,6 +253,8 @@ def build_patrol_request_service(
     return TaskRequestService(
         repository=task_request_repository,
         patrol_workflow_starter=patrol_workflow_starter,
+        patrol_request_precheck=patrol_request_precheck,
+        async_patrol_request_precheck=async_patrol_request_precheck,
     )
 
 

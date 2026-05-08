@@ -316,9 +316,11 @@ class PatrolTaskCancelRepository:
     @staticmethod
     def _normalize_cancel_result(cancel_response):
         cancel_response = cancel_response or {}
-        result_code = str(cancel_response.get("result_code") or "UNKNOWN").strip() or "UNKNOWN"
-        result_message = cancel_response.get("result_message")
         cancel_requested = bool(cancel_response.get("cancel_requested"))
+        result_code = str(cancel_response.get("result_code") or "UNKNOWN").strip() or "UNKNOWN"
+        if cancel_requested:
+            result_code = TASK_STATUS_CANCEL_REQUESTED
+        result_message = cancel_response.get("result_message")
         if result_message is None:
             result_message = (
                 "순찰 중단 요청이 접수되었습니다."

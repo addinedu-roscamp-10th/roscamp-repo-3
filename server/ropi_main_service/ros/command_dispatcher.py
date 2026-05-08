@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import partial
 
 from server.ropi_main_service.application.delivery_config import get_delivery_runtime_config
@@ -10,6 +11,147 @@ class RosServiceCommandDispatchError(RuntimeError):
     def __init__(self, error_code: str, error: str):
         super().__init__(error)
         self.error_code = error_code
+
+
+@dataclass(frozen=True)
+class ActionCommandSpec:
+    client_attr: str
+    identifier_field: str
+    identifier_error_code: str
+    identifier_error_message: str
+    action_name_template: str
+    timeout_strategy: str
+    missing_client_error_code: str | None = None
+    missing_client_error_message: str | None = None
+
+
+@dataclass(frozen=True)
+class ServiceCommandSpec:
+    client_attr: str
+    pinky_id_getter: str
+    request_builder: str
+    service_name_builder: str
+    missing_client_error_code: str
+    missing_client_error_message: str
+
+
+@dataclass(frozen=True)
+class ActionClientSpec:
+    client_attr: str
+    client_name: str
+    required: bool = False
+
+
+@dataclass(frozen=True)
+class RuntimeStatusContext:
+    pinky_id: str
+    include_navigation: bool
+    include_patrol: bool
+    include_guide: bool
+    patrol_pinky_id: str
+    arm_ids: tuple
+
+
+@dataclass(frozen=True)
+class RuntimeStatusActionTargetSpec:
+    client_attr: str
+    check_name_template: str
+    action_name_template: str
+
+
+@dataclass(frozen=True)
+class RuntimeStatusActionCheck:
+    name: str
+    action_name: str
+    action_client: object | None
+    missing_client_error: str | None = None
+
+
+ACTION_CLIENT_SPECS = (
+    ActionClientSpec(
+        client_attr="goal_pose_action_client",
+        client_name="navigation",
+        required=True,
+    ),
+    ActionClientSpec(
+        client_attr="manipulation_action_client",
+        client_name="manipulation",
+    ),
+    ActionClientSpec(
+        client_attr="patrol_path_action_client",
+        client_name="patrol",
+    ),
+)
+
+RUNTIME_STATUS_ACTION_TARGET_SPECS = {
+    "navigation": RuntimeStatusActionTargetSpec(
+        client_attr="goal_pose_action_client",
+        check_name_template="{pinky_id}.navigate_to_goal",
+        action_name_template="/ropi/control/{pinky_id}/navigate_to_goal",
+    ),
+    "patrol": RuntimeStatusActionTargetSpec(
+        client_attr="patrol_path_action_client",
+        check_name_template="{patrol_pinky_id}.execute_patrol_path",
+        action_name_template="/ropi/control/{patrol_pinky_id}/execute_patrol_path",
+    ),
+}
+
+
+ACTION_COMMAND_SPECS = {
+    "navigate_to_goal": ActionCommandSpec(
+        client_attr="goal_pose_action_client",
+        identifier_field="pinky_id",
+        identifier_error_code="PINKY_ID_REQUIRED",
+        identifier_error_message="navigate_to_goal command requires pinky_id.",
+        action_name_template="/ropi/control/{identifier}/navigate_to_goal",
+        timeout_strategy="navigation",
+    ),
+    "execute_manipulation": ActionCommandSpec(
+        client_attr="manipulation_action_client",
+        identifier_field="arm_id",
+        identifier_error_code="ARM_ID_REQUIRED",
+        identifier_error_message="execute_manipulation command requires arm_id.",
+        action_name_template="/ropi/arm/{identifier}/execute_manipulation",
+        timeout_strategy="manipulation",
+        missing_client_error_code="MANIPULATION_SERVICE_UNAVAILABLE",
+        missing_client_error_message=(
+            "execute_manipulation command requires manipulation action client."
+        ),
+    ),
+    "execute_patrol_path": ActionCommandSpec(
+        client_attr="patrol_path_action_client",
+        identifier_field="pinky_id",
+        identifier_error_code="PINKY_ID_REQUIRED",
+        identifier_error_message="execute_patrol_path command requires pinky_id.",
+        action_name_template="/ropi/control/{identifier}/execute_patrol_path",
+        timeout_strategy="navigation",
+        missing_client_error_code="PATROL_SERVICE_UNAVAILABLE",
+        missing_client_error_message=(
+            "execute_patrol_path command requires patrol path action client."
+        ),
+    ),
+}
+
+SERVICE_COMMAND_SPECS = {
+    "fall_response_control": ServiceCommandSpec(
+        client_attr="fall_response_control_client",
+        pinky_id_getter="_get_fall_response_pinky_id",
+        request_builder="_build_fall_response_request",
+        service_name_builder="_build_fall_response_service_name",
+        missing_client_error_code="FALL_RESPONSE_SERVICE_UNAVAILABLE",
+        missing_client_error_message=(
+            "fall_response_control command requires fall response service client."
+        ),
+    ),
+    "guide_command": ServiceCommandSpec(
+        client_attr="guide_command_client",
+        pinky_id_getter="_get_guide_pinky_id",
+        request_builder="_build_guide_command_request",
+        service_name_builder="_build_guide_command_service_name",
+        missing_client_error_code="GUIDE_COMMAND_SERVICE_UNAVAILABLE",
+        missing_client_error_message="guide_command requires guide command service client.",
+    ),
+}
 
 
 class RosServiceCommandDispatcher:
@@ -24,7 +166,6 @@ class RosServiceCommandDispatcher:
         fall_response_control_client=None,
         guide_command_client=None,
         guide_runtime_subscriber=None,
-        guide_tracking_update_publisher=None,
         runtime_config=None,
         patrol_runtime_config=None,
     ):
@@ -34,7 +175,6 @@ class RosServiceCommandDispatcher:
         self.fall_response_control_client = fall_response_control_client
         self.guide_command_client = guide_command_client
         self.guide_runtime_subscriber = guide_runtime_subscriber
-        self.guide_tracking_update_publisher = guide_tracking_update_publisher
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
         self._dispatch_executor = ThreadPoolExecutor(
@@ -45,23 +185,27 @@ class RosServiceCommandDispatcher:
             "cancel_action": self._dispatch_cancel_action,
             "get_action_feedback": self._dispatch_get_action_feedback,
             "get_runtime_status": self._dispatch_get_runtime_status,
-            "navigate_to_goal": self._dispatch_navigate_to_goal,
-            "execute_manipulation": self._dispatch_execute_manipulation,
-            "execute_patrol_path": self._dispatch_execute_patrol_path,
-            "fall_response_control": self._dispatch_fall_response_control,
-            "guide_command": self._dispatch_guide_command,
-            "publish_guide_tracking_update": self._dispatch_publish_guide_tracking_update,
+            **{
+                command: partial(self._dispatch_action_command, spec)
+                for command, spec in ACTION_COMMAND_SPECS.items()
+            },
+            **{
+                command: partial(self._dispatch_service_command, spec)
+                for command, spec in SERVICE_COMMAND_SPECS.items()
+            },
         }
         self._async_command_handlers = {
             "cancel_action": self._async_dispatch_cancel_action,
             "get_action_feedback": self._async_dispatch_get_action_feedback,
             "get_runtime_status": self._async_dispatch_get_runtime_status,
-            "navigate_to_goal": self._async_dispatch_navigate_to_goal,
-            "execute_manipulation": self._async_dispatch_execute_manipulation,
-            "execute_patrol_path": self._async_dispatch_execute_patrol_path,
-            "fall_response_control": self._async_dispatch_fall_response_control,
-            "guide_command": self._async_dispatch_guide_command,
-            "publish_guide_tracking_update": self._async_dispatch_publish_guide_tracking_update,
+            **{
+                command: partial(self._async_dispatch_action_command, spec)
+                for command, spec in ACTION_COMMAND_SPECS.items()
+            },
+            **{
+                command: partial(self._async_dispatch_service_command, spec)
+                for command, spec in SERVICE_COMMAND_SPECS.items()
+            },
         }
 
     def dispatch(self, command: str, payload: dict | None = None) -> dict:
@@ -92,98 +236,143 @@ class RosServiceCommandDispatcher:
         self._dispatch_executor.shutdown(wait=False, cancel_futures=True)
 
     def _dispatch_navigate_to_goal(self, payload: dict) -> dict:
-        pinky_id = self._get_required_identifier(
+        return self._dispatch_action_command(
+            ACTION_COMMAND_SPECS["navigate_to_goal"],
             payload,
-            field_name="pinky_id",
-            error_code="PINKY_ID_REQUIRED",
-            error_message="navigate_to_goal command requires pinky_id.",
-        )
-        goal = payload.get("goal") or {}
-
-        return self.goal_pose_action_client.send_goal(
-            action_name=f"/ropi/control/{pinky_id}/navigate_to_goal",
-            goal=goal,
-            result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
         )
 
     def _dispatch_execute_manipulation(self, payload: dict) -> dict:
-        arm_id = self._get_required_identifier(
+        return self._dispatch_action_command(
+            ACTION_COMMAND_SPECS["execute_manipulation"],
             payload,
-            field_name="arm_id",
-            error_code="ARM_ID_REQUIRED",
-            error_message="execute_manipulation command requires arm_id.",
-        )
-        goal = payload.get("goal") or {}
-        action_client = self._require_action_client(
-            self.manipulation_action_client,
-            error_code="MANIPULATION_SERVICE_UNAVAILABLE",
-            error_message="execute_manipulation command requires manipulation action client.",
-        )
-
-        return action_client.send_goal(
-            action_name=f"/ropi/arm/{arm_id}/execute_manipulation",
-            goal=goal,
-            result_wait_timeout_sec=self.DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC,
         )
 
     def _dispatch_execute_patrol_path(self, payload: dict) -> dict:
-        pinky_id = self._get_required_identifier(
+        return self._dispatch_action_command(
+            ACTION_COMMAND_SPECS["execute_patrol_path"],
             payload,
-            field_name="pinky_id",
-            error_code="PINKY_ID_REQUIRED",
-            error_message="execute_patrol_path command requires pinky_id.",
-        )
-        goal = payload.get("goal") or {}
-        action_client = self._require_action_client(
-            self.patrol_path_action_client,
-            error_code="PATROL_SERVICE_UNAVAILABLE",
-            error_message="execute_patrol_path command requires patrol path action client.",
-        )
-
-        return action_client.send_goal(
-            action_name=f"/ropi/control/{pinky_id}/execute_patrol_path",
-            goal=goal,
-            result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
         )
 
     def _dispatch_fall_response_control(self, payload: dict) -> dict:
-        pinky_id = self._get_fall_response_pinky_id(payload)
-        request = self._build_fall_response_request(payload)
-        service_client = self._require_action_client(
-            self.fall_response_control_client,
-            error_code="FALL_RESPONSE_SERVICE_UNAVAILABLE",
-            error_message="fall_response_control command requires fall response service client.",
-        )
-        return service_client.call(
-            service_name=self._build_fall_response_service_name(pinky_id),
-            request=request,
+        return self._dispatch_service_command(
+            SERVICE_COMMAND_SPECS["fall_response_control"],
+            payload,
         )
 
     def _dispatch_guide_command(self, payload: dict) -> dict:
-        pinky_id = self._get_guide_pinky_id(payload)
-        request = self._build_guide_command_request(payload)
-        service_client = self._require_action_client(
-            self.guide_command_client,
-            error_code="GUIDE_COMMAND_SERVICE_UNAVAILABLE",
-            error_message="guide_command requires guide command service client.",
+        return self._dispatch_service_command(
+            SERVICE_COMMAND_SPECS["guide_command"],
+            payload,
         )
+
+    def _dispatch_action_command(
+        self,
+        spec: ActionCommandSpec,
+        payload: dict,
+    ) -> dict:
+        identifier = self._get_required_identifier(
+            payload,
+            field_name=spec.identifier_field,
+            error_code=spec.identifier_error_code,
+            error_message=spec.identifier_error_message,
+        )
+        goal = payload.get("goal") or {}
+        action_client = self._get_action_client_for_spec(spec)
+
+        return action_client.send_goal(
+            action_name=self._build_spec_action_name(spec, identifier),
+            goal=goal,
+            result_wait_timeout_sec=self._build_spec_result_wait_timeout_sec(
+                spec,
+                goal,
+            ),
+        )
+
+    async def _async_dispatch_action_command(
+        self,
+        spec: ActionCommandSpec,
+        payload: dict,
+    ) -> dict:
+        identifier = self._get_required_identifier(
+            payload,
+            field_name=spec.identifier_field,
+            error_code=spec.identifier_error_code,
+            error_message=spec.identifier_error_message,
+        )
+        goal = payload.get("goal") or {}
+        action_client = self._get_action_client_for_spec(spec)
+
+        return await self._async_send_goal(
+            action_client,
+            action_name=self._build_spec_action_name(spec, identifier),
+            goal=goal,
+            result_wait_timeout_sec=self._build_spec_result_wait_timeout_sec(
+                spec,
+                goal,
+            ),
+        )
+
+    def _dispatch_service_command(
+        self,
+        spec: ServiceCommandSpec,
+        payload: dict,
+    ) -> dict:
+        pinky_id = getattr(self, spec.pinky_id_getter)(payload)
+        request = getattr(self, spec.request_builder)(payload)
+        service_client = self._get_service_client_for_spec(spec)
         return service_client.call(
-            service_name=self._build_guide_command_service_name(pinky_id),
+            service_name=getattr(self, spec.service_name_builder)(pinky_id),
             request=request,
         )
 
-    def _dispatch_publish_guide_tracking_update(self, payload: dict) -> dict:
-        pinky_id, update = self._build_guide_tracking_update(payload)
-        publisher = self._require_action_client(
-            self.guide_tracking_update_publisher,
-            error_code="GUIDE_TRACKING_UPDATE_PUBLISHER_UNAVAILABLE",
-            error_message="publish_guide_tracking_update requires guide tracking update publisher.",
+    async def _async_dispatch_service_command(
+        self,
+        spec: ServiceCommandSpec,
+        payload: dict,
+    ) -> dict:
+        pinky_id = getattr(self, spec.pinky_id_getter)(payload)
+        request = getattr(self, spec.request_builder)(payload)
+        service_client = self._get_service_client_for_spec(spec)
+        return await self._async_call_service(
+            service_client,
+            service_name=getattr(self, spec.service_name_builder)(pinky_id),
+            request=request,
         )
-        result = publisher.publish(pinky_id=pinky_id, update=update)
-        return self._build_guide_tracking_update_response(
-            pinky_id=pinky_id,
-            update=update,
-            publisher_result=result,
+
+    def _get_action_client_for_spec(self, spec: ActionCommandSpec):
+        action_client = getattr(self, spec.client_attr)
+        if spec.missing_client_error_code is None:
+            return action_client
+
+        return self._require_action_client(
+            action_client,
+            error_code=spec.missing_client_error_code,
+            error_message=spec.missing_client_error_message,
+        )
+
+    def _get_service_client_for_spec(self, spec: ServiceCommandSpec):
+        return self._require_action_client(
+            getattr(self, spec.client_attr),
+            error_code=spec.missing_client_error_code,
+            error_message=spec.missing_client_error_message,
+        )
+
+    @staticmethod
+    def _build_spec_action_name(spec: ActionCommandSpec, identifier: str) -> str:
+        return spec.action_name_template.format(identifier=identifier)
+
+    def _build_spec_result_wait_timeout_sec(
+        self,
+        spec: ActionCommandSpec,
+        goal: dict,
+    ) -> float:
+        if spec.timeout_strategy == "navigation":
+            return self._build_navigation_result_wait_timeout_sec(goal)
+        if spec.timeout_strategy == "manipulation":
+            return self.DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC
+        raise RosServiceCommandDispatchError(
+            "ACTION_TIMEOUT_STRATEGY_UNKNOWN",
+            f"Unsupported action timeout strategy: {spec.timeout_strategy}",
         )
 
     def _dispatch_cancel_action(self, payload: dict) -> dict:
@@ -194,36 +383,15 @@ class RosServiceCommandDispatcher:
             error_message="cancel_action command requires task_id.",
         )
         action_name = self._get_optional_identifier(payload, "action_name")
-        details = []
-
-        details.append(
+        details = [
             self._cancel_goal(
-                self.goal_pose_action_client,
-                client_name="navigation",
+                action_client,
+                client_name=spec.client_name,
                 task_id=task_id,
                 action_name=action_name,
             )
-        )
-
-        if self.manipulation_action_client is not None:
-            details.append(
-                self._cancel_goal(
-                    self.manipulation_action_client,
-                    client_name="manipulation",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
-
-        if self.patrol_path_action_client is not None:
-            details.append(
-                self._cancel_goal(
-                    self.patrol_path_action_client,
-                    client_name="patrol",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
+            for spec, action_client in self._iter_action_clients()
+        ]
 
         return self._build_cancel_action_response(
             task_id=task_id,
@@ -241,30 +409,11 @@ class RosServiceCommandDispatcher:
         action_name = self._get_optional_identifier(payload, "action_name")
         feedback = []
 
-        feedback.extend(
-            self._get_latest_feedback(
-                self.goal_pose_action_client,
-                client_name="navigation",
-                task_id=task_id,
-                action_name=action_name,
-            )
-        )
-
-        if self.manipulation_action_client is not None:
+        for spec, action_client in self._iter_action_clients():
             feedback.extend(
                 self._get_latest_feedback(
-                    self.manipulation_action_client,
-                    client_name="manipulation",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
-
-        if self.patrol_path_action_client is not None:
-            feedback.extend(
-                self._get_latest_feedback(
-                    self.patrol_path_action_client,
-                    client_name="patrol",
+                    action_client,
+                    client_name=spec.client_name,
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -277,111 +426,33 @@ class RosServiceCommandDispatcher:
         )
 
     async def _async_dispatch_navigate_to_goal(self, payload: dict) -> dict:
-        pinky_id = self._get_required_identifier(
+        return await self._async_dispatch_action_command(
+            ACTION_COMMAND_SPECS["navigate_to_goal"],
             payload,
-            field_name="pinky_id",
-            error_code="PINKY_ID_REQUIRED",
-            error_message="navigate_to_goal command requires pinky_id.",
-        )
-        goal = payload.get("goal") or {}
-
-        return await self._async_send_goal(
-            self.goal_pose_action_client,
-            action_name=f"/ropi/control/{pinky_id}/navigate_to_goal",
-            goal=goal,
-            result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
         )
 
     async def _async_dispatch_execute_manipulation(self, payload: dict) -> dict:
-        arm_id = self._get_required_identifier(
+        return await self._async_dispatch_action_command(
+            ACTION_COMMAND_SPECS["execute_manipulation"],
             payload,
-            field_name="arm_id",
-            error_code="ARM_ID_REQUIRED",
-            error_message="execute_manipulation command requires arm_id.",
-        )
-        goal = payload.get("goal") or {}
-        action_client = self._require_action_client(
-            self.manipulation_action_client,
-            error_code="MANIPULATION_SERVICE_UNAVAILABLE",
-            error_message="execute_manipulation command requires manipulation action client.",
-        )
-
-        return await self._async_send_goal(
-            action_client,
-            action_name=f"/ropi/arm/{arm_id}/execute_manipulation",
-            goal=goal,
-            result_wait_timeout_sec=self.DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC,
         )
 
     async def _async_dispatch_execute_patrol_path(self, payload: dict) -> dict:
-        pinky_id = self._get_required_identifier(
+        return await self._async_dispatch_action_command(
+            ACTION_COMMAND_SPECS["execute_patrol_path"],
             payload,
-            field_name="pinky_id",
-            error_code="PINKY_ID_REQUIRED",
-            error_message="execute_patrol_path command requires pinky_id.",
-        )
-        goal = payload.get("goal") or {}
-        action_client = self._require_action_client(
-            self.patrol_path_action_client,
-            error_code="PATROL_SERVICE_UNAVAILABLE",
-            error_message="execute_patrol_path command requires patrol path action client.",
-        )
-
-        return await self._async_send_goal(
-            action_client,
-            action_name=f"/ropi/control/{pinky_id}/execute_patrol_path",
-            goal=goal,
-            result_wait_timeout_sec=self._build_navigation_result_wait_timeout_sec(goal),
         )
 
     async def _async_dispatch_fall_response_control(self, payload: dict) -> dict:
-        pinky_id = self._get_fall_response_pinky_id(payload)
-        request = self._build_fall_response_request(payload)
-        service_client = self._require_action_client(
-            self.fall_response_control_client,
-            error_code="FALL_RESPONSE_SERVICE_UNAVAILABLE",
-            error_message="fall_response_control command requires fall response service client.",
-        )
-        return await self._async_call_service(
-            service_client,
-            service_name=self._build_fall_response_service_name(pinky_id),
-            request=request,
+        return await self._async_dispatch_service_command(
+            SERVICE_COMMAND_SPECS["fall_response_control"],
+            payload,
         )
 
     async def _async_dispatch_guide_command(self, payload: dict) -> dict:
-        pinky_id = self._get_guide_pinky_id(payload)
-        request = self._build_guide_command_request(payload)
-        service_client = self._require_action_client(
-            self.guide_command_client,
-            error_code="GUIDE_COMMAND_SERVICE_UNAVAILABLE",
-            error_message="guide_command requires guide command service client.",
-        )
-        return await self._async_call_service(
-            service_client,
-            service_name=self._build_guide_command_service_name(pinky_id),
-            request=request,
-        )
-
-    async def _async_dispatch_publish_guide_tracking_update(self, payload: dict) -> dict:
-        pinky_id, update = self._build_guide_tracking_update(payload)
-        publisher = self._require_action_client(
-            self.guide_tracking_update_publisher,
-            error_code="GUIDE_TRACKING_UPDATE_PUBLISHER_UNAVAILABLE",
-            error_message="publish_guide_tracking_update requires guide tracking update publisher.",
-        )
-        async_publish = getattr(publisher, "async_publish", None)
-        if async_publish is not None:
-            result = await async_publish(pinky_id=pinky_id, update=update)
-        else:
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                self._dispatch_executor,
-                partial(publisher.publish, pinky_id=pinky_id, update=update),
-            )
-        return self._build_guide_tracking_update_response(
-            pinky_id=pinky_id,
-            update=update,
-            publisher_result=result,
+        return await self._async_dispatch_service_command(
+            SERVICE_COMMAND_SPECS["guide_command"],
+            payload,
         )
 
     async def _async_dispatch_cancel_action(self, payload: dict) -> dict:
@@ -394,30 +465,11 @@ class RosServiceCommandDispatcher:
         action_name = self._get_optional_identifier(payload, "action_name")
         details = []
 
-        details.append(
-            await self._async_cancel_goal(
-                self.goal_pose_action_client,
-                client_name="navigation",
-                task_id=task_id,
-                action_name=action_name,
-            )
-        )
-
-        if self.manipulation_action_client is not None:
+        for spec, action_client in self._iter_action_clients():
             details.append(
                 await self._async_cancel_goal(
-                    self.manipulation_action_client,
-                    client_name="manipulation",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
-
-        if self.patrol_path_action_client is not None:
-            details.append(
-                await self._async_cancel_goal(
-                    self.patrol_path_action_client,
-                    client_name="patrol",
+                    action_client,
+                    client_name=spec.client_name,
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -439,30 +491,11 @@ class RosServiceCommandDispatcher:
         action_name = self._get_optional_identifier(payload, "action_name")
         feedback = []
 
-        feedback.extend(
-            self._get_latest_feedback(
-                self.goal_pose_action_client,
-                client_name="navigation",
-                task_id=task_id,
-                action_name=action_name,
-            )
-        )
-
-        if self.manipulation_action_client is not None:
+        for spec, action_client in self._iter_action_clients():
             feedback.extend(
                 self._get_latest_feedback(
-                    self.manipulation_action_client,
-                    client_name="manipulation",
-                    task_id=task_id,
-                    action_name=action_name,
-                )
-            )
-
-        if self.patrol_path_action_client is not None:
-            feedback.extend(
-                self._get_latest_feedback(
-                    self.patrol_path_action_client,
-                    client_name="patrol",
+                    action_client,
+                    client_name=spec.client_name,
                     task_id=task_id,
                     action_name=action_name,
                 )
@@ -475,238 +508,241 @@ class RosServiceCommandDispatcher:
         )
 
     def _dispatch_get_runtime_status(self, payload: dict) -> dict:
-        default_pinky_id = self.runtime_config.pinky_id
-        pinky_id = str(payload.get("pinky_id") or default_pinky_id).strip() or default_pinky_id
-        include_navigation = payload.get("include_navigation")
-        include_navigation = True if include_navigation is None else bool(include_navigation)
-        include_patrol = bool(payload.get("include_patrol"))
-        include_guide = bool(payload.get("include_guide"))
-        patrol_pinky_id = str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
-        arm_ids = payload.get("arm_ids") or []
-        checks = []
-
-        if include_navigation:
-            navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
-            checks.append(
-                {
-                    "name": f"{pinky_id}.navigate_to_goal",
-                    "ready": self.goal_pose_action_client.is_server_ready(
-                        action_name=navigate_action_name,
-                        wait_timeout_sec=0.0,
-                    ),
-                    "action_name": navigate_action_name,
-                }
-            )
-
-        if include_patrol and self.patrol_path_action_client is not None:
-            patrol_action_name = f"/ropi/control/{patrol_pinky_id}/execute_patrol_path"
-            checks.append(
-                {
-                    "name": f"{patrol_pinky_id}.execute_patrol_path",
-                    "ready": self.patrol_path_action_client.is_server_ready(
-                        action_name=patrol_action_name,
-                        wait_timeout_sec=0.0,
-                    ),
-                    "action_name": patrol_action_name,
-                }
-            )
-
-        for arm_id in arm_ids:
-            action_name = f"/ropi/arm/{arm_id}/execute_manipulation"
-            if self.manipulation_action_client is None:
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": False,
-                        "action_name": action_name,
-                        "error": "manipulation action client is not configured",
-                    }
-                )
-                continue
-
-            try:
-                ready = self.manipulation_action_client.is_server_ready(
-                    action_name=action_name,
-                    wait_timeout_sec=0.0,
-                )
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": ready,
-                        "action_name": action_name,
-                    }
-                )
-            except Exception as exc:  # pragma: no cover
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": False,
-                        "action_name": action_name,
-                        "error": str(exc),
-                    }
-                )
-
+        context = self._build_runtime_status_context(payload)
+        checks = [
+            self._build_runtime_action_ready_check(check)
+            for check in self._iter_runtime_status_action_checks(context)
+        ]
         guide_snapshot = None
-        if include_guide:
-            guide_service_name = self._build_guide_command_service_name(pinky_id)
-            if self.guide_command_client is None:
-                checks.append(
-                    {
-                        "name": f"{pinky_id}.guide_command",
-                        "ready": False,
-                        "service_name": guide_service_name,
-                        "error": "guide command service client is not configured",
-                    }
-                )
-            else:
-                try:
-                    service_client = self.guide_command_client.service_client_factory(
-                        self.guide_command_client.node,
-                        self.guide_command_client.service_type_loader(),
-                        guide_service_name,
-                    )
-                    checks.append(
-                        {
-                            "name": f"{pinky_id}.guide_command",
-                            "ready": service_client.wait_for_service(timeout_sec=0.0),
-                            "service_name": guide_service_name,
-                        }
-                    )
-                except Exception as exc:  # pragma: no cover
-                    checks.append(
-                        {
-                            "name": f"{pinky_id}.guide_command",
-                            "ready": False,
-                            "service_name": guide_service_name,
-                            "error": str(exc),
-                        }
-                    )
 
-            guide_snapshot = self._build_guide_runtime_snapshot(pinky_id)
+        if context.include_guide:
+            checks.append(self._build_runtime_guide_service_check(context.pinky_id))
+            guide_snapshot = self._build_guide_runtime_snapshot(context.pinky_id)
 
-        return {
-            "ready": all(check.get("ready") is True for check in checks),
-            "checks": checks,
-            "guide_runtime": guide_snapshot,
-        }
+        return self._build_runtime_status_response(checks, guide_snapshot)
 
     async def _async_dispatch_get_runtime_status(self, payload: dict) -> dict:
-        default_pinky_id = self.runtime_config.pinky_id
-        pinky_id = str(payload.get("pinky_id") or default_pinky_id).strip() or default_pinky_id
-        include_navigation = payload.get("include_navigation")
-        include_navigation = True if include_navigation is None else bool(include_navigation)
-        include_patrol = bool(payload.get("include_patrol"))
-        include_guide = bool(payload.get("include_guide"))
-        patrol_pinky_id = str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
-        arm_ids = payload.get("arm_ids") or []
-        checks = []
-
-        if include_navigation:
-            navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
-            checks.append(
-                {
-                    "name": f"{pinky_id}.navigate_to_goal",
-                    "ready": await self._async_is_server_ready(
-                        self.goal_pose_action_client,
-                        action_name=navigate_action_name,
-                        wait_timeout_sec=0.0,
-                    ),
-                    "action_name": navigate_action_name,
-                }
-            )
-
-        if include_patrol and self.patrol_path_action_client is not None:
-            patrol_action_name = f"/ropi/control/{patrol_pinky_id}/execute_patrol_path"
-            checks.append(
-                {
-                    "name": f"{patrol_pinky_id}.execute_patrol_path",
-                    "ready": await self._async_is_server_ready(
-                        self.patrol_path_action_client,
-                        action_name=patrol_action_name,
-                        wait_timeout_sec=0.0,
-                    ),
-                    "action_name": patrol_action_name,
-                }
-            )
-
-        for arm_id in arm_ids:
-            action_name = f"/ropi/arm/{arm_id}/execute_manipulation"
-            if self.manipulation_action_client is None:
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": False,
-                        "action_name": action_name,
-                        "error": "manipulation action client is not configured",
-                    }
-                )
-                continue
-
-            try:
-                ready = await self._async_is_server_ready(
-                    self.manipulation_action_client,
-                    action_name=action_name,
-                    wait_timeout_sec=0.0,
-                )
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": ready,
-                        "action_name": action_name,
-                    }
-                )
-            except Exception as exc:  # pragma: no cover
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": False,
-                        "action_name": action_name,
-                        "error": str(exc),
-                    }
-                )
-
+        context = self._build_runtime_status_context(payload)
+        checks = [
+            await self._async_build_runtime_action_ready_check(check)
+            for check in self._iter_runtime_status_action_checks(context)
+        ]
         guide_snapshot = None
-        if include_guide:
-            guide_service_name = self._build_guide_command_service_name(pinky_id)
-            if self.guide_command_client is None:
-                checks.append(
-                    {
-                        "name": f"{pinky_id}.guide_command",
-                        "ready": False,
-                        "service_name": guide_service_name,
-                        "error": "guide command service client is not configured",
-                    }
-                )
-            else:
-                try:
-                    service_type = self.guide_command_client.service_type_loader()
-                    service_client = self.guide_command_client.service_client_factory(
-                        self.guide_command_client.node,
-                        service_type,
-                        guide_service_name,
-                    )
-                    checks.append(
-                        {
-                            "name": f"{pinky_id}.guide_command",
-                            "ready": await self.guide_command_client._async_wait_for_service(
-                                service_client,
-                                timeout_sec=0.0,
-                            ),
-                            "service_name": guide_service_name,
-                        }
-                    )
-                except Exception as exc:  # pragma: no cover
-                    checks.append(
-                        {
-                            "name": f"{pinky_id}.guide_command",
-                            "ready": False,
-                            "service_name": guide_service_name,
-                            "error": str(exc),
-                        }
-                    )
 
-            guide_snapshot = self._build_guide_runtime_snapshot(pinky_id)
+        if context.include_guide:
+            checks.append(
+                await self._async_build_runtime_guide_service_check(context.pinky_id)
+            )
+            guide_snapshot = self._build_guide_runtime_snapshot(context.pinky_id)
 
+        return self._build_runtime_status_response(checks, guide_snapshot)
+
+    def _build_runtime_status_context(self, payload: dict) -> RuntimeStatusContext:
+        default_pinky_id = self.runtime_config.pinky_id
+        pinky_id = (
+            str(payload.get("pinky_id") or default_pinky_id).strip()
+            or default_pinky_id
+        )
+        include_navigation = payload.get("include_navigation")
+        include_navigation = (
+            True if include_navigation is None else bool(include_navigation)
+        )
+        patrol_pinky_id = (
+            str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
+        )
+        return RuntimeStatusContext(
+            pinky_id=pinky_id,
+            include_navigation=include_navigation,
+            include_patrol=bool(payload.get("include_patrol")),
+            include_guide=bool(payload.get("include_guide")),
+            patrol_pinky_id=patrol_pinky_id,
+            arm_ids=tuple(payload.get("arm_ids") or ()),
+        )
+
+    def _iter_runtime_status_action_checks(self, context: RuntimeStatusContext):
+        if context.include_navigation:
+            yield self._build_runtime_status_action_target_check(
+                RUNTIME_STATUS_ACTION_TARGET_SPECS["navigation"],
+                pinky_id=context.pinky_id,
+                patrol_pinky_id=context.patrol_pinky_id,
+            )
+
+        if context.include_patrol and self.patrol_path_action_client is not None:
+            yield self._build_runtime_status_action_target_check(
+                RUNTIME_STATUS_ACTION_TARGET_SPECS["patrol"],
+                pinky_id=context.pinky_id,
+                patrol_pinky_id=context.patrol_pinky_id,
+            )
+
+        for arm_id in context.arm_ids:
+            yield RuntimeStatusActionCheck(
+                name=f"{arm_id}.execute_manipulation",
+                action_name=f"/ropi/arm/{arm_id}/execute_manipulation",
+                action_client=self.manipulation_action_client,
+                missing_client_error="manipulation action client is not configured",
+            )
+
+    def _build_runtime_status_action_target_check(
+        self,
+        spec: RuntimeStatusActionTargetSpec,
+        **identifiers,
+    ) -> RuntimeStatusActionCheck:
+        return RuntimeStatusActionCheck(
+            name=spec.check_name_template.format(**identifiers),
+            action_name=spec.action_name_template.format(**identifiers),
+            action_client=getattr(self, spec.client_attr),
+        )
+
+    def _build_runtime_action_ready_check(self, check: RuntimeStatusActionCheck):
+        if check.action_client is None:
+            return self._build_runtime_action_unavailable_check(check)
+
+        try:
+            ready = check.action_client.is_server_ready(
+                action_name=check.action_name,
+                wait_timeout_sec=0.0,
+            )
+            return self._build_runtime_action_check_payload(check, ready=ready)
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_action_check_payload(
+                check,
+                ready=False,
+                error=str(exc),
+            )
+
+    async def _async_build_runtime_action_ready_check(
+        self,
+        check: RuntimeStatusActionCheck,
+    ):
+        if check.action_client is None:
+            return self._build_runtime_action_unavailable_check(check)
+
+        try:
+            ready = await self._async_is_server_ready(
+                check.action_client,
+                action_name=check.action_name,
+                wait_timeout_sec=0.0,
+            )
+            return self._build_runtime_action_check_payload(check, ready=ready)
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_action_check_payload(
+                check,
+                ready=False,
+                error=str(exc),
+            )
+
+    def _build_runtime_action_unavailable_check(self, check: RuntimeStatusActionCheck):
+        return self._build_runtime_action_check_payload(
+            check,
+            ready=False,
+            error=check.missing_client_error,
+        )
+
+    @staticmethod
+    def _build_runtime_action_check_payload(
+        check: RuntimeStatusActionCheck,
+        *,
+        ready,
+        error=None,
+    ):
+        payload = {
+            "name": check.name,
+            "ready": ready,
+            "action_name": check.action_name,
+        }
+        if error:
+            payload["error"] = error
+        return payload
+
+    def _build_runtime_guide_service_check(self, pinky_id: str):
+        guide_service_name = self._build_guide_command_service_name(pinky_id)
+        if self.guide_command_client is None:
+            return self._build_runtime_guide_service_unavailable_check(
+                pinky_id,
+                guide_service_name,
+            )
+
+        try:
+            service_client = self.guide_command_client.service_client_factory(
+                self.guide_command_client.node,
+                self.guide_command_client.service_type_loader(),
+                guide_service_name,
+            )
+            return self._build_runtime_guide_service_check_payload(
+                pinky_id,
+                guide_service_name,
+                ready=service_client.wait_for_service(timeout_sec=0.0),
+            )
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_guide_service_check_payload(
+                pinky_id,
+                guide_service_name,
+                ready=False,
+                error=str(exc),
+            )
+
+    async def _async_build_runtime_guide_service_check(self, pinky_id: str):
+        guide_service_name = self._build_guide_command_service_name(pinky_id)
+        if self.guide_command_client is None:
+            return self._build_runtime_guide_service_unavailable_check(
+                pinky_id,
+                guide_service_name,
+            )
+
+        try:
+            service_type = self.guide_command_client.service_type_loader()
+            service_client = self.guide_command_client.service_client_factory(
+                self.guide_command_client.node,
+                service_type,
+                guide_service_name,
+            )
+            return self._build_runtime_guide_service_check_payload(
+                pinky_id,
+                guide_service_name,
+                ready=await self.guide_command_client._async_wait_for_service(
+                    service_client,
+                    timeout_sec=0.0,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_guide_service_check_payload(
+                pinky_id,
+                guide_service_name,
+                ready=False,
+                error=str(exc),
+            )
+
+    def _build_runtime_guide_service_unavailable_check(
+        self,
+        pinky_id,
+        guide_service_name,
+    ):
+        return self._build_runtime_guide_service_check_payload(
+            pinky_id,
+            guide_service_name,
+            ready=False,
+            error="guide command service client is not configured",
+        )
+
+    @staticmethod
+    def _build_runtime_guide_service_check_payload(
+        pinky_id,
+        guide_service_name,
+        *,
+        ready,
+        error=None,
+    ):
+        payload = {
+            "name": f"{pinky_id}.guide_command",
+            "ready": ready,
+            "service_name": guide_service_name,
+        }
+        if error:
+            payload["error"] = error
+        return payload
+
+    @staticmethod
+    def _build_runtime_status_response(checks, guide_snapshot):
         return {
             "ready": all(check.get("ready") is True for check in checks),
             "checks": checks,
@@ -745,6 +781,13 @@ class RosServiceCommandDispatcher:
             self._dispatch_executor,
             partial(service_client.call, **kwargs),
         )
+
+    def _iter_action_clients(self):
+        for spec in ACTION_CLIENT_SPECS:
+            action_client = getattr(self, spec.client_attr)
+            if action_client is None and not spec.required:
+                continue
+            yield spec, action_client
 
     def _cancel_goal(self, action_client, *, client_name, **kwargs):
         cancel_goal = getattr(action_client, "cancel_goal", None)
@@ -856,15 +899,13 @@ class RosServiceCommandDispatcher:
             "stale": bool(update.stale),
             "last_update": {
                 "task_id": update.task_id,
+                "pinky_id": update.pinky_id,
+                "guide_phase": update.guide_phase,
                 "target_track_id": update.target_track_id,
-                "tracking_status": update.tracking_status,
-                "tracking_result_seq": update.tracking_result_seq,
-                "frame_ts_sec": update.frame_ts_sec,
-                "frame_ts_nanosec": update.frame_ts_nanosec,
-                "bbox_valid": update.bbox_valid,
-                "bbox_xyxy": list(update.bbox_xyxy),
-                "image_width_px": update.image_width_px,
-                "image_height_px": update.image_height_px,
+                "reason_code": update.reason_code,
+                "seq": update.seq,
+                "occurred_at_sec": update.occurred_at_sec,
+                "occurred_at_nanosec": update.occurred_at_nanosec,
                 "received_at_sec": update.received_at_sec,
                 "received_at_nanosec": update.received_at_nanosec,
             },
@@ -928,100 +969,48 @@ class RosServiceCommandDispatcher:
             error_code="COMMAND_TYPE_REQUIRED",
             error_message="guide_command requires command_type.",
         )
-        target_track_id = cls._get_optional_identifier(request, "target_track_id")
-        finish_reason = cls._get_optional_identifier(request, "finish_reason")
-        wait_timeout_raw = request.get("wait_timeout_sec", 0)
+        command_type = command_type.strip().upper()
+        if command_type not in {"WAIT_TARGET_TRACKING", "START_GUIDANCE"}:
+            raise RosServiceCommandDispatchError(
+                "COMMAND_TYPE_INVALID",
+                "guide_command supports only WAIT_TARGET_TRACKING or START_GUIDANCE.",
+            )
+
+        target_track_raw = request.get("target_track_id", -1)
         try:
-            wait_timeout_sec = int(wait_timeout_raw)
+            target_track_id = int(str(target_track_raw).strip())
         except (TypeError, ValueError) as exc:
             raise RosServiceCommandDispatchError(
-                "WAIT_TIMEOUT_INVALID",
-                "guide_command requires integer wait_timeout_sec.",
+                "TARGET_TRACK_ID_INVALID",
+                "guide_command requires integer target_track_id.",
             ) from exc
+
+        destination_id = cls._get_optional_identifier(request, "destination_id") or ""
+        destination_pose = request.get("destination_pose") or {}
+        if not isinstance(destination_pose, dict):
+            raise RosServiceCommandDispatchError(
+                "DESTINATION_POSE_INVALID",
+                "guide_command requires object destination_pose.",
+            )
+        if command_type == "START_GUIDANCE":
+            if target_track_id < 0:
+                raise RosServiceCommandDispatchError(
+                    "TARGET_TRACK_ID_REQUIRED",
+                    "START_GUIDANCE requires non-negative target_track_id.",
+                )
+            if not destination_pose:
+                raise RosServiceCommandDispatchError(
+                    "DESTINATION_POSE_REQUIRED",
+                    "START_GUIDANCE requires destination_pose.",
+                )
 
         return {
             "task_id": task_id,
             "command_type": command_type,
-            "target_track_id": target_track_id or "",
-            "wait_timeout_sec": wait_timeout_sec,
-            "finish_reason": finish_reason or "",
-        }
-
-    @classmethod
-    def _build_guide_tracking_update(cls, payload: dict):
-        request = payload.get("request")
-        if not isinstance(request, dict):
-            request = payload
-        pinky_id = cls._get_required_identifier(
-            request,
-            field_name="pinky_id",
-            error_code="PINKY_ID_REQUIRED",
-            error_message="publish_guide_tracking_update requires pinky_id.",
-        )
-        task_id = cls._get_required_identifier(
-            request,
-            field_name="task_id",
-            error_code="TASK_ID_REQUIRED",
-            error_message="publish_guide_tracking_update requires task_id.",
-        )
-        target_track_id = cls._get_required_identifier(
-            request,
-            field_name="target_track_id",
-            error_code="TARGET_TRACK_ID_REQUIRED",
-            error_message="publish_guide_tracking_update requires target_track_id.",
-        )
-        tracking_status = cls._get_required_identifier(
-            request,
-            field_name="tracking_status",
-            error_code="TRACKING_STATUS_REQUIRED",
-            error_message="publish_guide_tracking_update requires tracking_status.",
-        ).upper()
-        if tracking_status not in {"TRACKING", "LOST"}:
-            raise RosServiceCommandDispatchError(
-                "TRACKING_STATUS_INVALID",
-                "publish_guide_tracking_update requires TRACKING or LOST tracking_status.",
-            )
-
-        update = {
-            "task_id": task_id,
             "target_track_id": target_track_id,
-            "tracking_status": tracking_status,
-            "tracking_result_seq": cls._get_required_u32(
-                request,
-                field_name="tracking_result_seq",
-                error_code="TRACKING_RESULT_SEQ_INVALID",
-                error_message="publish_guide_tracking_update requires u32 tracking_result_seq.",
-            ),
-            "frame_ts_sec": cls._get_required_u32(
-                request,
-                field_name="frame_ts_sec",
-                error_code="FRAME_TS_INVALID",
-                error_message="publish_guide_tracking_update requires u32 frame_ts_sec.",
-            ),
-            "frame_ts_nanosec": cls._get_required_u32(
-                request,
-                field_name="frame_ts_nanosec",
-                error_code="FRAME_TS_INVALID",
-                error_message="publish_guide_tracking_update requires u32 frame_ts_nanosec.",
-            ),
-            "bbox_valid": bool(request.get("bbox_valid")),
-            "bbox_xyxy": cls._get_bbox_xyxy(request.get("bbox_xyxy")),
-            "image_width_px": cls._get_required_u32(
-                request,
-                field_name="image_width_px",
-                error_code="IMAGE_SIZE_INVALID",
-                error_message="publish_guide_tracking_update requires u32 image_width_px.",
-            ),
-            "image_height_px": cls._get_required_u32(
-                request,
-                field_name="image_height_px",
-                error_code="IMAGE_SIZE_INVALID",
-                error_message="publish_guide_tracking_update requires u32 image_height_px.",
-            ),
+            "destination_id": destination_id,
+            "destination_pose": destination_pose,
         }
-        if not update["bbox_valid"]:
-            update["bbox_xyxy"] = [0, 0, 0, 0]
-        return pinky_id, update
 
     @staticmethod
     def _build_fall_response_service_name(pinky_id: str) -> str:
@@ -1056,71 +1045,16 @@ class RosServiceCommandDispatcher:
             "feedback": feedback,
         }
 
-    @staticmethod
-    def _build_guide_tracking_update_response(*, pinky_id, update, publisher_result):
-        if isinstance(publisher_result, dict):
-            accepted = (
-                publisher_result.get("accepted") is True
-                or str(publisher_result.get("result_code") or "").upper() == "ACCEPTED"
-            )
-        else:
-            accepted = True
-
-        if not accepted:
-            raise RosServiceCommandDispatchError(
-                "GUIDE_TRACKING_UPDATE_PUBLISH_REJECTED",
-                "guide tracking update publisher rejected the request.",
-            )
-
-        return {
-            "result_code": "ACCEPTED",
-            "result_message": "guide tracking update publish accepted.",
-            "pinky_id": pinky_id,
-            "task_id": update["task_id"],
-            "target_track_id": update["target_track_id"],
-            "tracking_status": update["tracking_status"],
-            "tracking_result_seq": update["tracking_result_seq"],
-        }
-
-    @staticmethod
-    def _get_required_u32(
-        payload: dict,
-        *,
-        field_name: str,
-        error_code: str,
-        error_message: str,
-    ):
-        try:
-            value = int(payload.get(field_name))
-        except (TypeError, ValueError) as exc:
-            raise RosServiceCommandDispatchError(error_code, error_message) from exc
-        if value < 0 or value > 0xFFFFFFFF:
-            raise RosServiceCommandDispatchError(error_code, error_message)
-        return value
-
-    @staticmethod
-    def _get_bbox_xyxy(value):
-        if not isinstance(value, (list, tuple)) or len(value) != 4:
-            raise RosServiceCommandDispatchError(
-                "BBOX_INVALID",
-                "publish_guide_tracking_update requires int[4] bbox_xyxy.",
-            )
-        try:
-            bbox = [int(item) for item in value]
-        except (TypeError, ValueError) as exc:
-            raise RosServiceCommandDispatchError(
-                "BBOX_INVALID",
-                "publish_guide_tracking_update requires int[4] bbox_xyxy.",
-            ) from exc
-        if any(item < -0x80000000 or item > 0x7FFFFFFF for item in bbox):
-            raise RosServiceCommandDispatchError(
-                "BBOX_INVALID",
-                "publish_guide_tracking_update requires int[4] bbox_xyxy.",
-            )
-        return bbox
-
 
 __all__ = [
+    "ACTION_CLIENT_SPECS",
+    "ACTION_COMMAND_SPECS",
+    "RUNTIME_STATUS_ACTION_TARGET_SPECS",
+    "SERVICE_COMMAND_SPECS",
+    "ActionClientSpec",
+    "ActionCommandSpec",
     "RosServiceCommandDispatchError",
     "RosServiceCommandDispatcher",
+    "RuntimeStatusActionTargetSpec",
+    "ServiceCommandSpec",
 ]

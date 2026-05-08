@@ -37,6 +37,21 @@ def test_task_monitor_page_tracks_patrol_events_and_fall_marker():
                     "phase": "MOVE_TO_WAYPOINT",
                     "assigned_robot_id": "pinky3",
                     "cancellable": True,
+                    "patrol_map": {
+                        "map_id": "map_0504",
+                        "frame_id": "map",
+                        "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml",
+                        "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm",
+                    },
+                    "patrol_path": {
+                        "frame_id": "map",
+                        "waypoint_count": 3,
+                        "current_waypoint_index": 0,
+                        "poses": [
+                            {"x": 0.2, "y": 0.2, "yaw": 1.57},
+                            {"x": 1.0, "y": 0.5, "yaw": 0.0},
+                        ],
+                    },
                 },
             }
         )
@@ -54,13 +69,23 @@ def test_task_monitor_page_tracks_patrol_events_and_fall_marker():
                 "payload": {
                     "task_id": "2001",
                     "feedback_summary": "MOVING / 남은 거리 1.25m",
-                    "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
+                    "patrol_status": "MOVING",
+                    "current_waypoint_index": 1,
+                    "total_waypoints": 3,
+                    "current_pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
+                    "distance_remaining_m": 1.25,
                 },
             }
         )
 
         assert page.detail_feedback_label.text() == "MOVING / 남은 거리 1.25m"
         assert page.detail_pose_label.text() == "x=1.20, y=0.40, yaw=0.00"
+        assert page.patrol_status_label.text() == "MOVING"
+        assert page.patrol_waypoint_label.text() == "2 / 3"
+        assert page.patrol_distance_label.text() == "1.25m"
+        assert page.patrol_location_label.text() == "x=1.20, y=0.40, yaw=0.00"
+        assert page.patrol_map_overlay.current_waypoint_index == 1
+        assert page.patrol_map_overlay.robot_pixel_point is not None
 
         page.apply_stream_event(
             {
@@ -248,7 +273,9 @@ def test_task_monitor_page_shows_result_reason_and_message_prominently():
 
         assert page.detail_result_code_label.text() == "FAILED"
         assert page.detail_reason_code_label.text() == "ROS_ACTION_TIMEOUT"
-        assert page.detail_result_message_label.text() == "목적지 이동 중 action timeout"
+        assert (
+            page.detail_result_message_label.text() == "목적지 이동 중 action timeout"
+        )
         assert page.result_info_panel.objectName() == "taskResultPanelWarning"
         assert page.patrol_runtime_section.isHidden() is True
 
@@ -346,23 +373,23 @@ def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
                         "phase": "WAIT_FALL_RESPONSE",
                         "assigned_robot_id": "pinky3",
                         "patrol_map": {
-                            "map_id": "map_test11_0423",
+                            "map_id": "map_0504",
                             "frame_id": "map",
-                            "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.yaml",
-                            "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_test11_0423.pgm",
+                            "yaml_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.yaml",
+                            "pgm_path": "device/ropi_mobile/src/ropi_nav_config/maps/map_0504.pgm",
                         },
                         "patrol_path": {
                             "frame_id": "map",
                             "waypoint_count": 3,
                             "current_waypoint_index": 1,
                             "poses": [
-                                {"x": 0.1665755137108074, "y": -0.4496830900440016, "yaw": 1.57},
-                                {"x": 1.6946025435218914, "y": 0.0043433854992070454, "yaw": 0.0},
+                                {"x": 0.2, "y": 0.2, "yaw": 1.57},
+                                {"x": 1.0, "y": 0.5, "yaw": 0.0},
                             ],
                         },
                         "latest_feedback": {
                             "feedback_summary": "MOVING / 남은 거리 1.25m",
-                            "pose": {"x": 1.2, "y": 0.4, "yaw": 0.0},
+                            "pose": {"x": 0.8, "y": 0.3, "yaw": 0.0},
                         },
                         "latest_alert": {
                             "alert_id": 17,
@@ -372,7 +399,7 @@ def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
                             "evidence_image_id": "fall-2001-44",
                             "evidence_image_available": True,
                             "zone_name": "3층 복도",
-                            "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                            "alert_pose": {"x": 0.6, "y": 0.1, "yaw": 0.0},
                         },
                     }
                 ],
@@ -388,10 +415,10 @@ def test_task_monitor_page_applies_snapshot_and_starts_stream_from_watermark(
         assert page.evidence_image_id_label.text() == "fall-2001-44"
         assert "3층 복도" in page.fall_marker_label.text()
         assert page.patrol_map_overlay.map_loaded is True
-        assert page.patrol_map_overlay.route_pixel_points == [(18, 46), (94, 24)]
+        assert page.patrol_map_overlay.route_pixel_points == [(10, 40), (50, 25)]
         assert page.patrol_map_overlay.current_waypoint_index == 1
         assert page.patrol_map_overlay.robot_pixel_point is not None
-        assert page.patrol_map_overlay.fall_alert_pixel_point == (56, 15)
+        assert page.patrol_map_overlay.fall_alert_pixel_point == (30, 45)
         assert started_last_seq_values == [12]
     finally:
         page.shutdown()
@@ -421,7 +448,9 @@ def test_task_monitor_page_snapshot_failure_falls_back_to_full_stream(monkeypatc
         page.close()
 
 
-def test_task_monitor_page_exposes_manual_refresh_reconnect_and_update_time(monkeypatch):
+def test_task_monitor_page_exposes_manual_refresh_reconnect_and_update_time(
+    monkeypatch,
+):
     _app()
 
     from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
@@ -434,7 +463,9 @@ def test_task_monitor_page_exposes_manual_refresh_reconnect_and_update_time(monk
     monkeypatch.setattr(
         page,
         "_start_snapshot_load",
-        lambda *, status_text="초기 상태 조회 중": snapshot_statuses.append(status_text),
+        lambda *, status_text="초기 상태 조회 중": snapshot_statuses.append(
+            status_text
+        ),
     )
     monkeypatch.setattr(
         page,
@@ -569,6 +600,42 @@ def test_task_monitor_page_starts_fall_evidence_lookup_from_selected_alert(monke
         page.close()
 
 
+def test_task_monitor_page_focuses_fall_alert_action_from_marker_click():
+    app = _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+
+    try:
+        page.show()
+        app.processEvents()
+        page.apply_stream_event(
+            {
+                "event_type": "ALERT_CREATED",
+                "payload": {
+                    "task_id": "2001",
+                    "alert_id": "17",
+                    "result_seq": 541,
+                    "frame_id": "frame-541",
+                    "evidence_image_id": "fall_evidence_pinky3_541",
+                    "evidence_image_available": True,
+                    "zone_name": "3층 복도",
+                    "alert_pose": {"x": 0.9308, "y": 0.185, "yaw": 0.0},
+                },
+            }
+        )
+
+        page.patrol_map_overlay.fall_alert_clicked.emit()
+        app.processEvents()
+
+        assert page.fall_alert_panel.property("markerFocused") is True
+        assert app.focusWidget() is page.evidence_image_btn
+    finally:
+        page.shutdown()
+        page.close()
+
+
 def test_task_monitor_page_shows_fall_evidence_dialog_on_ok_response():
     _app()
 
@@ -599,7 +666,9 @@ def test_task_monitor_page_shows_fall_evidence_dialog_on_ok_response():
         assert page._fall_evidence_dialog is not None
         assert page._fall_evidence_dialog.objectName() == "fallEvidenceImageDialog"
         assert (
-            page._fall_evidence_dialog.findChild(QLabel, "fallEvidenceImageIdLabel").text()
+            page._fall_evidence_dialog.findChild(
+                QLabel, "fallEvidenceImageIdLabel"
+            ).text()
             == "fall_evidence_pinky3_541"
         )
     finally:

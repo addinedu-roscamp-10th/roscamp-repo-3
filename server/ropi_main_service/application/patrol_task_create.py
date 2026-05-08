@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
     TaskRequestRepository,
@@ -19,9 +20,13 @@ class PatrolTaskCreateService:
         *,
         repository=None,
         patrol_workflow_starter=None,
+        patrol_request_precheck=None,
+        async_patrol_request_precheck=None,
     ):
         self.repository = repository or _new_task_request_repository()
         self.patrol_workflow_starter = patrol_workflow_starter
+        self.patrol_request_precheck = patrol_request_precheck
+        self.async_patrol_request_precheck = async_patrol_request_precheck
 
     def create_patrol_task(
         self,
@@ -40,6 +45,16 @@ class PatrolTaskCreateService:
         )
         if invalid_response is not None:
             return invalid_response
+
+        precheck_response = self._run_patrol_request_precheck(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            patrol_area_id=patrol_area_id,
+            priority=priority,
+            idempotency_key=idempotency_key,
+        )
+        if precheck_response is not None:
+            return precheck_response
 
         response = self.repository.create_patrol_task(
             request_id=request_id,
@@ -68,6 +83,16 @@ class PatrolTaskCreateService:
         )
         if invalid_response is not None:
             return invalid_response
+
+        precheck_response = await self._async_run_patrol_request_precheck(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            patrol_area_id=patrol_area_id,
+            priority=priority,
+            idempotency_key=idempotency_key,
+        )
+        if precheck_response is not None:
+            return precheck_response
 
         async_create = getattr(self.repository, "async_create_patrol_task", None)
         if async_create is not None:
@@ -134,6 +159,34 @@ class PatrolTaskCreateService:
             )
 
         return None
+
+    def _run_patrol_request_precheck(self, **kwargs):
+        if self.patrol_request_precheck is None:
+            return None
+
+        return self.patrol_request_precheck(**kwargs)
+
+    async def _async_run_patrol_request_precheck(self, **kwargs):
+        if self.async_patrol_request_precheck is not None:
+            return await self._call_precheck_async(
+                self.async_patrol_request_precheck,
+                **kwargs,
+            )
+
+        if self.patrol_request_precheck is None:
+            return None
+
+        if inspect.iscoroutinefunction(self.patrol_request_precheck):
+            return await self.patrol_request_precheck(**kwargs)
+
+        return await asyncio.to_thread(self.patrol_request_precheck, **kwargs)
+
+    @staticmethod
+    async def _call_precheck_async(precheck, **kwargs):
+        result = precheck(**kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     def _start_patrol_workflow_if_needed(self, *, response):
         if response.get("result_code") != self.ACCEPTED:

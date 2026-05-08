@@ -1,3 +1,5 @@
+import inspect
+
 from server.ropi_main_service.application.delivery_config import (
     DEFAULT_DELIVERY_PINKY_ID,
     get_delivery_runtime_config,
@@ -5,8 +7,10 @@ from server.ropi_main_service.application.delivery_config import (
 from server.ropi_main_service.application.patrol_config import get_patrol_runtime_config
 from server.ropi_main_service.persistence.connection import fetch_one, get_connection
 from server.ropi_main_service.persistence.repositories.delivery_task_repository import (
-    DEFAULT_PICKUP_GOAL_POSE_ID,
     DeliveryTaskRepository,
+)
+from server.ropi_main_service.persistence.repositories.delivery_task_create_repository import (
+    DeliveryTaskCreateRepository,
 )
 from server.ropi_main_service.persistence.repositories.delivery_task_cancel_repository import (
     DeliveryTaskCancelRepository,
@@ -57,6 +61,7 @@ class TaskRequestRepository:
         self,
         runtime_config=None,
         delivery_task_repository=None,
+        delivery_task_create_repository=None,
         delivery_task_cancel_repository=None,
         delivery_task_result_repository=None,
         patrol_runtime_config=None,
@@ -82,6 +87,28 @@ class TaskRequestRepository:
         self.patrol_task_result_repository = patrol_task_result_repository or PatrolTaskResultRepository()
         self.patrol_task_resume_repository = patrol_task_resume_repository or PatrolTaskResumeRepository()
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
+        self.delivery_task_create_repository = (
+            delivery_task_create_repository
+            or DeliveryTaskCreateRepository(
+                runtime_config=self.runtime_config,
+                delivery_task_repository=self.delivery_task_repository,
+                idempotency_repository=self.idempotency_repository,
+                connection_factory=lambda: get_connection(),
+                async_transaction_factory=lambda: async_transaction(),
+                fetch_product_by_id=(
+                    lambda cur, item_id, conn=None: self._fetch_product(
+                        "item_id = %s",
+                        (item_id,),
+                        conn=conn,
+                    )
+                ),
+                async_fetch_product_by_id=self._async_fetch_product_by_id,
+                caregiver_exists=self._caregiver_exists,
+                async_caregiver_exists=self._async_caregiver_exists,
+                goal_pose_exists=self._goal_pose_exists,
+                async_goal_pose_exists=self._async_goal_pose_exists,
+            )
+        )
         self.patrol_task_create_repository = (
             patrol_task_create_repository
             or PatrolTaskCreateRepository(
@@ -110,22 +137,40 @@ class TaskRequestRepository:
         return await self.lookup_repository.async_get_all_products()
 
     def get_enabled_goal_poses(self):
-        return self.lookup_repository.get_enabled_goal_poses()
+        return self._call_lookup_with_optional_map_id(
+            self.lookup_repository.get_enabled_goal_poses,
+            self.runtime_config.map_id,
+        )
 
     async def async_get_enabled_goal_poses(self):
-        return await self.lookup_repository.async_get_enabled_goal_poses()
+        return await self._async_call_lookup_with_optional_map_id(
+            self.lookup_repository.async_get_enabled_goal_poses,
+            self.runtime_config.map_id,
+        )
 
     def get_delivery_destinations(self):
-        return self.lookup_repository.get_delivery_destinations()
+        return self._call_lookup_with_optional_map_id(
+            self.lookup_repository.get_delivery_destinations,
+            self.runtime_config.map_id,
+        )
 
     async def async_get_delivery_destinations(self):
-        return await self.lookup_repository.async_get_delivery_destinations()
+        return await self._async_call_lookup_with_optional_map_id(
+            self.lookup_repository.async_get_delivery_destinations,
+            self.runtime_config.map_id,
+        )
 
     def get_patrol_areas(self):
-        return self.lookup_repository.get_patrol_areas()
+        return self._call_lookup_with_optional_map_id(
+            self.lookup_repository.get_patrol_areas,
+            self.patrol_runtime_config.map_id,
+        )
 
     async def async_get_patrol_areas(self):
-        return await self.lookup_repository.async_get_patrol_areas()
+        return await self._async_call_lookup_with_optional_map_id(
+            self.lookup_repository.async_get_patrol_areas,
+            self.patrol_runtime_config.map_id,
+        )
 
     def get_product_by_id(self, item_id, conn=None):
         numeric_item_id = self._parse_numeric_identifier(item_id)
@@ -140,6 +185,26 @@ class TaskRequestRepository:
     async def async_get_product_by_name(self, item_name):
         return await self.lookup_repository.async_get_product_by_name(item_name)
 
+    @staticmethod
+    def _accepts_map_id(method):
+        parameters = inspect.signature(method).parameters
+        return "map_id" in parameters or any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+
+    @classmethod
+    def _call_lookup_with_optional_map_id(cls, method, map_id):
+        if cls._accepts_map_id(method):
+            return method(map_id=map_id)
+        return method()
+
+    @classmethod
+    async def _async_call_lookup_with_optional_map_id(cls, method, map_id):
+        if cls._accepts_map_id(method):
+            return await method(map_id=map_id)
+        return await method()
+
     def create_delivery_task(
         self,
         request_id,
@@ -151,123 +216,17 @@ class TaskRequestRepository:
         notes,
         idempotency_key,
     ):
-        numeric_item_id = self._parse_numeric_identifier(item_id)
-        numeric_caregiver_id = self._parse_numeric_identifier(caregiver_id)
-        requested_quantity = int(quantity)
-        destination_goal_pose_id = str(destination_id or "").strip()
-        request_hash = self.idempotency_repository.build_request_hash(
+        self._sync_delivery_task_create_repository_dependencies()
+        return self.delivery_task_create_repository.create_delivery_task(
             request_id=request_id,
-            caregiver_id=numeric_caregiver_id,
-            item_id=numeric_item_id,
-            quantity=requested_quantity,
-            destination_id=destination_goal_pose_id,
+            caregiver_id=caregiver_id,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
             priority=priority,
             notes=notes,
+            idempotency_key=idempotency_key,
         )
-
-        if numeric_item_id is None:
-            return self._build_delivery_task_response(
-                result_code="REJECTED",
-                result_message="요청한 item_id를 현재 물품 목록에서 찾을 수 없습니다.",
-                reason_code="ITEM_NOT_FOUND",
-            )
-
-        if numeric_caregiver_id is None:
-            return self._build_delivery_task_response(
-                result_code="REJECTED",
-                result_message="caregiver_id를 확인할 수 없습니다.",
-                reason_code="REQUESTER_NOT_AUTHORIZED",
-            )
-
-        conn = get_connection()
-        try:
-            self._begin(conn)
-            with conn.cursor() as cur:
-                existing_response = self.idempotency_repository.find_response(
-                    cur,
-                    requester_id=str(numeric_caregiver_id),
-                    idempotency_key=idempotency_key,
-                    request_hash=request_hash,
-                )
-                if existing_response is not None:
-                    conn.commit()
-                    return existing_response
-
-                product = self._fetch_product("item_id = %s", (numeric_item_id,), conn=conn)
-                if not product:
-                    conn.rollback()
-                    return self._build_delivery_task_response(
-                        result_code="REJECTED",
-                        result_message="요청한 item_id를 현재 물품 목록에서 찾을 수 없습니다.",
-                        reason_code="ITEM_NOT_FOUND",
-                    )
-
-                current_quantity = int(product["quantity"])
-                if requested_quantity > current_quantity:
-                    conn.rollback()
-                    return self._build_delivery_task_response(
-                        result_code="REJECTED",
-                        result_message=f"재고가 부족합니다. 현재 재고: {current_quantity}",
-                        reason_code="ITEM_QUANTITY_INSUFFICIENT",
-                    )
-
-                if not self._caregiver_exists(cur, numeric_caregiver_id):
-                    conn.rollback()
-                    return self._build_delivery_task_response(
-                        result_code="REJECTED",
-                        result_message="요청자를 확인할 수 없습니다.",
-                        reason_code="REQUESTER_NOT_AUTHORIZED",
-                    )
-
-                if not self._goal_pose_exists(cur, DEFAULT_PICKUP_GOAL_POSE_ID):
-                    conn.rollback()
-                    return self._build_delivery_task_response(
-                        result_code="REJECTED",
-                        result_message="운반 픽업 goal pose를 찾을 수 없습니다.",
-                        reason_code="PICKUP_GOAL_POSE_NOT_FOUND",
-                    )
-
-                if not self._goal_pose_exists(cur, destination_goal_pose_id):
-                    conn.rollback()
-                    return self._build_delivery_task_response(
-                        result_code="INVALID_REQUEST",
-                        result_message=f"지원하지 않는 destination_id입니다: {destination_goal_pose_id}",
-                        reason_code="DESTINATION_GOAL_POSE_NOT_FOUND",
-                    )
-
-                task_id = self.delivery_task_repository.create_delivery_task_records(
-                    cur,
-                    request_id=request_id,
-                    idempotency_key=idempotency_key,
-                    caregiver_id=numeric_caregiver_id,
-                    priority=priority,
-                    destination_goal_pose_id=destination_goal_pose_id,
-                    notes=notes,
-                    item_id=numeric_item_id,
-                    quantity=requested_quantity,
-                )
-
-                response = self._build_delivery_task_response(
-                    result_code="ACCEPTED",
-                    task_id=task_id,
-                    task_status="WAITING_DISPATCH",
-                    assigned_robot_id=self.runtime_config.pinky_id,
-                )
-                self.idempotency_repository.insert_record(
-                    cur,
-                    requester_id=str(numeric_caregiver_id),
-                    idempotency_key=idempotency_key,
-                    request_hash=request_hash,
-                    response=response,
-                    task_id=task_id,
-                )
-                conn.commit()
-                return response
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
     async def async_create_delivery_task(
         self,
@@ -280,108 +239,17 @@ class TaskRequestRepository:
         notes,
         idempotency_key,
     ):
-        numeric_item_id = self._parse_numeric_identifier(item_id)
-        numeric_caregiver_id = self._parse_numeric_identifier(caregiver_id)
-        requested_quantity = int(quantity)
-        destination_goal_pose_id = str(destination_id or "").strip()
-        request_hash = self.idempotency_repository.build_request_hash(
+        self._sync_delivery_task_create_repository_dependencies()
+        return await self.delivery_task_create_repository.async_create_delivery_task(
             request_id=request_id,
-            caregiver_id=numeric_caregiver_id,
-            item_id=numeric_item_id,
-            quantity=requested_quantity,
-            destination_id=destination_goal_pose_id,
+            caregiver_id=caregiver_id,
+            item_id=item_id,
+            quantity=quantity,
+            destination_id=destination_id,
             priority=priority,
             notes=notes,
+            idempotency_key=idempotency_key,
         )
-
-        if numeric_item_id is None:
-            return self._build_delivery_task_response(
-                result_code="REJECTED",
-                result_message="요청한 item_id를 현재 물품 목록에서 찾을 수 없습니다.",
-                reason_code="ITEM_NOT_FOUND",
-            )
-
-        if numeric_caregiver_id is None:
-            return self._build_delivery_task_response(
-                result_code="REJECTED",
-                result_message="caregiver_id를 확인할 수 없습니다.",
-                reason_code="REQUESTER_NOT_AUTHORIZED",
-            )
-
-        async with async_transaction() as cur:
-            existing_response = await self.idempotency_repository.async_find_response(
-                cur,
-                requester_id=str(numeric_caregiver_id),
-                idempotency_key=idempotency_key,
-                request_hash=request_hash,
-            )
-            if existing_response is not None:
-                return existing_response
-
-            product = await self._async_fetch_product_by_id(cur, numeric_item_id)
-            if not product:
-                return self._build_delivery_task_response(
-                    result_code="REJECTED",
-                    result_message="요청한 item_id를 현재 물품 목록에서 찾을 수 없습니다.",
-                    reason_code="ITEM_NOT_FOUND",
-                )
-
-            current_quantity = int(product["quantity"])
-            if requested_quantity > current_quantity:
-                return self._build_delivery_task_response(
-                    result_code="REJECTED",
-                    result_message=f"재고가 부족합니다. 현재 재고: {current_quantity}",
-                    reason_code="ITEM_QUANTITY_INSUFFICIENT",
-                )
-
-            if not await self._async_caregiver_exists(cur, numeric_caregiver_id):
-                return self._build_delivery_task_response(
-                    result_code="REJECTED",
-                    result_message="요청자를 확인할 수 없습니다.",
-                    reason_code="REQUESTER_NOT_AUTHORIZED",
-                )
-
-            if not await self._async_goal_pose_exists(cur, DEFAULT_PICKUP_GOAL_POSE_ID):
-                return self._build_delivery_task_response(
-                    result_code="REJECTED",
-                    result_message="운반 픽업 goal pose를 찾을 수 없습니다.",
-                    reason_code="PICKUP_GOAL_POSE_NOT_FOUND",
-                )
-
-            if not await self._async_goal_pose_exists(cur, destination_goal_pose_id):
-                return self._build_delivery_task_response(
-                    result_code="INVALID_REQUEST",
-                    result_message=f"지원하지 않는 destination_id입니다: {destination_goal_pose_id}",
-                    reason_code="DESTINATION_GOAL_POSE_NOT_FOUND",
-                )
-
-            task_id = await self.delivery_task_repository.async_create_delivery_task_records(
-                cur,
-                request_id=request_id,
-                idempotency_key=idempotency_key,
-                caregiver_id=numeric_caregiver_id,
-                priority=priority,
-                destination_goal_pose_id=destination_goal_pose_id,
-                notes=notes,
-                item_id=numeric_item_id,
-                quantity=requested_quantity,
-            )
-
-            response = self._build_delivery_task_response(
-                result_code="ACCEPTED",
-                task_id=task_id,
-                task_status="WAITING_DISPATCH",
-                assigned_robot_id=self.runtime_config.pinky_id,
-            )
-            await self.idempotency_repository.async_insert_record(
-                cur,
-                requester_id=str(numeric_caregiver_id),
-                idempotency_key=idempotency_key,
-                request_hash=request_hash,
-                response=response,
-                task_id=task_id,
-            )
-            return response
 
     def create_patrol_task(
         self,
@@ -573,6 +441,37 @@ class TaskRequestRepository:
             workflow_response=workflow_response,
         )
 
+    def _sync_delivery_task_create_repository_dependencies(self):
+        self.delivery_task_create_repository.runtime_config = self.runtime_config
+        self.delivery_task_create_repository.delivery_task_repository = (
+            self.delivery_task_repository
+        )
+        self.delivery_task_create_repository.idempotency_repository = (
+            self.idempotency_repository
+        )
+        self.delivery_task_create_repository.connection_factory = lambda: get_connection()
+        self.delivery_task_create_repository.async_transaction_factory = (
+            lambda: async_transaction()
+        )
+        self.delivery_task_create_repository.fetch_product_by_id = (
+            lambda cur, item_id, conn=None: self._fetch_product(
+                "item_id = %s",
+                (item_id,),
+                conn=conn,
+            )
+        )
+        self.delivery_task_create_repository.async_fetch_product_by_id = (
+            self._async_fetch_product_by_id
+        )
+        self.delivery_task_create_repository.caregiver_exists = self._caregiver_exists
+        self.delivery_task_create_repository.async_caregiver_exists = (
+            self._async_caregiver_exists
+        )
+        self.delivery_task_create_repository.goal_pose_exists = self._goal_pose_exists
+        self.delivery_task_create_repository.async_goal_pose_exists = (
+            self._async_goal_pose_exists
+        )
+
     def _sync_patrol_task_create_repository_dependencies(self):
         self.patrol_task_create_repository.runtime_config = self.patrol_runtime_config
         self.patrol_task_create_repository.patrol_task_repository = self.patrol_task_repository
@@ -643,19 +542,32 @@ class TaskRequestRepository:
     async def _async_caregiver_exists(self, cur, caregiver_id) -> bool:
         return await self.lookup_repository.async_caregiver_exists(cur, caregiver_id)
 
-    def _goal_pose_exists(self, cur, goal_pose_id) -> bool:
-        return self.lookup_repository.goal_pose_exists(cur, goal_pose_id)
+    def _goal_pose_exists(self, cur, goal_pose_id, *, map_id=None) -> bool:
+        return self.lookup_repository.goal_pose_exists(
+            cur,
+            goal_pose_id,
+            map_id=map_id or self.runtime_config.map_id,
+        )
 
-    async def _async_goal_pose_exists(self, cur, goal_pose_id) -> bool:
-        return await self.lookup_repository.async_goal_pose_exists(cur, goal_pose_id)
+    async def _async_goal_pose_exists(self, cur, goal_pose_id, *, map_id=None) -> bool:
+        return await self.lookup_repository.async_goal_pose_exists(
+            cur,
+            goal_pose_id,
+            map_id=map_id or self.runtime_config.map_id,
+        )
 
     def _fetch_patrol_area_by_id(self, cur, patrol_area_id):
-        return self.lookup_repository.fetch_patrol_area_by_id(cur, patrol_area_id)
+        return self.lookup_repository.fetch_patrol_area_by_id(
+            cur,
+            patrol_area_id,
+            map_id=self.patrol_runtime_config.map_id,
+        )
 
     async def _async_fetch_patrol_area_by_id(self, cur, patrol_area_id):
         return await self.lookup_repository.async_fetch_patrol_area_by_id(
             cur,
             patrol_area_id,
+            map_id=self.patrol_runtime_config.map_id,
         )
 
     @classmethod

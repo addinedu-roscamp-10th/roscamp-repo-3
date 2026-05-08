@@ -5,6 +5,10 @@ from server.ropi_main_service.persistence.repositories.guide_task_lifecycle_repo
 )
 
 
+ALLOWED_GUIDE_COMMAND_TYPES = {"WAIT_TARGET_TRACKING", "START_GUIDANCE"}
+UNSUPPORTED_GUIDE_COMMAND_MESSAGE = "지원하지 않는 안내 제어 명령입니다."
+
+
 class GuideCommandLifecycleService:
     def __init__(
         self,
@@ -25,30 +29,31 @@ class GuideCommandLifecycleService:
         task_id,
         command_type,
         pinky_id=None,
-        target_track_id="",
-        wait_timeout_sec=0,
-        finish_reason="",
+        target_track_id=-1,
+        destination_id="",
+        destination_pose=None,
     ):
         target_pinky_id = self._resolve_pinky_id(pinky_id)
-        try:
-            response = self.guide_command_service.send(
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                command_type=command_type,
-                target_track_id=target_track_id,
-                wait_timeout_sec=wait_timeout_sec,
-                finish_reason=finish_reason,
-            )
-        except Exception as exc:
-            response = self._build_transport_error_response(exc)
+        if self._normalize_command_type(command_type) not in ALLOWED_GUIDE_COMMAND_TYPES:
+            response = self._build_invalid_command_response()
+        else:
+            try:
+                response = self.guide_command_service.send(
+                    task_id=task_id,
+                    pinky_id=target_pinky_id,
+                    command_type=command_type,
+                    target_track_id=target_track_id,
+                    destination_id=destination_id,
+                    destination_pose=destination_pose,
+                )
+            except Exception as exc:
+                response = self._build_transport_error_response(exc)
         response = self._attach_lifecycle(
             response=response,
             task_id=task_id,
             pinky_id=target_pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
         )
         return self._finalize_response(response)
 
@@ -58,30 +63,31 @@ class GuideCommandLifecycleService:
         task_id,
         command_type,
         pinky_id=None,
-        target_track_id="",
-        wait_timeout_sec=0,
-        finish_reason="",
+        target_track_id=-1,
+        destination_id="",
+        destination_pose=None,
     ):
         target_pinky_id = self._resolve_pinky_id(pinky_id)
-        try:
-            response = await self.guide_command_service.async_send(
-                task_id=task_id,
-                pinky_id=target_pinky_id,
-                command_type=command_type,
-                target_track_id=target_track_id,
-                wait_timeout_sec=wait_timeout_sec,
-                finish_reason=finish_reason,
-            )
-        except Exception as exc:
-            response = self._build_transport_error_response(exc)
+        if self._normalize_command_type(command_type) not in ALLOWED_GUIDE_COMMAND_TYPES:
+            response = self._build_invalid_command_response()
+        else:
+            try:
+                response = await self.guide_command_service.async_send(
+                    task_id=task_id,
+                    pinky_id=target_pinky_id,
+                    command_type=command_type,
+                    target_track_id=target_track_id,
+                    destination_id=destination_id,
+                    destination_pose=destination_pose,
+                )
+            except Exception as exc:
+                response = self._build_transport_error_response(exc)
         response = await self._async_attach_lifecycle(
             response=response,
             task_id=task_id,
             pinky_id=target_pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
         )
         return self._finalize_response(response)
 
@@ -93,8 +99,6 @@ class GuideCommandLifecycleService:
         pinky_id,
         command_type,
         target_track_id,
-        wait_timeout_sec,
-        finish_reason,
     ):
         if self._normalize_positive_id(task_id) is None:
             return response
@@ -104,8 +108,6 @@ class GuideCommandLifecycleService:
             pinky_id=pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
             command_response=response,
         )
         return self._merge_lifecycle_response(response, lifecycle_result)
@@ -118,8 +120,6 @@ class GuideCommandLifecycleService:
         pinky_id,
         command_type,
         target_track_id,
-        wait_timeout_sec,
-        finish_reason,
     ):
         if self._normalize_positive_id(task_id) is None:
             return response
@@ -130,8 +130,6 @@ class GuideCommandLifecycleService:
                 pinky_id=pinky_id,
                 command_type=command_type,
                 target_track_id=target_track_id,
-                wait_timeout_sec=wait_timeout_sec,
-                finish_reason=finish_reason,
                 command_response=response,
             )
         )
@@ -188,6 +186,20 @@ class GuideCommandLifecycleService:
             "message": message,
         }
 
+    @staticmethod
+    def _build_invalid_command_response():
+        return {
+            "accepted": False,
+            "result_code": "REJECTED",
+            "result_message": UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
+            "reason_code": "COMMAND_TYPE_INVALID",
+            "message": UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
+        }
+
+    @staticmethod
+    def _normalize_command_type(command_type):
+        return str(command_type or "").strip().upper()
+
     def _resolve_pinky_id(self, pinky_id):
         return str(pinky_id or self.default_pinky_id).strip() or self.default_pinky_id
 
@@ -202,4 +214,4 @@ class GuideCommandLifecycleService:
         return numeric
 
 
-__all__ = ["GuideCommandLifecycleService"]
+__all__ = ["ALLOWED_GUIDE_COMMAND_TYPES", "GuideCommandLifecycleService"]

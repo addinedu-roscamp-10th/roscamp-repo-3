@@ -28,15 +28,20 @@ def test_pinky_config_wraps_common_nav_files():
 
     assert (PINKY_CONFIG_ROOT / "config" / "nav2_params.yaml").exists()
     assert (PINKY_CONFIG_ROOT / "config" / "mapper_params.yaml").exists()
-    assert (PINKY_CONFIG_ROOT / "maps" / "map_test11_0423.yaml").exists()
-    assert (PINKY_CONFIG_ROOT / "maps" / "map_test11_0423.pgm").exists()
-    assert "map_test11_0423.yaml" in launch_py
+    assert (PINKY_CONFIG_ROOT / "maps" / "map_0504.yaml").exists()
+    assert (PINKY_CONFIG_ROOT / "maps" / "map_0504.pgm").exists()
+    assert (PINKY_CONFIG_ROOT / "maps" / "map_test12_0506.yaml").exists()
+    assert (PINKY_CONFIG_ROOT / "maps" / "map_test12_0506.pgm").exists()
+    assert "map_0504.yaml" in launch_py
+    assert "map_test11_0423.yaml" not in launch_py
     assert "config\", \"nav2_params.yaml" in launch_py
-    assert "maps\", \"map_test11_0423.yaml" in launch_py
+    assert "maps\", \"map_0504.yaml" in launch_py
     assert "from launch_xml.launch_description_sources import XMLLaunchDescriptionSource" in launch_py
-    assert "robot_id" not in launch_py
-    assert "image: map_test11_0423.pgm" in (
-        PINKY_CONFIG_ROOT / "maps" / "map_test11_0423.yaml"
+    assert "image: map_0504.pgm" in (
+        PINKY_CONFIG_ROOT / "maps" / "map_0504.yaml"
+    ).read_text(encoding="utf-8")
+    assert "image: map_test12_0506.pgm" in (
+        PINKY_CONFIG_ROOT / "maps" / "map_test12_0506.yaml"
     ).read_text(encoding="utf-8")
 
     for robot_id in ("pinky1", "pinky2", "pinky3"):

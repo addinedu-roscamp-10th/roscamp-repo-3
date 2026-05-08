@@ -12,6 +12,7 @@ from server.ropi_main_service.persistence.sql_loader import load_sql
 
 
 ACTIVE_MAP_PROFILE_SQL = load_sql("coordinate_config/get_active_map_profile.sql")
+FIND_MAP_PROFILE_SQL = load_sql("coordinate_config/find_map_profile.sql")
 DELETE_ROUTE_WAYPOINTS_SQL = load_sql("fms_config/delete_route_waypoints.sql")
 FIND_EDGE_SQL = load_sql("fms_config/find_edge.sql")
 FIND_ROUTE_SQL = load_sql("fms_config/find_route.sql")
@@ -41,6 +42,12 @@ class FmsConfigRepository:
 
     async def async_get_active_map_profile(self):
         return await async_fetch_one(ACTIVE_MAP_PROFILE_SQL)
+
+    def get_map_profile(self, *, map_id):
+        return fetch_one(FIND_MAP_PROFILE_SQL, (str(map_id),))
+
+    async def async_get_map_profile(self, *, map_id):
+        return await async_fetch_one(FIND_MAP_PROFILE_SQL, (str(map_id),))
 
     def get_waypoints(self, *, map_id, include_disabled=True):
         return fetch_all(

@@ -34,7 +34,6 @@ async def _run_ros_service(node_name: str):
     fall_response_control_client = RclpyFallResponseControlClient(node=node)
     guide_command_client = RclpyGuideCommandClient(node=node)
     guide_runtime_subscriber = _build_guide_runtime_subscriber(node)
-    guide_tracking_update_publisher = _build_guide_tracking_update_publisher(node)
     uds_server = RosServiceUdsServer(
         goal_pose_action_client=goal_pose_action_client,
         manipulation_action_client=manipulation_action_client,
@@ -42,7 +41,6 @@ async def _run_ros_service(node_name: str):
         fall_response_control_client=fall_response_control_client,
         guide_command_client=guide_command_client,
         guide_runtime_subscriber=guide_runtime_subscriber,
-        guide_tracking_update_publisher=guide_tracking_update_publisher,
     )
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -77,25 +75,11 @@ def _build_guide_runtime_subscriber(node):
         )
     except ImportError as exc:
         node.get_logger().warning(
-            "Guide runtime subscriber disabled because GuideTrackingUpdate "
+            "Guide runtime subscriber disabled because GuidePhaseSnapshot "
             f"interface is unavailable: {exc}"
         )
         return None
     return GuideRuntimeSubscriber(node=node)
-
-
-def _build_guide_tracking_update_publisher(node):
-    try:
-        from server.ropi_main_service.ros.guide_tracking_update_publisher import (
-            RclpyGuideTrackingUpdatePublisher,
-        )
-        return RclpyGuideTrackingUpdatePublisher(node=node)
-    except ImportError as exc:
-        node.get_logger().warning(
-            "Guide tracking update publisher disabled because GuideTrackingUpdate "
-            f"interface is unavailable: {exc}"
-        )
-        return None
 
 
 def main():

@@ -15,7 +15,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 set(
   MSG_FILES
-  "msg/GuideTrackingUpdate.msg"
+  "msg/GuidePhaseSnapshot.msg"
   "msg/PinkyStatus.msg"
 )
 
@@ -42,7 +42,14 @@ rosidl_generate_interfaces(
 
 
 if(BUILD_TESTING)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  find_package(ament_cmake_pytest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
+  ament_add_pytest_test(
+    guide_interface_contract
+    test/test_guide_interface_contract.py
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  )
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files
   set(ament_cmake_copyright_FOUND TRUE)

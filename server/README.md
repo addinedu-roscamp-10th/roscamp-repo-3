@@ -43,6 +43,8 @@ CONTROL_SERVER_TIMEOUT=3.0
 
 ROPI_ROS_SERVICE_SOCKET_PATH=/tmp/ropi_control_ros_service.sock
 ROPI_ROS_SERVICE_SOCKET_TIMEOUT=2.0
+ACTION_FEEDBACK_EVENT_POLL_ENABLED=true
+ACTION_FEEDBACK_EVENT_POLL_INTERVAL_SEC=0.5
 
 PATROL_PATH_TIMEOUT_SEC=180
 
@@ -104,8 +106,12 @@ source /home/addinedu/dev/roscamp-repo-3/device/install/setup.bash
 ```bash
 source /opt/ros/jazzy/setup.bash
 source /home/addinedu/dev/roscamp-repo-3/device/install/setup.bash
-python3 -c "from ropi_interface.action import ExecutePatrolPath; from ropi_interface.msg import GuideTrackingUpdate; from ropi_interface.srv import FallResponseControl; print('ropi_interface ok')"
+python3 -c "from ropi_interface.action import ExecutePatrolPath; from ropi_interface.msg import GuidePhaseSnapshot; from ropi_interface.srv import FallResponseControl; print('ropi_interface ok')"
 ```
+
+안내 `IF-GUI-007` phase snapshot은 `ropi-ros-service`가 ROS topic을 구독하고, `ropi-control-server`가 기본적으로 `get_runtime_status(include_guide=True)`를 polling해서 DB와 UI push로 수렴한다. 필요하면 `GUIDE_PHASE_SNAPSHOT_POLL_ENABLED=false`로 poller를 끌 수 있고, polling 주기는 `GUIDE_PHASE_SNAPSHOT_POLL_INTERVAL_SEC`로 조정한다.
+
+태스크 모니터의 action feedback push는 `ropi-control-server`가 기본적으로 활성 태스크를 기준으로 `ropi-ros-service`의 `get_action_feedback`을 polling해서 `ACTION_FEEDBACK_UPDATED` 이벤트로 수렴한다. 로컬 UI-only 테스트에서 ROS 브릿지 polling을 끄려면 `ACTION_FEEDBACK_EVENT_POLL_ENABLED=false`를 둔다.
 
 ## 실행 순서
 

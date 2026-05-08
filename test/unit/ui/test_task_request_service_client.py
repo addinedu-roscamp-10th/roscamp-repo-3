@@ -1,4 +1,8 @@
 from server.ropi_main_service.transport.tcp_protocol import (
+    MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+    MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+    MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+    MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
     MESSAGE_CODE_PATROL_FALL_EVIDENCE_QUERY,
     MESSAGE_CODE_PATROL_RESUME_TASK,
     MESSAGE_CODE_TASK_STATUS_QUERY,
@@ -111,14 +115,14 @@ def test_inventory_remote_service_exposes_bundle_and_item_id_mutation_rpcs(monke
     ]
 
 
-def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch):
+def test_kiosk_visitor_remote_service_sends_if_gui_008_through_010(monkeypatch):
     calls = []
 
-    def fake_rpc(service, method, **kwargs):
-        calls.append((service, method, kwargs))
-        return {"result_code": "OK"}
+    def fake_send_request(message_code, payload):
+        calls.append((message_code, payload))
+        return {"ok": True, "payload": {"result_code": "OK"}}
 
-    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    monkeypatch.setattr(service_clients, "send_request", fake_send_request)
     service = KioskVisitorRemoteService()
 
     assert service.lookup_residents(keyword="301", limit=5) == {"result_code": "OK"}
@@ -134,16 +138,14 @@ def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch)
     assert service.get_care_history(visitor_id=42) == {"result_code": "OK"}
     assert calls == [
         (
-            "kiosk_visitor",
-            "lookup_residents",
+            MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
             {
                 "keyword": "301",
                 "limit": 5,
             },
         ),
         (
-            "kiosk_visitor",
-            "register_visit",
+            MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
             {
                 "visitor_name": "김민수",
                 "phone_no": "010-1111-2222",
@@ -155,8 +157,7 @@ def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch)
             },
         ),
         (
-            "kiosk_visitor",
-            "get_care_history",
+            MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
             {
                 "visitor_id": 42,
             },
@@ -164,14 +165,14 @@ def test_kiosk_visitor_remote_service_exposes_visitor_workflow_rpcs(monkeypatch)
     ]
 
 
-def test_staff_call_remote_service_exposes_if_gui_010_rpc(monkeypatch):
+def test_staff_call_remote_service_sends_if_gui_011(monkeypatch):
     calls = []
 
-    def fake_rpc(service, method, **kwargs):
-        calls.append((service, method, kwargs))
-        return {"result_code": "ACCEPTED"}
+    def fake_send_request(message_code, payload):
+        calls.append((message_code, payload))
+        return {"ok": True, "payload": {"result_code": "ACCEPTED"}}
 
-    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    monkeypatch.setattr(service_clients, "send_request", fake_send_request)
 
     result = StaffCallRemoteService().submit_staff_call(
         call_type="방문 등록 도움",
@@ -185,8 +186,7 @@ def test_staff_call_remote_service_exposes_if_gui_010_rpc(monkeypatch):
     assert result == {"result_code": "ACCEPTED"}
     assert calls == [
         (
-            "staff_call",
-            "submit_staff_call",
+            MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
             {
                 "call_type": "방문 등록 도움",
                 "description": "대상 어르신을 찾는 데 도움이 필요합니다.",
@@ -522,6 +522,47 @@ def test_coordinate_config_remote_service_exposes_goal_pose_update_rpc(monkeypat
     ]
 
 
+def test_coordinate_config_remote_service_exposes_goal_pose_create_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "CREATED"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = CoordinateConfigRemoteService().create_goal_pose(
+        goal_pose_id="delivery_room_302",
+        map_id="map_test",
+        zone_id="room_302",
+        purpose="DESTINATION",
+        pose_x=2.1,
+        pose_y=0.12,
+        pose_yaw=0.0,
+        frame_id="map",
+        is_enabled=True,
+    )
+
+    assert response["result_code"] == "CREATED"
+    assert calls == [
+        (
+            "coordinate_config",
+            "create_goal_pose",
+            {
+                "goal_pose_id": "delivery_room_302",
+                "map_id": "map_test",
+                "zone_id": "room_302",
+                "purpose": "DESTINATION",
+                "pose_x": 2.1,
+                "pose_y": 0.12,
+                "pose_yaw": 0.0,
+                "frame_id": "map",
+                "is_enabled": True,
+            },
+        )
+    ]
+
+
 def test_coordinate_config_remote_service_exposes_patrol_area_path_update_rpc(
     monkeypatch,
 ):
@@ -557,6 +598,72 @@ def test_coordinate_config_remote_service_exposes_patrol_area_path_update_rpc(
                 "path_json": path_json,
             },
         )
+    ]
+
+
+def test_coordinate_config_remote_service_exposes_patrol_area_create_and_update_rpc(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {
+            "result_code": "CREATED" if method == "create_patrol_area" else "UPDATED"
+        }
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+    path_json = {
+        "header": {"frame_id": "map"},
+        "poses": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 1.0, "y": 1.0, "yaw": 0.0},
+        ],
+    }
+    service = CoordinateConfigRemoteService()
+
+    create_response = service.create_patrol_area(
+        patrol_area_id="patrol_day_01",
+        map_id="map_test12_0506",
+        patrol_area_name="주간 병동 순찰",
+        path_json=path_json,
+        is_enabled=True,
+    )
+    update_response = service.update_patrol_area(
+        patrol_area_id="patrol_day_01",
+        map_id="map_test12_0506",
+        expected_revision=1,
+        patrol_area_name="주간 병동 순찰",
+        path_json=path_json,
+        is_enabled=False,
+    )
+
+    assert create_response["result_code"] == "CREATED"
+    assert update_response["result_code"] == "UPDATED"
+    assert calls == [
+        (
+            "coordinate_config",
+            "create_patrol_area",
+            {
+                "patrol_area_id": "patrol_day_01",
+                "map_id": "map_test12_0506",
+                "patrol_area_name": "주간 병동 순찰",
+                "path_json": path_json,
+                "is_enabled": True,
+            },
+        ),
+        (
+            "coordinate_config",
+            "update_patrol_area",
+            {
+                "patrol_area_id": "patrol_day_01",
+                "map_id": "map_test12_0506",
+                "expected_revision": 1,
+                "patrol_area_name": "주간 병동 순찰",
+                "path_json": path_json,
+                "is_enabled": False,
+            },
+        ),
     ]
 
 
@@ -758,7 +865,7 @@ def test_visit_guide_remote_service_exposes_start_guide_driving_rpc(monkeypatch)
     response = VisitGuideRemoteService().start_guide_driving(
         task_id="3001",
         pinky_id="pinky1",
-        target_track_id="track_17",
+        target_track_id=17,
     )
 
     assert response[0] is True
@@ -768,35 +875,41 @@ def test_visit_guide_remote_service_exposes_start_guide_driving_rpc(monkeypatch)
             "start_guide_driving",
             {
                 "task_id": "3001",
-                "target_track_id": "track_17",
+                "target_track_id": 17,
                 "pinky_id": "pinky1",
             },
         )
     ]
 
 
-def test_visit_guide_remote_service_exposes_tracking_status_rpc(monkeypatch):
+def test_visit_guide_remote_service_finish_uses_common_task_cancel_rpc(monkeypatch):
     calls = []
 
     def fake_rpc(service, method, **kwargs):
         calls.append((service, method, kwargs))
-        return True, "안내 대상을 확인했습니다.", {"target_track_id": "track_17"}
+        return True, "취소 요청이 접수되었습니다.", {"result_code": "CANCEL_REQUESTED"}
 
     monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
 
-    response = VisitGuideRemoteService().get_tracking_status(
+    response = VisitGuideRemoteService().finish_guide_session(
         task_id="3001",
         pinky_id="pinky1",
+        finish_reason="USER_CANCELLED",
     )
 
     assert response[0] is True
     assert calls == [
         (
-            "visit_guide",
-            "get_tracking_status",
+            "task_request",
+            "cancel_task",
             {
                 "task_id": "3001",
-                "pinky_id": "pinky1",
+                "caregiver_id": None,
+                "reason": "USER_CANCELLED",
             },
         )
     ]
+
+
+def test_visit_guide_remote_service_does_not_expose_retired_tracking_status_rpc():
+    assert not hasattr(VisitGuideRemoteService(), "get_tracking_status")

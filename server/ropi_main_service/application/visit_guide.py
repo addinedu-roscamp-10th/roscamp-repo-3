@@ -13,18 +13,14 @@ from server.ropi_main_service.persistence.repositories.visit_guide_repository im
 from server.ropi_main_service.application.guide_command import GuideCommandService
 from server.ropi_main_service.application.guide_command_lifecycle import (
     GuideCommandLifecycleService,
+    UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
 )
 from server.ropi_main_service.application.guide_driving_orchestrator import (
-    DEFAULT_GUIDE_NAVIGATION_TIMEOUT_SEC,
     GuideDrivingOrchestrator,
 )
-from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.guide_runtime import (
     DEFAULT_GUIDE_PINKY_ID,
     GuideRuntimeService,
-)
-from server.ropi_main_service.application.guide_tracking_snapshot import (
-    get_default_guide_tracking_snapshot_store,
 )
 
 
@@ -36,11 +32,8 @@ class VisitGuideService:
         guide_task_lifecycle_repository=None,
         guide_task_navigation_repository=None,
         guide_command_service=None,
-        goal_pose_navigation_service=None,
-        guide_navigation_starter=None,
+        guide_runtime_preflight=None,
         guide_runtime_service=None,
-        guide_tracking_snapshot_store=None,
-        guide_navigation_timeout_sec=DEFAULT_GUIDE_NAVIGATION_TIMEOUT_SEC,
         default_pinky_id=DEFAULT_GUIDE_PINKY_ID,
     ):
         self.repository = repository or VisitGuideRepository()
@@ -59,25 +52,15 @@ class VisitGuideService:
             guide_task_lifecycle_repository=self.guide_task_lifecycle_repository,
             default_pinky_id=default_pinky_id,
         )
-        self.goal_pose_navigation_service = (
-            goal_pose_navigation_service or GoalPoseNavigationService()
-        )
-        self.guide_navigation_starter = guide_navigation_starter
         self.guide_runtime_service = guide_runtime_service or GuideRuntimeService(
             default_pinky_id=default_pinky_id
         )
-        self.guide_tracking_snapshot_store = (
-            guide_tracking_snapshot_store or get_default_guide_tracking_snapshot_store()
-        )
-        self.guide_navigation_timeout_sec = float(guide_navigation_timeout_sec)
         self.default_pinky_id = str(default_pinky_id).strip() or DEFAULT_GUIDE_PINKY_ID
         self.guide_driving_orchestrator = GuideDrivingOrchestrator(
             guide_task_navigation_repository=self.guide_task_navigation_repository,
             guide_task_lifecycle_repository=self.guide_task_lifecycle_repository,
             guide_command_lifecycle_service=self.guide_command_lifecycle_service,
-            goal_pose_navigation_service=self.goal_pose_navigation_service,
-            guide_navigation_starter=self.guide_navigation_starter,
-            guide_navigation_timeout_sec=self.guide_navigation_timeout_sec,
+            guide_runtime_preflight=guide_runtime_preflight,
             default_pinky_id=self.default_pinky_id,
         )
 
@@ -179,7 +162,7 @@ class VisitGuideService:
         idempotency_key=None,
         pinky_id=None,
         command_type="WAIT_TARGET_TRACKING",
-        target_track_id="",
+        target_track_id=-1,
         wait_timeout_sec=0,
         finish_reason="",
     ):
@@ -205,8 +188,6 @@ class VisitGuideService:
             command_type=command_type,
             pinky_id=target_pinky_id,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
         )
         payload = {
             "task_id": guide_task_id,
@@ -231,7 +212,7 @@ class VisitGuideService:
         idempotency_key=None,
         pinky_id=None,
         command_type="WAIT_TARGET_TRACKING",
-        target_track_id="",
+        target_track_id=-1,
         wait_timeout_sec=0,
         finish_reason="",
     ):
@@ -257,8 +238,6 @@ class VisitGuideService:
             command_type=command_type,
             pinky_id=target_pinky_id,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
         )
         payload = {
             "task_id": guide_task_id,
@@ -281,12 +260,10 @@ class VisitGuideService:
         target_track_id="",
         finish_reason="",
     ):
-        return self.send_guide_command(
+        return self._reject_unsupported_guide_command(
             task_id=task_id,
-            command_type="FINISH_GUIDANCE",
             pinky_id=pinky_id,
-            target_track_id=target_track_id,
-            finish_reason=finish_reason,
+            command_type="FINISH_GUIDANCE",
         )
 
     async def async_finish_guide_session(
@@ -297,12 +274,10 @@ class VisitGuideService:
         target_track_id="",
         finish_reason="",
     ):
-        return await self.async_send_guide_command(
+        return self._reject_unsupported_guide_command(
             task_id=task_id,
-            command_type="FINISH_GUIDANCE",
             pinky_id=pinky_id,
-            target_track_id=target_track_id,
-            finish_reason=finish_reason,
+            command_type="FINISH_GUIDANCE",
         )
 
     def start_guide_driving(
@@ -311,13 +286,11 @@ class VisitGuideService:
         task_id,
         target_track_id,
         pinky_id=None,
-        navigation_timeout_sec=None,
     ):
         return self.guide_driving_orchestrator.start_guide_driving(
             task_id=task_id,
             target_track_id=target_track_id,
             pinky_id=pinky_id,
-            navigation_timeout_sec=navigation_timeout_sec,
         )
 
     async def async_start_guide_driving(
@@ -326,13 +299,11 @@ class VisitGuideService:
         task_id,
         target_track_id,
         pinky_id=None,
-        navigation_timeout_sec=None,
     ):
         return await self.guide_driving_orchestrator.async_start_guide_driving(
             task_id=task_id,
             target_track_id=target_track_id,
             pinky_id=pinky_id,
-            navigation_timeout_sec=navigation_timeout_sec,
         )
 
     def send_guide_command(
@@ -341,17 +312,19 @@ class VisitGuideService:
         task_id,
         command_type,
         pinky_id=None,
-        target_track_id="",
+        target_track_id=-1,
         wait_timeout_sec=0,
         finish_reason="",
+        destination_id="",
+        destination_pose=None,
     ):
         return self.guide_command_lifecycle_service.send_command(
             task_id=task_id,
             pinky_id=pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
+            destination_id=destination_id,
+            destination_pose=destination_pose,
         )
 
     async def async_send_guide_command(
@@ -360,32 +333,20 @@ class VisitGuideService:
         task_id,
         command_type,
         pinky_id=None,
-        target_track_id="",
+        target_track_id=-1,
         wait_timeout_sec=0,
         finish_reason="",
+        destination_id="",
+        destination_pose=None,
     ):
         return await self.guide_command_lifecycle_service.async_send_command(
             task_id=task_id,
             pinky_id=pinky_id,
             command_type=command_type,
             target_track_id=target_track_id,
-            wait_timeout_sec=wait_timeout_sec,
-            finish_reason=finish_reason,
+            destination_id=destination_id,
+            destination_pose=destination_pose,
         )
-
-    def get_tracking_status(self, *, task_id=None, pinky_id=None):
-        snapshot = self.guide_tracking_snapshot_store.get(
-            task_id=task_id,
-            pinky_id=pinky_id or self.default_pinky_id,
-        )
-        return self._build_tracking_status_response(
-            snapshot=snapshot,
-            task_id=task_id,
-            pinky_id=pinky_id or self.default_pinky_id,
-        )
-
-    async def async_get_tracking_status(self, *, task_id=None, pinky_id=None):
-        return self.get_tracking_status(task_id=task_id, pinky_id=pinky_id)
 
     def get_guide_runtime_status(self, *, pinky_id=None):
         status = self.guide_runtime_service.get_status(pinky_id=pinky_id)
@@ -396,50 +357,6 @@ class VisitGuideService:
             return False, "안내 추적 업데이트가 오래되어 최신 상태가 아닙니다.", status
         return True, "안내 추적 상태를 확인했습니다.", status
 
-    @classmethod
-    def _build_tracking_status_response(cls, *, snapshot, task_id=None, pinky_id=None):
-        if not snapshot:
-            return (
-                False,
-                "안내 대상 확인 대기 중입니다.",
-                {
-                    "result_code": "PENDING",
-                    "result_message": "안내 대상 확인 대기 중입니다.",
-                    "reason_code": "TRACKING_SNAPSHOT_NOT_FOUND",
-                    "task_id": cls._normalize_positive_id(task_id),
-                    "pinky_id": str(pinky_id or "").strip() or None,
-                    "tracking_status": "NOT_TRACKING",
-                    "active_track_id": None,
-                    "target_track_id": None,
-                },
-            )
-
-        response = dict(snapshot)
-        active_track_id = str(response.get("active_track_id") or "").strip() or None
-        adopted_target_track_id = (
-            str(response.get("adopted_target_track_id") or "").strip() or None
-        )
-        tracking_status = str(response.get("tracking_status") or "").strip().upper()
-        acquired = tracking_status == "TRACKING" and active_track_id is not None
-        result_code = "FOUND" if acquired else "PENDING"
-        message = (
-            "안내 대상을 확인했습니다."
-            if acquired
-            else "안내 대상 확인 대기 중입니다."
-        )
-
-        response.update(
-            {
-                "result_code": result_code,
-                "result_message": message,
-                "reason_code": None if acquired else "TRACKING_TARGET_NOT_ACQUIRED",
-                "active_track_id": active_track_id,
-                "target_track_id": adopted_target_track_id or active_track_id,
-                "tracking_status": tracking_status or "NOT_TRACKING",
-            }
-        )
-        return acquired, message, response
-
     async def async_get_guide_runtime_status(self, *, pinky_id=None):
         status = await self.guide_runtime_service.async_get_status(pinky_id=pinky_id)
         guide_runtime = (status or {}).get("guide_runtime") or {}
@@ -448,6 +365,21 @@ class VisitGuideService:
         if guide_runtime.get("stale"):
             return False, "안내 추적 업데이트가 오래되어 최신 상태가 아닙니다.", status
         return True, "안내 추적 상태를 확인했습니다.", status
+
+    def _reject_unsupported_guide_command(self, *, task_id, pinky_id=None, command_type):
+        return False, UNSUPPORTED_GUIDE_COMMAND_MESSAGE, {
+            "accepted": False,
+            "result_code": "REJECTED",
+            "result_message": UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
+            "reason_code": "COMMAND_TYPE_INVALID",
+            "message": UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
+            "task_id": self._normalize_positive_id(task_id),
+            "task_type": "GUIDE",
+            "assigned_robot_id": (
+                str(pinky_id or self.default_pinky_id).strip() or self.default_pinky_id
+            ),
+            "command_type": str(command_type or "").strip().upper(),
+        }
 
     def _create_task_or_member_event(
         self,

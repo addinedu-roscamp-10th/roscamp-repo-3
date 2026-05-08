@@ -69,9 +69,9 @@ def test_guide_command_lifecycle_service_records_and_merges_sync_command():
             "task_id": 3001,
             "pinky_id": "pinky1",
             "command_type": "WAIT_TARGET_TRACKING",
-            "target_track_id": "",
-            "wait_timeout_sec": 0,
-            "finish_reason": "",
+            "target_track_id": -1,
+            "destination_id": "",
+            "destination_pose": None,
         }
     ]
     assert lifecycle_repository.recorded == [
@@ -79,9 +79,7 @@ def test_guide_command_lifecycle_service_records_and_merges_sync_command():
             "task_id": 3001,
             "pinky_id": "pinky1",
             "command_type": "WAIT_TARGET_TRACKING",
-            "target_track_id": "",
-            "wait_timeout_sec": 0,
-            "finish_reason": "",
+            "target_track_id": -1,
             "command_response": {"accepted": True, "message": "done"},
         }
     ]
@@ -91,21 +89,19 @@ def test_guide_command_lifecycle_service_records_and_merges_sync_command():
     assert response["lifecycle_result"] is lifecycle_repository.response
 
 
-def test_guide_command_lifecycle_service_uses_lifecycle_success_after_transport_error():
-    command_service = FakeGuideCommandService(
-        error_message="/ropi/control/pinky1/guide_command service is not available."
-    )
+def test_guide_command_lifecycle_service_rejects_unsupported_post_start_command():
+    command_service = FakeGuideCommandService()
     lifecycle_repository = FakeGuideTaskLifecycleRepository(
         response={
-            "result_code": "ACCEPTED",
-            "result_message": "안내 시작 전 취소가 접수되었습니다.",
-            "reason_code": "USER_CANCELLED",
+            "result_code": "REJECTED",
+            "result_message": "지원하지 않는 안내 제어 명령입니다.",
+            "reason_code": "COMMAND_TYPE_INVALID",
             "task_id": 3001,
-            "task_status": "CANCELLED",
-            "phase": "GUIDANCE_CANCELLED",
-            "guide_phase": "CANCELLED",
+            "task_status": "RUNNING",
+            "phase": "WAIT_TARGET_TRACKING",
+            "guide_phase": "WAIT_TARGET_TRACKING",
             "assigned_robot_id": "pinky1",
-            "accepted": True,
+            "accepted": False,
         }
     )
     service = GuideCommandLifecycleService(
@@ -117,20 +113,19 @@ def test_guide_command_lifecycle_service_uses_lifecycle_success_after_transport_
     ok, message, response = service.send_command(
         task_id=3001,
         command_type="FINISH_GUIDANCE",
-        finish_reason="USER_CANCELLED",
     )
 
-    assert ok is True
-    assert message == "안내 시작 전 취소가 접수되었습니다."
-    assert response["accepted"] is True
-    assert response["reason_code"] == "USER_CANCELLED"
-    assert response["task_status"] == "CANCELLED"
+    assert ok is False
+    assert message == "지원하지 않는 안내 제어 명령입니다."
+    assert command_service.sent == []
+    assert response["accepted"] is False
+    assert response["reason_code"] == "COMMAND_TYPE_INVALID"
     assert lifecycle_repository.recorded[0]["command_response"] == {
         "accepted": False,
         "result_code": "REJECTED",
-        "result_message": "/ropi/control/pinky1/guide_command service is not available.",
-        "reason_code": "GUIDE_COMMAND_TRANSPORT_ERROR",
-        "message": "/ropi/control/pinky1/guide_command service is not available.",
+        "result_message": "지원하지 않는 안내 제어 명령입니다.",
+        "reason_code": "COMMAND_TYPE_INVALID",
+        "message": "지원하지 않는 안내 제어 명령입니다.",
     }
 
 
@@ -150,14 +145,17 @@ def test_guide_command_lifecycle_service_records_async_command():
             task_id=3001,
             pinky_id="pinky7",
             command_type="START_GUIDANCE",
-            target_track_id="track_17",
+            target_track_id=17,
+            destination_id="delivery_room_301",
+            destination_pose={"header": {"frame_id": "map"}},
         )
     )
 
     assert ok is True
     assert message == "async done"
     assert command_service.sent[0]["pinky_id"] == "pinky7"
-    assert command_service.sent[0]["target_track_id"] == "track_17"
+    assert command_service.sent[0]["target_track_id"] == 17
+    assert command_service.sent[0]["destination_id"] == "delivery_room_301"
     assert lifecycle_repository.recorded[0]["pinky_id"] == "pinky7"
-    assert lifecycle_repository.recorded[0]["target_track_id"] == "track_17"
+    assert lifecycle_repository.recorded[0]["target_track_id"] == 17
     assert response["lifecycle_result"] is lifecycle_repository.response

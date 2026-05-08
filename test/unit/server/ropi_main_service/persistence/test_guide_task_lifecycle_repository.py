@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from server.ropi_main_service.persistence.repositories.guide_task_lifecycle_repository import (
     GuideTaskLifecycleRepository,
@@ -145,46 +146,70 @@ def test_record_command_rejection_keeps_current_phase_and_writes_event_only():
     assert len(connection.cursor_instance.calls) == 3
 
 
-def test_record_pre_driving_finish_transport_rejection_finalizes_user_cancelled_task():
+def test_record_post_start_command_rejects_without_state_change_even_when_transport_accepts():
     connection = FakeConnection()
     repository = GuideTaskLifecycleRepository(connection_factory=lambda: connection)
 
     response = repository.record_command_result(
         task_id=3001,
         pinky_id="pinky1",
-        command_type="FINISH_GUIDANCE",
-        finish_reason="USER_CANCELLED",
+        command_type="RESUME_GUIDANCE",
         command_response={
-            "accepted": False,
-            "result_code": "REJECTED",
-            "result_message": "/ropi/control/pinky1/guide_command service is not available.",
-            "reason_code": "GUIDE_COMMAND_TRANSPORT_ERROR",
-            "message": "/ropi/control/pinky1/guide_command service is not available.",
+            "accepted": True,
+            "result_code": "ACCEPTED",
+            "message": "accepted by stale caller",
         },
     )
 
-    assert response["accepted"] is True
-    assert response["result_code"] == "ACCEPTED"
-    assert response["reason_code"] == "USER_CANCELLED"
-    assert response["result_message"] == "안내 시작 전 취소가 접수되었습니다."
-    assert response["task_status"] == "CANCELLED"
-    assert response["phase"] == "GUIDANCE_CANCELLED"
-    assert response["guide_phase"] == "CANCELLED"
+    assert response["accepted"] is False
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "COMMAND_TYPE_INVALID"
+    assert response["task_status"] == "WAITING_DISPATCH"
+    assert response["phase"] == "WAIT_GUIDE_START_CONFIRM"
+    assert response["guide_phase"] == "WAIT_GUIDE_START_CONFIRM"
     assert "UPDATE task" in connection.cursor_instance.calls[1][0]
     assert connection.cursor_instance.calls[1][1][:4] == (
-        "CANCELLED",
-        "GUIDANCE_CANCELLED",
-        "USER_CANCELLED",
-        "ACCEPTED",
+        "COMMAND_TYPE_INVALID",
+        "REJECTED",
+        "지원하지 않는 안내 제어 명령입니다.",
+        3001,
     )
-    assert "UPDATE guide_task_detail" in connection.cursor_instance.calls[2][0]
-    assert "INSERT INTO task_state_history" in connection.cursor_instance.calls[3][0]
-    assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[4][0]
-    event_payload = connection.cursor_instance.calls[4][1][-1]
-    assert "GUIDE_COMMAND_TRANSPORT_ERROR" in event_payload
+    assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[2][0]
+    assert len(connection.cursor_instance.calls) == 3
 
 
-def test_async_record_finish_user_cancel_finalizes_cancelled_task():
+def test_record_start_guidance_keeps_numeric_target_track_id():
+    connection = FakeConnection(
+        row={
+            "task_id": 3001,
+            "task_type": "GUIDE",
+            "task_status": "RUNNING",
+            "phase": "WAIT_TARGET_TRACKING",
+            "assigned_robot_id": "pinky1",
+            "guide_phase": "WAIT_TARGET_TRACKING",
+            "target_track_id": None,
+        }
+    )
+    repository = GuideTaskLifecycleRepository(connection_factory=lambda: connection)
+
+    response = repository.record_command_result(
+        task_id=3001,
+        pinky_id="pinky1",
+        command_type="START_GUIDANCE",
+        target_track_id=17,
+        command_response={"accepted": True, "message": ""},
+    )
+
+    detail_params = connection.cursor_instance.calls[2][1]
+    event_payload = json.loads(connection.cursor_instance.calls[4][1][-1])
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["target_track_id"] == 17
+    assert detail_params[1] == 17
+    assert event_payload["target_track_id"] == 17
+
+
+def test_async_record_finish_guidance_rejects_without_state_change():
     transaction = FakeAsyncTransaction()
     repository = GuideTaskLifecycleRepository(
         async_transaction_factory=lambda: transaction,
@@ -200,20 +225,20 @@ def test_async_record_finish_user_cancel_finalizes_cancelled_task():
         )
     )
 
-    assert response["result_code"] == "ACCEPTED"
-    assert response["task_status"] == "CANCELLED"
-    assert response["phase"] == "GUIDANCE_CANCELLED"
-    assert response["guide_phase"] == "CANCELLED"
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "COMMAND_TYPE_INVALID"
+    assert response["task_status"] == "RUNNING"
+    assert response["phase"] == "WAIT_TARGET_TRACKING"
+    assert response["guide_phase"] == "WAIT_TARGET_TRACKING"
     assert "UPDATE task" in transaction.cursor.calls[1][0]
     assert transaction.cursor.calls[1][1][:4] == (
-        "CANCELLED",
-        "GUIDANCE_CANCELLED",
-        "USER_CANCELLED",
-        "ACCEPTED",
+        "COMMAND_TYPE_INVALID",
+        "REJECTED",
+        "지원하지 않는 안내 제어 명령입니다.",
+        3001,
     )
-    assert "UPDATE guide_task_detail" in transaction.cursor.calls[2][0]
-    assert "INSERT INTO task_state_history" in transaction.cursor.calls[3][0]
-    assert "INSERT INTO task_event_log" in transaction.cursor.calls[4][0]
+    assert "INSERT INTO task_event_log" in transaction.cursor.calls[2][0]
+    assert len(transaction.cursor.calls) == 3
 
 
 def test_record_lifecycle_rejects_non_numeric_task_id():

@@ -24,6 +24,35 @@ def build_goal_pose_update_payload(
     }
 
 
+def build_goal_pose_save_payload(
+    *,
+    mode,
+    selected_goal_pose,
+    goal_pose_id,
+    zone_id,
+    purpose,
+    pose_x,
+    pose_y,
+    pose_yaw,
+    frame_id,
+    is_enabled,
+):
+    payload = build_goal_pose_update_payload(
+        selected_goal_pose=selected_goal_pose,
+        goal_pose_id=goal_pose_id,
+        zone_id=zone_id,
+        purpose=purpose,
+        pose_x=pose_x,
+        pose_y=pose_y,
+        pose_yaw=pose_yaw,
+        frame_id=frame_id,
+        is_enabled=is_enabled,
+    )
+    if str(mode or "").strip() == "create":
+        payload.pop("expected_updated_at", None)
+    return payload
+
+
 def goal_pose_from_save_response(response):
     response = response if isinstance(response, dict) else {}
     goal_pose = response.get("goal_pose")
@@ -49,6 +78,7 @@ def _float_or_default(value, default=0.0):
 
 
 __all__ = [
+    "build_goal_pose_save_payload",
     "build_goal_pose_update_payload",
     "goal_pose_from_save_response",
     "goal_pose_world_point_from_payload",

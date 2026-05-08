@@ -35,13 +35,32 @@ class FmsConfigService:
         include_routes=True,
         include_reservations=False,
     ):
+        return self.get_graph_bundle(
+            map_id=None,
+            include_disabled=include_disabled,
+            include_edges=include_edges,
+            include_routes=include_routes,
+            include_reservations=include_reservations,
+        )
+
+    def get_graph_bundle(
+        self,
+        *,
+        map_id=None,
+        include_disabled=True,
+        include_edges=True,
+        include_routes=True,
+        include_reservations=False,
+    ):
         include_disabled = bool_value(include_disabled)
 
-        active_map = self.repository.get_active_map_profile()
-        if not active_map:
+        map_profile, error = self._resolve_map_profile(
+            map_id=map_id,
+            error_factory=self._not_found_bundle_response,
+        )
+        if error:
             return self._not_found_bundle_response()
 
-        map_profile = format_map_profile(active_map)
         waypoints = self.repository.get_waypoints(
             map_id=map_profile["map_id"],
             include_disabled=include_disabled,
@@ -81,16 +100,32 @@ class FmsConfigService:
         include_routes=True,
         include_reservations=False,
     ):
+        return await self.async_get_graph_bundle(
+            map_id=None,
+            include_disabled=include_disabled,
+            include_edges=include_edges,
+            include_routes=include_routes,
+            include_reservations=include_reservations,
+        )
+
+    async def async_get_graph_bundle(
+        self,
+        *,
+        map_id=None,
+        include_disabled=True,
+        include_edges=True,
+        include_routes=True,
+        include_reservations=False,
+    ):
         include_disabled = bool_value(include_disabled)
 
-        active_map = await self._call_async_or_thread(
-            "async_get_active_map_profile",
-            "get_active_map_profile",
+        map_profile, error = await self._async_resolve_map_profile(
+            map_id=map_id,
+            error_factory=self._not_found_bundle_response,
         )
-        if not active_map:
+        if error:
             return self._not_found_bundle_response()
 
-        map_profile = format_map_profile(active_map)
         waypoints = await self._call_async_or_thread(
             "async_get_waypoints",
             "get_waypoints",
@@ -141,8 +176,9 @@ class FmsConfigService:
         frame_id,
         snap_group=None,
         is_enabled,
+        map_id=None,
     ):
-        active_map, error = self._resolve_active_map()
+        active_map, error = self._resolve_active_map(map_id=map_id)
         if error:
             return error
 
@@ -189,8 +225,9 @@ class FmsConfigService:
         expected_updated_at=None,
         traversal_cost=None,
         priority=None,
+        map_id=None,
     ):
-        active_map, error = self._resolve_active_map_for_edge()
+        active_map, error = self._resolve_active_map_for_edge(map_id=map_id)
         if error:
             return error
 
@@ -240,8 +277,9 @@ class FmsConfigService:
         waypoint_sequence,
         is_enabled,
         expected_revision=None,
+        map_id=None,
     ):
-        active_map, error = self._resolve_active_map_for_route()
+        active_map, error = self._resolve_active_map_for_route(map_id=map_id)
         if error:
             return error
 
@@ -300,8 +338,9 @@ class FmsConfigService:
         frame_id,
         snap_group=None,
         is_enabled,
+        map_id=None,
     ):
-        active_map, error = await self._async_resolve_active_map()
+        active_map, error = await self._async_resolve_active_map(map_id=map_id)
         if error:
             return error
 
@@ -350,8 +389,9 @@ class FmsConfigService:
         expected_updated_at=None,
         traversal_cost=None,
         priority=None,
+        map_id=None,
     ):
-        active_map, error = await self._async_resolve_active_map_for_edge()
+        active_map, error = await self._async_resolve_active_map_for_edge(map_id=map_id)
         if error:
             return error
 
@@ -403,8 +443,9 @@ class FmsConfigService:
         waypoint_sequence,
         is_enabled,
         expected_revision=None,
+        map_id=None,
     ):
-        active_map, error = await self._async_resolve_active_map_for_route()
+        active_map, error = await self._async_resolve_active_map_for_route(map_id=map_id)
         if error:
             return error
 
@@ -452,50 +493,69 @@ class FmsConfigService:
 
         return self._format_route_upsert_result(result)
 
-    def _resolve_active_map(self):
-        active_map = self.repository.get_active_map_profile()
-        if not active_map:
-            return None, self._not_found_waypoint_response()
-        return format_map_profile(active_map), None
-
-    def _resolve_active_map_for_edge(self):
-        active_map = self.repository.get_active_map_profile()
-        if not active_map:
-            return None, self._not_found_edge_response()
-        return format_map_profile(active_map), None
-
-    def _resolve_active_map_for_route(self):
-        active_map = self.repository.get_active_map_profile()
-        if not active_map:
-            return None, self._not_found_route_response()
-        return format_map_profile(active_map), None
-
-    async def _async_resolve_active_map(self):
-        active_map = await self._call_async_or_thread(
-            "async_get_active_map_profile",
-            "get_active_map_profile",
+    def _resolve_active_map(self, *, map_id=None):
+        return self._resolve_map_profile(
+            map_id=map_id,
+            error_factory=self._not_found_waypoint_response,
         )
-        if not active_map:
-            return None, self._not_found_waypoint_response()
-        return format_map_profile(active_map), None
 
-    async def _async_resolve_active_map_for_edge(self):
-        active_map = await self._call_async_or_thread(
-            "async_get_active_map_profile",
-            "get_active_map_profile",
+    def _resolve_active_map_for_edge(self, *, map_id=None):
+        return self._resolve_map_profile(
+            map_id=map_id,
+            error_factory=self._not_found_edge_response,
         )
-        if not active_map:
-            return None, self._not_found_edge_response()
-        return format_map_profile(active_map), None
 
-    async def _async_resolve_active_map_for_route(self):
-        active_map = await self._call_async_or_thread(
-            "async_get_active_map_profile",
-            "get_active_map_profile",
+    def _resolve_active_map_for_route(self, *, map_id=None):
+        return self._resolve_map_profile(
+            map_id=map_id,
+            error_factory=self._not_found_route_response,
         )
-        if not active_map:
-            return None, self._not_found_route_response()
-        return format_map_profile(active_map), None
+
+    async def _async_resolve_active_map(self, *, map_id=None):
+        return await self._async_resolve_map_profile(
+            map_id=map_id,
+            error_factory=self._not_found_waypoint_response,
+        )
+
+    async def _async_resolve_active_map_for_edge(self, *, map_id=None):
+        return await self._async_resolve_map_profile(
+            map_id=map_id,
+            error_factory=self._not_found_edge_response,
+        )
+
+    async def _async_resolve_active_map_for_route(self, *, map_id=None):
+        return await self._async_resolve_map_profile(
+            map_id=map_id,
+            error_factory=self._not_found_route_response,
+        )
+
+    def _resolve_map_profile(self, *, map_id=None, error_factory):
+        requested_map_id = str(map_id or "").strip()
+        row = (
+            self.repository.get_map_profile(map_id=requested_map_id)
+            if requested_map_id
+            else self.repository.get_active_map_profile()
+        )
+        if not row:
+            return None, error_factory()
+        return format_map_profile(row), None
+
+    async def _async_resolve_map_profile(self, *, map_id=None, error_factory):
+        requested_map_id = str(map_id or "").strip()
+        if requested_map_id:
+            row = await self._call_async_or_thread(
+                "async_get_map_profile",
+                "get_map_profile",
+                map_id=requested_map_id,
+            )
+        else:
+            row = await self._call_async_or_thread(
+                "async_get_active_map_profile",
+                "get_active_map_profile",
+            )
+        if not row:
+            return None, error_factory()
+        return format_map_profile(row), None
 
     async def _call_async_or_thread(self, async_name, sync_name, **kwargs):
         async_method = getattr(self.repository, async_name, None)

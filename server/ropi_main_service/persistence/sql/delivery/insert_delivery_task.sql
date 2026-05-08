@@ -27,4 +27,5 @@ SELECT
     NOW(3)
 FROM goal_pose gp
 WHERE gp.goal_pose_id = %s
+  AND gp.map_id = %s
 LIMIT 1

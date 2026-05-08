@@ -7,4 +7,5 @@ SELECT
     is_enabled
 FROM patrol_area
 WHERE patrol_area_id = %s
+  AND map_id = %s
 LIMIT 1

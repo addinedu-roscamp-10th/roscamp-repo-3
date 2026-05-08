@@ -155,34 +155,34 @@ def test_delivery_navigation_config_reads_key_value_pose_string_envs(monkeypatch
     monkeypatch.delenv("ROPI_RETURN_TO_DOCK_GOAL_POSE_JSON", raising=False)
     monkeypatch.setenv(
         "ROPI_DELIVERY_PICKUP_GOAL_POSE",
-        "x=0.1665755137108074,y=-0.4496830900440016,yaw_deg=90.0",
+        "x=0.64,y=-0.44,yaw_deg=180.0",
     )
     monkeypatch.setenv(
         "ROPI_DELIVERY_DESTINATION_GOAL_POSES",
-        "room2=x=1.6946025435218914,y=0.0043433854992070454,yaw_deg=0.0",
+        "room2=x=1.6838363409042358,y=-0.4915957748889923,yaw_deg=90.0",
     )
     monkeypatch.setenv(
         "ROPI_RETURN_TO_DOCK_GOAL_POSE",
-        "x=0.8577123880386353,y=0.25597259402275085,yaw_deg=0.0",
+        "x=-0.009538442827761173,y=-0.006931785028427839,yaw_deg=0.0",
     )
 
     config = get_delivery_navigation_config()
 
     pickup_goal_pose = config["pickup_goal_pose"]
-    assert pickup_goal_pose["pose"]["position"]["x"] == pytest.approx(0.1665755137108074)
-    assert pickup_goal_pose["pose"]["position"]["y"] == pytest.approx(-0.4496830900440016)
-    assert pickup_goal_pose["pose"]["orientation"]["z"] == pytest.approx(math.sqrt(0.5))
-    assert pickup_goal_pose["pose"]["orientation"]["w"] == pytest.approx(math.sqrt(0.5))
+    assert pickup_goal_pose["pose"]["position"]["x"] == pytest.approx(0.64)
+    assert pickup_goal_pose["pose"]["position"]["y"] == pytest.approx(-0.44)
+    assert pickup_goal_pose["pose"]["orientation"]["z"] == pytest.approx(1.0)
+    assert pickup_goal_pose["pose"]["orientation"]["w"] == pytest.approx(0.0)
 
     destination_goal_pose = config["destination_goal_poses"]["room2"]
-    assert destination_goal_pose["pose"]["position"]["x"] == pytest.approx(1.6946025435218914)
-    assert destination_goal_pose["pose"]["position"]["y"] == pytest.approx(0.0043433854992070454)
-    assert destination_goal_pose["pose"]["orientation"]["z"] == pytest.approx(0.0)
-    assert destination_goal_pose["pose"]["orientation"]["w"] == pytest.approx(1.0)
+    assert destination_goal_pose["pose"]["position"]["x"] == pytest.approx(1.6838363409042358)
+    assert destination_goal_pose["pose"]["position"]["y"] == pytest.approx(-0.4915957748889923)
+    assert destination_goal_pose["pose"]["orientation"]["z"] == pytest.approx(math.sqrt(0.5))
+    assert destination_goal_pose["pose"]["orientation"]["w"] == pytest.approx(math.sqrt(0.5))
 
     return_to_dock_goal_pose = config["return_to_dock_goal_pose"]
-    assert return_to_dock_goal_pose["pose"]["position"]["x"] == pytest.approx(0.8577123880386353)
-    assert return_to_dock_goal_pose["pose"]["position"]["y"] == pytest.approx(0.25597259402275085)
+    assert return_to_dock_goal_pose["pose"]["position"]["x"] == pytest.approx(-0.009538442827761173)
+    assert return_to_dock_goal_pose["pose"]["position"]["y"] == pytest.approx(-0.006931785028427839)
     assert return_to_dock_goal_pose["pose"]["orientation"]["z"] == pytest.approx(0.0)
     assert return_to_dock_goal_pose["pose"]["orientation"]["w"] == pytest.approx(1.0)
 
@@ -196,24 +196,24 @@ def test_delivery_navigation_config_defaults_to_db_goal_pose_rows(monkeypatch):
                 {
                     "goal_pose_id": "pickup_supply",
                     "purpose": "PICKUP",
-                    "pose_x": 0.1665755137108074,
-                    "pose_y": -0.4496830900440016,
-                    "pose_yaw": 1.5707963267948966,
+                    "pose_x": 0.64,
+                    "pose_y": -0.44,
+                    "pose_yaw": 3.141592653589793,
                     "frame_id": "map",
                 },
                 {
                     "goal_pose_id": "delivery_room_301",
                     "purpose": "DESTINATION",
-                    "pose_x": 1.6946025435218914,
-                    "pose_y": 0.0043433854992070454,
-                    "pose_yaw": 0.0,
+                    "pose_x": 1.6838363409042358,
+                    "pose_y": -0.4915957748889923,
+                    "pose_yaw": 1.5707963267948966,
                     "frame_id": "map",
                 },
                 {
                     "goal_pose_id": "dock_home",
                     "purpose": "DOCK",
-                    "pose_x": 0.8577123880386353,
-                    "pose_y": 0.25597259402275085,
+                    "pose_x": -0.009538442827761173,
+                    "pose_y": -0.006931785028427839,
                     "pose_yaw": 0.0,
                     "frame_id": "map",
                 },
@@ -222,17 +222,26 @@ def test_delivery_navigation_config_defaults_to_db_goal_pose_rows(monkeypatch):
     config = get_delivery_navigation_config(repository=FakeGoalPoseRepository())
 
     assert config["pickup_goal_pose"]["pose"]["position"]["x"] == pytest.approx(
-        0.1665755137108074
+        0.64
     )
     assert config["pickup_goal_pose"]["pose"]["orientation"]["z"] == pytest.approx(
-        math.sqrt(0.5)
+        1.0
     )
     assert list(config["destination_goal_poses"]) == ["delivery_room_301"]
     assert config["destination_goal_poses"]["delivery_room_301"]["pose"]["position"] == {
-        "x": 1.6946025435218914,
-        "y": 0.0043433854992070454,
+        "x": 1.6838363409042358,
+        "y": -0.4915957748889923,
         "z": 0.0,
     }
     assert config["return_to_dock_goal_pose"]["pose"]["position"]["x"] == pytest.approx(
-        0.8577123880386353
+        -0.009538442827761173
+    )
+    assert config["return_to_dock_goal_pose"]["pose"]["position"]["y"] == pytest.approx(
+        -0.006931785028427839
+    )
+    assert config["return_to_dock_goal_pose"]["pose"]["orientation"]["z"] == pytest.approx(
+        0.0
+    )
+    assert config["return_to_dock_goal_pose"]["pose"]["orientation"]["w"] == pytest.approx(
+        1.0
     )

@@ -12,9 +12,14 @@ from server.ropi_main_service.application.caregiver_rpc_facade import (
 from server.ropi_main_service.application.coordinate_config import (
     CoordinateConfigService,
 )
+from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_GUIDE_CREATE_TASK,
+    MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
+    MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+    MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+    MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
     MESSAGE_CODE_HEARTBEAT,
     MESSAGE_CODE_INTERNAL_RPC,
     MESSAGE_CODE_LOGIN,
@@ -89,6 +94,8 @@ class FakeCoordinateConfigRepository:
 @pytest.fixture
 def control_service_server(monkeypatch):
     monkeypatch.setenv("AI_FALL_STREAM_ENABLED", "false")
+    monkeypatch.setenv("GUIDE_PHASE_SNAPSHOT_POLL_ENABLED", "false")
+    monkeypatch.setenv("ACTION_FEEDBACK_EVENT_POLL_ENABLED", "false")
     return tcp_server.ControlServiceServer()
 
 
@@ -143,15 +150,11 @@ def test_heartbeat_with_ros_check_puts_ros_status_under_payload(control_service_
     }
 
 
-def test_internal_rpc_dispatches_kiosk_visitor_lookup_service(control_service_server):
+def test_if_gui_008_dispatches_kiosk_visitor_lookup_service(control_service_server):
     request = TCPFrame(
-        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        message_code=MESSAGE_CODE_GUIDE_RESIDENT_EXISTENCE_QUERY,
         sequence_no=41,
-        payload={
-            "service": "kiosk_visitor",
-            "method": "lookup_residents",
-            "kwargs": {"keyword": ""},
-        },
+        payload={"keyword": ""},
     )
 
     response = control_service_server.dispatch_frame(request)
@@ -161,15 +164,32 @@ def test_internal_rpc_dispatches_kiosk_visitor_lookup_service(control_service_se
     assert response.payload["reason_code"] == "KEYWORD_EMPTY"
 
 
-def test_internal_rpc_dispatches_kiosk_visitor_care_history_service(control_service_server):
+def test_if_gui_009_dispatches_kiosk_visitor_registration_service(control_service_server):
     request = TCPFrame(
-        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        message_code=MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
         sequence_no=42,
         payload={
-            "service": "kiosk_visitor",
-            "method": "get_care_history",
-            "kwargs": {"visitor_id": ""},
+            "visitor_name": "김민수",
+            "phone_no": "010-1111-2222",
+            "relationship": "아들",
+            "visit_purpose": "정기 면회",
+            "target_member_id": 1,
+            "privacy_agreed": False,
         },
+    )
+
+    response = control_service_server.dispatch_frame(request)
+
+    assert response.is_response is True
+    assert response.payload["result_code"] == "INVALID_REQUEST"
+    assert response.payload["reason_code"] == "PRIVACY_CONSENT_REQUIRED"
+
+
+def test_if_gui_010_dispatches_kiosk_visitor_care_history_service(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
+        sequence_no=43,
+        payload={"visitor_id": ""},
     )
 
     response = control_service_server.dispatch_frame(request)
@@ -179,18 +199,14 @@ def test_internal_rpc_dispatches_kiosk_visitor_care_history_service(control_serv
     assert response.payload["reason_code"] == "VISITOR_ID_INVALID"
 
 
-def test_internal_rpc_dispatches_staff_call_service(control_service_server):
+def test_if_gui_011_dispatches_staff_call_service(control_service_server):
     request = TCPFrame(
-        message_code=MESSAGE_CODE_INTERNAL_RPC,
-        sequence_no=43,
+        message_code=MESSAGE_CODE_GUIDE_STAFF_CALL_SUBMISSION,
+        sequence_no=44,
         payload={
-            "service": "staff_call",
-            "method": "submit_staff_call",
-            "kwargs": {
-                "call_type": "",
-                "description": "도움 필요",
-                "idempotency_key": "idem_staff_001",
-            },
+            "call_type": "",
+            "description": "도움 필요",
+            "idempotency_key": "idem_staff_001",
         },
     )
 
@@ -1243,7 +1259,7 @@ def test_async_guide_start_driving_rpc_publishes_task_update(control_service_ser
             "method": "start_guide_driving",
             "kwargs": {
                 "task_id": "3001",
-                "target_track_id": "track_17",
+                "target_track_id": 17,
             },
         },
     )
@@ -1284,18 +1300,75 @@ def test_async_guide_start_driving_rpc_publishes_task_update(control_service_ser
     assert published_events[0][1]["phase"] == "GUIDANCE_RUNNING"
 
 
-def test_visit_guide_runtime_service_uses_guide_navigation_runtime_starter(
+def test_async_guide_start_driving_rejection_publishes_task_update(control_service_server):
+    request = TCPFrame(
+        message_code=MESSAGE_CODE_INTERNAL_RPC,
+        sequence_no=44,
+        payload={
+            "service": "visit_guide",
+            "method": "start_guide_driving",
+            "kwargs": {
+                "task_id": "3001",
+                "target_track_id": 17,
+            },
+        },
+    )
+    published_events = []
+
+    class FakeAsyncVisitGuideService:
+        async def async_start_guide_driving(self, **payload):
+            return False, "안내 목적지 좌표가 설정되어 있지 않습니다.", {
+                "result_code": "REJECTED",
+                "result_message": "안내 목적지 좌표가 설정되어 있지 않습니다.",
+                "reason_code": "GUIDE_DESTINATION_NOT_CONFIGURED",
+                "task_id": payload["task_id"],
+                "task_type": "GUIDE",
+                "task_status": "RUNNING",
+                "phase": "READY_TO_START_GUIDANCE",
+                "guide_phase": "READY_TO_START_GUIDANCE",
+                "assigned_robot_id": "pinky1",
+                "target_track_id": payload["target_track_id"],
+            }
+
+    class FakeTaskEventStreamHub:
+        async def publish(self, event_type, payload):
+            published_events.append((event_type, payload))
+
+    async def scenario():
+        control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
+        with patch.dict(
+            tcp_server.SERVICE_REGISTRY,
+            {"visit_guide": FakeAsyncVisitGuideService},
+        ):
+            return await control_service_server.async_dispatch_frame(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.is_response is True
+    assert response.payload[0] is False
+    assert published_events[0][0] == "TASK_UPDATED"
+    assert published_events[0][1]["source"] == "GUIDE_COMMAND"
+    assert published_events[0][1]["latest_reason_code"] == (
+        "GUIDE_DESTINATION_NOT_CONFIGURED"
+    )
+    assert published_events[0][1]["result_code"] == "REJECTED"
+    assert published_events[0][1]["phase"] == "READY_TO_START_GUIDANCE"
+    assert published_events[0][1]["guide_detail"]["guide_phase"] == (
+        "READY_TO_START_GUIDANCE"
+    )
+
+
+def test_visit_guide_runtime_service_does_not_inject_guide_destination_navigation(
     control_service_server,
 ):
     service = control_service_server._build_runtime_service(
         "visit_guide",
-        tcp_server.VisitGuideService,
+        VisitGuideService,
     )
 
-    starter = service.guide_driving_orchestrator.guide_navigation_starter
-
-    assert starter.__self__ is control_service_server.guide_navigation_runtime_starter
-    assert starter.__func__.__name__ == "start_destination_navigation"
+    assert not hasattr(control_service_server, "guide_navigation_runtime_starter")
+    assert not hasattr(service, "guide_navigation_starter")
+    assert not hasattr(service.guide_driving_orchestrator, "guide_navigation_starter")
 
 
 def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_update(
@@ -1639,6 +1712,153 @@ def test_start_failure_closes_background_writer_and_db_pool(control_service_serv
         "writer_stopped",
         "pool_closed",
     ]
+
+
+def test_start_wires_guide_phase_snapshot_poller(control_service_server, monkeypatch):
+    monkeypatch.setenv("GUIDE_PHASE_SNAPSHOT_POLL_ENABLED", "true")
+    events = []
+
+    class FakeTcpServer:
+        sockets = []
+
+    class FakeBackgroundDbWriter:
+        def start(self):
+            events.append("writer_started")
+
+        async def stop(self):
+            events.append("writer_stopped")
+
+    class FakeWorkflowTaskManager:
+        async def shutdown(self):
+            events.append("workflow_shutdown")
+
+    async def fake_start_server(*args, **kwargs):
+        events.append("tcp_started")
+        return FakeTcpServer()
+
+    async def fake_close_pool():
+        events.append("pool_closed")
+
+    def fake_start_guide_phase_snapshot_polling_if_enabled(**kwargs):
+        events.append(
+            (
+                "guide_phase_snapshot_poll_started",
+                kwargs["workflow_task_manager"],
+                kwargs["task_update_publisher"],
+                kwargs["loop"],
+            )
+        )
+        return "guide_phase_snapshot_poll_task"
+
+    async def scenario():
+        control_service_server.db_writer = FakeBackgroundDbWriter()
+        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
+
+        with patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
+            new=fake_start_server,
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.close_pool",
+            new=fake_close_pool,
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.start_guide_phase_snapshot_polling_if_enabled",
+            new=fake_start_guide_phase_snapshot_polling_if_enabled,
+        ), patch(
+            "server.ropi_main_service.transport.tcp_server.start_fall_inference_stream_if_enabled",
+            return_value=None,
+        ):
+            await control_service_server.start()
+            await control_service_server._shutdown_resources()
+
+    asyncio.run(scenario())
+
+    assert events[0] == "writer_started"
+    assert events[1][0] == "guide_phase_snapshot_poll_started"
+    assert events[1][1] is control_service_server.delivery_workflow_task_manager
+    assert events[1][2] is control_service_server.task_update_event_publisher
+    assert events[2] == "tcp_started"
+    assert control_service_server.guide_phase_snapshot_poll_task == (
+        "guide_phase_snapshot_poll_task"
+    )
+
+
+def test_start_wires_action_feedback_event_poller(control_service_server, monkeypatch):
+    monkeypatch.setenv("ACTION_FEEDBACK_EVENT_POLL_ENABLED", "true")
+    events = []
+
+    class FakeTcpServer:
+        sockets = []
+
+    class FakeBackgroundDbWriter:
+        def start(self):
+            events.append("writer_started")
+
+        async def stop(self):
+            events.append("writer_stopped")
+
+    class FakeWorkflowTaskManager:
+        async def shutdown(self):
+            events.append("workflow_shutdown")
+
+    async def fake_start_server(*args, **kwargs):
+        events.append("tcp_started")
+        return FakeTcpServer()
+
+    async def fake_close_pool():
+        events.append("pool_closed")
+
+    def fake_start_action_feedback_event_polling_if_enabled(**kwargs):
+        events.append(
+            (
+                "action_feedback_event_poll_started",
+                kwargs["workflow_task_manager"],
+                kwargs["task_event_publisher"],
+                kwargs["loop"],
+            )
+        )
+        return "action_feedback_event_poll_task"
+
+    async def scenario():
+        control_service_server.db_writer = FakeBackgroundDbWriter()
+        control_service_server.delivery_workflow_task_manager = (
+            FakeWorkflowTaskManager()
+        )
+
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
+                new=fake_start_server,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.close_pool",
+                new=fake_close_pool,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.start_action_feedback_event_polling_if_enabled",
+                new=fake_start_action_feedback_event_polling_if_enabled,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.start_guide_phase_snapshot_polling_if_enabled",
+                return_value=None,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.start_fall_inference_stream_if_enabled",
+                return_value=None,
+            ),
+        ):
+            await control_service_server.start()
+            await control_service_server._shutdown_resources()
+
+    asyncio.run(scenario())
+
+    assert events[0] == "writer_started"
+    assert events[1][0] == "action_feedback_event_poll_started"
+    assert events[1][1] is control_service_server.delivery_workflow_task_manager
+    assert events[1][2] is control_service_server.task_event_stream_hub
+    assert events[2] == "tcp_started"
+    assert control_service_server.action_feedback_event_poll_task == (
+        "action_feedback_event_poll_task"
+    )
 
 
 def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_service_server):
