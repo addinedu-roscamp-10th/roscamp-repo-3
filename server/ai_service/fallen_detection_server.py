@@ -470,6 +470,7 @@ class FallenDetectionServer:
                 f"result_seq={result.get('result_seq')}"
             )
             return
+        
 
         self.send_result_push(subscriber, [result])
 
