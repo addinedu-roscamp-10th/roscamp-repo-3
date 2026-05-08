@@ -92,3 +92,67 @@ def test_operation_zone_save_response_requires_operation_zone_dict():
     ) == operation_zone
     assert operation_zone_from_save_response({"operation_zone": None}) is None
     assert operation_zone_from_save_response("invalid") is None
+
+
+def test_operation_zone_editor_controller_tracks_selection_and_dirty_state():
+    from ui.utils.pages.caregiver.coordinate_operation_zone_editing import (
+        OperationZoneEditorController,
+    )
+
+    controller = OperationZoneEditorController()
+    selected = controller.select(
+        1,
+        [
+            {"zone_id": "room_301", "zone_name": "Room 301"},
+            {"zone_id": "caregiver_room", "zone_name": "Staff Station"},
+        ],
+    )
+
+    assert selected == {"zone_id": "caregiver_room", "zone_name": "Staff Station"}
+    assert controller.selected_row == selected
+    assert controller.selected_index == 1
+    assert controller.mode == "edit"
+    assert controller.dirty is False
+
+    assert controller.mark_dirty(selected_edit_type="goal_pose") is False
+    assert controller.dirty is False
+    assert controller.mark_dirty(selected_edit_type="operation_zone") is True
+    assert controller.dirty is True
+
+    controller.syncing_form = True
+    assert controller.mark_dirty(selected_edit_type="operation_zone") is False
+
+
+def test_operation_zone_editor_controller_builds_create_draft_and_applies_saved_row():
+    from ui.utils.pages.caregiver.coordinate_operation_zone_editing import (
+        OperationZoneEditorController,
+    )
+
+    controller = OperationZoneEditorController()
+
+    draft = controller.start_create()
+
+    assert draft == {
+        "zone_id": "",
+        "zone_name": "",
+        "zone_type": "ROOM",
+        "is_enabled": True,
+    }
+    assert controller.selected_row is None
+    assert controller.selected_index is None
+    assert controller.mode == "create"
+    assert controller.dirty is False
+
+    controller.apply_saved_row(
+        {
+            "zone_id": "caregiver_room",
+            "zone_name": "Staff Station",
+        }
+    )
+
+    assert controller.selected_row == {
+        "zone_id": "caregiver_room",
+        "zone_name": "Staff Station",
+    }
+    assert controller.mode == "edit"
+    assert controller.dirty is False
