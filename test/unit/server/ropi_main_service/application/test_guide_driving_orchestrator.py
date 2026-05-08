@@ -37,29 +37,6 @@ class FakeGuideTaskNavigationRepository:
         return self.response
 
 
-class FakeGoalPoseNavigationService:
-    def __init__(self, response=None, events=None):
-        self.response = response or {
-            "result_code": "ACCEPTED",
-            "navigation_started": True,
-            "nav_phase": "GUIDE_DESTINATION",
-        }
-        self.events = events
-        self.navigated = []
-
-    def navigate(self, **kwargs):
-        self.navigated.append(kwargs)
-        if self.events is not None:
-            self.events.append("navigate")
-        return self.response
-
-    async def async_navigate(self, **kwargs):
-        self.navigated.append(kwargs)
-        if self.events is not None:
-            self.events.append("navigate")
-        return self.response
-
-
 class FakeGuideCommandLifecycleService:
     def __init__(self, response=None, events=None):
         self.response = response or {
@@ -102,6 +79,29 @@ class FakeGuideCommandLifecycleService:
         )
 
 
+class FakeGuideRuntimePreflight:
+    def __init__(self, response=None, events=None):
+        self.response = response or {
+            "result_code": "ACCEPTED",
+            "result_message": "안내 ROS 런타임이 준비되었습니다.",
+            "ready": True,
+        }
+        self.events = events
+        self.checked = []
+
+    def check(self, **kwargs):
+        self.checked.append(kwargs)
+        if self.events is not None:
+            self.events.append("preflight")
+        return self.response
+
+    async def async_check(self, **kwargs):
+        self.checked.append(kwargs)
+        if self.events is not None:
+            self.events.append("preflight")
+        return self.response
+
+
 class FakeGuideTaskLifecycleRepository:
     def __init__(self):
         self.recorded = []
@@ -139,29 +139,33 @@ class FakeGuideTaskLifecycleRepository:
         }
 
 
-def test_guide_driving_orchestrator_sends_start_guidance_without_destination_navigation():
+def test_guide_driving_orchestrator_preflights_guide_command_and_sends_start_guidance():
     events = []
     navigation_repository = FakeGuideTaskNavigationRepository()
-    navigation_service = FakeGoalPoseNavigationService(events=events)
+    guide_runtime_preflight = FakeGuideRuntimePreflight(events=events)
     command_lifecycle_service = FakeGuideCommandLifecycleService(events=events)
     service = GuideDrivingOrchestrator(
         guide_task_navigation_repository=navigation_repository,
         guide_command_lifecycle_service=command_lifecycle_service,
-        goal_pose_navigation_service=navigation_service,
+        guide_runtime_preflight=guide_runtime_preflight,
         default_pinky_id="pinky1",
     )
 
     ok, message, response = service.start_guide_driving(
         task_id=3001,
         target_track_id=17,
-        navigation_timeout_sec=42,
     )
 
     assert ok is True
     assert message == "안내 주행을 시작했습니다."
-    assert events == ["command"]
+    assert events == ["preflight", "command"]
     assert navigation_repository.requested == [{"task_id": 3001}]
-    assert navigation_service.navigated == []
+    assert guide_runtime_preflight.checked == [
+        {
+            "task_id": 3001,
+            "pinky_id": "pinky1",
+        }
+    ]
     assert command_lifecycle_service.sent == [
         {
             "task_id": 3001,
@@ -178,9 +182,62 @@ def test_guide_driving_orchestrator_sends_start_guidance_without_destination_nav
     assert "navigation_response" not in response
 
 
+def test_guide_driving_orchestrator_rejects_when_guide_command_runtime_is_not_ready():
+    navigation_repository = FakeGuideTaskNavigationRepository()
+    guide_runtime_preflight = FakeGuideRuntimePreflight(
+        response={
+            "result_code": "REJECTED",
+            "result_message": "안내 ROS 런타임이 준비되지 않았습니다.",
+            "reason_code": "GUIDE_RUNTIME_NOT_READY",
+            "runtime_status": {
+                "ready": False,
+                "checks": [
+                    {
+                        "ready": False,
+                        "service_name": "/ropi/control/pinky1/guide_command",
+                    }
+                ],
+            },
+        }
+    )
+    lifecycle_repository = FakeGuideTaskLifecycleRepository()
+    command_lifecycle_service = FakeGuideCommandLifecycleService()
+    service = GuideDrivingOrchestrator(
+        guide_task_navigation_repository=navigation_repository,
+        guide_task_lifecycle_repository=lifecycle_repository,
+        guide_command_lifecycle_service=command_lifecycle_service,
+        guide_runtime_preflight=guide_runtime_preflight,
+        default_pinky_id="pinky1",
+    )
+
+    ok, message, response = service.start_guide_driving(
+        task_id=3001,
+        target_track_id=17,
+    )
+
+    assert ok is False
+    assert message == "안내 ROS 런타임이 준비되지 않았습니다."
+    assert command_lifecycle_service.sent == []
+    assert guide_runtime_preflight.checked == [{"task_id": 3001, "pinky_id": "pinky1"}]
+    assert lifecycle_repository.recorded[0]["command_type"] == START_GUIDANCE_COMMAND
+    assert lifecycle_repository.recorded[0]["command_response"]["accepted"] is False
+    assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (
+        "GUIDE_RUNTIME_NOT_READY"
+    )
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "GUIDE_RUNTIME_NOT_READY"
+    assert response["phase"] == "WAIT_TARGET_TRACKING"
+    assert response["guide_phase"] == "WAIT_TARGET_TRACKING"
+    assert response["runtime_status"]["checks"][0]["service_name"] == (
+        "/ropi/control/pinky1/guide_command"
+    )
+    assert response["lifecycle_result"]["accepted"] is False
+    assert "navigation_response" not in response
+
+
 def test_guide_driving_orchestrator_returns_start_guidance_rejection_without_navigation():
     navigation_repository = FakeGuideTaskNavigationRepository()
-    navigation_service = FakeGoalPoseNavigationService()
+    guide_runtime_preflight = FakeGuideRuntimePreflight()
     command_lifecycle_service = FakeGuideCommandLifecycleService(
         response={
             "accepted": False,
@@ -192,7 +249,7 @@ def test_guide_driving_orchestrator_returns_start_guidance_rejection_without_nav
     service = GuideDrivingOrchestrator(
         guide_task_navigation_repository=navigation_repository,
         guide_command_lifecycle_service=command_lifecycle_service,
-        goal_pose_navigation_service=navigation_service,
+        guide_runtime_preflight=guide_runtime_preflight,
         default_pinky_id="pinky1",
     )
 
@@ -203,7 +260,6 @@ def test_guide_driving_orchestrator_returns_start_guidance_rejection_without_nav
 
     assert ok is False
     assert message == "guide command rejected"
-    assert navigation_service.navigated == []
     assert (
         command_lifecycle_service.sent[0]["destination_pose"]
         == (navigation_repository.response["goal_pose"])
@@ -230,10 +286,12 @@ def test_guide_driving_orchestrator_records_context_rejection_as_start_guidance(
     )
     lifecycle_repository = FakeGuideTaskLifecycleRepository()
     command_lifecycle_service = FakeGuideCommandLifecycleService()
+    guide_runtime_preflight = FakeGuideRuntimePreflight()
     service = GuideDrivingOrchestrator(
         guide_task_navigation_repository=navigation_repository,
         guide_task_lifecycle_repository=lifecycle_repository,
         guide_command_lifecycle_service=command_lifecycle_service,
+        guide_runtime_preflight=guide_runtime_preflight,
         default_pinky_id="pinky1",
     )
 
@@ -245,6 +303,7 @@ def test_guide_driving_orchestrator_records_context_rejection_as_start_guidance(
     assert ok is False
     assert message == "안내 주행을 시작할 수 없는 상태입니다."
     assert command_lifecycle_service.sent == []
+    assert guide_runtime_preflight.checked == []
     assert lifecycle_repository.recorded == [
         {
             "task_id": 3001,
@@ -275,8 +334,8 @@ def test_guide_driving_orchestrator_records_context_rejection_as_start_guidance(
     assert response["lifecycle_result"]["accepted"] is False
 
 
-def test_guide_driving_orchestrator_async_sends_start_guidance_without_destination_navigation():
-    navigation_service = FakeGoalPoseNavigationService()
+def test_guide_driving_orchestrator_async_preflights_and_sends_start_guidance():
+    guide_runtime_preflight = FakeGuideRuntimePreflight()
     command_lifecycle_service = FakeGuideCommandLifecycleService(
         response={
             "accepted": True,
@@ -289,7 +348,7 @@ def test_guide_driving_orchestrator_async_sends_start_guidance_without_destinati
     service = GuideDrivingOrchestrator(
         guide_task_navigation_repository=FakeGuideTaskNavigationRepository(),
         guide_command_lifecycle_service=command_lifecycle_service,
-        goal_pose_navigation_service=navigation_service,
+        guide_runtime_preflight=guide_runtime_preflight,
         default_pinky_id="pinky1",
     )
 
@@ -302,7 +361,7 @@ def test_guide_driving_orchestrator_async_sends_start_guidance_without_destinati
 
     assert ok is True
     assert message == "안내 주행을 시작했습니다."
-    assert navigation_service.navigated == []
+    assert guide_runtime_preflight.checked == [{"task_id": 3001, "pinky_id": "pinky1"}]
     assert command_lifecycle_service.sent[0]["command_type"] == START_GUIDANCE_COMMAND
     assert command_lifecycle_service.sent[0]["target_track_id"] == 17
     assert command_lifecycle_service.sent[0]["destination_id"] == "delivery_room_301"
@@ -325,10 +384,12 @@ def test_guide_driving_orchestrator_async_records_context_rejection_as_start_gui
     )
     lifecycle_repository = FakeGuideTaskLifecycleRepository()
     command_lifecycle_service = FakeGuideCommandLifecycleService()
+    guide_runtime_preflight = FakeGuideRuntimePreflight()
     service = GuideDrivingOrchestrator(
         guide_task_navigation_repository=navigation_repository,
         guide_task_lifecycle_repository=lifecycle_repository,
         guide_command_lifecycle_service=command_lifecycle_service,
+        guide_runtime_preflight=guide_runtime_preflight,
         default_pinky_id="pinky1",
     )
 
@@ -342,6 +403,7 @@ def test_guide_driving_orchestrator_async_records_context_rejection_as_start_gui
     assert ok is False
     assert message == "안내 목적지 좌표가 설정되어 있지 않습니다."
     assert command_lifecycle_service.sent == []
+    assert guide_runtime_preflight.checked == []
     assert lifecycle_repository.recorded[0]["command_type"] == START_GUIDANCE_COMMAND
     assert lifecycle_repository.recorded[0]["command_response"]["accepted"] is False
     assert lifecycle_repository.recorded[0]["command_response"]["reason_code"] == (

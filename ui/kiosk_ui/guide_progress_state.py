@@ -57,9 +57,6 @@ def guide_warning_message_for_reason(reason_code):
         "GUIDE_COMMAND_TRANSPORT_ERROR": (
             "로봇 안내 명령을 보낼 수 없습니다. 직원에게 문의해 주세요."
         ),
-        "GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR": (
-            "안내 목적지 이동을 시작할 수 없습니다. 직원에게 문의해 주세요."
-        ),
         "NAV_CONTEXT_NOT_READY": "안내 이동 준비가 아직 완료되지 않았습니다.",
     }
     return messages.get(

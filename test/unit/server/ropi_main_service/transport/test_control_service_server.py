@@ -12,6 +12,7 @@ from server.ropi_main_service.application.caregiver_rpc_facade import (
 from server.ropi_main_service.application.coordinate_config import (
     CoordinateConfigService,
 )
+from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_DELIVERY_CREATE_TASK,
     MESSAGE_CODE_GUIDE_CREATE_TASK,
@@ -1357,18 +1358,17 @@ def test_async_guide_start_driving_rejection_publishes_task_update(control_servi
     )
 
 
-def test_visit_guide_runtime_service_uses_guide_navigation_runtime_starter(
+def test_visit_guide_runtime_service_does_not_inject_guide_destination_navigation(
     control_service_server,
 ):
     service = control_service_server._build_runtime_service(
         "visit_guide",
-        tcp_server.VisitGuideService,
+        VisitGuideService,
     )
 
-    starter = service.guide_driving_orchestrator.guide_navigation_starter
-
-    assert starter.__self__ is control_service_server.guide_navigation_runtime_starter
-    assert starter.__func__.__name__ == "start_destination_navigation"
+    assert not hasattr(control_service_server, "guide_navigation_runtime_starter")
+    assert not hasattr(service, "guide_navigation_starter")
+    assert not hasattr(service.guide_driving_orchestrator, "guide_navigation_starter")
 
 
 def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_update(

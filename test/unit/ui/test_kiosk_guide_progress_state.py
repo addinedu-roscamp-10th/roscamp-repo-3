@@ -90,6 +90,10 @@ def test_guide_warning_message_maps_known_rejection_reasons():
         == "로봇 안내 명령을 보낼 수 없습니다. 직원에게 문의해 주세요."
     )
     assert (
+        guide_warning_message_for_reason("GUIDE_DESTINATION_NAVIGATION_TRANSPORT_ERROR")
+        == "안내 주행 시작이 거부되었습니다."
+    )
+    assert (
         guide_warning_message_for_reason("UNKNOWN_REASON")
         == "안내 주행 시작이 거부되었습니다."
     )

@@ -16,9 +16,6 @@ from server.ropi_main_service.application.delivery_runtime import build_delivery
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
-from server.ropi_main_service.application.guide_navigation_runtime import (
-    GuideNavigationRuntimeStarter,
-)
 from server.ropi_main_service.application.guide_phase_snapshot_runtime import (
     start_guide_phase_snapshot_polling_if_enabled,
 )
@@ -28,7 +25,6 @@ from server.ropi_main_service.application.workflow_task_manager import (
 from server.ropi_main_service.application.patrol_runtime import build_patrol_request_service
 from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
 from server.ropi_main_service.application.rpc_service_registry import SERVICE_REGISTRY
-from server.ropi_main_service.application.visit_guide import VisitGuideService
 from server.ropi_main_service.observability import configure_logging, log_event
 from server.ropi_main_service.persistence.async_connection import close_pool
 from server.ropi_main_service.persistence.background_db_writer import (
@@ -161,9 +157,6 @@ class ControlServiceServer:
         self._server = None
         self.db_writer = get_default_background_db_writer()
         self.delivery_workflow_task_manager = get_default_workflow_task_manager()
-        self.guide_navigation_runtime_starter = GuideNavigationRuntimeStarter(
-            workflow_task_manager=self.delivery_workflow_task_manager,
-        )
         self.task_event_stream_hub = TaskEventStreamHub()
         self.task_event_subscription_handler = TaskEventSubscriptionHandler(
             stream_hub=self.task_event_stream_hub,
@@ -301,12 +294,6 @@ class ControlServiceServer:
         }
 
     def _build_runtime_service(self, service_name, factory):
-        if service_name == "visit_guide" and factory is VisitGuideService:
-            return VisitGuideService(
-                guide_navigation_starter=(
-                    self.guide_navigation_runtime_starter.start_destination_navigation
-                ),
-            )
         return factory()
 
     async def start(self):

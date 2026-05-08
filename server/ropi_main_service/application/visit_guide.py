@@ -16,10 +16,8 @@ from server.ropi_main_service.application.guide_command_lifecycle import (
     UNSUPPORTED_GUIDE_COMMAND_MESSAGE,
 )
 from server.ropi_main_service.application.guide_driving_orchestrator import (
-    DEFAULT_GUIDE_NAVIGATION_TIMEOUT_SEC,
     GuideDrivingOrchestrator,
 )
-from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
 from server.ropi_main_service.application.guide_runtime import (
     DEFAULT_GUIDE_PINKY_ID,
     GuideRuntimeService,
@@ -34,10 +32,8 @@ class VisitGuideService:
         guide_task_lifecycle_repository=None,
         guide_task_navigation_repository=None,
         guide_command_service=None,
-        goal_pose_navigation_service=None,
-        guide_navigation_starter=None,
+        guide_runtime_preflight=None,
         guide_runtime_service=None,
-        guide_navigation_timeout_sec=DEFAULT_GUIDE_NAVIGATION_TIMEOUT_SEC,
         default_pinky_id=DEFAULT_GUIDE_PINKY_ID,
     ):
         self.repository = repository or VisitGuideRepository()
@@ -56,22 +52,15 @@ class VisitGuideService:
             guide_task_lifecycle_repository=self.guide_task_lifecycle_repository,
             default_pinky_id=default_pinky_id,
         )
-        self.goal_pose_navigation_service = (
-            goal_pose_navigation_service or GoalPoseNavigationService()
-        )
-        self.guide_navigation_starter = guide_navigation_starter
         self.guide_runtime_service = guide_runtime_service or GuideRuntimeService(
             default_pinky_id=default_pinky_id
         )
-        self.guide_navigation_timeout_sec = float(guide_navigation_timeout_sec)
         self.default_pinky_id = str(default_pinky_id).strip() or DEFAULT_GUIDE_PINKY_ID
         self.guide_driving_orchestrator = GuideDrivingOrchestrator(
             guide_task_navigation_repository=self.guide_task_navigation_repository,
             guide_task_lifecycle_repository=self.guide_task_lifecycle_repository,
             guide_command_lifecycle_service=self.guide_command_lifecycle_service,
-            goal_pose_navigation_service=self.goal_pose_navigation_service,
-            guide_navigation_starter=self.guide_navigation_starter,
-            guide_navigation_timeout_sec=self.guide_navigation_timeout_sec,
+            guide_runtime_preflight=guide_runtime_preflight,
             default_pinky_id=self.default_pinky_id,
         )
 
@@ -297,13 +286,11 @@ class VisitGuideService:
         task_id,
         target_track_id,
         pinky_id=None,
-        navigation_timeout_sec=None,
     ):
         return self.guide_driving_orchestrator.start_guide_driving(
             task_id=task_id,
             target_track_id=target_track_id,
             pinky_id=pinky_id,
-            navigation_timeout_sec=navigation_timeout_sec,
         )
 
     async def async_start_guide_driving(
@@ -312,13 +299,11 @@ class VisitGuideService:
         task_id,
         target_track_id,
         pinky_id=None,
-        navigation_timeout_sec=None,
     ):
         return await self.guide_driving_orchestrator.async_start_guide_driving(
             task_id=task_id,
             target_track_id=target_track_id,
             pinky_id=pinky_id,
-            navigation_timeout_sec=navigation_timeout_sec,
         )
 
     def send_guide_command(
