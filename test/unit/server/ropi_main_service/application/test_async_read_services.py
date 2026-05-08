@@ -271,6 +271,11 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
             "current_task_id": 101,
             "current_task_phase": "DELIVERY_DESTINATION",
             "current_task_status": "RUNNING",
+            "current_pose_map_id": "map_test12_0506",
+            "pose_x": 1.2,
+            "pose_y": 0.8,
+            "pose_yaw": 1.57,
+            "frame_id": "map",
             "last_seen_at": "2026-05-03T12:00:00",
             "last_seen_age_sec": 5,
             "fault_code": None,
@@ -321,6 +326,14 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
     assert bundle["robots"][0]["capabilities"] == ["GUIDE", "DELIVERY", "PATROL"]
     assert bundle["robots"][0]["connection_status"] == "ONLINE"
     assert bundle["robots"][0]["current_phase"] == "DELIVERY_DESTINATION"
+    assert bundle["robots"][0]["current_pose"] == {
+        "map_id": "map_test12_0506",
+        "frame_id": "map",
+        "x": 1.2,
+        "y": 0.8,
+        "yaw": 1.57,
+        "updated_at": "2026-05-03T12:00:00",
+    }
     assert bundle["robots"][1]["station_roles"] == [
         {"task_type": "DELIVERY", "station_role": "PICKUP"}
     ]
@@ -344,6 +357,11 @@ def test_caregiver_service_marks_stale_runtime_offline_and_hides_ip_location():
             "current_task_id": None,
             "current_task_phase": None,
             "current_task_status": None,
+            "current_pose_map_id": "map_test12_0506",
+            "pose_x": 1.2,
+            "pose_y": 0.8,
+            "pose_yaw": 0.0,
+            "frame_id": "map",
             "last_seen_at": "2026-05-03T12:00:00",
             "last_seen_age_sec": 3600,
             "fault_code": None,
@@ -358,6 +376,11 @@ def test_caregiver_service_marks_stale_runtime_offline_and_hides_ip_location():
             "current_task_id": None,
             "current_task_phase": None,
             "current_task_status": None,
+            "current_pose_map_id": None,
+            "pose_x": 0.2,
+            "pose_y": 0.3,
+            "pose_yaw": 0.0,
+            "frame_id": "map",
             "last_seen_at": "2026-05-03T12:00:00",
             "last_seen_age_sec": 5,
             "fault_code": None,
@@ -372,8 +395,10 @@ def test_caregiver_service_marks_stale_runtime_offline_and_hides_ip_location():
     assert robots[0]["zone"] == "-"
     assert robots[0]["battery"] == "-"
     assert robots[0]["battery_percent"] is None
+    assert robots[0]["current_pose"] is None
     assert robots[1]["connection_status"] == "ONLINE"
     assert robots[1]["current_location"] == "-"
+    assert robots[1]["current_pose"] is None
 
 
 def test_caregiver_service_flow_board_uses_dashboard_status_buckets():

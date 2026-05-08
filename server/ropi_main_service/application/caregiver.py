@@ -128,6 +128,11 @@ class CaregiverService:
                 else None
             )
             last_seen_at = isoformat(row.get("last_seen_at"), none_value=None)
+            current_pose = (
+                CaregiverService._current_pose(row, updated_at=last_seen_at)
+                if CaregiverService._runtime_location_is_current(row)
+                else None
+            )
 
             if connection_status == "ONLINE":
                 chip_type = "green"
@@ -150,6 +155,7 @@ class CaregiverService:
                     "runtime_state": status,
                     "battery_percent": battery_percent,
                     "current_location": current_location,
+                    "current_pose": current_pose,
                     "current_task_id": row.get("current_task_id"),
                     "current_phase": current_phase,
                     "last_seen_at": last_seen_at,
@@ -265,6 +271,31 @@ class CaregiverService:
         if not text or CaregiverService._is_ipv4_address(text):
             return "-"
         return text
+
+    @staticmethod
+    def _current_pose(row, *, updated_at=None):
+        map_id = str(row.get("current_pose_map_id") or row.get("map_id") or "").strip()
+        frame_id = str(row.get("frame_id") or "").strip() or "map"
+        x = CaregiverService._optional_float(row.get("pose_x"))
+        y = CaregiverService._optional_float(row.get("pose_y"))
+        yaw = CaregiverService._optional_float(row.get("pose_yaw"), default=0.0)
+        if not map_id or x is None or y is None:
+            return None
+        return {
+            "map_id": map_id,
+            "frame_id": frame_id,
+            "x": x,
+            "y": y,
+            "yaw": yaw,
+            "updated_at": updated_at,
+        }
+
+    @staticmethod
+    def _optional_float(value, default=None):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
 
     @staticmethod
     def _is_ipv4_address(value):

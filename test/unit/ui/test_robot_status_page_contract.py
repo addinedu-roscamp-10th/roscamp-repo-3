@@ -1,9 +1,10 @@
 import os
+import base64
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame, QComboBox, QWidget
 
 
 _APP = None
@@ -43,6 +44,14 @@ def _bundle():
                 "runtime_state": "RUNNING",
                 "battery_percent": 87.5,
                 "current_location": "x=1.2, y=0.8",
+                "current_pose": {
+                    "map_id": "map_0504",
+                    "frame_id": "map",
+                    "x": 1.2,
+                    "y": 0.8,
+                    "yaw": 0.0,
+                    "updated_at": "2026-05-03T12:00:00",
+                },
                 "current_task_id": 1001,
                 "current_phase": "DELIVERY_DESTINATION",
                 "last_seen_at": "2026-05-03T12:00:00",
@@ -58,6 +67,7 @@ def _bundle():
                 "runtime_state": "ERROR",
                 "battery_percent": None,
                 "current_location": "-",
+                "current_pose": None,
                 "current_task_id": None,
                 "current_phase": None,
                 "last_seen_at": "2026-05-03T11:58:00",
@@ -68,7 +78,63 @@ def _bundle():
             {"label": "목적지 로봇팔", "value": "jetcobot2"},
             {"label": "ROS adapter arm_id", "value": "arm1 / arm2"},
         ],
+        "map_profiles": [
+            {"map_id": "map_0504", "map_name": "순찰/안내 맵", "frame_id": "map"},
+            {
+                "map_id": "map_test12_0506",
+                "map_name": "운반 맵",
+                "frame_id": "map",
+            },
+        ],
+        "selected_map_id": "map_0504",
+        "map_assets": _map_assets("map_0504"),
     }
+
+
+def _map_assets(map_id):
+    return {
+        "map_id": map_id,
+        "yaml_text": "image: map.pgm\nresolution: 1.0\norigin: [0.0, 0.0, 0.0]\n",
+        "pgm_bytes": b"P5\n4 4\n255\n" + (b"\x00" * 16),
+        "yaml_sha256": f"{map_id}-yaml",
+        "pgm_sha256": f"{map_id}-pgm",
+    }
+
+
+def _multi_map_bundle():
+    bundle = _bundle()
+    bundle["robots"] = [
+        {
+            **bundle["robots"][0],
+            "robot_id": "pinky2",
+            "current_location": "x=1.2, y=0.8",
+            "current_pose": {
+                "map_id": "map_test12_0506",
+                "frame_id": "map",
+                "x": 1.2,
+                "y": 0.8,
+                "yaw": 0.0,
+                "updated_at": "2026-05-03T12:00:00",
+            },
+        },
+        {
+            **bundle["robots"][0],
+            "robot_id": "pinky3",
+            "current_location": "x=2.0, y=1.0",
+            "current_pose": {
+                "map_id": "map_0504",
+                "frame_id": "map",
+                "x": 2.0,
+                "y": 1.0,
+                "yaw": 1.57,
+                "updated_at": "2026-05-03T12:00:01",
+            },
+        },
+        bundle["robots"][1],
+    ]
+    bundle["selected_map_id"] = "map_0504"
+    bundle["map_assets"] = _map_assets("map_0504")
+    return bundle
 
 
 def test_robot_status_page_matches_phase1_layout_contract():
@@ -93,12 +159,15 @@ def test_robot_status_page_matches_phase1_layout_contract():
         assert "주의" in labels
         assert "로봇 상세" in labels
         robot_cards_panel = page.findChild(QFrame, "robotCardsPanel")
-        location_panel = page.findChild(QFrame, "robotLocationPanel")
+        location_panel = page.findChild(QFrame, "robotLocationMapPanel")
         assert robot_cards_panel is not None
         assert location_panel is not None
         assert location_panel.parentWidget() is robot_cards_panel
-        assert location_panel.minimumHeight() >= 180
-        assert "로봇 위치 요약" in labels
+        assert location_panel.minimumHeight() >= 320
+        assert page.findChild(QComboBox, "robotMapSelector") is not None
+        assert page.findChild(QWidget, "robotLocationMapCanvas") is not None
+        assert "로봇 위치 맵" in labels
+        assert "로봇 위치 요약" not in labels
         assert "맵/위치 시각화" not in labels
         assert page.findChild(QFrame, "pageTimeCard") is not None
         assert "새로고침" in [button.text() for button in refresh_buttons]
@@ -127,7 +196,11 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         assert "pinky2" in labels
         assert "ROS adapter arm_id" in labels
         assert "arm1 / arm2" in labels
-        assert "로봇 위치 요약" in labels
+        assert "로봇 위치 맵" in labels
+        assert page.map_selector.count() == 2
+        assert page.selected_map_id == "map_0504"
+        assert page.robot_map_canvas.map_loaded is True
+        assert page.robot_map_canvas.visible_robot_ids == ["pinky2"]
         assert "x=1.2, y=0.8" in labels
         assert not any("Delivery Mobile Robot: pinky2" in text for text in labels)
         assert not any("유형/역할" in text for text in labels)
@@ -174,6 +247,26 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         page.close()
 
 
+def test_robot_status_map_filters_markers_to_selected_map():
+    _app()
+
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False)
+
+    try:
+        page.apply_robot_status_bundle(_multi_map_bundle())
+
+        labels = _label_texts(page)
+        assert "pinky2" in labels
+        assert "pinky3" in labels
+        assert page.selected_map_id == "map_0504"
+        assert page.robot_map_canvas.visible_robot_ids == ["pinky3"]
+        assert "선택 맵 map_0504 · 표시 1대 / 전체 3대" in labels
+    finally:
+        page.close()
+
+
 def test_robot_status_load_worker_uses_caregiver_robot_status_rpc(monkeypatch):
     _app()
 
@@ -187,21 +280,59 @@ def test_robot_status_load_worker_uses_caregiver_robot_status_rpc(monkeypatch):
             calls.append("get_robot_status_bundle")
             return _bundle()
 
+    class FakeCoordinateConfigRemoteService:
+        def list_map_profiles(self):
+            calls.append("list_map_profiles")
+            return {
+                "result_code": "OK",
+                "map_profiles": _bundle()["map_profiles"],
+            }
+
+        def get_map_asset(self, *, asset_type, map_id=None, encoding=None):
+            calls.append(f"get_map_asset:{asset_type}:{map_id}:{encoding}")
+            if asset_type == "YAML":
+                return {
+                    "result_code": "OK",
+                    "content_text": _map_assets(map_id)["yaml_text"],
+                    "sha256": "yaml-sha",
+                }
+            return {
+                "result_code": "OK",
+                "content_base64": base64.b64encode(
+                    _map_assets(map_id)["pgm_bytes"]
+                ).decode("ascii"),
+                "sha256": "pgm-sha",
+            }
+
     monkeypatch.setattr(
         robot_status_page,
         "CaregiverRemoteService",
         FakeCaregiverRemoteService,
     )
+    monkeypatch.setattr(
+        robot_status_page,
+        "CoordinateConfigRemoteService",
+        FakeCoordinateConfigRemoteService,
+    )
 
-    worker = RobotStatusLoadWorker()
+    worker = RobotStatusLoadWorker(selected_map_id="map_0504")
     emitted = []
     worker.finished.connect(lambda ok, payload: emitted.append((ok, payload)))
 
     worker.run()
 
-    assert calls == ["get_robot_status_bundle"]
+    assert calls == [
+        "get_robot_status_bundle",
+        "list_map_profiles",
+        "get_map_asset:YAML:map_0504:TEXT",
+        "get_map_asset:PGM:map_0504:BASE64",
+    ]
     assert emitted[0][0] is True
     assert emitted[0][1]["summary"]["total_robot_count"] == 5
+    assert emitted[0][1]["selected_map_id"] == "map_0504"
+    assert emitted[0][1]["map_assets"]["pgm_bytes"] == _map_assets("map_0504")[
+        "pgm_bytes"
+    ]
 
 
 def test_robot_status_page_uses_shared_worker_thread_helper():
