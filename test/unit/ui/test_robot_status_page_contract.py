@@ -247,22 +247,36 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         page.close()
 
 
-def test_robot_status_map_filters_markers_to_selected_map():
+def test_robot_status_page_orders_pinky_cards_above_jetcobot_cards():
     _app()
 
     from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
 
     page = RobotStatusPage(autoload=False)
+    bundle = _bundle()
+    bundle["robots"] = [
+        {"robot_id": "jetcobot2", "robot_type": "ARM"},
+        {"robot_id": "pinky3", "robot_type": "MOBILE"},
+        {"robot_id": "jetcobot1", "robot_type": "ARM"},
+        {"robot_id": "pinky1", "robot_type": "MOBILE"},
+        {"robot_id": "pinky2", "robot_type": "MOBILE"},
+    ]
 
     try:
-        page.apply_robot_status_bundle(_multi_map_bundle())
+        page.apply_robot_status_bundle(bundle)
 
-        labels = _label_texts(page)
-        assert "pinky2" in labels
-        assert "pinky3" in labels
-        assert page.selected_map_id == "map_0504"
-        assert page.robot_map_canvas.visible_robot_ids == ["pinky3"]
-        assert "선택 맵 map_0504 · 표시 1대 / 전체 3대" in labels
+        assert page.card_grid.itemAtPosition(0, 0).widget().robot_id == "pinky1"
+        assert page.card_grid.itemAtPosition(0, 1).widget().robot_id == "pinky2"
+        assert page.card_grid.itemAtPosition(0, 2).widget().robot_id == "pinky3"
+        assert page.card_grid.itemAtPosition(1, 0).widget().robot_id == "jetcobot1"
+        assert page.card_grid.itemAtPosition(1, 1).widget().robot_id == "jetcobot2"
+        assert [page.table.item(row, 0).text() for row in range(5)] == [
+            "pinky1",
+            "pinky2",
+            "pinky3",
+            "jetcobot1",
+            "jetcobot2",
+        ]
     finally:
         page.close()
 

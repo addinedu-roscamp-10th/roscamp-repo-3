@@ -11,6 +11,9 @@ from server.ropi_main_service.ros.fall_response_control_client import RclpyFallR
 from server.ropi_main_service.ros.manipulation_action_client import RclpyManipulationActionClient
 from server.ropi_main_service.ros.patrol_path_action_client import RclpyPatrolPathActionClient
 from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
+from server.ropi_main_service.persistence.background_db_writer import (
+    get_default_background_db_writer,
+)
 
 
 def parse_args():
@@ -34,6 +37,13 @@ async def _run_ros_service(node_name: str):
     fall_response_control_client = RclpyFallResponseControlClient(node=node)
     guide_command_client = RclpyGuideCommandClient(node=node)
     guide_runtime_subscriber = _build_guide_runtime_subscriber(node)
+    db_writer = get_default_background_db_writer()
+    db_writer.start()
+    status_runtime_subscriber = _build_status_runtime_subscriber(
+        node,
+        loop=asyncio.get_running_loop(),
+        db_writer=db_writer,
+    )
     uds_server = RosServiceUdsServer(
         goal_pose_action_client=goal_pose_action_client,
         manipulation_action_client=manipulation_action_client,
@@ -63,6 +73,7 @@ async def _run_ros_service(node_name: str):
     finally:
         await uds_server.close()
         executor.shutdown()
+        await db_writer.stop()
         node.destroy_node()
         rclpy.shutdown()
         spin_thread.join(timeout=5)
@@ -80,6 +91,19 @@ def _build_guide_runtime_subscriber(node):
         )
         return None
     return GuideRuntimeSubscriber(node=node)
+
+
+def _build_status_runtime_subscriber(node, *, loop, db_writer):
+    try:
+        from server.ropi_main_service.ros.status_runtime_subscriber import (
+            StatusRuntimeSubscriber,
+        )
+    except ImportError as exc:
+        node.get_logger().warning(
+            f"Status runtime subscriber disabled because interface is unavailable: {exc}"
+        )
+        return None
+    return StatusRuntimeSubscriber(node=node, loop=loop, db_writer=db_writer)
 
 
 def main():

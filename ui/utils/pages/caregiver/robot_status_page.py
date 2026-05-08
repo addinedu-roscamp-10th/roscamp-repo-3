@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import math
+import re
 
 from PyQt6.QtCore import QPointF
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -125,6 +126,23 @@ def _optional_float(value, default=None):
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _robot_display_sort_key(robot: dict):
+    robot_id = str(robot.get("robot_id") or "").strip().lower()
+    robot_type = str(robot.get("robot_type") or "").strip().upper()
+    prefix_rank = 1
+    if robot_id.startswith("pinky") or robot_type == "MOBILE":
+        prefix_rank = 0
+    elif robot_id.startswith("jetcobot") or robot_type == "ARM":
+        prefix_rank = 1
+
+    return (prefix_rank, _natural_robot_id_key(robot_id), robot_id)
+
+
+def _natural_robot_id_key(robot_id: str):
+    parts = re.split(r"(\d+)", robot_id)
+    return [int(part) if part.isdigit() else part for part in parts]
 
 
 class RobotStatusLoadWorker(QObject):
@@ -503,6 +521,7 @@ class RobotStatusPage(QWidget):
                 robots=self.robots,
             )
         )
+        self.robots.sort(key=_robot_display_sort_key)
 
         self._apply_summary(summary)
         self._populate_map_selector()
