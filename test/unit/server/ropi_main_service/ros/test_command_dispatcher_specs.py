@@ -1,6 +1,7 @@
 from server.ropi_main_service.ros.command_dispatcher import (
     ACTION_CLIENT_SPECS,
     ACTION_COMMAND_SPECS,
+    RUNTIME_STATUS_ACTION_TARGET_SPECS,
     SERVICE_COMMAND_SPECS,
 )
 
@@ -66,3 +67,22 @@ def test_action_client_specs_define_cancel_and_feedback_client_order():
         False,
         False,
     ]
+
+
+def test_runtime_status_action_target_specs_define_fixed_readiness_checks():
+    assert list(RUNTIME_STATUS_ACTION_TARGET_SPECS) == [
+        "navigation",
+        "patrol",
+    ]
+
+    navigation = RUNTIME_STATUS_ACTION_TARGET_SPECS["navigation"]
+    assert navigation.client_attr == "goal_pose_action_client"
+    assert navigation.check_name_template == "{pinky_id}.navigate_to_goal"
+    assert navigation.action_name_template == "/ropi/control/{pinky_id}/navigate_to_goal"
+
+    patrol = RUNTIME_STATUS_ACTION_TARGET_SPECS["patrol"]
+    assert patrol.client_attr == "patrol_path_action_client"
+    assert patrol.check_name_template == "{patrol_pinky_id}.execute_patrol_path"
+    assert patrol.action_name_template == (
+        "/ropi/control/{patrol_pinky_id}/execute_patrol_path"
+    )

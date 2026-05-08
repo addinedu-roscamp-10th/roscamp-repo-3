@@ -42,6 +42,31 @@ class ActionClientSpec:
     required: bool = False
 
 
+@dataclass(frozen=True)
+class RuntimeStatusContext:
+    pinky_id: str
+    include_navigation: bool
+    include_patrol: bool
+    include_guide: bool
+    patrol_pinky_id: str
+    arm_ids: tuple
+
+
+@dataclass(frozen=True)
+class RuntimeStatusActionTargetSpec:
+    client_attr: str
+    check_name_template: str
+    action_name_template: str
+
+
+@dataclass(frozen=True)
+class RuntimeStatusActionCheck:
+    name: str
+    action_name: str
+    action_client: object | None
+    missing_client_error: str | None = None
+
+
 ACTION_CLIENT_SPECS = (
     ActionClientSpec(
         client_attr="goal_pose_action_client",
@@ -57,6 +82,19 @@ ACTION_CLIENT_SPECS = (
         client_name="patrol",
     ),
 )
+
+RUNTIME_STATUS_ACTION_TARGET_SPECS = {
+    "navigation": RuntimeStatusActionTargetSpec(
+        client_attr="goal_pose_action_client",
+        check_name_template="{pinky_id}.navigate_to_goal",
+        action_name_template="/ropi/control/{pinky_id}/navigate_to_goal",
+    ),
+    "patrol": RuntimeStatusActionTargetSpec(
+        client_attr="patrol_path_action_client",
+        check_name_template="{patrol_pinky_id}.execute_patrol_path",
+        action_name_template="/ropi/control/{patrol_pinky_id}/execute_patrol_path",
+    ),
+}
 
 
 ACTION_COMMAND_SPECS = {
@@ -470,238 +508,241 @@ class RosServiceCommandDispatcher:
         )
 
     def _dispatch_get_runtime_status(self, payload: dict) -> dict:
-        default_pinky_id = self.runtime_config.pinky_id
-        pinky_id = str(payload.get("pinky_id") or default_pinky_id).strip() or default_pinky_id
-        include_navigation = payload.get("include_navigation")
-        include_navigation = True if include_navigation is None else bool(include_navigation)
-        include_patrol = bool(payload.get("include_patrol"))
-        include_guide = bool(payload.get("include_guide"))
-        patrol_pinky_id = str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
-        arm_ids = payload.get("arm_ids") or []
-        checks = []
-
-        if include_navigation:
-            navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
-            checks.append(
-                {
-                    "name": f"{pinky_id}.navigate_to_goal",
-                    "ready": self.goal_pose_action_client.is_server_ready(
-                        action_name=navigate_action_name,
-                        wait_timeout_sec=0.0,
-                    ),
-                    "action_name": navigate_action_name,
-                }
-            )
-
-        if include_patrol and self.patrol_path_action_client is not None:
-            patrol_action_name = f"/ropi/control/{patrol_pinky_id}/execute_patrol_path"
-            checks.append(
-                {
-                    "name": f"{patrol_pinky_id}.execute_patrol_path",
-                    "ready": self.patrol_path_action_client.is_server_ready(
-                        action_name=patrol_action_name,
-                        wait_timeout_sec=0.0,
-                    ),
-                    "action_name": patrol_action_name,
-                }
-            )
-
-        for arm_id in arm_ids:
-            action_name = f"/ropi/arm/{arm_id}/execute_manipulation"
-            if self.manipulation_action_client is None:
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": False,
-                        "action_name": action_name,
-                        "error": "manipulation action client is not configured",
-                    }
-                )
-                continue
-
-            try:
-                ready = self.manipulation_action_client.is_server_ready(
-                    action_name=action_name,
-                    wait_timeout_sec=0.0,
-                )
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": ready,
-                        "action_name": action_name,
-                    }
-                )
-            except Exception as exc:  # pragma: no cover
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": False,
-                        "action_name": action_name,
-                        "error": str(exc),
-                    }
-                )
-
+        context = self._build_runtime_status_context(payload)
+        checks = [
+            self._build_runtime_action_ready_check(check)
+            for check in self._iter_runtime_status_action_checks(context)
+        ]
         guide_snapshot = None
-        if include_guide:
-            guide_service_name = self._build_guide_command_service_name(pinky_id)
-            if self.guide_command_client is None:
-                checks.append(
-                    {
-                        "name": f"{pinky_id}.guide_command",
-                        "ready": False,
-                        "service_name": guide_service_name,
-                        "error": "guide command service client is not configured",
-                    }
-                )
-            else:
-                try:
-                    service_client = self.guide_command_client.service_client_factory(
-                        self.guide_command_client.node,
-                        self.guide_command_client.service_type_loader(),
-                        guide_service_name,
-                    )
-                    checks.append(
-                        {
-                            "name": f"{pinky_id}.guide_command",
-                            "ready": service_client.wait_for_service(timeout_sec=0.0),
-                            "service_name": guide_service_name,
-                        }
-                    )
-                except Exception as exc:  # pragma: no cover
-                    checks.append(
-                        {
-                            "name": f"{pinky_id}.guide_command",
-                            "ready": False,
-                            "service_name": guide_service_name,
-                            "error": str(exc),
-                        }
-                    )
 
-            guide_snapshot = self._build_guide_runtime_snapshot(pinky_id)
+        if context.include_guide:
+            checks.append(self._build_runtime_guide_service_check(context.pinky_id))
+            guide_snapshot = self._build_guide_runtime_snapshot(context.pinky_id)
 
-        return {
-            "ready": all(check.get("ready") is True for check in checks),
-            "checks": checks,
-            "guide_runtime": guide_snapshot,
-        }
+        return self._build_runtime_status_response(checks, guide_snapshot)
 
     async def _async_dispatch_get_runtime_status(self, payload: dict) -> dict:
-        default_pinky_id = self.runtime_config.pinky_id
-        pinky_id = str(payload.get("pinky_id") or default_pinky_id).strip() or default_pinky_id
-        include_navigation = payload.get("include_navigation")
-        include_navigation = True if include_navigation is None else bool(include_navigation)
-        include_patrol = bool(payload.get("include_patrol"))
-        include_guide = bool(payload.get("include_guide"))
-        patrol_pinky_id = str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
-        arm_ids = payload.get("arm_ids") or []
-        checks = []
-
-        if include_navigation:
-            navigate_action_name = f"/ropi/control/{pinky_id}/navigate_to_goal"
-            checks.append(
-                {
-                    "name": f"{pinky_id}.navigate_to_goal",
-                    "ready": await self._async_is_server_ready(
-                        self.goal_pose_action_client,
-                        action_name=navigate_action_name,
-                        wait_timeout_sec=0.0,
-                    ),
-                    "action_name": navigate_action_name,
-                }
-            )
-
-        if include_patrol and self.patrol_path_action_client is not None:
-            patrol_action_name = f"/ropi/control/{patrol_pinky_id}/execute_patrol_path"
-            checks.append(
-                {
-                    "name": f"{patrol_pinky_id}.execute_patrol_path",
-                    "ready": await self._async_is_server_ready(
-                        self.patrol_path_action_client,
-                        action_name=patrol_action_name,
-                        wait_timeout_sec=0.0,
-                    ),
-                    "action_name": patrol_action_name,
-                }
-            )
-
-        for arm_id in arm_ids:
-            action_name = f"/ropi/arm/{arm_id}/execute_manipulation"
-            if self.manipulation_action_client is None:
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": False,
-                        "action_name": action_name,
-                        "error": "manipulation action client is not configured",
-                    }
-                )
-                continue
-
-            try:
-                ready = await self._async_is_server_ready(
-                    self.manipulation_action_client,
-                    action_name=action_name,
-                    wait_timeout_sec=0.0,
-                )
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": ready,
-                        "action_name": action_name,
-                    }
-                )
-            except Exception as exc:  # pragma: no cover
-                checks.append(
-                    {
-                        "name": f"{arm_id}.execute_manipulation",
-                        "ready": False,
-                        "action_name": action_name,
-                        "error": str(exc),
-                    }
-                )
-
+        context = self._build_runtime_status_context(payload)
+        checks = [
+            await self._async_build_runtime_action_ready_check(check)
+            for check in self._iter_runtime_status_action_checks(context)
+        ]
         guide_snapshot = None
-        if include_guide:
-            guide_service_name = self._build_guide_command_service_name(pinky_id)
-            if self.guide_command_client is None:
-                checks.append(
-                    {
-                        "name": f"{pinky_id}.guide_command",
-                        "ready": False,
-                        "service_name": guide_service_name,
-                        "error": "guide command service client is not configured",
-                    }
-                )
-            else:
-                try:
-                    service_type = self.guide_command_client.service_type_loader()
-                    service_client = self.guide_command_client.service_client_factory(
-                        self.guide_command_client.node,
-                        service_type,
-                        guide_service_name,
-                    )
-                    checks.append(
-                        {
-                            "name": f"{pinky_id}.guide_command",
-                            "ready": await self.guide_command_client._async_wait_for_service(
-                                service_client,
-                                timeout_sec=0.0,
-                            ),
-                            "service_name": guide_service_name,
-                        }
-                    )
-                except Exception as exc:  # pragma: no cover
-                    checks.append(
-                        {
-                            "name": f"{pinky_id}.guide_command",
-                            "ready": False,
-                            "service_name": guide_service_name,
-                            "error": str(exc),
-                        }
-                    )
 
-            guide_snapshot = self._build_guide_runtime_snapshot(pinky_id)
+        if context.include_guide:
+            checks.append(
+                await self._async_build_runtime_guide_service_check(context.pinky_id)
+            )
+            guide_snapshot = self._build_guide_runtime_snapshot(context.pinky_id)
 
+        return self._build_runtime_status_response(checks, guide_snapshot)
+
+    def _build_runtime_status_context(self, payload: dict) -> RuntimeStatusContext:
+        default_pinky_id = self.runtime_config.pinky_id
+        pinky_id = (
+            str(payload.get("pinky_id") or default_pinky_id).strip()
+            or default_pinky_id
+        )
+        include_navigation = payload.get("include_navigation")
+        include_navigation = (
+            True if include_navigation is None else bool(include_navigation)
+        )
+        patrol_pinky_id = (
+            str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
+        )
+        return RuntimeStatusContext(
+            pinky_id=pinky_id,
+            include_navigation=include_navigation,
+            include_patrol=bool(payload.get("include_patrol")),
+            include_guide=bool(payload.get("include_guide")),
+            patrol_pinky_id=patrol_pinky_id,
+            arm_ids=tuple(payload.get("arm_ids") or ()),
+        )
+
+    def _iter_runtime_status_action_checks(self, context: RuntimeStatusContext):
+        if context.include_navigation:
+            yield self._build_runtime_status_action_target_check(
+                RUNTIME_STATUS_ACTION_TARGET_SPECS["navigation"],
+                pinky_id=context.pinky_id,
+                patrol_pinky_id=context.patrol_pinky_id,
+            )
+
+        if context.include_patrol and self.patrol_path_action_client is not None:
+            yield self._build_runtime_status_action_target_check(
+                RUNTIME_STATUS_ACTION_TARGET_SPECS["patrol"],
+                pinky_id=context.pinky_id,
+                patrol_pinky_id=context.patrol_pinky_id,
+            )
+
+        for arm_id in context.arm_ids:
+            yield RuntimeStatusActionCheck(
+                name=f"{arm_id}.execute_manipulation",
+                action_name=f"/ropi/arm/{arm_id}/execute_manipulation",
+                action_client=self.manipulation_action_client,
+                missing_client_error="manipulation action client is not configured",
+            )
+
+    def _build_runtime_status_action_target_check(
+        self,
+        spec: RuntimeStatusActionTargetSpec,
+        **identifiers,
+    ) -> RuntimeStatusActionCheck:
+        return RuntimeStatusActionCheck(
+            name=spec.check_name_template.format(**identifiers),
+            action_name=spec.action_name_template.format(**identifiers),
+            action_client=getattr(self, spec.client_attr),
+        )
+
+    def _build_runtime_action_ready_check(self, check: RuntimeStatusActionCheck):
+        if check.action_client is None:
+            return self._build_runtime_action_unavailable_check(check)
+
+        try:
+            ready = check.action_client.is_server_ready(
+                action_name=check.action_name,
+                wait_timeout_sec=0.0,
+            )
+            return self._build_runtime_action_check_payload(check, ready=ready)
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_action_check_payload(
+                check,
+                ready=False,
+                error=str(exc),
+            )
+
+    async def _async_build_runtime_action_ready_check(
+        self,
+        check: RuntimeStatusActionCheck,
+    ):
+        if check.action_client is None:
+            return self._build_runtime_action_unavailable_check(check)
+
+        try:
+            ready = await self._async_is_server_ready(
+                check.action_client,
+                action_name=check.action_name,
+                wait_timeout_sec=0.0,
+            )
+            return self._build_runtime_action_check_payload(check, ready=ready)
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_action_check_payload(
+                check,
+                ready=False,
+                error=str(exc),
+            )
+
+    def _build_runtime_action_unavailable_check(self, check: RuntimeStatusActionCheck):
+        return self._build_runtime_action_check_payload(
+            check,
+            ready=False,
+            error=check.missing_client_error,
+        )
+
+    @staticmethod
+    def _build_runtime_action_check_payload(
+        check: RuntimeStatusActionCheck,
+        *,
+        ready,
+        error=None,
+    ):
+        payload = {
+            "name": check.name,
+            "ready": ready,
+            "action_name": check.action_name,
+        }
+        if error:
+            payload["error"] = error
+        return payload
+
+    def _build_runtime_guide_service_check(self, pinky_id: str):
+        guide_service_name = self._build_guide_command_service_name(pinky_id)
+        if self.guide_command_client is None:
+            return self._build_runtime_guide_service_unavailable_check(
+                pinky_id,
+                guide_service_name,
+            )
+
+        try:
+            service_client = self.guide_command_client.service_client_factory(
+                self.guide_command_client.node,
+                self.guide_command_client.service_type_loader(),
+                guide_service_name,
+            )
+            return self._build_runtime_guide_service_check_payload(
+                pinky_id,
+                guide_service_name,
+                ready=service_client.wait_for_service(timeout_sec=0.0),
+            )
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_guide_service_check_payload(
+                pinky_id,
+                guide_service_name,
+                ready=False,
+                error=str(exc),
+            )
+
+    async def _async_build_runtime_guide_service_check(self, pinky_id: str):
+        guide_service_name = self._build_guide_command_service_name(pinky_id)
+        if self.guide_command_client is None:
+            return self._build_runtime_guide_service_unavailable_check(
+                pinky_id,
+                guide_service_name,
+            )
+
+        try:
+            service_type = self.guide_command_client.service_type_loader()
+            service_client = self.guide_command_client.service_client_factory(
+                self.guide_command_client.node,
+                service_type,
+                guide_service_name,
+            )
+            return self._build_runtime_guide_service_check_payload(
+                pinky_id,
+                guide_service_name,
+                ready=await self.guide_command_client._async_wait_for_service(
+                    service_client,
+                    timeout_sec=0.0,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_guide_service_check_payload(
+                pinky_id,
+                guide_service_name,
+                ready=False,
+                error=str(exc),
+            )
+
+    def _build_runtime_guide_service_unavailable_check(
+        self,
+        pinky_id,
+        guide_service_name,
+    ):
+        return self._build_runtime_guide_service_check_payload(
+            pinky_id,
+            guide_service_name,
+            ready=False,
+            error="guide command service client is not configured",
+        )
+
+    @staticmethod
+    def _build_runtime_guide_service_check_payload(
+        pinky_id,
+        guide_service_name,
+        *,
+        ready,
+        error=None,
+    ):
+        payload = {
+            "name": f"{pinky_id}.guide_command",
+            "ready": ready,
+            "service_name": guide_service_name,
+        }
+        if error:
+            payload["error"] = error
+        return payload
+
+    @staticmethod
+    def _build_runtime_status_response(checks, guide_snapshot):
         return {
             "ready": all(check.get("ready") is True for check in checks),
             "checks": checks,
@@ -1008,10 +1049,12 @@ class RosServiceCommandDispatcher:
 __all__ = [
     "ACTION_CLIENT_SPECS",
     "ACTION_COMMAND_SPECS",
+    "RUNTIME_STATUS_ACTION_TARGET_SPECS",
     "SERVICE_COMMAND_SPECS",
     "ActionClientSpec",
     "ActionCommandSpec",
     "RosServiceCommandDispatchError",
     "RosServiceCommandDispatcher",
+    "RuntimeStatusActionTargetSpec",
     "ServiceCommandSpec",
 ]
