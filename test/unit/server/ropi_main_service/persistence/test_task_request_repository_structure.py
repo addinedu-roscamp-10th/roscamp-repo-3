@@ -1,4 +1,5 @@
 from server.ropi_main_service.persistence.repositories import (
+    DeliveryTaskCreateRepository,
     DeliveryRequestEventRepository,
 )
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
@@ -60,6 +61,10 @@ def test_delivery_request_event_repository_is_public_member_event_writer_name():
     assert DeliveryRequestEventRepository.__name__ == "DeliveryRequestEventRepository"
 
 
+def test_delivery_task_create_repository_is_public_create_transaction_owner():
+    assert DeliveryTaskCreateRepository.__name__ == "DeliveryTaskCreateRepository"
+
+
 def test_task_request_repository_delegates_option_reads_to_lookup_repository():
     lookup_repository = FakeLookupRepository()
     repository = TaskRequestRepository(
@@ -109,4 +114,44 @@ def test_task_request_repository_delegates_delivery_request_event_creation():
         "priority": "긴급",
         "detail": "요청",
         "member_id": "7",
+    }
+
+
+def test_task_request_repository_delegates_delivery_create_to_create_repository():
+    class FakeDeliveryTaskCreateRepository:
+        def __init__(self):
+            self.created = None
+
+        def create_delivery_task(self, **kwargs):
+            self.created = kwargs
+            return {"result_code": "ACCEPTED", "task_id": 101}
+
+    create_repository = FakeDeliveryTaskCreateRepository()
+    repository = TaskRequestRepository(
+        lookup_repository=FakeLookupRepository(),
+        delivery_request_event_repository=FakeDeliveryRequestEventRepository(),
+        delivery_task_create_repository=create_repository,
+    )
+
+    response = repository.create_delivery_task(
+        request_id="req_001",
+        caregiver_id=1,
+        item_id=2,
+        quantity=3,
+        destination_id="delivery_room_301",
+        priority="NORMAL",
+        notes="note",
+        idempotency_key="idem_001",
+    )
+
+    assert response == {"result_code": "ACCEPTED", "task_id": 101}
+    assert create_repository.created == {
+        "request_id": "req_001",
+        "caregiver_id": 1,
+        "item_id": 2,
+        "quantity": 3,
+        "destination_id": "delivery_room_301",
+        "priority": "NORMAL",
+        "notes": "note",
+        "idempotency_key": "idem_001",
     }
