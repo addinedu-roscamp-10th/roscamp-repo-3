@@ -1,6 +1,71 @@
+from dataclasses import dataclass
+
 from ui.utils.pages.caregiver.coordinate_waypoint_editing import (
     patrol_path_payload_poses,
 )
+
+
+@dataclass
+class PatrolAreaEditorController:
+    selected_row: dict | None = None
+    selected_index: int | None = None
+    selected_waypoint_index: int | None = None
+    mode: str | None = None
+    dirty: bool = False
+    syncing_area_form: bool = False
+    syncing_waypoint_form: bool = False
+
+    def select(self, row_index, rows):
+        row_index = int(row_index)
+        row = rows[row_index]
+        selected = dict(row if isinstance(row, dict) else {})
+        self.selected_row = selected
+        self.selected_index = row_index
+        self.selected_waypoint_index = None
+        self.mode = "edit"
+        self.dirty = False
+        return selected
+
+    def start_create(self, *, frame_id):
+        self.selected_row = None
+        self.selected_index = None
+        self.selected_waypoint_index = None
+        self.mode = "create"
+        self.dirty = False
+        return {
+            "patrol_area_id": "",
+            "patrol_area_name": "",
+            "revision": 0,
+            "path_json": {
+                "header": {"frame_id": _frame_id_or_default(frame_id)},
+                "poses": [],
+            },
+            "is_enabled": True,
+        }
+
+    def mark_dirty(self, *, selected_edit_type):
+        if (
+            self.syncing_area_form
+            or self.syncing_waypoint_form
+            or selected_edit_type != "patrol_area"
+        ):
+            return False
+        self.dirty = True
+        return True
+
+    def apply_saved_row(self, row):
+        self.selected_row = dict(row if isinstance(row, dict) else {})
+        self.mode = "edit"
+        self.dirty = False
+
+    def clear(self):
+        self.selected_row = None
+        self.selected_index = None
+        self.selected_waypoint_index = None
+        self.mode = None
+        self.dirty = False
+        self.syncing_area_form = False
+        self.syncing_waypoint_form = False
 
 
 def build_patrol_area_path_save_payload(
@@ -81,6 +146,7 @@ def _int_or_default(value, default=0):
 
 
 __all__ = [
+    "PatrolAreaEditorController",
     "build_patrol_area_save_payload",
     "build_patrol_area_path_save_payload",
     "patrol_area_from_save_response",

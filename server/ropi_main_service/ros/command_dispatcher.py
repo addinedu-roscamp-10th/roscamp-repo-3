@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from functools import partial
 
 from server.ropi_main_service.application.delivery_config import get_delivery_runtime_config
+from server.ropi_main_service.application.manipulation_timeout import (
+    DEFAULT_MANIPULATION_ACTION_TIMEOUT_SEC,
+    get_manipulation_action_timeout_sec,
+)
 from server.ropi_main_service.application.patrol_config import get_patrol_runtime_config
 
 
@@ -155,7 +159,7 @@ SERVICE_COMMAND_SPECS = {
 
 
 class RosServiceCommandDispatcher:
-    DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC = 30.0
+    DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC = DEFAULT_MANIPULATION_ACTION_TIMEOUT_SEC
 
     def __init__(
         self,
@@ -168,6 +172,7 @@ class RosServiceCommandDispatcher:
         guide_runtime_subscriber=None,
         runtime_config=None,
         patrol_runtime_config=None,
+        manipulation_result_wait_timeout_sec=None,
     ):
         self.goal_pose_action_client = goal_pose_action_client
         self.manipulation_action_client = manipulation_action_client
@@ -177,6 +182,11 @@ class RosServiceCommandDispatcher:
         self.guide_runtime_subscriber = guide_runtime_subscriber
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
+        self.manipulation_result_wait_timeout_sec = (
+            get_manipulation_action_timeout_sec()
+            if manipulation_result_wait_timeout_sec is None
+            else float(manipulation_result_wait_timeout_sec)
+        )
         self._dispatch_executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="ropi_ros_dispatch",
@@ -369,7 +379,7 @@ class RosServiceCommandDispatcher:
         if spec.timeout_strategy == "navigation":
             return self._build_navigation_result_wait_timeout_sec(goal)
         if spec.timeout_strategy == "manipulation":
-            return self.DEFAULT_MANIPULATION_RESULT_WAIT_TIMEOUT_SEC
+            return self.manipulation_result_wait_timeout_sec
         raise RosServiceCommandDispatchError(
             "ACTION_TIMEOUT_STRATEGY_UNKNOWN",
             f"Unsupported action timeout strategy: {spec.timeout_strategy}",

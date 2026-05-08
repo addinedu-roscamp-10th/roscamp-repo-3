@@ -53,10 +53,15 @@ def test_schema_uses_item_table_and_unsigned_delivery_quantities():
     assert "`delivered_quantity` INT UNSIGNED NOT NULL" in ddl
 
 
-def test_dummy_item_seed_includes_food_example():
+def test_dummy_item_seed_matches_transport_team_item_catalog():
     seed_sql = _seed_sql()
 
-    assert "(6, '식료품', '두유', 60, NOW(), NOW())" in seed_sql
+    assert "(1, '의료', '의료키트', 30, NOW(), NOW())" in seed_sql
+    assert "(2, '생활용품', '기저귀', 30, NOW(), NOW())" in seed_sql
+    assert "(3, '식품', '오렌지', 30, NOW(), NOW())" in seed_sql
+    assert "'물티슈'" not in seed_sql
+    assert "'혈압약'" not in seed_sql
+    assert "'두유'" not in seed_sql
 
 
 def test_schema_contains_control_task_and_log_tables():

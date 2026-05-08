@@ -43,6 +43,7 @@ CONTROL_SERVER_TIMEOUT=3.0
 
 ROPI_ROS_SERVICE_SOCKET_PATH=/tmp/ropi_control_ros_service.sock
 ROPI_ROS_SERVICE_SOCKET_TIMEOUT=2.0
+ROPI_MANIPULATION_ACTION_TIMEOUT_SEC=90.0
 ACTION_FEEDBACK_EVENT_POLL_ENABLED=true
 ACTION_FEEDBACK_EVENT_POLL_INTERVAL_SEC=0.5
 
@@ -63,6 +64,8 @@ AI_FALL_STREAM_LAST_SEQ=0
 ```
 
 `AI_SERVER_HOST`는 영상 미디어 게이트웨이, 낙상 추론 TCP 구독, 낙상 증거사진 조회가 같은 AI 서버를 바라볼 때 공통으로 쓰는 기본 IP다. 기능별로 다른 AI 서버를 써야 하면 아래 값을 개별로 추가해 공통값을 덮어쓴다.
+
+`ROPI_MANIPULATION_ACTION_TIMEOUT_SEC`는 `IF-DEL-003` 팔 action result 대기 시간이다. `ropi-control-server`와 `ropi-ros-service`가 같은 값을 보도록 같은 `.env`에서 실행한다.
 
 ```env
 VISION_GATEWAY_AI_HOST=<영상 UDP를 받을 AI 서버 IP>
@@ -199,6 +202,8 @@ uv run ropi-ros-action-test arm \
   --robot-slot-id robot_slot_a1
 ```
 
+arm 동작 시간이 길면 `--ipc-timeout-sec`로 단건 테스트 대기 시간을 늘릴 수 있다. 값을 생략하면 `ROPI_MANIPULATION_ACTION_TIMEOUT_SEC` 기본값을 쓴다.
+
 ### 2. Control Service
 
 ```bash
@@ -244,3 +249,4 @@ test -S /tmp/ropi_control_ros_service.sock && echo "ROS bridge UDS ok"
 - 영상이 AI 서버로 가지 않음: `ropi-media-gateway` 실행 여부, UDP 포트, AI 서버 IP, 방화벽을 확인한다.
 - 낙상 감지 TCP push가 보이지 않음: `AI_FALL_STREAM_ENABLED=true`, `AI_SERVER_HOST`, `AI_FALL_STREAM_PORT=6000`을 확인한다. 단일 로봇 필터를 걸었으면 `AI_FALL_STREAM_PINKY_ID`와 AI 서버가 보내는 `pinky_id`가 같은지 확인한다.
 - ROS 브릿지 UDS 오류: `ROPI_ROS_SERVICE_SOCKET_PATH`가 ROS 브릿지와 Control Service에서 같은 값인지 확인한다.
+- arm2 하차 뒤 복귀가 시작되지 않음: `FROM_ROBOT` action이 `SUCCESS`를 반환했는지와 `ROPI_MANIPULATION_ACTION_TIMEOUT_SEC`가 arm 실제 동작 시간보다 충분히 긴지 확인한다. arm2가 실패하거나 timeout이면 Control Service는 `RETURN_TO_DOCK`을 보내지 않는다.

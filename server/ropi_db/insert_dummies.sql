@@ -141,12 +141,9 @@ VALUES
 INSERT INTO `item`
 (`item_id`, `item_type`, `item_name`, `quantity`, `created_at`, `updated_at`)
 VALUES
-(1, '생활용품', '기저귀', 120, NOW(), NOW()),
-(2, '생활용품', '물티슈', 80, NOW(), NOW()),
-(3, '의약품', '혈압약', 35, NOW(), NOW()),
-(4, '의약품', '소화제', 50, NOW(), NOW()),
-(5, '생활용품', '휴지', 200, NOW(), NOW()),
-(6, '식료품', '두유', 60, NOW(), NOW());
+(1, '의료', '의료키트', 30, NOW(), NOW()),
+(2, '생활용품', '기저귀', 30, NOW(), NOW()),
+(3, '식품', '오렌지', 30, NOW(), NOW());
 
 -- =========================
 -- map_profile

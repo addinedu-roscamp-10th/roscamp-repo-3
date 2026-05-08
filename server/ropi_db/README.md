@@ -8,6 +8,7 @@
 | --- | --- |
 | `init_tables.sql` | 기존 테이블을 drop하고 현재 설계 기준 테이블을 다시 생성한다. |
 | `insert_dummies.sql` | 개발/통합 테스트용 seed 데이터를 넣는다. |
+| `ropi-db-migrate-delivery-items` | 기존 DB의 운반 물품 catalog를 운반팀 item preset ID 계약으로 보정하는 CLI. |
 | `ropi-db-migrate-multimap` | 기존 DB를 멀티맵 좌표 설정 계약으로 보정하는 CLI. |
 | `ropi-db-migrate-guide-location` | 기존 DB에 phase-1 안내 목적지 좌표를 보강하는 CLI. |
 | `ropi-db-migrate-guide-tracking` | 기존 DB의 안내 tracking 컬럼을 현재 정수 계약으로 보정하는 CLI. |
@@ -26,6 +27,25 @@ mysql -u care_user -p care_service < server/ropi_db/insert_dummies.sql
 ```dotenv
 DB_NAME=care_service
 ```
+
+## 기존 DB 운반 물품 catalog 마이그레이션
+
+기존 DB를 유지하면서 phase-1 운반팀 item preset ID 계약으로 `item` row를 맞출 때 사용한다.
+
+```bash
+uv run ropi-db-migrate-delivery-items
+uv run ropi-db-migrate-delivery-items --apply
+```
+
+적용 후 운반 물품 catalog는 다음 세 row를 기준으로 한다.
+
+| `item_id` | 물품명 | 분류 |
+| --- | --- | --- |
+| `1` | 의료키트 | 의료 |
+| `2` | 기저귀 | 생활용품 |
+| `3` | 오렌지 | 식품 |
+
+마이그레이션은 위 세 `item_id`를 upsert하고, 기존 운반 이력이 참조하지 않는 비계약 물품 row만 삭제한다. Control Service는 DB 숫자형 `item_id`를 ROS `ArmManipulation.action`의 string `item_id`로 변환해서 보낸다.
 
 ## 기존 DB 멀티맵 마이그레이션
 

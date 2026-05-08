@@ -27,12 +27,14 @@ dev = [
 
 [project.scripts]
 ropi-control-server = "server.ropi_main_service.transport.tcp_server:main"
+ropi-db-migrate-delivery-items = "server.ropi_db.delivery_item_catalog_migration:main"
 ropi-db-migrate-guide-location = "server.ropi_db.guide_location_config_migration:main"
 ropi-db-migrate-guide-tracking = "server.ropi_db.guide_tracking_schema_migration:main"
 ropi-db-migrate-multimap = "server.ropi_db.multimap_coordinate_migration:main"
 ropi-media-gateway = "server.ropi_main_service.transport.vision_frame_gateway:main"
 ropi-ros-action-test = "server.ropi_main_service.ros.action_test_cli:main"
 ropi-ros-service = "server.ropi_main_service.ros.main:main"
+ropi-status-topic-monitor = "server.ropi_main_service.ros.status_topic_monitor:main"
 ropi-admin-ui = "ui.admin_ui.main:main"
 ropi-kiosk-ui = "ui.kiosk_ui.main:main"
 ropi-user-ui = "ui.user_ui.main:main"

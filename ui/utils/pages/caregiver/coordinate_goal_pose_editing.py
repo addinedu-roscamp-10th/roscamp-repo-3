@@ -1,3 +1,59 @@
+from dataclasses import dataclass
+
+
+@dataclass
+class GoalPoseEditorController:
+    selected_row: dict | None = None
+    selected_index: int | None = None
+    mode: str | None = None
+    dirty: bool = False
+    syncing_form: bool = False
+
+    def select(self, row_index, rows):
+        row_index = int(row_index)
+        row = rows[row_index]
+        selected = dict(row if isinstance(row, dict) else {})
+        self.selected_row = selected
+        self.selected_index = row_index
+        self.mode = "edit"
+        self.dirty = False
+        return selected
+
+    def start_create(self, *, frame_id):
+        self.selected_row = None
+        self.selected_index = None
+        self.mode = "create"
+        self.dirty = False
+        return {
+            "goal_pose_id": "",
+            "zone_id": None,
+            "purpose": "DESTINATION",
+            "pose_x": 0.0,
+            "pose_y": 0.0,
+            "pose_yaw": 0.0,
+            "frame_id": frame_id,
+            "is_enabled": True,
+        }
+
+    def mark_dirty(self, *, selected_edit_type):
+        if self.syncing_form or selected_edit_type != "goal_pose":
+            return False
+        self.dirty = True
+        return True
+
+    def apply_saved_row(self, row):
+        self.selected_row = dict(row if isinstance(row, dict) else {})
+        self.mode = "edit"
+        self.dirty = False
+
+    def clear(self):
+        self.selected_row = None
+        self.selected_index = None
+        self.mode = None
+        self.dirty = False
+        self.syncing_form = False
+
+
 def build_goal_pose_update_payload(
     *,
     selected_goal_pose,
@@ -78,6 +134,7 @@ def _float_or_default(value, default=0.0):
 
 
 __all__ = [
+    "GoalPoseEditorController",
     "build_goal_pose_save_payload",
     "build_goal_pose_update_payload",
     "goal_pose_from_save_response",

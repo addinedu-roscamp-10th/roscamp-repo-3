@@ -30,6 +30,7 @@ from ui.utils.pages.caregiver.coordinate_boundary_editing import (
     selected_boundary_vertex,
 )
 from ui.utils.pages.caregiver.coordinate_goal_pose_editing import (
+    GoalPoseEditorController,
     build_goal_pose_save_payload,
     build_goal_pose_update_payload,
     goal_pose_from_save_response,
@@ -59,11 +60,13 @@ from ui.utils.pages.caregiver.coordinate_fms_route_editing import (
     fms_route_waypoint_table_rows,
 )
 from ui.utils.pages.caregiver.coordinate_operation_zone_editing import (
+    OperationZoneEditorController,
     build_operation_zone_boundary_save_payload,
     build_operation_zone_save_payload,
     operation_zone_from_save_response,
 )
 from ui.utils.pages.caregiver.coordinate_patrol_area_editing import (
+    PatrolAreaEditorController,
     build_patrol_area_save_payload,
     build_patrol_area_path_save_payload,
     patrol_area_from_save_response,
@@ -283,6 +286,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_waypoint_rows = []
         self.fms_route_waypoint_rows = []
         self.selected_edit_type = None
+        self.operation_zone_editor = OperationZoneEditorController()
         self.operation_zone_mode = None
         self.selected_operation_zone = None
         self.selected_operation_zone_index = None
@@ -292,11 +296,13 @@ class CoordinateZoneSettingsPage(QWidget):
         self.selected_operation_zone_boundary_vertex_index = None
         self._syncing_operation_zone_form = False
         self._syncing_operation_zone_boundary_form = False
+        self.goal_pose_editor = GoalPoseEditorController()
         self.selected_goal_pose = None
         self.selected_goal_pose_index = None
         self.goal_pose_mode = None
         self.goal_pose_dirty = False
         self._syncing_goal_pose_form = False
+        self.patrol_area_editor = PatrolAreaEditorController()
         self.selected_patrol_area = None
         self.selected_patrol_area_index = None
         self.selected_patrol_waypoint_index = None
@@ -339,6 +345,148 @@ class CoordinateZoneSettingsPage(QWidget):
         self._build_shortcuts()
         self._install_shortcut_event_filters()
         self._sync_shortcuts_enabled_state()
+
+    @property
+    def selected_goal_pose(self):
+        return self.goal_pose_editor.selected_row
+
+    @selected_goal_pose.setter
+    def selected_goal_pose(self, value):
+        self.goal_pose_editor.selected_row = (
+            dict(value) if isinstance(value, dict) else value
+        )
+
+    @property
+    def selected_goal_pose_index(self):
+        return self.goal_pose_editor.selected_index
+
+    @selected_goal_pose_index.setter
+    def selected_goal_pose_index(self, value):
+        self.goal_pose_editor.selected_index = value
+
+    @property
+    def goal_pose_mode(self):
+        return self.goal_pose_editor.mode
+
+    @goal_pose_mode.setter
+    def goal_pose_mode(self, value):
+        self.goal_pose_editor.mode = value
+
+    @property
+    def goal_pose_dirty(self):
+        return self.goal_pose_editor.dirty
+
+    @goal_pose_dirty.setter
+    def goal_pose_dirty(self, value):
+        self.goal_pose_editor.dirty = bool(value)
+
+    @property
+    def _syncing_goal_pose_form(self):
+        return self.goal_pose_editor.syncing_form
+
+    @_syncing_goal_pose_form.setter
+    def _syncing_goal_pose_form(self, value):
+        self.goal_pose_editor.syncing_form = bool(value)
+
+    @property
+    def selected_operation_zone(self):
+        return self.operation_zone_editor.selected_row
+
+    @selected_operation_zone.setter
+    def selected_operation_zone(self, value):
+        self.operation_zone_editor.selected_row = (
+            dict(value) if isinstance(value, dict) else value
+        )
+
+    @property
+    def selected_operation_zone_index(self):
+        return self.operation_zone_editor.selected_index
+
+    @selected_operation_zone_index.setter
+    def selected_operation_zone_index(self, value):
+        self.operation_zone_editor.selected_index = value
+
+    @property
+    def operation_zone_mode(self):
+        return self.operation_zone_editor.mode
+
+    @operation_zone_mode.setter
+    def operation_zone_mode(self, value):
+        self.operation_zone_editor.mode = value
+
+    @property
+    def operation_zone_dirty(self):
+        return self.operation_zone_editor.dirty
+
+    @operation_zone_dirty.setter
+    def operation_zone_dirty(self, value):
+        self.operation_zone_editor.dirty = bool(value)
+
+    @property
+    def _syncing_operation_zone_form(self):
+        return self.operation_zone_editor.syncing_form
+
+    @_syncing_operation_zone_form.setter
+    def _syncing_operation_zone_form(self, value):
+        self.operation_zone_editor.syncing_form = bool(value)
+
+    @property
+    def selected_patrol_area(self):
+        return self.patrol_area_editor.selected_row
+
+    @selected_patrol_area.setter
+    def selected_patrol_area(self, value):
+        self.patrol_area_editor.selected_row = (
+            dict(value) if isinstance(value, dict) else value
+        )
+
+    @property
+    def selected_patrol_area_index(self):
+        return self.patrol_area_editor.selected_index
+
+    @selected_patrol_area_index.setter
+    def selected_patrol_area_index(self, value):
+        self.patrol_area_editor.selected_index = value
+
+    @property
+    def selected_patrol_waypoint_index(self):
+        return self.patrol_area_editor.selected_waypoint_index
+
+    @selected_patrol_waypoint_index.setter
+    def selected_patrol_waypoint_index(self, value):
+        self.patrol_area_editor.selected_waypoint_index = value
+
+    @property
+    def patrol_area_mode(self):
+        return self.patrol_area_editor.mode
+
+    @patrol_area_mode.setter
+    def patrol_area_mode(self, value):
+        self.patrol_area_editor.mode = value
+
+    @property
+    def patrol_area_dirty(self):
+        return self.patrol_area_editor.dirty
+
+    @patrol_area_dirty.setter
+    def patrol_area_dirty(self, value):
+        self.patrol_area_editor.dirty = bool(value)
+
+    @property
+    def _syncing_patrol_area_form(self):
+        return self.patrol_area_editor.syncing_area_form
+
+    @_syncing_patrol_area_form.setter
+    def _syncing_patrol_area_form(self, value):
+        self.patrol_area_editor.syncing_area_form = bool(value)
+
+    @property
+    def _syncing_patrol_waypoint_form(self):
+        return self.patrol_area_editor.syncing_waypoint_form
+
+    @_syncing_patrol_waypoint_form.setter
+    def _syncing_patrol_waypoint_form(self, value):
+        self.patrol_area_editor.syncing_waypoint_form = bool(value)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -1334,12 +1482,8 @@ class CoordinateZoneSettingsPage(QWidget):
         self.selected_goal_pose_index = None
         self.goal_pose_mode = None
         self.goal_pose_dirty = False
-        self.selected_patrol_area = None
-        self.selected_patrol_area_index = None
-        self.patrol_area_mode = None
-        self.patrol_area_dirty = False
         self.patrol_waypoint_rows = []
-        self.selected_patrol_waypoint_index = None
+        self.patrol_area_editor.clear()
         self.selected_fms_waypoint = None
         self.selected_fms_waypoint_index = None
         self.fms_waypoint_mode = None
@@ -1705,15 +1849,14 @@ class CoordinateZoneSettingsPage(QWidget):
     def select_operation_zone(self, row_index):
         self._capture_current_form_to_draft()
         try:
-            row_index = int(row_index)
-            operation_zone = self.operation_zone_rows[row_index]
+            operation_zone = self.operation_zone_editor.select(
+                row_index,
+                self.operation_zone_rows,
+            )
         except (IndexError, TypeError, ValueError):
             return
 
         self.selected_edit_type = "operation_zone"
-        self.operation_zone_mode = "edit"
-        self.selected_operation_zone_index = row_index
-        self.selected_operation_zone = dict(operation_zone)
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(False)
         self.goal_pose_form.setHidden(True)
@@ -1724,16 +1867,12 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_mode_label.setText("구역 boundary 편집 모드")
         self._clear_patrol_overlay()
         self._set_operation_zone_form(operation_zone, mode="edit")
-        self.operation_zone_dirty = False
         self.operation_zone_boundary_dirty = False
         self._sync_operation_zone_save_state()
 
     def start_operation_zone_create(self):
         self._capture_current_form_to_draft()
         self.selected_edit_type = "operation_zone"
-        self.operation_zone_mode = "create"
-        self.selected_operation_zone = None
-        self.selected_operation_zone_index = None
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(False)
         self.goal_pose_form.setHidden(True)
@@ -1744,15 +1883,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_mode_label.setText("구역 생성 모드")
         self._clear_patrol_overlay()
         self._set_operation_zone_form(
-            {
-                "zone_id": "",
-                "zone_name": "",
-                "zone_type": "ROOM",
-                "is_enabled": True,
-            },
+            self.operation_zone_editor.start_create(),
             mode="create",
         )
-        self.operation_zone_dirty = False
         self.operation_zone_boundary_dirty = False
         self.validation_message_label.setText("새 운영 구역을 입력하세요.")
         self._sync_operation_zone_save_state()
@@ -1760,15 +1893,11 @@ class CoordinateZoneSettingsPage(QWidget):
     def select_goal_pose(self, row_index):
         self._capture_current_form_to_draft()
         try:
-            row_index = int(row_index)
-            goal_pose = self.goal_pose_rows[row_index]
+            goal_pose = self.goal_pose_editor.select(row_index, self.goal_pose_rows)
         except (IndexError, TypeError, ValueError):
             return
 
         self.selected_edit_type = "goal_pose"
-        self.goal_pose_mode = "edit"
-        self.selected_goal_pose_index = row_index
-        self.selected_goal_pose = dict(goal_pose)
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(False)
@@ -1779,15 +1908,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_mode_label.setText("목표 좌표 편집 모드")
         self._clear_patrol_overlay()
         self._set_goal_pose_form(goal_pose, mode="edit")
-        self.goal_pose_dirty = False
         self._sync_goal_pose_save_state()
 
     def start_goal_pose_create(self):
         self._capture_current_form_to_draft()
         self.selected_edit_type = "goal_pose"
-        self.goal_pose_mode = "create"
-        self.selected_goal_pose = None
-        self.selected_goal_pose_index = None
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(False)
@@ -1798,19 +1923,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self.edit_mode_label.setText("목표 좌표 생성 모드")
         self._clear_patrol_overlay()
         self._set_goal_pose_form(
-            {
-                "goal_pose_id": "",
-                "zone_id": None,
-                "purpose": "DESTINATION",
-                "pose_x": 0.0,
-                "pose_y": 0.0,
-                "pose_yaw": 0.0,
-                "frame_id": self._active_map_frame_id(),
-                "is_enabled": True,
-            },
+            self.goal_pose_editor.start_create(frame_id=self._active_map_frame_id()),
             mode="create",
         )
-        self.goal_pose_dirty = False
         self.validation_message_label.setText(
             "새 목표 좌표 ID와 위치를 입력하세요."
         )
@@ -1819,15 +1934,14 @@ class CoordinateZoneSettingsPage(QWidget):
     def select_patrol_area(self, row_index):
         self._capture_current_form_to_draft()
         try:
-            row_index = int(row_index)
-            patrol_area = self.patrol_area_rows[row_index]
+            patrol_area = self.patrol_area_editor.select(
+                row_index,
+                self.patrol_area_rows,
+            )
         except (IndexError, TypeError, ValueError):
             return
 
         self.selected_edit_type = "patrol_area"
-        self.patrol_area_mode = "edit"
-        self.selected_patrol_area_index = row_index
-        self.selected_patrol_area = dict(patrol_area)
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(True)
         self.goal_pose_form.setHidden(True)
@@ -1837,16 +1951,14 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("순찰 경로 편집 모드")
         self._set_patrol_area_form(patrol_area, mode="edit")
-        self.patrol_area_dirty = False
         self._sync_patrol_area_save_state()
 
     def start_patrol_area_create(self):
         self._capture_current_form_to_draft()
         self.selected_edit_type = "patrol_area"
-        self.patrol_area_mode = "create"
-        self.selected_patrol_area = None
-        self.selected_patrol_area_index = None
-        self.selected_patrol_waypoint_index = None
+        draft = self.patrol_area_editor.start_create(
+            frame_id=self._active_map_frame_id()
+        )
         self.patrol_waypoint_rows = []
         self.edit_placeholder_label.setHidden(True)
         self.operation_zone_form.setHidden(True)
@@ -1857,19 +1969,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_route_form.setHidden(True)
         self.edit_mode_label.setText("순찰 구역 생성 모드")
         self._set_patrol_area_form(
-            {
-                "patrol_area_id": "",
-                "patrol_area_name": "",
-                "revision": 0,
-                "path_json": {
-                    "header": {"frame_id": self._active_map_frame_id()},
-                    "poses": [],
-                },
-                "is_enabled": True,
-            },
+            draft,
             mode="create",
         )
-        self.patrol_area_dirty = False
         self.validation_message_label.setText(
             "새 순찰 구역 ID와 이름, 최소 2개 waypoint를 입력하세요."
         )
@@ -2303,9 +2405,7 @@ class CoordinateZoneSettingsPage(QWidget):
             self._set_goal_pose_form(original_row, mode="edit")
         elif table_name == "patrol_area":
             self._replace_patrol_area_row(original_row)
-            self.selected_patrol_area = dict(original_row)
-            self.patrol_area_mode = "edit"
-            self.patrol_area_dirty = False
+            self.patrol_area_editor.apply_saved_row(original_row)
             self._set_patrol_area_form(original_row, mode="edit")
         elif table_name == "fms_waypoint":
             self._replace_fms_waypoint_row(original_row)
@@ -2688,12 +2788,10 @@ class CoordinateZoneSettingsPage(QWidget):
         self._set_operation_zone_boundary_form(operation_zone)
 
     def _mark_operation_zone_dirty(self):
-        if (
-            self._syncing_operation_zone_form
-            or self.selected_edit_type != "operation_zone"
+        if not self.operation_zone_editor.mark_dirty(
+            selected_edit_type=self.selected_edit_type,
         ):
             return
-        self.operation_zone_dirty = True
         self._clear_failed_coordinate_error_for_selected_row()
         self.validation_message_label.setText("운영 구역 변경 사항이 저장 전입니다.")
         self._sync_operation_zone_save_state()
@@ -2934,10 +3032,8 @@ class CoordinateZoneSettingsPage(QWidget):
         ]
         pending_boundary_index = self.selected_operation_zone_boundary_vertex_index
         self._replace_operation_zone_row(operation_zone)
-        self.selected_operation_zone = dict(operation_zone)
-        self.operation_zone_mode = "edit"
+        self.operation_zone_editor.apply_saved_row(operation_zone)
         self._set_operation_zone_form(operation_zone, mode="edit")
-        self.operation_zone_dirty = False
         self.operation_zone_boundary_dirty = boundary_dirty
         if boundary_dirty:
             self.operation_zone_boundary_vertices = pending_boundary_vertices
@@ -3183,9 +3279,10 @@ class CoordinateZoneSettingsPage(QWidget):
         self.patrol_waypoint_down_button.setEnabled(state["down"])
 
     def _mark_patrol_area_dirty(self):
-        if self._syncing_patrol_area_form or self.selected_edit_type != "patrol_area":
+        if not self.patrol_area_editor.mark_dirty(
+            selected_edit_type=self.selected_edit_type
+        ):
             return
-        self.patrol_area_dirty = True
         self.validation_message_label.setText("순찰 경로 변경 사항이 저장 전입니다.")
         self._sync_patrol_area_save_state()
 
@@ -3235,9 +3332,8 @@ class CoordinateZoneSettingsPage(QWidget):
             return
 
         self._replace_patrol_area_row(patrol_area)
-        self.selected_patrol_area = dict(patrol_area)
+        self.patrol_area_editor.apply_saved_row(patrol_area)
         self._set_patrol_area_form(patrol_area)
-        self.patrol_area_dirty = False
         self.validation_message_label.setText("순찰 경로를 저장했습니다.")
         self._sync_patrol_area_save_state()
 
@@ -3480,9 +3576,10 @@ class CoordinateZoneSettingsPage(QWidget):
             self.goal_pose_zone_combo.blockSignals(False)
 
     def _mark_goal_pose_dirty(self):
-        if self._syncing_goal_pose_form or self.selected_edit_type != "goal_pose":
+        if not self.goal_pose_editor.mark_dirty(
+            selected_edit_type=self.selected_edit_type,
+        ):
             return
-        self.goal_pose_dirty = True
         self._clear_failed_coordinate_error_for_selected_row()
         self.validation_message_label.setText("목표 좌표 변경 사항이 저장 전입니다.")
         self._sync_goal_pose_overlay()
@@ -3526,10 +3623,8 @@ class CoordinateZoneSettingsPage(QWidget):
             return
 
         self._replace_goal_pose_row(updated_goal_pose)
-        self.selected_goal_pose = dict(updated_goal_pose)
-        self.goal_pose_mode = "edit"
+        self.goal_pose_editor.apply_saved_row(updated_goal_pose)
         self._set_goal_pose_form(updated_goal_pose, mode="edit")
-        self.goal_pose_dirty = False
         self.validation_message_label.setText("목표 좌표를 저장했습니다.")
         self._sync_goal_pose_save_state()
 
@@ -4262,9 +4357,7 @@ class CoordinateZoneSettingsPage(QWidget):
                 if self.selected_patrol_area and (
                     self.selected_patrol_area.get("patrol_area_id") == row_id
                 ):
-                    self.selected_patrol_area = dict(row)
-                    self.patrol_area_mode = "edit"
-                    self.patrol_area_dirty = False
+                    self.patrol_area_editor.apply_saved_row(row)
                     self._set_patrol_area_form(row, mode="edit")
         elif table == "fms_waypoint":
             row = fms_waypoint_from_save_response(response)

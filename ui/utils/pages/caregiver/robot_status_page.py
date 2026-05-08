@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import math
+import re
+
+from PyQt6.QtCore import QPointF
 from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtGui import QColor, QPen
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -13,7 +21,10 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
-from ui.utils.network.service_clients import CaregiverRemoteService
+from ui.utils.network.service_clients import (
+    CaregiverRemoteService,
+    CoordinateConfigRemoteService,
+)
 from ui.utils.widgets.admin_common import (
     KeyValueList,
     KeyValueRow,
@@ -24,6 +35,7 @@ from ui.utils.widgets.admin_common import (
     operator_datetime_text as _datetime,
 )
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
+from ui.utils.widgets.map_canvas import MapCanvasWidget
 
 
 SUMMARY_ITEMS = (
@@ -64,22 +76,230 @@ def _capabilities_text(capabilities) -> str:
     return _display(capabilities)
 
 
+def _is_ok_response(response):
+    return isinstance(response, dict) and response.get("result_code", "OK") == "OK"
+
+
+def _format_response_error(response, default_message):
+    response = response if isinstance(response, dict) else {}
+    return str(response.get("result_message") or response.get("reason_code") or default_message)
+
+
+def _decode_base64_asset(value):
+    try:
+        return base64.b64decode(str(value or "").encode("ascii"), validate=True)
+    except (binascii.Error, ValueError):
+        return b""
+
+
+def _selected_map_id(*, preferred_map_id, map_profiles, robots):
+    map_ids = [
+        str(profile.get("map_id") or "").strip()
+        for profile in map_profiles or []
+        if isinstance(profile, dict) and str(profile.get("map_id") or "").strip()
+    ]
+    preferred_map_id = str(preferred_map_id or "").strip()
+    if preferred_map_id and preferred_map_id in map_ids:
+        return preferred_map_id
+
+    robot_map_counts = {}
+    for robot in robots or []:
+        pose = robot.get("current_pose") if isinstance(robot, dict) else None
+        if not isinstance(pose, dict):
+            continue
+        map_id = str(pose.get("map_id") or "").strip()
+        if map_id and map_id in map_ids:
+            robot_map_counts[map_id] = robot_map_counts.get(map_id, 0) + 1
+    if robot_map_counts:
+        return sorted(robot_map_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+    for profile in map_profiles or []:
+        if not isinstance(profile, dict):
+            continue
+        if bool(profile.get("is_active")):
+            return str(profile.get("map_id") or "").strip()
+    return map_ids[0] if map_ids else None
+
+
+def _optional_float(value, default=None):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _robot_display_sort_key(robot: dict):
+    robot_id = str(robot.get("robot_id") or "").strip().lower()
+    robot_type = str(robot.get("robot_type") or "").strip().upper()
+    prefix_rank = 1
+    if robot_id.startswith("pinky") or robot_type == "MOBILE":
+        prefix_rank = 0
+    elif robot_id.startswith("jetcobot") or robot_type == "ARM":
+        prefix_rank = 1
+
+    return (prefix_rank, _natural_robot_id_key(robot_id), robot_id)
+
+
+def _natural_robot_id_key(robot_id: str):
+    parts = re.split(r"(\d+)", robot_id)
+    return [int(part) if part.isdigit() else part for part in parts]
+
+
 class RobotStatusLoadWorker(QObject):
     finished = pyqtSignal(bool, object)
+
+    def __init__(self, *, selected_map_id=None):
+        super().__init__()
+        self.selected_map_id = str(selected_map_id or "").strip() or None
 
     def run(self):
         try:
             bundle = CaregiverRemoteService().get_robot_status_bundle() or {}
+            self._attach_map_payload(bundle)
             self.finished.emit(True, bundle)
         except Exception as exc:
             self.finished.emit(False, str(exc))
+
+    def _attach_map_payload(self, bundle):
+        bundle = bundle if isinstance(bundle, dict) else {}
+        try:
+            service = CoordinateConfigRemoteService()
+            profiles_response = service.list_map_profiles()
+            if not _is_ok_response(profiles_response):
+                bundle["map_asset_error"] = _format_response_error(
+                    profiles_response,
+                    "맵 목록을 불러오지 못했습니다.",
+                )
+                return
+
+            profiles = [
+                profile
+                for profile in profiles_response.get("map_profiles") or []
+                if isinstance(profile, dict)
+            ]
+            bundle["map_profiles"] = profiles
+            selected_map_id = _selected_map_id(
+                preferred_map_id=self.selected_map_id,
+                map_profiles=profiles,
+                robots=bundle.get("robots") or [],
+            )
+            bundle["selected_map_id"] = selected_map_id
+            if not selected_map_id:
+                return
+
+            yaml_asset = service.get_map_asset(
+                asset_type="YAML",
+                map_id=selected_map_id,
+                encoding="TEXT",
+            )
+            if not _is_ok_response(yaml_asset):
+                bundle["map_asset_error"] = _format_response_error(
+                    yaml_asset,
+                    "맵 YAML을 불러오지 못했습니다.",
+                )
+                return
+
+            pgm_asset = service.get_map_asset(
+                asset_type="PGM",
+                map_id=selected_map_id,
+                encoding="BASE64",
+            )
+            if not _is_ok_response(pgm_asset):
+                bundle["map_asset_error"] = _format_response_error(
+                    pgm_asset,
+                    "맵 PGM을 불러오지 못했습니다.",
+                )
+                return
+
+            bundle["map_assets"] = {
+                "map_id": selected_map_id,
+                "yaml_text": str(yaml_asset.get("content_text") or ""),
+                "pgm_bytes": _decode_base64_asset(pgm_asset.get("content_base64")),
+                "yaml_sha256": yaml_asset.get("sha256"),
+                "pgm_sha256": pgm_asset.get("sha256"),
+            }
+        except Exception as exc:
+            bundle["map_asset_error"] = str(exc)
+
+
+class RobotLocationMapCanvas(MapCanvasWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("robotLocationMapCanvas")
+        self.visible_robot_ids = []
+        self.robot_markers = []
+
+    def show_robots(self, robots, *, selected_map_id):
+        self.visible_robot_ids = []
+        self.robot_markers = []
+        selected_map_id = str(selected_map_id or "").strip()
+        if not self.map_loaded or not selected_map_id:
+            self.update()
+            return
+
+        for robot in robots or []:
+            if not isinstance(robot, dict):
+                continue
+            pose = robot.get("current_pose")
+            if not isinstance(pose, dict):
+                continue
+            if str(pose.get("map_id") or "").strip() != selected_map_id:
+                continue
+            point = self.world_to_pixel(
+                {
+                    "x": pose.get("x"),
+                    "y": pose.get("y"),
+                }
+            )
+            if point is None:
+                continue
+            robot_id = _display(robot.get("robot_id"))
+            self.visible_robot_ids.append(robot_id)
+            self.robot_markers.append(
+                {
+                    "robot_id": robot_id,
+                    "pixel": point,
+                    "yaw": _optional_float(pose.get("yaw"), default=0.0),
+                    "connection_status": str(
+                        robot.get("connection_status") or ""
+                    ).upper(),
+                }
+            )
+        self.update()
+
+    def draw_overlay(self, painter, target):
+        for marker in self.robot_markers:
+            point = self.to_view_point(marker.get("pixel"), target)
+            if point is None:
+                continue
+            status = marker.get("connection_status")
+            fill = QColor("#2563EB" if status == "ONLINE" else "#F59E0B")
+            painter.setPen(QPen(QColor("#FFFFFF"), 2))
+            painter.setBrush(fill)
+            painter.drawEllipse(point, 8, 8)
+
+            yaw = marker.get("yaw")
+            if yaw is not None:
+                heading = QPointF(
+                    point.x() + math.cos(float(yaw)) * 18.0,
+                    point.y() - math.sin(float(yaw)) * 18.0,
+                )
+                painter.setPen(QPen(QColor("#1D4ED8"), 2))
+                painter.drawLine(point, heading)
+
+            painter.setPen(QPen(QColor("#111827"), 1))
+            painter.drawText(point + QPointF(10, -10), marker.get("robot_id") or "-")
 
 
 class RobotStatusCard(QFrame):
     def __init__(self, robot: dict):
         super().__init__()
         self.robot_id = robot.get("robot_id")
-        self.setObjectName("card")
+        self.setObjectName("robotStatusCard")
+        self.setProperty(
+            "connection_status",
+            str(robot.get("connection_status") or "").lower(),
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
@@ -96,20 +316,17 @@ class RobotStatusCard(QFrame):
         title_row.addStretch()
         title_row.addWidget(chip)
 
-        display_name = QLabel(_display(robot.get("display_name")))
-        display_name.setObjectName("mutedText")
-
         details = [
             ("구분", _display(robot.get("robot_type"))),
             ("지원 기능", _capabilities_text(robot.get("capabilities"))),
             ("현재 작업", _display(robot.get("current_task_id"))),
             ("단계", _display(robot.get("current_phase"))),
+            ("위치", _display(robot.get("current_location"))),
             ("배터리", _battery_text(robot.get("battery_percent"))),
             ("마지막 수신", _datetime(robot.get("last_seen_at"))),
         ]
 
         layout.addLayout(title_row)
-        layout.addWidget(display_name)
         for key, value in details:
             layout.addWidget(KeyValueRow(key, value))
 
@@ -122,6 +339,9 @@ class RobotStatusPage(QWidget):
         self.load_worker = None
         self.summary_cards = {}
         self.robots = []
+        self.map_profiles = []
+        self.selected_map_id = None
+        self._syncing_map_selector = False
 
         self._build_ui()
         if autoload:
@@ -164,13 +384,38 @@ class RobotStatusPage(QWidget):
         self.card_grid.setVerticalSpacing(16)
 
         cards_wrap = QFrame()
-        cards_wrap.setObjectName("card")
+        cards_wrap.setObjectName("robotCardsPanel")
+        self.robot_cards_panel = cards_wrap
         cards_layout = QVBoxLayout(cards_wrap)
         cards_layout.setContentsMargins(20, 20, 20, 20)
         cards_layout.setSpacing(14)
         cards_title = QLabel("로봇 카드")
         cards_title.setObjectName("sectionTitle")
         cards_layout.addWidget(cards_title)
+        self.location_panel = QFrame()
+        self.location_panel.setObjectName("robotLocationMapPanel")
+        self.location_panel.setMinimumHeight(320)
+        location_layout = QVBoxLayout(self.location_panel)
+        location_layout.setContentsMargins(18, 18, 18, 18)
+        location_layout.setSpacing(12)
+        location_header = QHBoxLayout()
+        location_title = QLabel("로봇 위치 맵")
+        location_title.setObjectName("sectionTitle")
+        self.map_selector = QComboBox()
+        self.map_selector.setObjectName("robotMapSelector")
+        self.map_selector.currentIndexChanged.connect(self._handle_map_selection_changed)
+        location_header.addWidget(location_title)
+        location_header.addStretch()
+        location_header.addWidget(self.map_selector)
+        self.robot_map_canvas = RobotLocationMapCanvas()
+        self.robot_map_canvas.setMinimumHeight(280)
+        self.map_status_label = QLabel("맵을 불러오지 않았습니다.")
+        self.map_status_label.setObjectName("mutedText")
+        self.map_status_label.setWordWrap(True)
+        location_layout.addLayout(location_header)
+        location_layout.addWidget(self.robot_map_canvas, 1)
+        location_layout.addWidget(self.map_status_label)
+        cards_layout.addWidget(self.location_panel)
         cards_layout.addLayout(self.card_grid)
 
         bottom_row = QHBoxLayout()
@@ -206,22 +451,6 @@ class RobotStatusPage(QWidget):
         detail_layout.addWidget(detail_title)
         detail_layout.addWidget(self.detail_list)
 
-        map_card = QFrame()
-        map_card.setObjectName("noticeCard")
-        map_layout = QVBoxLayout(map_card)
-        map_layout.setContentsMargins(20, 20, 20, 20)
-        map_layout.setSpacing(10)
-        map_title = QLabel("맵/위치 시각화")
-        map_title.setObjectName("sectionTitle")
-        map_body = QLabel(
-            "현재 phase 1에서는 좌표 텍스트를 표시합니다. 지도 기반 위치 시각화는 "
-            "좌표/구역 설정의 맵 렌더링 컴포넌트를 재사용해 확장합니다."
-        )
-        map_body.setObjectName("mutedText")
-        map_body.setWordWrap(True)
-        map_layout.addWidget(map_title)
-        map_layout.addWidget(map_body)
-
         composition_card = QFrame()
         composition_card.setObjectName("noticeCard")
         composition_layout = QVBoxLayout(composition_card)
@@ -233,7 +462,6 @@ class RobotStatusPage(QWidget):
         composition_layout.addWidget(composition_title)
 
         side_column.addWidget(detail_card)
-        side_column.addWidget(map_card)
         side_column.addWidget(composition_card)
         side_column.addStretch()
 
@@ -254,7 +482,7 @@ class RobotStatusPage(QWidget):
         self._show_status("로봇 상태를 불러오는 중입니다.")
         self.load_thread, self.load_worker = start_worker_thread(
             self,
-            worker=RobotStatusLoadWorker(),
+            worker=RobotStatusLoadWorker(selected_map_id=self.selected_map_id),
             finished_handler=self._handle_load_finished,
             clear_handler=self._clear_load_thread,
         )
@@ -279,8 +507,25 @@ class RobotStatusPage(QWidget):
         self.robots = [
             robot for robot in bundle.get("robots") or [] if isinstance(robot, dict)
         ]
+        self.map_profiles = [
+            profile
+            for profile in bundle.get("map_profiles") or []
+            if isinstance(profile, dict)
+        ]
+        self.selected_map_id = (
+            str(bundle.get("selected_map_id") or "").strip()
+            or self.selected_map_id
+            or _selected_map_id(
+                preferred_map_id=None,
+                map_profiles=self.map_profiles,
+                robots=self.robots,
+            )
+        )
+        self.robots.sort(key=_robot_display_sort_key)
 
         self._apply_summary(summary)
+        self._populate_map_selector()
+        self._apply_robot_map(bundle)
         self._apply_robot_cards(self.robots)
         self._apply_robot_table(self.robots)
         self._apply_delivery_composition(bundle.get("delivery_composition") or [])
@@ -305,6 +550,68 @@ class RobotStatusPage(QWidget):
 
         for index, robot in enumerate(robots):
             self.card_grid.addWidget(RobotStatusCard(robot), index // 3, index % 3)
+
+    def _populate_map_selector(self):
+        self._syncing_map_selector = True
+        try:
+            self.map_selector.clear()
+            for profile in self.map_profiles:
+                map_id = str(profile.get("map_id") or "").strip()
+                if not map_id:
+                    continue
+                map_name = str(profile.get("map_name") or "").strip()
+                label = f"{map_name} ({map_id})" if map_name else map_id
+                self.map_selector.addItem(label, map_id)
+            index = self.map_selector.findData(self.selected_map_id)
+            self.map_selector.setCurrentIndex(index if index >= 0 else 0)
+            if self.map_selector.currentIndex() >= 0:
+                self.selected_map_id = self.map_selector.currentData()
+        finally:
+            self._syncing_map_selector = False
+
+    def _apply_robot_map(self, bundle):
+        assets = bundle.get("map_assets") if isinstance(bundle, dict) else None
+        assets = assets if isinstance(assets, dict) else {}
+        asset_map_id = str(assets.get("map_id") or "").strip()
+        if asset_map_id and asset_map_id == self.selected_map_id:
+            self.robot_map_canvas.load_map_from_assets(
+                yaml_text=str(assets.get("yaml_text") or ""),
+                pgm_bytes=assets.get("pgm_bytes") or b"",
+                cache_key=(
+                    asset_map_id,
+                    assets.get("yaml_sha256"),
+                    assets.get("pgm_sha256"),
+                ),
+            )
+        else:
+            self.robot_map_canvas.clear_map("맵 asset 미수신")
+
+        self.robot_map_canvas.show_robots(
+            self.robots,
+            selected_map_id=self.selected_map_id,
+        )
+        visible_count = len(self.robot_map_canvas.visible_robot_ids)
+        total_count = len(self.robots)
+        error = str(bundle.get("map_asset_error") or "").strip()
+        if error:
+            self.map_status_label.setText(error)
+        elif self.selected_map_id:
+            self.map_status_label.setText(
+                f"선택 맵 {self.selected_map_id} · 표시 {visible_count}대 / "
+                f"전체 {total_count}대"
+            )
+        else:
+            self.map_status_label.setText("선택 가능한 맵이 없습니다.")
+
+    def _handle_map_selection_changed(self, index):
+        if self._syncing_map_selector:
+            return
+        selected_map_id = self.map_selector.itemData(index)
+        selected_map_id = str(selected_map_id or "").strip() or None
+        if not selected_map_id or selected_map_id == self.selected_map_id:
+            return
+        self.selected_map_id = selected_map_id
+        self.refresh_data()
 
     def _apply_robot_table(self, robots):
         self.table.setRowCount(len(robots))
@@ -395,6 +702,7 @@ __all__ = [
     "RobotStatusLoadWorker",
     "RobotStatusPage",
     "RobotStatusCard",
+    "RobotLocationMapCanvas",
     "StatusChip",
     "SummaryCard",
 ]

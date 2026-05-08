@@ -294,7 +294,39 @@ def test_async_dispatch_prefers_async_manipulation_action_client():
 
     assert response["result_code"] == "SUCCESS"
     assert manipulation_client.goal_calls[0]["action_name"] == "/ropi/arm/arm1/execute_manipulation"
-    assert manipulation_client.goal_calls[0]["result_wait_timeout_sec"] == 30.0
+    assert manipulation_client.goal_calls[0]["result_wait_timeout_sec"] == 90.0
+
+
+def test_async_dispatch_manipulation_timeout_uses_env(monkeypatch):
+    monkeypatch.setenv("ROPI_MANIPULATION_ACTION_TIMEOUT_SEC", "123.5")
+    manipulation_client = FakeAsyncManipulationActionClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        manipulation_action_client=manipulation_client,
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "execute_manipulation",
+                {
+                    "arm_id": "arm1",
+                    "goal": {
+                        "task_id": "task_delivery_001",
+                        "transfer_direction": "TO_ROBOT",
+                        "item_id": "med_acetaminophen_500",
+                        "quantity": 2,
+                        "robot_slot_id": "robot_slot_a1",
+                    },
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "SUCCESS"
+    assert manipulation_client.goal_calls[0]["result_wait_timeout_sec"] == 123.5
 
 
 def test_async_dispatch_execute_patrol_path_uses_patrol_action_client():

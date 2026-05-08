@@ -1,6 +1,57 @@
+from dataclasses import dataclass
+
 from ui.utils.pages.caregiver.coordinate_boundary_editing import (
     boundary_json_from_vertices,
 )
+
+
+@dataclass
+class OperationZoneEditorController:
+    selected_row: dict | None = None
+    selected_index: int | None = None
+    mode: str | None = None
+    dirty: bool = False
+    syncing_form: bool = False
+
+    def select(self, row_index, rows):
+        row_index = int(row_index)
+        row = rows[row_index]
+        selected = dict(row if isinstance(row, dict) else {})
+        self.selected_row = selected
+        self.selected_index = row_index
+        self.mode = "edit"
+        self.dirty = False
+        return selected
+
+    def start_create(self):
+        self.selected_row = None
+        self.selected_index = None
+        self.mode = "create"
+        self.dirty = False
+        return {
+            "zone_id": "",
+            "zone_name": "",
+            "zone_type": "ROOM",
+            "is_enabled": True,
+        }
+
+    def mark_dirty(self, *, selected_edit_type):
+        if self.syncing_form or selected_edit_type != "operation_zone":
+            return False
+        self.dirty = True
+        return True
+
+    def apply_saved_row(self, row):
+        self.selected_row = dict(row if isinstance(row, dict) else {})
+        self.mode = "edit"
+        self.dirty = False
+
+    def clear(self):
+        self.selected_row = None
+        self.selected_index = None
+        self.mode = None
+        self.dirty = False
+        self.syncing_form = False
 
 
 def build_operation_zone_save_payload(
@@ -81,6 +132,7 @@ def _stripped_text(value):
 
 
 __all__ = [
+    "OperationZoneEditorController",
     "build_operation_zone_boundary_save_payload",
     "build_operation_zone_save_payload",
     "operation_zone_from_save_response",
