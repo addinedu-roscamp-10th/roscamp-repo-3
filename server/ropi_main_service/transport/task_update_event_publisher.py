@@ -38,6 +38,11 @@ class TaskUpdateEventPublisher:
         }
         if resolved_task_type == "GUIDE":
             payload["guide_detail"] = cls.build_guide_detail(response)
+        if resolved_task_type == "PATROL" and isinstance(
+            response.get("fall_alert"),
+            dict,
+        ):
+            payload["fall_alert"] = dict(response["fall_alert"])
 
         return payload
 

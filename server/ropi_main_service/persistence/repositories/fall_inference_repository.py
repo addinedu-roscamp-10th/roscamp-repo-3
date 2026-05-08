@@ -138,6 +138,7 @@ class FallInferenceRepository:
                     ),
                 ),
             )
+            alert_id = getattr(cur, "lastrowid", None)
 
         return {
             "result_code": "ACCEPTED",
@@ -148,6 +149,12 @@ class FallInferenceRepository:
             "assigned_robot_id": row.get("assigned_robot_id"),
             "latest_reason_code": FALL_DETECTED_REASON,
             "cancellable": True,
+            "fall_alert": self._build_fall_alert_payload(
+                alert_id=alert_id,
+                row=row,
+                robot_id=robot_id,
+                trigger_result=trigger_result,
+            ),
         }
 
     @classmethod
@@ -159,6 +166,25 @@ class FallInferenceRepository:
             },
             ensure_ascii=False,
         )
+
+    @classmethod
+    def _build_fall_alert_payload(cls, *, alert_id, row, robot_id, trigger_result):
+        trigger = trigger_result if isinstance(trigger_result, dict) else {}
+        fall_alert = dict(trigger)
+        fall_alert.update(
+            {
+                "alert_id": str(alert_id) if alert_id not in (None, "") else None,
+                "alert_type": "FALL_DETECTED",
+                "task_id": row.get("task_id"),
+                "pinky_id": cls._normalize_optional_text(robot_id)
+                or row.get("assigned_robot_id"),
+            }
+        )
+        fall_alert["evidence_image_available"] = bool(
+            fall_alert.get("evidence_image_id")
+            and trigger.get("evidence_image_available") is True
+        )
+        return fall_alert
 
     @staticmethod
     def _is_waiting_fall_response(row):

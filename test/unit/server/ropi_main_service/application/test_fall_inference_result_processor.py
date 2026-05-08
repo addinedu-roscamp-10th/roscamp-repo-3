@@ -22,6 +22,13 @@ class FakeRepository:
 
     async def async_record_fall_alert_started(self, **kwargs):
         self.alert_records.append(kwargs)
+        fall_alert = {
+            "alert_id": "17",
+            "alert_type": "FALL_DETECTED",
+            "task_id": kwargs["task_id"],
+            "pinky_id": kwargs["robot_id"],
+            **dict(kwargs["trigger_result"]),
+        }
         return {
             "result_code": "ACCEPTED",
             "task_id": kwargs["task_id"],
@@ -29,6 +36,7 @@ class FakeRepository:
             "phase": "WAIT_FALL_RESPONSE",
             "assigned_robot_id": kwargs["robot_id"],
             "cancellable": True,
+            "fall_alert": fall_alert,
         }
 
 
@@ -94,6 +102,8 @@ def test_processor_records_inference_and_starts_fall_response_after_threshold():
                         "confidence": 0.94,
                         "fall_streak_ms": 0,
                         "alert_candidate": True,
+                        "evidence_image_id": "fall_evidence_pinky3_541",
+                        "evidence_image_available": True,
                     }
                 ],
             }
@@ -138,6 +148,21 @@ def test_processor_records_inference_and_starts_fall_response_after_threshold():
                 "result_message": "낙상 대응 대기 상태로 전환했습니다.",
                 "cancel_requested": None,
                 "cancellable": True,
+                "fall_alert": {
+                    "alert_id": "17",
+                    "alert_type": "FALL_DETECTED",
+                    "task_id": 2001,
+                    "pinky_id": "pinky3",
+                    "result_seq": 541,
+                    "frame_id": "front_cam_frame_541",
+                    "frame_ts": "2026-04-29T12:34:56Z",
+                    "fall_detected": True,
+                    "confidence": 0.94,
+                    "fall_streak_ms": 0,
+                    "alert_candidate": True,
+                    "evidence_image_id": "fall_evidence_pinky3_541",
+                    "evidence_image_available": True,
+                },
             },
         )
     ]

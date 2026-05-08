@@ -149,12 +149,21 @@ def test_control_server_subscribes_ai_fall_stream_and_starts_fall_alert(
         "SELECT robot_id, result_json FROM ai_inference_log "
         f"WHERE task_id = {int(task_id)} ORDER BY ai_inference_log_id DESC LIMIT 1"
     )
+    event_row = safe_fetch_one(
+        "SELECT event_name, payload_json FROM task_event_log "
+        f"WHERE task_id = {int(task_id)} "
+        "ORDER BY task_event_log_id DESC LIMIT 1"
+    )
 
     assert task_row["phase"] == "WAIT_FALL_RESPONSE"
     assert task_row["latest_reason_code"] == "FALL_DETECTED"
     assert patrol_row["patrol_status"] == "WAITING_FALL_RESPONSE"
     assert inference_row["robot_id"] == "pinky3"
     assert json.loads(inference_row["result_json"])["pinky_id"] == "pinky3"
+    assert event_row["event_name"] == "FALL_ALERT_CREATED"
+    event_payload = json.loads(event_row["payload_json"])
+    assert event_payload["trigger_result"]["evidence_image_id"] == "it-pat-005-evidence-541"
+    assert event_payload["trigger_result"]["evidence_image_available"] is True
 
 
 def test_kiosk_client_queries_single_guide_task_status(
