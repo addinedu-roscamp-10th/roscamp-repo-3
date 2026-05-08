@@ -105,3 +105,10 @@ def test_kiosk_staff_call_modal_is_split_from_main_window():
     assert KioskStaffCallModal.__module__.endswith("staff_call_modal")
     assert KIOSK_STAFF_CALL_MODAL.exists()
     assert "class KioskStaffCallModal" not in main_source
+
+
+def test_kiosk_main_window_does_not_keep_unused_navigation_button():
+    main_source = KIOSK_MAIN_WINDOW.read_text(encoding="utf-8")
+
+    assert "class KioskNavigationActionButton" not in main_source
+    assert 'setProperty("iconName", "navigation")' not in main_source

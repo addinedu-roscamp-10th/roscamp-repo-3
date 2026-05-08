@@ -2,12 +2,9 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
-    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -27,29 +24,6 @@ from ui.utils.network.service_clients import StaffCallRemoteService  # noqa: E40
 
 
 KIOSK_ID = "lobby_kiosk_01"
-
-
-class KioskNavigationActionButton(QPushButton):
-    def __init__(self, text):
-        super().__init__(text)
-        self.setProperty("iconName", "navigation")
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor("#FFFFFF")))
-
-        center_y = self.height() / 2
-        path = QPainterPath()
-        path.moveTo(36, center_y - 15)
-        path.lineTo(56, center_y)
-        path.lineTo(36, center_y + 15)
-        path.lineTo(42, center_y)
-        path.closeSubpath()
-        painter.drawPath(path)
 
 
 class KioskHomeWindow(QMainWindow):
