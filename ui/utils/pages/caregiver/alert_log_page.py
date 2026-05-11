@@ -44,6 +44,15 @@ TABLE_HEADERS = [
     "메시지",
 ]
 
+STREAM_REFRESH_EVENT_TYPES = {
+    "TASK_UPDATED",
+    "ACTION_FEEDBACK_UPDATED",
+    "ALERT_CREATED",
+    "FALL_ALERT_CREATED",
+    "PINKY_UPDATED",
+    "ARM_UPDATED",
+}
+
 
 def _filter_text(widget: QLineEdit):
     text = widget.text().strip()
@@ -77,11 +86,15 @@ class AlertLogPage(QWidget):
         self.events = []
         self.summary_cards = {}
         self._filter_debounce_ms = 300
+        self._stream_refresh_debounce_ms = 300
         self._pending_filter_refresh = False
         self._shutting_down = False
         self.filter_timer = QTimer(self)
         self.filter_timer.setSingleShot(True)
         self.filter_timer.timeout.connect(self._run_debounced_filter_refresh)
+        self.stream_refresh_timer = QTimer(self)
+        self.stream_refresh_timer.setSingleShot(True)
+        self.stream_refresh_timer.timeout.connect(self._run_debounced_stream_refresh)
 
         self._build_ui()
         if autoload:
@@ -255,6 +268,15 @@ class AlertLogPage(QWidget):
     def _run_debounced_filter_refresh(self):
         self.refresh_data()
 
+    def apply_stream_event(self, event):
+        event = event or {}
+        event_type = str(event.get("event_type") or "").strip().upper()
+        if event_type in STREAM_REFRESH_EVENT_TYPES:
+            self.stream_refresh_timer.start(self._stream_refresh_debounce_ms)
+
+    def _run_debounced_stream_refresh(self):
+        self.refresh_data()
+
     def refresh_data(self):
         if self.load_thread is not None:
             self._pending_filter_refresh = True
@@ -396,6 +418,7 @@ class AlertLogPage(QWidget):
     def shutdown(self):
         self._shutting_down = True
         self.filter_timer.stop()
+        self.stream_refresh_timer.stop()
         stop_worker_thread(
             self.load_thread,
             wait_ms=self._worker_stop_wait_ms,

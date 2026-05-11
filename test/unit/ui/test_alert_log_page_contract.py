@@ -290,6 +290,47 @@ def test_alert_log_page_queues_latest_filter_refresh_while_loading():
         page.close()
 
 
+def test_alert_log_page_debounces_stream_refresh_and_preserves_filters():
+    _app()
+
+    from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
+
+    page = AlertLogPage(autoload=False)
+    calls = []
+
+    try:
+        page.source_input.setText("Control")
+        page.filter_timer.stop()
+        page.refresh_data = lambda: calls.append(page._collect_filters())
+
+        page.apply_stream_event(
+            {"event_type": "TASK_UPDATED", "payload": {"task_id": 1001}}
+        )
+        page.apply_stream_event(
+            {"event_type": "ACTION_FEEDBACK_UPDATED", "payload": {"task_id": 1001}}
+        )
+
+        assert page.stream_refresh_timer.isActive() is True
+        assert calls == []
+
+        page.stream_refresh_timer.stop()
+        page._run_debounced_stream_refresh()
+
+        assert calls == [
+            {
+                "period": "LAST_24_HOURS",
+                "severity": None,
+                "source_component": "Control",
+                "task_id": None,
+                "robot_id": None,
+                "event_type": None,
+                "limit": 100,
+            }
+        ]
+    finally:
+        page.close()
+
+
 def test_alert_log_load_worker_uses_caregiver_alert_log_rpc(monkeypatch):
     _app()
 

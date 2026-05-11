@@ -353,11 +353,13 @@ def test_caregiver_main_window_fans_out_admin_event_stream(monkeypatch):
     _app()
 
     from ui.admin_ui.main_window import CaregiverMainWindow
+    from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
     from ui.utils.pages.caregiver.delivery_request_form import DeliveryRequestForm
     from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
 
     monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
     monkeypatch.setattr(RobotStatusPage, "refresh_data", lambda self: None)
+    monkeypatch.setattr(AlertLogPage, "refresh_data", lambda self: None)
 
     window = CaregiverMainWindow()
     received = []
@@ -373,6 +375,10 @@ def test_caregiver_main_window_fans_out_admin_event_stream(monkeypatch):
         window.robot_status_btn.click()
         window.robot_status_page.apply_stream_event = lambda event: received.append(
             ("robot_status", event["event_type"])
+        )
+        window.alert_btn.click()
+        window.alert_page.apply_stream_event = lambda event: received.append(
+            ("alerts", event["event_type"])
         )
 
         window._handle_admin_event_batch(
@@ -393,9 +399,11 @@ def test_caregiver_main_window_fans_out_admin_event_stream(monkeypatch):
             ("home", "TASK_UPDATED"),
             ("task_request", "TASK_UPDATED"),
             ("robot_status", "TASK_UPDATED"),
+            ("alerts", "TASK_UPDATED"),
             ("home", "PINKY_UPDATED"),
             ("task_request", "PINKY_UPDATED"),
             ("robot_status", "PINKY_UPDATED"),
+            ("alerts", "PINKY_UPDATED"),
         ]
     finally:
         window.close()

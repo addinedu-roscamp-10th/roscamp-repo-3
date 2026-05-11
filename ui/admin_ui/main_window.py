@@ -223,6 +223,7 @@ class CaregiverMainWindow(QMainWindow):
             self.home_page,
             self.task_page,
             self.robot_status_page,
+            self.alert_page,
         ):
             handler = getattr(page, "apply_stream_event", None)
             if handler is not None:
