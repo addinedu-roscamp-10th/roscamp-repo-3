@@ -554,6 +554,8 @@ class CaregiverHomePage(QWidget):
         self.system_status_worker = None
         self.cancel_thread = None
         self.cancel_worker = None
+        self._last_summary = {}
+        self._last_robots = []
         self._last_flow_data = {}
         self._canceling_task_id = None
         self._stream_refresh_pending = False
@@ -800,14 +802,132 @@ class CaregiverHomePage(QWidget):
     def apply_stream_event(self, event):
         event = event or {}
         event_type = str(event.get("event_type") or "").strip().upper()
-        if event_type in {
-            "TASK_UPDATED",
-            "PINKY_UPDATED",
-            "ARM_UPDATED",
-            "ALERT_CREATED",
-            "FALL_ALERT_CREATED",
-        }:
+        if event_type in {"PINKY_UPDATED", "ARM_UPDATED"}:
+            payload = event.get("payload") if isinstance(event, dict) else {}
+            if self.isVisible() and self._apply_robot_stream_event(
+                event_type,
+                payload if isinstance(payload, dict) else {},
+            ):
+                return
             self._schedule_stream_refresh()
+            return
+
+        if event_type in {"TASK_UPDATED", "ALERT_CREATED", "FALL_ALERT_CREATED"}:
+            self._schedule_stream_refresh()
+
+    def _apply_robot_stream_event(self, event_type: str, payload: dict) -> bool:
+        patch = self._robot_patch_from_stream_event(event_type, payload)
+        robot_id = str(patch.get("robot_id") or "").strip()
+        if not robot_id or not self._last_robots:
+            return False
+
+        next_robots = []
+        patched = False
+        for robot in self._last_robots:
+            robot_data = dict(robot) if isinstance(robot, dict) else {}
+            current_id = str(
+                robot_data.get("robot_id") or robot_data.get("robot_name") or ""
+            ).strip()
+            if current_id == robot_id:
+                robot_data.update(patch)
+                patched = True
+            next_robots.append(robot_data)
+
+        if not patched:
+            return False
+
+        self.apply_robot_board_data(next_robots)
+        self._mark_last_update()
+        return True
+
+    def _robot_patch_from_stream_event(self, event_type: str, payload: dict) -> dict:
+        if event_type == "PINKY_UPDATED":
+            robot_id = payload.get("robot_id") or payload.get("pinky_id")
+            robot_type = "MOBILE"
+            state = payload.get("pinky_state") or payload.get("runtime_state")
+        else:
+            robot_id = payload.get("robot_id") or payload.get("arm_id")
+            robot_type = "ARM"
+            state = payload.get("arm_state") or payload.get("runtime_state")
+
+        patch = {
+            "robot_id": robot_id,
+            "robot_type": robot_type,
+        }
+
+        connection_status = str(payload.get("connection_status") or "").strip().upper()
+        if connection_status:
+            patch["connection_status"] = connection_status
+            patch["chip_type"] = self._robot_chip_type(connection_status)
+        elif state is not None:
+            patch["status"] = str(state or "").upper()
+
+        if state is not None:
+            patch["runtime_state"] = str(state or "").upper()
+
+        if "battery_percent" in payload:
+            patch["battery_percent"] = payload.get("battery_percent")
+
+        if "active_task_id" in payload:
+            patch["current_task_id"] = payload.get("active_task_id")
+        elif "current_task_id" in payload:
+            patch["current_task_id"] = payload.get("current_task_id")
+
+        location = self._robot_location_from_stream_payload(payload)
+        if location is not None:
+            patch["current_location"] = location
+
+        if payload.get("last_seen_at") is not None:
+            patch["last_seen_at"] = payload.get("last_seen_at")
+
+        if payload.get("fault_code") is not None:
+            patch["fault_code"] = payload.get("fault_code")
+
+        return patch
+
+    @staticmethod
+    def _robot_chip_type(connection_status: str) -> str:
+        status = str(connection_status or "").strip().upper()
+        if status == "ONLINE":
+            return "green"
+        if status in {"DEGRADED", "STALE", "UNKNOWN"}:
+            return "amber"
+        if status in {"OFFLINE", "ERROR", "FAULT"}:
+            return "red"
+        return "blue"
+
+    @classmethod
+    def _robot_location_from_stream_payload(cls, payload: dict) -> str | None:
+        for key in ("current_location", "zone_name", "zone_id"):
+            value = payload.get(key)
+            if value not in (None, ""):
+                return str(value)
+
+        if "current_pose" in payload or "pose" in payload:
+            pose = payload.get("current_pose") or payload.get("pose")
+            return cls._robot_location_from_pose(pose) or "위치 미수신"
+
+        return None
+
+    @staticmethod
+    def _robot_location_from_pose(pose) -> str | None:
+        if not isinstance(pose, dict):
+            return None
+
+        position = pose.get("position")
+        if isinstance(position, dict):
+            x_value = position.get("x")
+            y_value = position.get("y")
+        else:
+            x_value = pose.get("x")
+            y_value = pose.get("y")
+
+        try:
+            x = float(x_value)
+            y = float(y_value)
+        except (TypeError, ValueError):
+            return None
+        return f"좌표 x={x:.2f}, y={y:.2f}"
 
     def _schedule_stream_refresh(self):
         if not self.isVisible():
@@ -838,6 +958,7 @@ class CaregiverHomePage(QWidget):
     def apply_summary_data(self, summary, *, robots=None):
         summary = summary or {}
         robots = robots or []
+        self._last_summary = dict(summary) if isinstance(summary, dict) else {}
         available_robot_count = int(summary.get("available_robot_count") or 0)
         total_robot_count = summary.get("total_robot_count")
         if total_robot_count is None:
@@ -895,16 +1016,21 @@ class CaregiverHomePage(QWidget):
             card.hint_label.setText(hint)
 
     def apply_robot_board_data(self, robots):
+        robot_rows = [
+            dict(robot) if isinstance(robot, dict) else {}
+            for robot in (robots or [])
+        ]
+        self._last_robots = robot_rows
         self.clear_layout(self.robot_row)
 
-        if not robots:
+        if not robot_rows:
             empty = QLabel("표시할 로봇 상태가 없습니다.")
             empty.setObjectName("mutedText")
             self.robot_row.addWidget(empty)
             return
 
-        for robot in robots:
-            card = RobotBoardCard(robot if isinstance(robot, dict) else {})
+        for robot in robot_rows:
+            card = RobotBoardCard(robot)
             self.robot_row.addWidget(card)
 
     def apply_flow_board_data(self, flow_data):

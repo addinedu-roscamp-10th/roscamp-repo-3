@@ -280,6 +280,65 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
         page.close()
 
 
+def test_home_dashboard_patches_robot_board_from_robot_stream_event():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    refresh_calls = []
+
+    try:
+        page.apply_robot_board_data(
+            [
+                {
+                    "robot_id": "pinky2",
+                    "robot_type": "MOBILE",
+                    "capabilities": ["DELIVERY"],
+                    "connection_status": "OFFLINE",
+                    "current_location": "위치 미수신",
+                    "battery_percent": 10,
+                    "current_task_id": None,
+                    "last_seen_at": "2026-05-11T19:00:00",
+                    "chip_type": "red",
+                }
+            ]
+        )
+        page.show()
+        app.processEvents()
+        page._schedule_stream_refresh = lambda: refresh_calls.append("refresh")
+
+        page.apply_stream_event(
+            {
+                "event_type": "PINKY_UPDATED",
+                "payload": {
+                    "pinky_id": "pinky2",
+                    "connection_status": "ONLINE",
+                    "runtime_state": "RUNNING",
+                    "battery_percent": 54.4,
+                    "active_task_id": 301,
+                    "zone_name": "303호 앞",
+                    "last_seen_at": "2026-05-11T20:15:54",
+                },
+            }
+        )
+
+        card = page.robot_row.itemAt(0).widget()
+        labels = _label_texts(card)
+        assert refresh_calls == []
+        assert page.robot_row.count() == 1
+        assert card.property("connection_status") == "online"
+        assert "ONLINE" in labels
+        assert "303호 앞" in labels
+        assert "54%" in labels
+        assert "301" in labels
+        assert "2026.05.11 20:15" in labels
+        assert "OFFLINE" not in labels
+        assert "위치 미수신" not in labels
+    finally:
+        page.close()
+
+
 def test_home_dashboard_schedules_refresh_from_admin_stream_events():
     app = _app()
 
@@ -296,12 +355,9 @@ def test_home_dashboard_schedules_refresh_from_admin_stream_events():
         page.apply_stream_event(
             {"event_type": "TASK_UPDATED", "payload": {"task_id": 1}}
         )
-        page.apply_stream_event(
-            {"event_type": "PINKY_UPDATED", "payload": {"pinky_id": "pinky2"}}
-        )
         page.apply_stream_event({"event_type": "IGNORED", "payload": {}})
 
-        assert calls == ["refresh", "refresh"]
+        assert calls == ["refresh"]
     finally:
         page.close()
 
