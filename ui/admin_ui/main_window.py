@@ -219,15 +219,24 @@ class CaregiverMainWindow(QMainWindow):
                 self._fanout_admin_stream_event(event)
 
     def _fanout_admin_stream_event(self, event):
-        for page in (
-            self.home_page,
-            self.task_page,
-            self.robot_status_page,
-            self.alert_page,
-        ):
+        for page in self._iter_admin_stream_pages():
             handler = getattr(page, "apply_stream_event", None)
-            if handler is not None:
+            if callable(handler):
                 handler(event)
+
+    def _iter_admin_stream_pages(self):
+        seen_page_ids = set()
+        for page in self.admin_shell.pages():
+            if page is None:
+                continue
+            page_id = id(page)
+            if page_id in seen_page_ids:
+                continue
+            seen_page_ids.add(page_id)
+            if getattr(page, "uses_admin_event_stream", True) is False:
+                continue
+            if callable(getattr(page, "apply_stream_event", None)):
+                yield page
 
     def _handle_admin_event_stream_failed(self, _error):
         if self._admin_event_stream_enabled:

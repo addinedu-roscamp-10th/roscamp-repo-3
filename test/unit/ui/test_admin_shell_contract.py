@@ -3,7 +3,14 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame, QStackedWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QStackedWidget,
+    QWidget,
+)
 
 
 _APP = None
@@ -356,10 +363,16 @@ def test_caregiver_main_window_fans_out_admin_event_stream(monkeypatch):
     from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
     from ui.utils.pages.caregiver.delivery_request_form import DeliveryRequestForm
     from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
 
     monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
     monkeypatch.setattr(RobotStatusPage, "refresh_data", lambda self: None)
     monkeypatch.setattr(AlertLogPage, "refresh_data", lambda self: None)
+    monkeypatch.setattr(
+        TaskMonitorPage,
+        "_start_snapshot_load",
+        lambda self, **_kwargs: True,
+    )
 
     window = CaregiverMainWindow()
     received = []
@@ -380,6 +393,17 @@ def test_caregiver_main_window_fans_out_admin_event_stream(monkeypatch):
         window.alert_page.apply_stream_event = lambda event: received.append(
             ("alerts", event["event_type"])
         )
+        window.task_monitor_btn.click()
+        window.task_monitor_page.apply_stream_event = lambda event: received.append(
+            ("task_monitor", event["event_type"])
+        )
+
+        class DynamicStreamPage(QWidget):
+            def apply_stream_event(self, event):
+                received.append(("dynamic", event["event_type"]))
+
+        dynamic_page = DynamicStreamPage()
+        window.admin_shell.add_page("dynamic_stream", dynamic_page)
 
         window._handle_admin_event_batch(
             {
@@ -400,11 +424,14 @@ def test_caregiver_main_window_fans_out_admin_event_stream(monkeypatch):
             ("task_request", "TASK_UPDATED"),
             ("robot_status", "TASK_UPDATED"),
             ("alerts", "TASK_UPDATED"),
+            ("dynamic", "TASK_UPDATED"),
             ("home", "PINKY_UPDATED"),
             ("task_request", "PINKY_UPDATED"),
             ("robot_status", "PINKY_UPDATED"),
             ("alerts", "PINKY_UPDATED"),
+            ("dynamic", "PINKY_UPDATED"),
         ]
+        assert not any(name == "task_monitor" for name, _event_type in received)
     finally:
         window.close()
 

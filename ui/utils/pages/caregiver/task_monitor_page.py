@@ -401,6 +401,8 @@ class TaskCancelWorker(QObject):
 
 
 class TaskMonitorPage(QWidget):
+    uses_admin_event_stream = False
+
     def __init__(self, *, autostart_stream=True):
         super().__init__()
         self.consumer_id = "ui-admin-task-monitor"

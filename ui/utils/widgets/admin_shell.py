@@ -385,6 +385,9 @@ class AdminShell(QWidget):
     def page(self, key: str) -> QWidget:
         return self._pages[key]
 
+    def pages(self) -> tuple[QWidget, ...]:
+        return tuple(self._pages.values())
+
     def set_page(self, key: str) -> None:
         page = self._pages[key]
         self.stack.setCurrentWidget(page)
