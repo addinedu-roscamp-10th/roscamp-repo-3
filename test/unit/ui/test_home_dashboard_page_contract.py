@@ -98,6 +98,79 @@ def test_home_dashboard_updates_system_status_strip_from_load_result():
         page.close()
 
 
+def test_home_dashboard_starts_lightweight_system_status_poll_timer():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(
+        autoload=False,
+        auto_system_status_poll=True,
+        system_status_poll_interval_ms=1234,
+    )
+
+    try:
+        assert page.system_status_timer.interval() == 1234
+        assert page.system_status_timer.isActive() is True
+    finally:
+        page.close()
+
+
+def test_home_dashboard_refreshes_header_status_without_dashboard_reload(monkeypatch):
+    _app()
+
+    import ui.utils.pages.caregiver.home_dashboard_page as home_dashboard_page
+    from ui.utils.pages.caregiver.home_dashboard_page import (
+        CaregiverHomePage,
+        HomeSystemStatusWorker,
+    )
+
+    page = CaregiverHomePage(autoload=False, auto_system_status_poll=False)
+    workers = []
+
+    try:
+        def fake_start_worker_thread(
+            parent,
+            *,
+            worker,
+            finished_handler=None,
+            clear_handler=None,
+            worker_signal_connections=None,
+        ):
+            assert parent is page
+            assert isinstance(worker, HomeSystemStatusWorker)
+            assert worker_signal_connections is None
+            workers.append(worker)
+            finished_handler(
+                {
+                    "관제 서버": "online",
+                    "데이터베이스": "online",
+                    "ROS2": "online",
+                    "AI 서버": "disabled",
+                }
+            )
+            return object(), worker
+
+        monkeypatch.setattr(
+            home_dashboard_page,
+            "start_worker_thread",
+            fake_start_worker_thread,
+        )
+        page.load_dashboard_data = lambda: (_ for _ in ()).throw(
+            AssertionError("system status refresh must not reload dashboard data")
+        )
+
+        page._refresh_system_statuses()
+
+        labels = _label_texts(page)
+        assert len(workers) == 1
+        assert "ROS2 정상" in labels
+        assert "AI 서버 미연동" in labels
+    finally:
+        page.system_status_thread = None
+        page.close()
+
+
 def test_home_dashboard_applies_summary_with_total_and_warning_count():
     _app()
 

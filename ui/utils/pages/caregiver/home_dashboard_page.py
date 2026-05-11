@@ -106,6 +106,8 @@ ROS_ERROR_MARKERS = (
     "ROPI_ROS_SERVICE_SOCKET",
 )
 
+HOME_SYSTEM_STATUS_POLL_INTERVAL_MS = 2000
+
 
 def _status_of(task: dict) -> str:
     return _display(task.get("task_status"), "UNKNOWN").upper()
@@ -231,6 +233,13 @@ class DashboardLoadWorker(QObject):
         if component.get("disabled"):
             return "disabled"
         return "online" if component.get("ok") else "offline"
+
+
+class HomeSystemStatusWorker(QObject):
+    finished = pyqtSignal(object)
+
+    def run(self):
+        self.finished.emit(DashboardLoadWorker._load_system_statuses())
 
 
 class DashboardTaskCancelWorker(QObject):
@@ -526,7 +535,13 @@ class FlowColumn(QFrame):
 
 
 class CaregiverHomePage(QWidget):
-    def __init__(self, *, autoload: bool = True):
+    def __init__(
+        self,
+        *,
+        autoload: bool = True,
+        auto_system_status_poll: bool | None = None,
+        system_status_poll_interval_ms: int = HOME_SYSTEM_STATUS_POLL_INTERVAL_MS,
+    ):
         super().__init__()
         self._worker_stop_wait_ms = 1000
         self.kpi_cards = {}
@@ -535,15 +550,31 @@ class CaregiverHomePage(QWidget):
         self.flow_grid = None
         self.dashboard_thread = None
         self.dashboard_worker = None
+        self.system_status_thread = None
+        self.system_status_worker = None
         self.cancel_thread = None
         self.cancel_worker = None
         self._last_flow_data = {}
         self._canceling_task_id = None
         self._stream_refresh_pending = False
+        self._auto_system_status_poll = (
+            bool(autoload)
+            if auto_system_status_poll is None
+            else bool(auto_system_status_poll)
+        )
+        try:
+            system_status_interval = int(system_status_poll_interval_ms)
+        except (TypeError, ValueError):
+            system_status_interval = HOME_SYSTEM_STATUS_POLL_INTERVAL_MS
+        self.system_status_timer = QTimer(self)
+        self.system_status_timer.setInterval(max(500, system_status_interval))
+        self.system_status_timer.timeout.connect(self._poll_system_statuses)
 
         self._build_ui()
         if autoload:
             QTimer.singleShot(0, self.load_dashboard_data)
+        if self._auto_system_status_poll:
+            self.system_status_timer.start()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -736,6 +767,29 @@ class CaregiverHomePage(QWidget):
         status_strip = getattr(self.header, "status_strip", None)
         if status_strip is not None and statuses:
             status_strip.set_statuses(statuses)
+
+    def _poll_system_statuses(self):
+        if not self.isVisible():
+            return
+        self._refresh_system_statuses()
+
+    def _refresh_system_statuses(self):
+        if self.system_status_thread is not None:
+            return
+
+        self.system_status_thread, self.system_status_worker = start_worker_thread(
+            self,
+            worker=HomeSystemStatusWorker(),
+            finished_handler=self._handle_system_status_loaded,
+            clear_handler=self._clear_system_status_thread,
+        )
+
+    def _handle_system_status_loaded(self, statuses):
+        self._set_system_statuses(statuses)
+
+    def _clear_system_status_thread(self):
+        self.system_status_thread = None
+        self.system_status_worker = None
 
     def _clear_dashboard_thread(self):
         self.dashboard_thread = None
@@ -953,10 +1007,16 @@ class CaregiverHomePage(QWidget):
         self.time_card.mark_updated()
 
     def shutdown(self):
+        self.system_status_timer.stop()
         stop_worker_thread(
             self.dashboard_thread,
             wait_ms=self._worker_stop_wait_ms,
             clear_handler=self._clear_dashboard_thread,
+        )
+        stop_worker_thread(
+            self.system_status_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_system_status_thread,
         )
         stop_worker_thread(
             self.cancel_thread,
@@ -1040,6 +1100,7 @@ __all__ = [
     "DashboardLoadWorker",
     "DashboardTaskCancelWorker",
     "FlowColumn",
+    "HomeSystemStatusWorker",
     "RobotBoardCard",
     "StatusChip",
 ]
