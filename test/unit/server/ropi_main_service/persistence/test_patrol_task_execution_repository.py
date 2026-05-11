@@ -145,3 +145,64 @@ def test_async_record_patrol_execution_started_rejects_terminal_task(monkeypatch
     assert response["result_code"] == "NOT_ALLOWED"
     assert response["reason_code"] == "PATROL_TASK_ALREADY_TERMINAL"
     assert [call[0].split()[0] for call in transaction.cursor.calls] == ["SELECT"]
+
+
+def test_async_record_patrol_execution_started_accepts_already_running_without_writes(
+    monkeypatch,
+):
+    row = {
+        "task_id": 2001,
+        "task_type": "PATROL",
+        "task_status": "RUNNING",
+        "phase": "FOLLOW_PATROL_PATH",
+        "assigned_robot_id": "pinky3",
+        "patrol_status": "MOVING",
+    }
+    transaction = FakeAsyncTransaction(row=row)
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.patrol_task_execution_repository.async_transaction",
+        lambda: transaction,
+    )
+
+    response = asyncio.run(
+        PatrolTaskExecutionRepository().async_record_patrol_execution_started(2001)
+    )
+
+    assert response == {
+        "result_code": "ACCEPTED",
+        "result_message": "순찰 경로 실행을 시작했습니다.",
+        "reason_code": None,
+        "task_id": 2001,
+        "task_status": "RUNNING",
+        "phase": "FOLLOW_PATROL_PATH",
+        "assigned_robot_id": "pinky3",
+        "cancellable": True,
+    }
+    assert [call[0].split()[0] for call in transaction.cursor.calls] == ["SELECT"]
+
+
+def test_async_record_patrol_execution_started_rejects_cancel_requested_task(
+    monkeypatch,
+):
+    row = {
+        "task_id": 2001,
+        "task_type": "PATROL",
+        "task_status": "CANCEL_REQUESTED",
+        "phase": "CANCEL_REQUESTED",
+        "assigned_robot_id": "pinky3",
+        "patrol_status": "CANCEL_REQUESTED",
+    }
+    transaction = FakeAsyncTransaction(row=row)
+    monkeypatch.setattr(
+        "server.ropi_main_service.persistence.repositories.patrol_task_execution_repository.async_transaction",
+        lambda: transaction,
+    )
+
+    response = asyncio.run(
+        PatrolTaskExecutionRepository().async_record_patrol_execution_started(2001)
+    )
+
+    assert response["result_code"] == "NOT_ALLOWED"
+    assert response["reason_code"] == "PATROL_TASK_NOT_STARTABLE"
+    assert response["task_status"] == "CANCEL_REQUESTED"
+    assert [call[0].split()[0] for call in transaction.cursor.calls] == ["SELECT"]

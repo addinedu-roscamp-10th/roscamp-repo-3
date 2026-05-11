@@ -146,6 +146,85 @@ def test_record_command_rejection_keeps_current_phase_and_writes_event_only():
     assert len(connection.cursor_instance.calls) == 3
 
 
+def test_record_hard_start_guidance_rejection_closes_task_as_failed():
+    connection = FakeConnection(
+        row={
+            "task_id": 3001,
+            "task_type": "GUIDE",
+            "task_status": "RUNNING",
+            "phase": "READY_TO_START_GUIDANCE",
+            "assigned_robot_id": "pinky1",
+            "guide_phase": "READY_TO_START_GUIDANCE",
+            "target_track_id": 17,
+        }
+    )
+    repository = GuideTaskLifecycleRepository(connection_factory=lambda: connection)
+
+    response = repository.record_command_result(
+        task_id=3001,
+        pinky_id="pinky1",
+        command_type="START_GUIDANCE",
+        target_track_id=17,
+        command_response={
+            "accepted": False,
+            "result_code": "REJECTED",
+            "reason_code": "GUIDE_DESTINATION_NOT_CONFIGURED",
+            "message": "destination missing",
+        },
+    )
+
+    assert response["accepted"] is False
+    assert response["result_code"] == "FAILED"
+    assert response["reason_code"] == "GUIDE_DESTINATION_NOT_CONFIGURED"
+    assert response["task_status"] == "FAILED"
+    assert response["phase"] == "GUIDANCE_FAILED"
+    assert response["guide_phase"] == "GUIDANCE_FAILED"
+    assert "UPDATE task" in connection.cursor_instance.calls[1][0]
+    assert connection.cursor_instance.calls[1][1][:5] == (
+        "FAILED",
+        "GUIDANCE_FAILED",
+        "GUIDE_DESTINATION_NOT_CONFIGURED",
+        "FAILED",
+        "destination missing",
+    )
+    assert "UPDATE guide_task_detail" in connection.cursor_instance.calls[2][0]
+    assert connection.cursor_instance.calls[2][1] == (
+        "GUIDANCE_FAILED",
+        17,
+        3001,
+    )
+    assert "INSERT INTO task_state_history" in connection.cursor_instance.calls[3][0]
+    assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[4][0]
+
+
+def test_record_wait_target_tracking_transport_error_closes_task_as_failed():
+    connection = FakeConnection()
+    repository = GuideTaskLifecycleRepository(connection_factory=lambda: connection)
+
+    response = repository.record_command_result(
+        task_id=3001,
+        pinky_id="pinky1",
+        command_type="WAIT_TARGET_TRACKING",
+        command_response={
+            "accepted": False,
+            "result_code": "REJECTED",
+            "reason_code": "GUIDE_COMMAND_TRANSPORT_ERROR",
+            "message": "UDS socket missing",
+        },
+    )
+
+    assert response["accepted"] is False
+    assert response["result_code"] == "FAILED"
+    assert response["reason_code"] == "GUIDE_COMMAND_TRANSPORT_ERROR"
+    assert response["task_status"] == "FAILED"
+    assert response["phase"] == "GUIDANCE_FAILED"
+    assert response["guide_phase"] == "GUIDANCE_FAILED"
+    assert "UPDATE task" in connection.cursor_instance.calls[1][0]
+    assert "UPDATE guide_task_detail" in connection.cursor_instance.calls[2][0]
+    assert "INSERT INTO task_state_history" in connection.cursor_instance.calls[3][0]
+    assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[4][0]
+
+
 def test_record_post_start_command_rejects_without_state_change_even_when_transport_accepts():
     connection = FakeConnection()
     repository = GuideTaskLifecycleRepository(connection_factory=lambda: connection)

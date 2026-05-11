@@ -3,10 +3,14 @@ import json
 from server.ropi_main_service.application.patrol_states import (
     PATROL_STATUS_MOVING,
     PHASE_FOLLOW_PATROL_PATH,
+    TASK_STATUS_ASSIGNED,
     TASK_STATUS_CANCELLED,
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
+    TASK_STATUS_READY,
     TASK_STATUS_RUNNING,
+    TASK_STATUS_WAITING,
+    TASK_STATUS_WAITING_DISPATCH,
 )
 from server.ropi_main_service.persistence.async_connection import async_transaction
 from server.ropi_main_service.persistence.sql_loader import load_sql
@@ -18,6 +22,12 @@ TERMINAL_PATROL_TASK_STATUSES = {
     TASK_STATUS_CANCELLED,
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
+}
+STARTABLE_PATROL_TASK_STATUSES = {
+    TASK_STATUS_WAITING,
+    TASK_STATUS_WAITING_DISPATCH,
+    TASK_STATUS_READY,
+    TASK_STATUS_ASSIGNED,
 }
 
 
@@ -148,6 +158,30 @@ class PatrolTaskExecutionRepository:
                 result_code="NOT_ALLOWED",
                 result_message="이미 종료된 순찰 task는 실행 시작 상태로 전환할 수 없습니다.",
                 reason_code="PATROL_TASK_ALREADY_TERMINAL",
+                task_id=row.get("task_id"),
+                task_status=row.get("task_status"),
+                phase=row.get("phase"),
+                assigned_robot_id=row.get("assigned_robot_id"),
+                cancellable=False,
+            )
+
+        if task_status == TASK_STATUS_RUNNING:
+            return self._build_patrol_execution_started_response(
+                result_code="ACCEPTED",
+                result_message=PATROL_EXECUTION_START_MESSAGE,
+                reason_code=None,
+                task_id=row.get("task_id"),
+                task_status=row.get("task_status"),
+                phase=row.get("phase") or PHASE_FOLLOW_PATROL_PATH,
+                assigned_robot_id=row.get("assigned_robot_id"),
+                cancellable=True,
+            )
+
+        if task_status not in STARTABLE_PATROL_TASK_STATUSES:
+            return self._build_patrol_execution_started_response(
+                result_code="NOT_ALLOWED",
+                result_message="순찰 task를 실행 시작 상태로 전환할 수 없는 상태입니다.",
+                reason_code="PATROL_TASK_NOT_STARTABLE",
                 task_id=row.get("task_id"),
                 task_status=row.get("task_status"),
                 phase=row.get("phase"),

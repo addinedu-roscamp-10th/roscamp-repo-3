@@ -147,6 +147,17 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
     ]
     assert published_updates == [
         (
+            {
+                "result_code": "ACCEPTED",
+                "task_id": 2001,
+                "task_status": "RUNNING",
+                "phase": "FOLLOW_PATROL_PATH",
+                "assigned_robot_id": "pinky3",
+            },
+            "PATROL_WORKFLOW_STARTED",
+            "PATROL",
+        ),
+        (
             {"result_code": "SUCCEEDED", "task_status": "COMPLETED"},
             "PATROL_WORKFLOW_RESULT",
             "PATROL",

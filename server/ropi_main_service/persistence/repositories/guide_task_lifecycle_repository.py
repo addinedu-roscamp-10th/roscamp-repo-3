@@ -11,6 +11,11 @@ GUIDE_COMMAND_REJECTED = "GUIDE_COMMAND_REJECTED"
 TERMINAL_GUIDE_STATUSES = {"COMPLETED", "CANCELLED", "FAILED"}
 ALLOWED_CONTROL_GUIDE_COMMAND_TYPES = {"WAIT_TARGET_TRACKING", "START_GUIDANCE"}
 UNSUPPORTED_GUIDE_COMMAND_MESSAGE = "지원하지 않는 안내 제어 명령입니다."
+TERMINAL_GUIDE_COMMAND_FAILURE_REASON_CODES = {
+    "GUIDE_COMMAND_TRANSPORT_ERROR",
+    "GUIDE_DESTINATION_NOT_CONFIGURED",
+    "GUIDE_DESTINATION_POSE_INVALID",
+}
 
 
 class GuideTaskLifecycleRepository:
@@ -106,7 +111,7 @@ class GuideTaskLifecycleRepository:
             return guard
 
         plan = self._build_write_plan(**kwargs)
-        if plan["accepted"]:
+        if plan["writes_lifecycle"]:
             cur.execute(
                 load_sql("guide/update_guide_task_lifecycle.sql"),
                 plan["update_task_params"],
@@ -139,7 +144,7 @@ class GuideTaskLifecycleRepository:
             return guard
 
         plan = self._build_write_plan(**kwargs)
-        if plan["accepted"]:
+        if plan["writes_lifecycle"]:
             await cur.execute(
                 load_sql("guide/update_guide_task_lifecycle.sql"),
                 plan["update_task_params"],
@@ -204,6 +209,19 @@ class GuideTaskLifecycleRepository:
             )
             event_name = GUIDE_COMMAND_ACCEPTED
             severity = "INFO"
+            writes_lifecycle = True
+        elif self._is_terminal_command_failure(
+            reason_code=rejected_reason_code,
+        ):
+            result_code = "FAILED"
+            reason_code = rejected_reason_code
+            task_status = "FAILED"
+            phase = "GUIDANCE_FAILED"
+            guide_phase = "GUIDANCE_FAILED"
+            is_terminal = True
+            event_name = GUIDE_COMMAND_REJECTED
+            severity = "ERROR"
+            writes_lifecycle = True
         else:
             result_code = "REJECTED"
             reason_code = rejected_reason_code
@@ -213,6 +231,7 @@ class GuideTaskLifecycleRepository:
             is_terminal = False
             event_name = GUIDE_COMMAND_REJECTED
             severity = "WARNING"
+            writes_lifecycle = False
 
         next_target_track_id = self._next_target_track_id(
             row=row,
@@ -221,7 +240,7 @@ class GuideTaskLifecycleRepository:
             accepted=accepted,
         )
         state_changed = (
-            accepted
+            writes_lifecycle
             and (
                 current_status != task_status
                 or current_phase != phase
@@ -245,6 +264,7 @@ class GuideTaskLifecycleRepository:
             "guide_phase": guide_phase,
             "target_track_id": next_target_track_id,
             "state_changed": state_changed,
+            "writes_lifecycle": writes_lifecycle,
             "update_task_params": (
                 task_status,
                 phase,
@@ -304,6 +324,13 @@ class GuideTaskLifecycleRepository:
     def _rejected_reason_code(command_response):
         reason_code = str((command_response or {}).get("reason_code") or "").strip()
         return reason_code or "GUIDE_COMMAND_REJECTED"
+
+    @staticmethod
+    def _is_terminal_command_failure(*, reason_code):
+        return (
+            str(reason_code or "").strip().upper()
+            in TERMINAL_GUIDE_COMMAND_FAILURE_REASON_CODES
+        )
 
     @staticmethod
     def _extract_message(command_response, *, accepted):

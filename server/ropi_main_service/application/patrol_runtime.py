@@ -193,6 +193,10 @@ def build_patrol_request_service(
                     task_id
                 )
             )
+            await _publish_workflow_task_update(
+                start_response,
+                source="PATROL_WORKFLOW_STARTED",
+            )
             if start_response.get("result_code") != "ACCEPTED":
                 return start_response
 
@@ -214,7 +218,11 @@ def build_patrol_request_service(
                     extra={"task_id": task_id},
                 )
 
-        async def _publish_workflow_task_update(response):
+        async def _publish_workflow_task_update(
+            response,
+            *,
+            source="PATROL_WORKFLOW_RESULT",
+        ):
             if task_update_publisher is None:
                 return
             publish_from_response = getattr(
@@ -226,7 +234,7 @@ def build_patrol_request_service(
                 return
             result = publish_from_response(
                 response,
-                source="PATROL_WORKFLOW_RESULT",
+                source=source,
                 task_type="PATROL",
             )
             if asyncio.iscoroutine(result):
