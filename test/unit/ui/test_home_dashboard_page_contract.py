@@ -519,6 +519,91 @@ def test_home_dashboard_normalizes_task_flow_into_spec_columns():
         page.close()
 
 
+def test_home_dashboard_patches_existing_task_flow_from_task_stream_event():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import (
+        CaregiverHomePage,
+        FLOW_COLUMNS,
+        FlowColumn,
+    )
+
+    page = CaregiverHomePage(autoload=False)
+    refresh_calls = []
+
+    try:
+        page.apply_summary_data(
+            {
+                "available_robot_count": 1,
+                "total_robot_count": 2,
+                "waiting_job_count": 1,
+                "running_job_count": 1,
+                "warning_error_count": 0,
+            }
+        )
+        page.apply_flow_board_data(
+            {
+                "WAITING": [
+                    {
+                        "task_id": 101,
+                        "task_type": "DELIVERY",
+                        "task_status": "WAITING_DISPATCH",
+                        "phase": "WAITING_DISPATCH",
+                        "robot_id": None,
+                        "description": "accepted",
+                    }
+                ],
+                "IN_PROGRESS": [
+                    {
+                        "task_id": 102,
+                        "task_type": "PATROL",
+                        "task_status": "RUNNING",
+                        "phase": "RUNNING",
+                        "robot_id": "pinky3",
+                        "description": "patrolling",
+                    }
+                ],
+            }
+        )
+        page.show()
+        app.processEvents()
+        page._schedule_stream_refresh = lambda: refresh_calls.append("refresh")
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": 101,
+                    "task_type": "DELIVERY",
+                    "task_status": "RUNNING",
+                    "phase": "MOVE_TO_DESTINATION",
+                    "assigned_robot_id": "pinky2",
+                    "result_message": "moving to destination",
+                    "cancellable": True,
+                },
+            }
+        )
+
+        columns = {
+            column_key: page.flow_grid.itemAtPosition(0, index).widget()
+            for index, (column_key, _title, _statuses) in enumerate(FLOW_COLUMNS)
+        }
+        labels = _label_texts(columns["IN_PROGRESS"])
+        assert refresh_calls == []
+        assert isinstance(columns["WAITING"], FlowColumn)
+        assert columns["WAITING"].task_count_label.text() == "0건"
+        assert columns["IN_PROGRESS"].task_count_label.text() == "2건"
+        assert page.kpi_cards["waiting_tasks"].value_label.text() == "0건"
+        assert page.kpi_cards["running_tasks"].value_label.text() == "2건"
+        assert "작업 #101 · 운반" in labels
+        assert "진행 중" in labels
+        assert "목적지 이동" in labels
+        assert "pinky2" in labels
+        assert "moving to destination" in labels
+    finally:
+        page.close()
+
+
 def test_home_dashboard_task_cards_expose_home_cancel_action():
     _app()
 

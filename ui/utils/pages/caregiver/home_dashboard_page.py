@@ -812,7 +812,16 @@ class CaregiverHomePage(QWidget):
             self._schedule_stream_refresh()
             return
 
-        if event_type in {"TASK_UPDATED", "ALERT_CREATED", "FALL_ALERT_CREATED"}:
+        if event_type == "TASK_UPDATED":
+            payload = event.get("payload") if isinstance(event, dict) else {}
+            if self.isVisible() and self._apply_task_stream_event(
+                payload if isinstance(payload, dict) else {},
+            ):
+                return
+            self._schedule_stream_refresh()
+            return
+
+        if event_type in {"ALERT_CREATED", "FALL_ALERT_CREATED"}:
             self._schedule_stream_refresh()
 
     def _apply_robot_stream_event(self, event_type: str, payload: dict) -> bool:
@@ -929,6 +938,75 @@ class CaregiverHomePage(QWidget):
             return None
         return f"좌표 x={x:.2f}, y={y:.2f}"
 
+    def _apply_task_stream_event(self, payload: dict) -> bool:
+        patch = self._task_patch_from_stream_payload(payload)
+        task_id = _task_id_value(patch)
+        if task_id is None or not self._last_flow_data:
+            return False
+
+        normalized = self._normalize_flow_data(self._last_flow_data)
+        next_tasks = []
+        patched = False
+        for task in self._iter_flow_tasks(normalized):
+            task_data = dict(task) if isinstance(task, dict) else {}
+            if _task_id_value(task_data) == task_id:
+                task_data.update(patch)
+                patched = True
+            next_tasks.append(task_data)
+
+        if not patched:
+            return False
+
+        next_flow_data = self._normalize_flow_data(next_tasks)
+        self.apply_flow_board_data(next_flow_data)
+        self._apply_task_flow_kpi_counts(next_flow_data)
+        self._mark_last_update()
+        return True
+
+    @staticmethod
+    def _task_patch_from_stream_payload(payload: dict) -> dict:
+        patch = {"task_id": payload.get("task_id")}
+
+        for source_key, target_key in (
+            ("task_type", "task_type"),
+            ("task_status", "task_status"),
+            ("phase", "phase"),
+            ("assigned_robot_id", "assigned_robot_id"),
+            ("robot_id", "robot_id"),
+            ("latest_reason_code", "latest_reason_code"),
+            ("reason_code", "latest_reason_code"),
+            ("cancel_requested", "cancel_requested"),
+            ("cancellable", "cancellable"),
+            ("destination_label", "destination_label"),
+            ("feedback_summary", "feedback_summary"),
+        ):
+            if source_key in payload:
+                patch[target_key] = payload.get(source_key)
+
+        description = payload.get("result_message")
+        if description is None and "description" in payload:
+            description = payload.get("description")
+        if description not in (None, ""):
+            patch["description"] = description
+
+        if patch.get("task_status") is not None:
+            patch["task_status"] = str(patch["task_status"] or "").upper()
+        if patch.get("phase") is not None:
+            patch["phase"] = str(patch["phase"] or "").upper()
+        if patch.get("task_type") is not None:
+            patch["task_type"] = str(patch["task_type"] or "").upper()
+
+        return patch
+
+    def _apply_task_flow_kpi_counts(self, flow_data):
+        normalized = self._normalize_flow_data(flow_data)
+        summary = dict(self._last_summary)
+        summary["waiting_job_count"] = len(normalized["WAITING"])
+        summary["running_job_count"] = len(normalized["ASSIGNED"]) + len(
+            normalized["IN_PROGRESS"]
+        )
+        self.apply_summary_data(summary, robots=self._last_robots)
+
     def _schedule_stream_refresh(self):
         if not self.isVisible():
             self._deferred_stream_refresh = True
@@ -1034,8 +1112,11 @@ class CaregiverHomePage(QWidget):
             self.robot_row.addWidget(card)
 
     def apply_flow_board_data(self, flow_data):
-        self._last_flow_data = flow_data or {}
         normalized = self._normalize_flow_data(flow_data)
+        self._last_flow_data = {
+            column_key: [dict(task) for task in tasks]
+            for column_key, tasks in normalized.items()
+        }
         self.clear_layout(self.flow_grid)
 
         for index, (column_key, title, _statuses) in enumerate(FLOW_COLUMNS):
