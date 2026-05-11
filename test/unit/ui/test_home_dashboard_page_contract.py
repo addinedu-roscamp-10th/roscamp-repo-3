@@ -281,7 +281,7 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
 
 
 def test_home_dashboard_schedules_refresh_from_admin_stream_events():
-    _app()
+    app = _app()
 
     from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
 
@@ -289,6 +289,8 @@ def test_home_dashboard_schedules_refresh_from_admin_stream_events():
     calls = []
 
     try:
+        page.show()
+        app.processEvents()
         page._schedule_stream_refresh = lambda: calls.append("refresh")
 
         page.apply_stream_event(
@@ -304,10 +306,8 @@ def test_home_dashboard_schedules_refresh_from_admin_stream_events():
         page.close()
 
 
-def test_home_dashboard_defers_stream_refresh_while_snapshot_load_is_running(
-    monkeypatch,
-):
-    _app()
+def test_home_dashboard_defers_stream_refresh_while_hidden_until_shown(monkeypatch):
+    app = _app()
 
     import ui.utils.pages.caregiver.home_dashboard_page as home_dashboard_page
     from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
@@ -317,6 +317,49 @@ def test_home_dashboard_defers_stream_refresh_while_snapshot_load_is_running(
     load_calls = []
 
     try:
+        monkeypatch.setattr(
+            home_dashboard_page.QTimer,
+            "singleShot",
+            lambda _delay, callback: scheduled_callbacks.append(callback),
+        )
+        page.load_dashboard_data = lambda: load_calls.append("load")
+
+        page.apply_stream_event(
+            {"event_type": "TASK_UPDATED", "payload": {"task_id": 1}}
+        )
+
+        assert scheduled_callbacks == []
+        assert load_calls == []
+        assert page._deferred_stream_refresh is True
+
+        page.show()
+        app.processEvents()
+
+        assert scheduled_callbacks == [page._run_stream_refresh]
+        assert page._deferred_stream_refresh is False
+
+        scheduled_callbacks.pop()()
+
+        assert load_calls == ["load"]
+    finally:
+        page.close()
+
+
+def test_home_dashboard_defers_stream_refresh_while_snapshot_load_is_running(
+    monkeypatch,
+):
+    app = _app()
+
+    import ui.utils.pages.caregiver.home_dashboard_page as home_dashboard_page
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    scheduled_callbacks = []
+    load_calls = []
+
+    try:
+        page.show()
+        app.processEvents()
         monkeypatch.setattr(
             home_dashboard_page.QTimer,
             "singleShot",

@@ -557,6 +557,7 @@ class CaregiverHomePage(QWidget):
         self._last_flow_data = {}
         self._canceling_task_id = None
         self._stream_refresh_pending = False
+        self._deferred_stream_refresh = False
         self._auto_system_status_poll = (
             bool(autoload)
             if auto_system_status_poll is None
@@ -809,17 +810,30 @@ class CaregiverHomePage(QWidget):
             self._schedule_stream_refresh()
 
     def _schedule_stream_refresh(self):
+        if not self.isVisible():
+            self._deferred_stream_refresh = True
+            return
         if self._stream_refresh_pending:
             return
         self._stream_refresh_pending = True
         QTimer.singleShot(200, self._run_stream_refresh)
 
     def _run_stream_refresh(self):
+        if not self.isVisible():
+            self._stream_refresh_pending = False
+            self._deferred_stream_refresh = True
+            return
         if self.dashboard_thread is not None:
             QTimer.singleShot(200, self._run_stream_refresh)
             return
         self._stream_refresh_pending = False
         self.load_dashboard_data()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._deferred_stream_refresh:
+            self._deferred_stream_refresh = False
+            self._schedule_stream_refresh()
 
     def apply_summary_data(self, summary, *, robots=None):
         summary = summary or {}
