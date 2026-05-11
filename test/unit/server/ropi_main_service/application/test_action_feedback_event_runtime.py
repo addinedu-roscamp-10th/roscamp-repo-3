@@ -60,6 +60,9 @@ def test_poll_once_publishes_new_patrol_feedback_event():
                 "task_id": 467,
                 "task_type": "PATROL",
                 "task_status": "RUNNING",
+                "assigned_robot_id": "pinky3",
+                "map_id": "map_0504",
+                "patrol_map": {"frame_id": "map"},
             }
         ]
     )
@@ -117,16 +120,24 @@ def test_poll_once_publishes_new_patrol_feedback_event():
             "ACTION_FEEDBACK_UPDATED",
             {
                 "task_id": 467,
+                "robot_id": "pinky3",
                 "action_name": "/ropi/control/pinky3/execute_patrol_path",
                 "action_type": "EXECUTE_PATROL_PATH",
                 "feedback_type": "PATROL_FEEDBACK",
                 "feedback_summary": "MOVING / 남은 거리 1.25m",
-                "pose": {"x": 0.5, "y": -0.2, "yaw": 0.0, "frame_id": "map"},
+                "pose": {
+                    "x": 0.5,
+                    "y": -0.2,
+                    "yaw": 0.0,
+                    "frame_id": "map",
+                    "map_id": "map_0504",
+                },
                 "current_pose": {
                     "x": 0.5,
                     "y": -0.2,
                     "yaw": 0.0,
                     "frame_id": "map",
+                    "map_id": "map_0504",
                 },
                 "patrol_status": "MOVING",
                 "current_waypoint_index": 1,

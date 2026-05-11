@@ -6,6 +6,9 @@ import os
 from server.ropi_main_service.application.action_feedback import (
     RosActionFeedbackService,
 )
+from server.ropi_main_service.application.delivery_config import (
+    get_delivery_runtime_config,
+)
 from server.ropi_main_service.application.task_monitor import (
     ACTIVE_TASK_STATUSES,
     TaskMonitorService,
@@ -59,10 +62,11 @@ class ActionFeedbackEventRuntime:
             await asyncio.sleep(self.poll_interval_sec)
 
     async def poll_once(self):
-        active_task_ids = await self._get_active_task_ids()
+        active_task_contexts = await self._get_active_task_contexts()
         published_count = 0
 
-        for task_id in active_task_ids:
+        for task_context in active_task_contexts:
+            task_id = task_context["task_id"]
             try:
                 response = await self.feedback_service.async_get_latest_feedback(
                     task_id=task_id,
@@ -83,6 +87,7 @@ class ActionFeedbackEventRuntime:
                     response=response,
                     feedback=feedback,
                     default_task_id=task_id,
+                    task_context=task_context,
                 )
                 if payload is None:
                     continue
@@ -97,11 +102,16 @@ class ActionFeedbackEventRuntime:
 
         return {
             "result_code": "ACCEPTED",
-            "active_task_count": len(active_task_ids),
+            "active_task_count": len(active_task_contexts),
             "published_count": published_count,
         }
 
     async def _get_active_task_ids(self):
+        return [
+            context["task_id"] for context in await self._get_active_task_contexts()
+        ]
+
+    async def _get_active_task_contexts(self):
         snapshot = await self.task_monitor_service.async_get_task_monitor_snapshot(
             consumer_id=TASK_EVENT_CONSUMER_ID,
             statuses=ACTIVE_TASK_STATUSES,
@@ -109,7 +119,7 @@ class ActionFeedbackEventRuntime:
             limit=self.active_task_limit,
         )
         snapshot = snapshot if isinstance(snapshot, dict) else {}
-        task_ids = []
+        task_contexts = []
         seen = set()
         for task in snapshot.get("tasks") or []:
             if not isinstance(task, dict):
@@ -118,8 +128,31 @@ class ActionFeedbackEventRuntime:
             if task_id is None or task_id in seen:
                 continue
             seen.add(task_id)
-            task_ids.append(task_id)
-        return task_ids
+            task_contexts.append(self._build_task_context(task=task, task_id=task_id))
+        return task_contexts
+
+    @classmethod
+    def _build_task_context(cls, *, task, task_id):
+        task = task if isinstance(task, dict) else {}
+        patrol_map = (
+            task.get("patrol_map") if isinstance(task.get("patrol_map"), dict) else {}
+        )
+        patrol_path = (
+            task.get("patrol_path") if isinstance(task.get("patrol_path"), dict) else {}
+        )
+        assigned_robot_id = cls._normalize_optional_text(task.get("assigned_robot_id"))
+        return {
+            "task_id": task_id,
+            "assigned_robot_id": assigned_robot_id,
+            "robot_id": assigned_robot_id,
+            "map_id": cls._normalize_optional_text(task.get("map_id")),
+            "frame_id": cls._normalize_optional_text(
+                task.get("frame_id")
+                or task.get("path_frame_id")
+                or patrol_map.get("frame_id")
+                or patrol_path.get("frame_id")
+            ),
+        }
 
     async def _publish(self, payload):
         if self.task_event_publisher is None:
@@ -133,10 +166,18 @@ class ActionFeedbackEventRuntime:
         return result
 
     @classmethod
-    def _build_event_payload(cls, *, response, feedback, default_task_id):
+    def _build_event_payload(
+        cls,
+        *,
+        response,
+        feedback,
+        default_task_id,
+        task_context=None,
+    ):
         if not isinstance(feedback, dict):
             return None
 
+        task_context = task_context if isinstance(task_context, dict) else {}
         raw_payload = feedback.get("payload")
         payload_snapshot = dict(raw_payload) if isinstance(raw_payload, dict) else {}
         task_id = cls._normalize_task_id(
@@ -149,14 +190,29 @@ class ActionFeedbackEventRuntime:
             str(feedback.get("feedback_type") or "ACTION_FEEDBACK").strip()
             or "ACTION_FEEDBACK"
         )
+        action_name = cls._normalize_optional_text(
+            feedback.get("action_name") or response.get("action_name")
+        )
+        robot_id = cls._resolve_robot_id(
+            feedback=feedback,
+            response=response,
+            payload_snapshot=payload_snapshot,
+            action_name=action_name,
+            task_context=task_context,
+        )
         pose = payload_snapshot.get("current_pose") or payload_snapshot.get("pose")
         normalized_pose = TaskMonitorService._normalize_pose_payload(pose)
+        normalized_pose = cls._normalize_feedback_pose(
+            normalized_pose,
+            raw_pose=pose,
+            payload_snapshot=payload_snapshot,
+            task_context=task_context,
+        )
 
         return {
             "task_id": task_id,
-            "action_name": cls._normalize_optional_text(
-                feedback.get("action_name") or response.get("action_name")
-            ),
+            "robot_id": robot_id,
+            "action_name": action_name,
             "action_type": cls._normalize_optional_text(feedback.get("action_type")),
             "feedback_type": feedback_type,
             "feedback_summary": cls._build_feedback_summary(
@@ -178,6 +234,90 @@ class ActionFeedbackEventRuntime:
             "received_at": cls._normalize_optional_text(feedback.get("received_at")),
             "payload": payload_snapshot,
         }
+
+    @classmethod
+    def _resolve_robot_id(
+        cls,
+        *,
+        feedback,
+        response,
+        payload_snapshot,
+        action_name,
+        task_context,
+    ):
+        return cls._normalize_optional_text(
+            feedback.get("robot_id")
+            or payload_snapshot.get("robot_id")
+            or response.get("robot_id")
+            or cls._robot_id_from_action_name(action_name)
+            or task_context.get("robot_id")
+            or task_context.get("assigned_robot_id")
+        )
+
+    @classmethod
+    def _normalize_feedback_pose(
+        cls,
+        normalized_pose,
+        *,
+        raw_pose,
+        payload_snapshot,
+        task_context,
+    ):
+        if not isinstance(normalized_pose, dict):
+            return normalized_pose
+
+        pose = dict(normalized_pose)
+        map_id = cls._normalize_optional_text(
+            pose.get("map_id")
+            or cls._raw_pose_map_id(raw_pose)
+            or payload_snapshot.get("map_id")
+            or task_context.get("map_id")
+        )
+        frame_id = cls._normalize_optional_text(
+            pose.get("frame_id")
+            or cls._raw_pose_frame_id(raw_pose)
+            or payload_snapshot.get("frame_id")
+            or task_context.get("frame_id")
+        )
+        if map_id:
+            pose["map_id"] = map_id
+        if frame_id:
+            pose["frame_id"] = frame_id
+        return pose
+
+    @staticmethod
+    def _raw_pose_map_id(raw_pose):
+        return raw_pose.get("map_id") if isinstance(raw_pose, dict) else None
+
+    @staticmethod
+    def _raw_pose_frame_id(raw_pose):
+        if not isinstance(raw_pose, dict):
+            return None
+        header = raw_pose.get("header")
+        if isinstance(header, dict):
+            return header.get("frame_id")
+        return raw_pose.get("frame_id")
+
+    @classmethod
+    def _robot_id_from_action_name(cls, action_name):
+        parts = str(action_name or "").strip("/").split("/")
+        if len(parts) >= 4 and parts[0] == "ropi" and parts[1] == "control":
+            return parts[2] or None
+        if len(parts) >= 4 and parts[0] == "ropi" and parts[1] == "arm":
+            return cls._arm_robot_id_from_action_id(parts[2])
+        return None
+
+    @staticmethod
+    def _arm_robot_id_from_action_id(arm_id):
+        try:
+            runtime_config = get_delivery_runtime_config()
+        except Exception:
+            return arm_id or None
+        if arm_id == runtime_config.pickup_arm_id:
+            return runtime_config.pickup_arm_robot_id
+        if arm_id == runtime_config.destination_arm_id:
+            return runtime_config.destination_arm_robot_id
+        return arm_id or None
 
     @staticmethod
     def _build_feedback_summary(*, feedback, feedback_type):
