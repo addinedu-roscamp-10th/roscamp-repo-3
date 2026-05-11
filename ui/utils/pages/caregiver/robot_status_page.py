@@ -5,7 +5,7 @@ import binascii
 import math
 import re
 
-from PyQt6.QtCore import QPointF, QTimer
+from PyQt6.QtCore import QPointF, QTimer, Qt
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QPen
 from PyQt6.QtWidgets import (
@@ -56,6 +56,10 @@ TABLE_HEADERS = [
     "현재 작업",
     "마지막 수신",
 ]
+
+REFRESH_BUTTON_TEXT = "새로고침"
+REFRESH_LOADING_TEXT = "불러오는 중..."
+HEADER_STATUS_RESERVED_HEIGHT = 20
 
 
 def _chip_type(connection_status: str) -> str:
@@ -404,6 +408,7 @@ class RobotStatusPage(QWidget):
         self.refresh_button = self.time_card.refresh_button
         self.last_update_label = self.time_card.last_update_label
         self.status_label = self.time_card.status_label
+        self._configure_header_status_slot()
         header_row.addWidget(self.time_card)
 
         summary_row = QHBoxLayout()
@@ -514,8 +519,7 @@ class RobotStatusPage(QWidget):
         if self.load_thread is not None:
             return
 
-        self.refresh_button.setEnabled(False)
-        self._show_status("로봇 상태를 불러오는 중입니다.")
+        self._set_refresh_loading(True, "로봇 상태를 불러오는 중입니다.")
         self.load_thread, self.load_worker = start_worker_thread(
             self,
             worker=RobotStatusLoadWorker(selected_map_id=self.selected_map_id),
@@ -529,17 +533,21 @@ class RobotStatusPage(QWidget):
 
     def _handle_load_finished(self, ok, payload):
         if not ok:
-            self._show_status(f"로봇 상태를 불러오지 못했습니다. {payload}")
+            self._set_refresh_loading(
+                False,
+                f"로봇 상태를 불러오지 못했습니다. {payload}",
+            )
             return
 
         self.apply_robot_status_bundle(payload if isinstance(payload, dict) else {})
-        self.status_label.setHidden(True)
+        self._set_refresh_loading(False)
         self.time_card.mark_updated()
 
     def _clear_load_thread(self):
         self.load_thread = None
         self.load_worker = None
         self.refresh_button.setEnabled(True)
+        self.refresh_button.setText(REFRESH_BUTTON_TEXT)
 
     def apply_robot_status_bundle(self, bundle):
         bundle = bundle or {}
@@ -894,8 +902,24 @@ class RobotStatusPage(QWidget):
         self.detail_list.set_rows(detail_rows)
 
     def _show_status(self, message: str):
-        self.status_label.setText(message)
+        text = str(message or "").strip()
+        self.status_label.setText(text or " ")
+        self.status_label.setToolTip(text)
         self.status_label.setHidden(False)
+
+    def _configure_header_status_slot(self):
+        self.status_label.setWordWrap(False)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.status_label.setFixedHeight(HEADER_STATUS_RESERVED_HEIGHT)
+        self._show_status("")
+
+    def _set_refresh_loading(self, loading: bool, message: str = ""):
+        if self.refresh_button is not None:
+            self.refresh_button.setEnabled(not loading)
+            self.refresh_button.setText(
+                REFRESH_LOADING_TEXT if loading else REFRESH_BUTTON_TEXT
+            )
+        self._show_status(message)
 
     def reset_page(self):
         self.refresh_data()

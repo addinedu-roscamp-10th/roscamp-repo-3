@@ -352,6 +352,52 @@ def test_robot_status_page_polls_snapshot_only_when_visible(monkeypatch):
         page.close()
 
 
+def test_robot_status_refresh_uses_fixed_header_status_without_layout_shift(
+    monkeypatch,
+):
+    _app()
+
+    import ui.utils.pages.caregiver.robot_status_page as robot_status_page
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False, auto_poll=False)
+
+    def fake_start_worker_thread(*_args, **_kwargs):
+        return object(), object()
+
+    try:
+        monkeypatch.setattr(
+            robot_status_page,
+            "start_worker_thread",
+            fake_start_worker_thread,
+        )
+        assert page.status_label.isHidden() is False
+        assert page.status_label.minimumHeight() == page.status_label.maximumHeight()
+        assert page.status_label.minimumHeight() > 0
+
+        before_height = page.time_card.sizeHint().height()
+
+        page.refresh_data()
+
+        during_height = page.time_card.sizeHint().height()
+        assert page.refresh_button.isEnabled() is False
+        assert page.refresh_button.text() == "불러오는 중..."
+        assert page.status_label.isHidden() is False
+        assert "로봇 상태" in page.status_label.text()
+
+        page._handle_load_finished(True, _bundle())
+        page._clear_load_thread()
+
+        after_height = page.time_card.sizeHint().height()
+        assert page.refresh_button.isEnabled() is True
+        assert page.refresh_button.text() == "새로고침"
+        assert page.status_label.isHidden() is False
+        assert page.status_label.text() == " "
+        assert before_height == during_height == after_height
+    finally:
+        page.close()
+
+
 def test_robot_status_load_worker_uses_caregiver_robot_status_rpc(monkeypatch):
     _app()
 
