@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 
-from PyQt6.QtCore import QDateTime, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QDateTime, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -16,6 +16,13 @@ from PyQt6.QtWidgets import (
 
 
 NavItem = tuple[str, str]
+PAGE_TIME_CARD_WIDTH = 360
+PAGE_TIME_CARD_HEIGHT = 150
+PAGE_TIME_CARD_ACTION_ROW_HEIGHT = 34
+PAGE_TIME_CARD_CLOCK_ROW_HEIGHT = 30
+PAGE_TIME_CARD_META_ROW_HEIGHT = 16
+PAGE_TIME_CARD_STATUS_ROW_HEIGHT = 18
+PAGE_TIME_CARD_BUTTON_HEIGHT = 32
 
 
 class SystemStatusStrip(QFrame):
@@ -132,33 +139,48 @@ class PageTimeCard(QFrame):
     ):
         super().__init__()
         self.setObjectName(object_name)
+        self.setFixedSize(PAGE_TIME_CARD_WIDTH, PAGE_TIME_CARD_HEIGHT)
 
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(18, 16, 18, 16)
-        self._layout.setSpacing(8)
+        self._layout.setContentsMargins(16, 10, 16, 10)
+        self._layout.setSpacing(3)
 
         self.clock_label = QLabel()
         self.clock_label.setObjectName("timeCardClock")
         self.clock_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.clock_label.setFixedHeight(PAGE_TIME_CARD_CLOCK_ROW_HEIGHT)
 
         self.date_label = QLabel()
         self.date_label.setObjectName("timeCardDate")
         self.date_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.date_label.setFixedHeight(PAGE_TIME_CARD_META_ROW_HEIGHT)
 
-        self.last_update_label = QLabel("마지막 업데이트: -")
+        self.last_update_label = QLabel(
+            "마지막 업데이트: -" if show_last_update else " "
+        )
         self.last_update_label.setObjectName("mutedText")
         self.last_update_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.last_update_label.setHidden(not show_last_update)
+        self.last_update_label.setFixedHeight(PAGE_TIME_CARD_META_ROW_HEIGHT)
 
-        self.status_label = QLabel(status_text)
+        self.status_label = QLabel(status_text or " ")
         self.status_label.setObjectName("mutedText")
-        self.status_label.setWordWrap(True)
-        self.status_label.setHidden(not bool(status_text))
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.status_label.setWordWrap(False)
+        self.status_label.setFixedHeight(PAGE_TIME_CARD_STATUS_ROW_HEIGHT)
 
         self._layout.addWidget(self.clock_label)
         self._layout.addWidget(self.date_label)
         self._layout.addWidget(self.last_update_label)
         self._layout.addWidget(self.status_label)
+
+        self.action_row = QWidget()
+        self.action_row.setObjectName("timeCardActionRow")
+        self.action_row.setFixedHeight(PAGE_TIME_CARD_ACTION_ROW_HEIGHT)
+        self.action_layout = QHBoxLayout(self.action_row)
+        self.action_layout.setContentsMargins(0, 0, 0, 0)
+        self.action_layout.setSpacing(8)
+        self.action_layout.addStretch(1)
+        self._layout.addWidget(self.action_row)
 
         self.refresh_button = None
         if refresh_text is not None:
@@ -168,7 +190,7 @@ class PageTimeCard(QFrame):
                 self.refresh_button.setProperty(*refresh_property)
             if on_refresh is not None:
                 self.refresh_button.clicked.connect(on_refresh)
-            self._layout.addWidget(self.refresh_button)
+            self.add_action(self.refresh_button)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.update_clock)
@@ -176,11 +198,22 @@ class PageTimeCard(QFrame):
         self.update_clock()
 
     def add_action(self, widget: QWidget) -> None:
-        self._layout.addWidget(widget)
+        widget.setFixedHeight(PAGE_TIME_CARD_BUTTON_HEIGHT)
+        self.action_layout.insertWidget(
+            max(0, self.action_layout.count() - 1),
+            widget,
+        )
+
+    def sizeHint(self) -> QSize:
+        return QSize(PAGE_TIME_CARD_WIDTH, PAGE_TIME_CARD_HEIGHT)
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
 
     def set_status(self, message: str) -> None:
-        self.status_label.setText(message)
-        self.status_label.setHidden(not bool(message))
+        text = str(message or "").strip()
+        self.status_label.setText(text or " ")
+        self.status_label.setToolTip(text)
 
     def mark_updated(self, source: str = "") -> None:
         current_time = QDateTime.currentDateTime().toString("HH:mm:ss")

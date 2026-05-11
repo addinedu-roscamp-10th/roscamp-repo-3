@@ -75,7 +75,8 @@ def test_shared_admin_shell_components_expose_ropi_contract():
         assert time_card.objectName() == "pageTimeCard"
         assert time_card.findChild(QLabel, "timeCardClock").text()
         assert time_card.findChild(QLabel, "timeCardDate").text()
-        assert time_card.last_update_label.isHidden() is True
+        assert time_card.last_update_label.isHidden() is False
+        assert time_card.last_update_label.text() == " "
         assert status_header.findChild(QFrame, "systemStatusStrip") is not None
 
         assert status_strip.objectName() == "systemStatusStrip"
@@ -95,6 +96,47 @@ def test_shared_admin_shell_components_expose_ropi_contract():
         status_header.close()
         default_status_strip.close()
         status_strip.close()
+
+
+def test_page_time_card_keeps_stable_size_for_different_page_actions():
+    _app()
+
+    from ui.utils.widgets.admin_shell import (
+        PAGE_TIME_CARD_HEIGHT,
+        PAGE_TIME_CARD_WIDTH,
+        PageTimeCard,
+    )
+
+    plain_card = PageTimeCard(show_last_update=False)
+    refresh_card = PageTimeCard(refresh_text="새로고침")
+    stream_card = PageTimeCard(
+        status_text="이벤트 스트림 연결 대기",
+        refresh_text="새로고침",
+    )
+    coordinate_card = PageTimeCard(show_last_update=False)
+    coordinate_card.add_action(QPushButton("새로고침"))
+    coordinate_card.add_action(QPushButton("변경 취소"))
+    coordinate_card.add_action(QPushButton("저장"))
+    stream_card.add_action(QPushButton("스트림 재연결"))
+
+    cards = [plain_card, refresh_card, stream_card, coordinate_card]
+
+    try:
+        for card in cards:
+            assert card.minimumWidth() == PAGE_TIME_CARD_WIDTH
+            assert card.maximumWidth() == PAGE_TIME_CARD_WIDTH
+            assert card.minimumHeight() == PAGE_TIME_CARD_HEIGHT
+            assert card.maximumHeight() == PAGE_TIME_CARD_HEIGHT
+            assert card.last_update_label.isHidden() is False
+            assert card.status_label.isHidden() is False
+            assert card.action_row.objectName() == "timeCardActionRow"
+            assert card.action_row.minimumHeight() == card.action_row.maximumHeight()
+
+        assert len({card.sizeHint().height() for card in cards}) == 1
+        assert len({card.sizeHint().width() for card in cards}) == 1
+    finally:
+        for card in cards:
+            card.close()
 
 
 def test_caregiver_main_window_uses_shared_admin_shell_contract():
@@ -136,10 +178,7 @@ def test_caregiver_main_window_uses_shared_admin_shell_contract():
 
 def test_admin_login_visible_copy_uses_operator_wording():
     source_path = (
-        Path(__file__).resolve().parents[3]
-        / "ui"
-        / "admin_ui"
-        / "login_auth_window.py"
+        Path(__file__).resolve().parents[3] / "ui" / "admin_ui" / "login_auth_window.py"
     )
     source = source_path.read_text(encoding="utf-8")
 
