@@ -449,7 +449,7 @@ class TaskRequestSidePanel(QWidget):
         if feedback_summary:
             self.robot_state_label.setText(_display(feedback_summary))
 
-        pose = payload.get("pose")
+        pose = payload.get("pose") or payload.get("current_pose")
         if isinstance(pose, dict):
             self.robot_pose_label.setText(self._format_pose(pose))
 

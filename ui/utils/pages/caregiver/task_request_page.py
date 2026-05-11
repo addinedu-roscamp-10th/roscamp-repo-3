@@ -293,6 +293,9 @@ class TaskRequestPage(QWidget):
             self.cancel_thread.wait(1000)
         self._clear_cancel_thread()
 
+    def apply_stream_event(self, event):
+        self.side_panel.apply_stream_event(event)
+
     def reset_page(self):
         for form in self.forms:
             if hasattr(form, "reset_form"):

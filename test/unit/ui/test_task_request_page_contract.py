@@ -684,6 +684,47 @@ def test_task_request_page_does_not_embed_patrol_resume_form(monkeypatch):
         page.close()
 
 
+def test_task_request_page_forwards_stream_events_to_side_panel(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import (
+        DeliveryRequestForm,
+        TaskRequestPage,
+    )
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+
+    page = TaskRequestPage()
+
+    try:
+        page.side_panel.show_delivery_result(
+            {
+                "result_code": "OK",
+                "task_id": 1001,
+                "task_status": "RUNNING",
+                "assigned_robot_id": "pinky2",
+                "cancellable": True,
+            }
+        )
+
+        page.apply_stream_event(
+            {
+                "event_type": "ACTION_FEEDBACK_UPDATED",
+                "payload": {
+                    "task_id": 1001,
+                    "feedback_summary": "MOVE_TO_DESTINATION",
+                    "current_pose": {"x": 1.25, "y": -0.5, "yaw": 90.0},
+                },
+            }
+        )
+
+        assert page.robot_state_label.text() == "MOVE_TO_DESTINATION"
+        assert "x=1.25" in page.robot_pose_label.text()
+        assert "y=-0.50" in page.robot_pose_label.text()
+    finally:
+        page.close()
+
+
 def test_delivery_create_payload_uses_numeric_ui_api_ids():
     _app()
 
