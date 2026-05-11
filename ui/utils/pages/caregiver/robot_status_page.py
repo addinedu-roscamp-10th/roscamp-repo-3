@@ -174,9 +174,14 @@ def _robot_id_from_action_name(action_name):
 class RobotStatusLoadWorker(QObject):
     finished = pyqtSignal(bool, object)
 
-    def __init__(self, *, selected_map_id=None):
+    def __init__(self, *, selected_map_id=None, cached_map_assets_by_map_id=None):
         super().__init__()
         self.selected_map_id = str(selected_map_id or "").strip() or None
+        self.cached_map_assets_by_map_id = (
+            cached_map_assets_by_map_id
+            if isinstance(cached_map_assets_by_map_id, dict)
+            else {}
+        )
 
     def run(self):
         try:
@@ -211,6 +216,11 @@ class RobotStatusLoadWorker(QObject):
             )
             bundle["selected_map_id"] = selected_map_id
             if not selected_map_id:
+                return
+
+            cached_assets = self.cached_map_assets_by_map_id.get(selected_map_id)
+            if isinstance(cached_assets, dict):
+                bundle["map_assets"] = dict(cached_assets)
                 return
 
             yaml_asset = service.get_map_asset(
@@ -373,6 +383,8 @@ class RobotStatusPage(QWidget):
         self.robots = []
         self.map_profiles = []
         self.selected_map_id = None
+        self._selected_robot_id = None
+        self._map_asset_cache = {}
         self._last_bundle = {}
         self._syncing_map_selector = False
         self._poll_timer = QTimer(self)
@@ -527,7 +539,10 @@ class RobotStatusPage(QWidget):
         self._set_refresh_loading(True, "로봇 상태를 불러오는 중입니다.")
         self.load_thread, self.load_worker = start_worker_thread(
             self,
-            worker=RobotStatusLoadWorker(selected_map_id=self.selected_map_id),
+            worker=RobotStatusLoadWorker(
+                selected_map_id=self.selected_map_id,
+                cached_map_assets_by_map_id=dict(self._map_asset_cache),
+            ),
             finished_handler=self._handle_load_finished,
             clear_handler=self._clear_load_thread,
         )
@@ -556,6 +571,7 @@ class RobotStatusPage(QWidget):
 
     def apply_robot_status_bundle(self, bundle):
         bundle = bundle or {}
+        preferred_robot_id = self._selected_robot_id or self._current_table_robot_id()
         self._last_bundle = dict(bundle)
         summary = bundle.get("summary") or {}
         self.robots = [
@@ -575,6 +591,14 @@ class RobotStatusPage(QWidget):
                 robots=self.robots,
             )
         )
+        self._remember_map_assets(bundle)
+        if (
+            "map_assets" not in bundle
+            and self.selected_map_id in self._map_asset_cache
+        ):
+            bundle = dict(bundle)
+            bundle["map_assets"] = dict(self._map_asset_cache[self.selected_map_id])
+            self._last_bundle = dict(bundle)
         self.robots.sort(key=_robot_display_sort_key)
 
         self._apply_summary(summary)
@@ -584,10 +608,7 @@ class RobotStatusPage(QWidget):
         self._apply_robot_table(self.robots)
         self._apply_delivery_composition(bundle.get("delivery_composition") or [])
 
-        if self.robots:
-            self._render_detail(self.robots[0])
-        else:
-            self.detail_list.set_rows([], empty_text="표시할 로봇 상태가 없습니다.")
+        self._render_selected_or_first_robot(preferred_robot_id)
 
     def apply_stream_event(self, event):
         event = event or {}
@@ -864,6 +885,28 @@ class RobotStatusPage(QWidget):
             for column_index, value in enumerate(values):
                 self.table.setItem(row_index, column_index, QTableWidgetItem(value))
 
+    def _current_table_robot_id(self):
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self.robots):
+            return None
+        return str(self.robots[row].get("robot_id") or "").strip() or None
+
+    def _render_selected_or_first_robot(self, preferred_robot_id=None):
+        if not self.robots:
+            self._selected_robot_id = None
+            self.detail_list.set_rows([], empty_text="표시할 로봇 상태가 없습니다.")
+            return
+
+        preferred_robot_id = str(preferred_robot_id or "").strip()
+        selected_index = 0
+        for index, robot in enumerate(self.robots):
+            if str(robot.get("robot_id") or "").strip() == preferred_robot_id:
+                selected_index = index
+                break
+
+        self.table.selectRow(selected_index)
+        self._render_detail(self.robots[selected_index])
+
     def _apply_delivery_composition(self, composition):
         for row in self.composition_rows:
             row.setParent(None)
@@ -887,6 +930,9 @@ class RobotStatusPage(QWidget):
         self._render_detail(self.robots[row])
 
     def _render_detail(self, robot):
+        if not isinstance(robot, dict):
+            return
+        self._selected_robot_id = str(robot.get("robot_id") or "").strip() or None
         detail_rows = [
             ("선택 로봇", _display(robot.get("robot_id"))),
             ("표시명", _display(robot.get("display_name"))),
@@ -905,6 +951,14 @@ class RobotStatusPage(QWidget):
             ("Fault", _display(robot.get("fault_code"))),
         ]
         self.detail_list.set_rows(detail_rows)
+
+    def _remember_map_assets(self, bundle):
+        assets = bundle.get("map_assets") if isinstance(bundle, dict) else None
+        if not isinstance(assets, dict):
+            return
+        map_id = str(assets.get("map_id") or "").strip()
+        if map_id:
+            self._map_asset_cache[map_id] = dict(assets)
 
     def _show_status(self, message: str):
         text = str(message or "").strip()

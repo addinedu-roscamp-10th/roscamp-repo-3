@@ -260,6 +260,33 @@ def test_robot_status_page_applies_server_bundle_to_cards_table_and_detail():
         page.close()
 
 
+def test_robot_status_page_preserves_selected_robot_detail_after_refresh():
+    _app()
+
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False)
+
+    try:
+        page.apply_robot_status_bundle(_bundle())
+        page.table.selectRow(1)
+        page._handle_table_selection()
+
+        refreshed_bundle = _bundle()
+        refreshed_bundle["robots"][0] = {
+            **refreshed_bundle["robots"][0],
+            "runtime_state": "MOVING",
+        }
+        page.apply_robot_status_bundle(refreshed_bundle)
+
+        labels = _label_texts(page)
+        assert "jetcobot1" in labels
+        assert "DEGRADED / ERROR" in labels
+        assert page.table.currentRow() == 1
+    finally:
+        page.close()
+
+
 def test_robot_status_page_orders_pinky_cards_above_jetcobot_cards():
     _app()
 
@@ -470,6 +497,57 @@ def test_robot_status_load_worker_uses_caregiver_robot_status_rpc(monkeypatch):
     assert (
         emitted[0][1]["map_assets"]["pgm_bytes"] == _map_assets("map_0504")["pgm_bytes"]
     )
+
+
+def test_robot_status_load_worker_reuses_cached_map_assets(monkeypatch):
+    _app()
+
+    import ui.utils.pages.caregiver.robot_status_page as robot_status_page
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusLoadWorker
+
+    calls = []
+    cached_assets = _map_assets("map_0504")
+
+    class FakeCaregiverRemoteService:
+        def get_robot_status_bundle(self):
+            calls.append("get_robot_status_bundle")
+            return _bundle()
+
+    class FakeCoordinateConfigRemoteService:
+        def list_map_profiles(self):
+            calls.append("list_map_profiles")
+            return {
+                "result_code": "OK",
+                "map_profiles": _bundle()["map_profiles"],
+            }
+
+        def get_map_asset(self, *, asset_type, map_id=None, encoding=None):
+            calls.append(f"get_map_asset:{asset_type}:{map_id}:{encoding}")
+            return {"result_code": "OK"}
+
+    monkeypatch.setattr(
+        robot_status_page,
+        "CaregiverRemoteService",
+        FakeCaregiverRemoteService,
+    )
+    monkeypatch.setattr(
+        robot_status_page,
+        "CoordinateConfigRemoteService",
+        FakeCoordinateConfigRemoteService,
+    )
+
+    worker = RobotStatusLoadWorker(
+        selected_map_id="map_0504",
+        cached_map_assets_by_map_id={"map_0504": cached_assets},
+    )
+    emitted = []
+    worker.finished.connect(lambda ok, payload: emitted.append((ok, payload)))
+
+    worker.run()
+
+    assert calls == ["get_robot_status_bundle", "list_map_profiles"]
+    assert emitted[0][0] is True
+    assert emitted[0][1]["map_assets"] == cached_assets
 
 
 def test_robot_status_page_uses_shared_worker_thread_helper():
