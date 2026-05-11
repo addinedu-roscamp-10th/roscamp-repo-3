@@ -33,5 +33,11 @@ def generate_launch_description():
                 output="screen",
                 parameters=[params_file],
             ),
+            Node(
+                package="ropi_patrol",
+                executable="fallen_alarm_buzzer",
+                name="fallen_alarm",
+                output="screen",
+            ),
         ]
     )

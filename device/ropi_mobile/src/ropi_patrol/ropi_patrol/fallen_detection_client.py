@@ -20,6 +20,12 @@ from ropi_interface.action import ExecutePatrolPath
 from ropi_interface.srv import FallResponseControl
 
 
+class PatrolFinished(Exception):
+    def __init__(self, result):
+        super().__init__()
+        self.result = result
+
+
 class FallenDetectionClient(Node):
     COMMAND_START_FALL_ALERT = "START_FALL_ALERT"
     COMMAND_CLEAR_AND_RESTART = "CLEAR_AND_RESTART"
@@ -92,6 +98,7 @@ class FallenDetectionClient(Node):
         self.declare_parameter("patrol_action_name", "")
         self.declare_parameter("fall_response_service_name", "")
         self.declare_parameter("active_task_topic", "")
+        self.declare_parameter("navigation_mode", "goToPose")
         self.declare_parameter("nav_check_interval_sec", 0.2)
         self.declare_parameter("path_interpolation_step_m", 0.1)
         self.declare_parameter("segment_retry_count", 3)
@@ -119,6 +126,7 @@ class FallenDetectionClient(Node):
             configured_active_task_topic
             or f"/ropi/robots/{self.pinky_id}/active_task_id"
         )
+        self.navigation_mode = str(self.get_parameter("navigation_mode").value).strip()
         self.nav_check_interval_sec = float(self.get_parameter("nav_check_interval_sec").value)
         self.path_interpolation_step_m = float(self.get_parameter("path_interpolation_step_m").value)
         self.segment_retry_count = int(self.get_parameter("segment_retry_count").value)
@@ -139,6 +147,8 @@ class FallenDetectionClient(Node):
             raise ValueError("fall_response_service_name parameter is required.")
         if not self.active_task_topic:
             raise ValueError("active_task_topic parameter is required.")
+        if self.navigation_mode not in ("goToPose", "followPath"):
+            raise ValueError('navigation_mode must be "goToPose" or "followPath".')
         if self.nav_check_interval_sec <= 0:
             raise ValueError("nav_check_interval_sec must be greater than 0.")
         if self.path_interpolation_step_m <= 0:
@@ -229,8 +239,7 @@ class FallenDetectionClient(Node):
         """
         IF-PAT-003 ExecutePatrolPath action 실행부.
 
-        path.poses는 dense trajectory가 아니라 waypoint sequence로 해석한다.
-        각 waypoint를 Nav2 goToPose goal로 순차 실행하면서 feedback/result를 만든다.
+        navigation_mode에 따라 waypoint 기반 goToPose 또는 segment 기반 followPath로 실행한다.
         """
         request = goal_handle.request
         feedback = ExecutePatrolPath.Feedback()
@@ -251,6 +260,7 @@ class FallenDetectionClient(Node):
         total_waypoints = len(path.poses)
         completed_count = 0
         started_at = time.monotonic()
+        timeout_sec = int(request.timeout_sec)
 
         self.active_task_id = str(request.task_id)
         self.active_patrol_snapshot = {
@@ -272,81 +282,28 @@ class FallenDetectionClient(Node):
                 -1.0,
             )
 
-            for waypoint_index, goal_pose in enumerate(path.poses):
-                with self.nav_lock:
-                    self.current_segment_index = waypoint_index
-                    self.active_patrol_snapshot["current_waypoint_index"] = waypoint_index
+            self.get_logger().info(
+                f"Patrol navigation started: task_id={self.active_task_id}, "
+                f"mode={self.navigation_mode}, waypoints={total_waypoints}, "
+                f"timeout_sec={timeout_sec}"
+            )
 
-                while rclpy.ok():
-                    goal_pose.header.stamp = self.get_clock().now().to_msg()
-                    self.navigator.goToPose(goal_pose)
-                    with self.nav_lock:
-                        self.navigation_running = True
-
-                    status = self._wait_for_waypoint(
-                        goal_handle,
-                        feedback,
-                        goal_pose,
-                        waypoint_index,
-                        total_waypoints,
-                        started_at,
-                        int(request.timeout_sec),
-                    )
-
-                    if status == "FALL_ALERT":
-                        wait_status = self._wait_for_fall_clear(
-                            goal_handle,
-                            feedback,
-                            goal_pose,
-                            waypoint_index,
-                            total_waypoints,
-                            started_at,
-                            int(request.timeout_sec),
-                        )
-                        if wait_status == "RESTART":
-                            continue
-                        status = wait_status
-
-                    break
-
-                if status == "CANCELED":
-                    goal_handle.canceled()
-                    return self._build_patrol_result(
-                        "CANCELED",
-                        "Patrol goal was canceled.",
-                        completed_count,
-                        goal_pose,
-                    )
-
-                if status == "TIMEOUT":
-                    goal_handle.abort()
-                    return self._build_patrol_result(
-                        "TIMEOUT",
-                        "Patrol action timeout reached.",
-                        completed_count,
-                        goal_pose,
-                    )
-
-                if status == "STOPPED":
-                    goal_handle.canceled()
-                    return self._build_patrol_result(
-                        "CANCELED",
-                        "Patrol stopped by fall response control.",
-                        completed_count,
-                        goal_pose,
-                    )
-
-                nav_result = self.navigator.getResult()
-                if nav_result != TaskResult.SUCCEEDED:
-                    goal_handle.abort()
-                    return self._build_patrol_result(
-                        "FAILED",
-                        f"Nav2 failed at waypoint {waypoint_index}.",
-                        completed_count,
-                        goal_pose,
-                    )
-
-                completed_count += 1
+            if self.navigation_mode == "followPath":
+                completed_count = self._execute_patrol_with_follow_path(
+                    goal_handle,
+                    feedback,
+                    path,
+                    started_at,
+                    timeout_sec,
+                )
+            else:
+                completed_count = self._execute_patrol_with_go_to_pose(
+                    goal_handle,
+                    feedback,
+                    path,
+                    started_at,
+                    timeout_sec,
+                )
 
             goal_handle.succeed()
             return self._build_patrol_result(
@@ -355,6 +312,9 @@ class FallenDetectionClient(Node):
                 completed_count,
                 path.poses[-1],
             )
+
+        except PatrolFinished as finished:
+            return finished.result
 
         except Exception as e:
             goal_handle.abort()
@@ -368,6 +328,299 @@ class FallenDetectionClient(Node):
                 self.active_task_id = ""
             self._publish_active_task_id("")
 
+    def _execute_patrol_with_go_to_pose(
+        self,
+        goal_handle,
+        feedback,
+        path,
+        started_at,
+        timeout_sec,
+    ):
+        """
+        path.poses를 waypoint sequence로 보고 각 pose를 Nav2 goToPose goal로 실행한다.
+        """
+        total_waypoints = len(path.poses)
+        completed_count = 0
+
+        for waypoint_index, goal_pose in enumerate(path.poses):
+            with self.nav_lock:
+                self.current_segment_index = waypoint_index
+                self.active_patrol_snapshot["current_waypoint_index"] = waypoint_index
+
+            status = "CANCELED"
+            while rclpy.ok():
+                goal_pose.header.stamp = self.get_clock().now().to_msg()
+                self.navigator.goToPose(goal_pose)
+                with self.nav_lock:
+                    self.navigation_running = True
+
+                status = self._wait_for_waypoint(
+                    goal_handle,
+                    feedback,
+                    goal_pose,
+                    waypoint_index,
+                    total_waypoints,
+                    started_at,
+                    timeout_sec,
+                )
+
+                if status == "FALL_ALERT":
+                    wait_status = self._wait_for_fall_clear(
+                        goal_handle,
+                        feedback,
+                        goal_pose,
+                        waypoint_index,
+                        total_waypoints,
+                        started_at,
+                        timeout_sec,
+                    )
+                    if wait_status == "RESTART":
+                        continue
+                    status = wait_status
+
+                break
+
+            if status == "CANCELED":
+                goal_handle.canceled()
+                raise PatrolFinished(
+                    self._build_patrol_result(
+                        "CANCELED",
+                        "Patrol goal was canceled.",
+                        completed_count,
+                        goal_pose,
+                    )
+                )
+
+            if status == "TIMEOUT":
+                goal_handle.abort()
+                raise PatrolFinished(
+                    self._build_patrol_result(
+                        "TIMEOUT",
+                        "Patrol action timeout reached.",
+                        completed_count,
+                        goal_pose,
+                    )
+                )
+
+            if status == "STOPPED":
+                goal_handle.canceled()
+                raise PatrolFinished(
+                    self._build_patrol_result(
+                        "CANCELED",
+                        "Patrol stopped by fall response control.",
+                        completed_count,
+                        goal_pose,
+                    )
+                )
+
+            nav_result = self.navigator.getResult()
+            if nav_result != TaskResult.SUCCEEDED:
+                goal_handle.abort()
+                raise PatrolFinished(
+                    self._build_patrol_result(
+                        "FAILED",
+                        f"Nav2 failed at waypoint {waypoint_index}.",
+                        completed_count,
+                        goal_pose,
+                    )
+                )
+
+            completed_count += 1
+
+        return completed_count
+
+    def _execute_patrol_with_follow_path(
+        self,
+        goal_handle,
+        feedback,
+        path,
+        started_at,
+        timeout_sec,
+    ):
+        """
+        path.poses를 waypoint sequence로 보고 waypoint 사이를 보간한 Path segment로 실행한다.
+        """
+        total_waypoints = len(path.poses)
+        completed_count = 0
+
+        if total_waypoints == 1:
+            self.get_logger().warn(
+                "followPath mode requires at least two poses. Falling back to goToPose."
+            )
+            return self._execute_patrol_with_go_to_pose(
+                goal_handle,
+                feedback,
+                path,
+                started_at,
+                timeout_sec,
+            )
+
+        for segment_index in range(total_waypoints - 1):
+            segment_goal_pose = path.poses[segment_index + 1]
+            retry_count = 0
+
+            with self.nav_lock:
+                self.current_segment_index = segment_index
+                self.active_patrol_snapshot["current_waypoint_index"] = segment_index
+
+            status = "CANCELED"
+            while rclpy.ok():
+                segment_path = self._build_path_segment_from_poses(
+                    path.poses[segment_index],
+                    segment_goal_pose,
+                    path.header.frame_id,
+                )
+                self.navigator.followPath(segment_path)
+                with self.nav_lock:
+                    self.navigation_running = True
+                    self.navigation_paused_by_alarm = False
+
+                self.get_logger().info(
+                    f"FollowPath started: segment {segment_index + 1}/{total_waypoints - 1}, "
+                    f"poses={len(segment_path.poses)}, "
+                    f"goal=({segment_goal_pose.pose.position.x:.3f}, "
+                    f"{segment_goal_pose.pose.position.y:.3f})"
+                )
+
+                status = self._wait_for_waypoint(
+                    goal_handle,
+                    feedback,
+                    segment_goal_pose,
+                    segment_index,
+                    total_waypoints,
+                    started_at,
+                    timeout_sec,
+                )
+
+                if status == "FALL_ALERT":
+                    wait_status = self._wait_for_fall_clear(
+                        goal_handle,
+                        feedback,
+                        segment_goal_pose,
+                        segment_index,
+                        total_waypoints,
+                        started_at,
+                        timeout_sec,
+                    )
+                    if wait_status == "RESTART":
+                        continue
+                    status = wait_status
+
+                if status == "CANCELED":
+                    goal_handle.canceled()
+                    raise PatrolFinished(
+                        self._build_patrol_result(
+                            "CANCELED",
+                            "Patrol goal was canceled.",
+                            completed_count,
+                            segment_goal_pose,
+                        )
+                    )
+
+                if status == "TIMEOUT":
+                    goal_handle.abort()
+                    raise PatrolFinished(
+                        self._build_patrol_result(
+                            "TIMEOUT",
+                            "Patrol action timeout reached.",
+                            completed_count,
+                            segment_goal_pose,
+                        )
+                    )
+
+                if status == "STOPPED":
+                    goal_handle.canceled()
+                    raise PatrolFinished(
+                        self._build_patrol_result(
+                            "CANCELED",
+                            "Patrol stopped by fall response control.",
+                            completed_count,
+                            segment_goal_pose,
+                        )
+                    )
+
+                nav_result = self.navigator.getResult()
+                nav_result_label = self._nav_result_to_string(nav_result)
+                nav_error_detail = self._get_nav_error_detail()
+                if nav_result == TaskResult.SUCCEEDED:
+                    completed_count = segment_index + 2
+                    self.get_logger().info(
+                        f"FollowPath succeeded: segment {segment_index + 1}/{total_waypoints - 1}, "
+                        f"completed_waypoints={completed_count}/{total_waypoints}, "
+                        f"result={nav_result_label}"
+                    )
+                    break
+
+                if retry_count < self.segment_retry_count:
+                    retry_count += 1
+                    self.get_logger().warn(
+                        f"FollowPath did not succeed: segment {segment_index + 1}/{total_waypoints - 1}, "
+                        f"result={nav_result_label}, {nav_error_detail}. Retrying "
+                        f"({retry_count}/{self.segment_retry_count})."
+                    )
+                    if self.segment_retry_delay_sec > 0:
+                        time.sleep(self.segment_retry_delay_sec)
+                    continue
+
+                goal_handle.abort()
+                self.get_logger().error(
+                    f"FollowPath failed: segment {segment_index + 1}/{total_waypoints - 1}, "
+                    f"result={nav_result_label}, {nav_error_detail}, "
+                    f"retries={retry_count}/{self.segment_retry_count}, "
+                    f"completed_waypoints={completed_count}/{total_waypoints}"
+                )
+                raise PatrolFinished(
+                    self._build_patrol_result(
+                        "FAILED",
+                        f"Nav2 failed at FollowPath segment {segment_index + 1}.",
+                        completed_count,
+                        segment_goal_pose,
+                    )
+                )
+
+        return completed_count
+
+    @staticmethod
+    def _nav_result_to_string(nav_result):
+        if nav_result == TaskResult.SUCCEEDED:
+            return "SUCCEEDED"
+        if nav_result == TaskResult.CANCELED:
+            return "CANCELED"
+        if nav_result == TaskResult.FAILED:
+            return "FAILED"
+        return f"UNKNOWN({nav_result})"
+
+    def _get_nav_error_detail(self):
+        try:
+            if self.navigator.result_future is None:
+                return "error_code=UNAVAILABLE, error_msg=''"
+
+            wrapped_result = self.navigator.result_future.result()
+            if wrapped_result is None or not hasattr(wrapped_result, "result"):
+                return "error_code=UNAVAILABLE, error_msg=''"
+
+            result = wrapped_result.result
+            error_code = getattr(result, "error_code", None)
+            error_msg = getattr(result, "error_msg", "")
+            error_label = self._follow_path_error_code_to_string(error_code)
+            return f"error_code={error_label}({error_code}), error_msg='{error_msg}'"
+        except Exception as e:
+            return f"error_detail_unavailable='{e}'"
+
+    @staticmethod
+    def _follow_path_error_code_to_string(error_code):
+        return {
+            0: "NONE",
+            100: "UNKNOWN",
+            101: "INVALID_CONTROLLER",
+            102: "TF_ERROR",
+            103: "INVALID_PATH",
+            104: "PATIENCE_EXCEEDED",
+            105: "FAILED_TO_MAKE_PROGRESS",
+            106: "NO_VALID_CONTROL",
+            107: "CONTROLLER_TIMED_OUT",
+        }.get(error_code, "UNRECOGNIZED")
+
     def _normalize_goal_path(self, path):
         frame_id = path.header.frame_id.strip() or "map"
         path.header.frame_id = frame_id
@@ -379,6 +632,52 @@ class FallenDetectionClient(Node):
             pose.header.stamp = path.header.stamp
 
         return path
+
+    def _build_path_segment_from_poses(self, start_pose, end_pose, frame_id):
+        start_x = start_pose.pose.position.x
+        start_y = start_pose.pose.position.y
+        end_x = end_pose.pose.position.x
+        end_y = end_pose.pose.position.y
+
+        dx = end_x - start_x
+        dy = end_y - start_y
+        distance = math.hypot(dx, dy)
+        segment_yaw_deg = (
+            math.degrees(math.atan2(dy, dx))
+            if distance > 0.0
+            else self._yaw_deg_from_pose(end_pose)
+        )
+        end_yaw_deg = self._yaw_deg_from_pose(end_pose)
+
+        path = Path()
+        path.header.frame_id = frame_id or "map"
+        path.header.stamp = self.get_clock().now().to_msg()
+
+        steps = max(1, int(math.ceil(distance / self.path_interpolation_step_m)))
+
+        for step_index in range(steps + 1):
+            ratio = step_index / steps
+            x = start_x + dx * ratio
+            y = start_y + dy * ratio
+            yaw_deg = end_yaw_deg if step_index == steps else segment_yaw_deg
+
+            pose = self.make_pose(x, y, yaw_deg)
+            pose.header.frame_id = path.header.frame_id
+            pose.header.stamp = path.header.stamp
+            path.poses.append(pose)
+
+        return path
+
+    @staticmethod
+    def _yaw_deg_from_pose(pose):
+        orientation = pose.pose.orientation
+        siny_cosp = 2.0 * (
+            orientation.w * orientation.z + orientation.x * orientation.y
+        )
+        cosy_cosp = 1.0 - 2.0 * (
+            orientation.y * orientation.y + orientation.z * orientation.z
+        )
+        return math.degrees(math.atan2(siny_cosp, cosy_cosp))
 
     def _wait_for_waypoint(
         self,
@@ -394,23 +693,46 @@ class FallenDetectionClient(Node):
             self.navigator.cancelTask()
             return "FALL_ALERT"
 
+        last_progress_log_at = 0.0
         while rclpy.ok() and not self.navigator.isTaskComplete():
             if goal_handle.is_cancel_requested:
                 self.navigator.cancelTask()
+                self.get_logger().warn(
+                    f"Nav2 task canceled by patrol action request: target_index={waypoint_index}"
+                )
                 return "CANCELED"
 
             if self.alarm_active:
                 self.navigator.cancelTask()
+                self.get_logger().warn(
+                    f"Nav2 task canceled because fall alarm is active: target_index={waypoint_index}"
+                )
                 return "FALL_ALERT"
 
             if timeout_sec > 0 and time.monotonic() - started_at >= timeout_sec:
                 self.navigator.cancelTask()
+                self.get_logger().warn(
+                    f"Nav2 task canceled by patrol timeout: target_index={waypoint_index}, "
+                    f"timeout_sec={timeout_sec}"
+                )
                 return "TIMEOUT"
 
             distance_remaining = -1.0
             nav_feedback = self.navigator.getFeedback()
             if nav_feedback is not None and hasattr(nav_feedback, "distance_remaining"):
                 distance_remaining = float(nav_feedback.distance_remaining)
+            elif nav_feedback is not None and hasattr(nav_feedback, "distance_to_goal"):
+                distance_remaining = float(nav_feedback.distance_to_goal)
+
+            now = time.monotonic()
+            if now - last_progress_log_at >= 2.0:
+                elapsed_sec = now - started_at
+                self.get_logger().info(
+                    f"Nav2 task still running: target_index={waypoint_index}, "
+                    f"elapsed_sec={elapsed_sec:.1f}, "
+                    f"distance_remaining_m={distance_remaining:.3f}"
+                )
+                last_progress_log_at = now
 
             patrol_status = "WAITING_FALL_RESPONSE" if self.alarm_active else "MOVING"
             self._publish_patrol_feedback(
@@ -427,6 +749,7 @@ class FallenDetectionClient(Node):
         if self.alarm_active or self.navigation_paused_by_alarm:
             return "FALL_ALERT"
 
+        self.get_logger().info(f"Nav2 task completed: target_index={waypoint_index}")
         return "DONE"
 
     def _wait_for_fall_clear(

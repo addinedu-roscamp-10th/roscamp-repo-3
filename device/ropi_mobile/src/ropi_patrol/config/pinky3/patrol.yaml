@@ -5,6 +5,7 @@ fallen_detection_client:
     patrol_action_name: ""
     fall_response_service_name: ""
     active_task_topic: "/ropi/robots/pinky3/active_task_id"
+    navigation_mode: "followPath" # "goToPose" or "followPath"
     nav_check_interval_sec: 0.2
     path_interpolation_step_m: 0.1
     segment_retry_count: 3
@@ -26,7 +27,7 @@ fallen_detection_client:
 
 ropi_camera:
   ros__parameters:
-    server_ip: "192.168.0.22"
+    server_ip: "192.168.0.76"
     udp_port: 5005
     stream_name: "pinky3_cam"
     udp_packet_size: 1200
