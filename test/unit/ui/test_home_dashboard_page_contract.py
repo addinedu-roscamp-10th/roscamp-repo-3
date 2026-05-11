@@ -56,6 +56,7 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         assert "대기 작업" in labels
         assert "진행 중 작업" in labels
         assert "경고/오류" in labels
+        assert "현재 요청된 작업을 상태별로 분류해 보여줍니다." not in labels
 
         flow_scroll = page.findChild(QScrollArea, "flowBoardScroll")
         assert flow_scroll is not None

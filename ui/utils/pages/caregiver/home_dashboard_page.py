@@ -648,9 +648,6 @@ class CaregiverHomePage(QWidget):
         flow_title = QLabel("작업 흐름 보드")
         flow_title.setObjectName("sectionTitle")
 
-        flow_sub = QLabel("현재 요청된 작업을 상태별로 분류해 보여줍니다.")
-        flow_sub.setObjectName("mutedText")
-
         self.flow_scroll = QScrollArea()
         self.flow_scroll.setObjectName("flowBoardScroll")
         self.flow_scroll.setWidgetResizable(True)
@@ -666,7 +663,6 @@ class CaregiverHomePage(QWidget):
         self.flow_scroll.setWidget(flow_content)
 
         fw.addWidget(flow_title)
-        fw.addWidget(flow_sub)
         fw.addWidget(self.flow_scroll)
 
         timeline_wrap = QFrame()
