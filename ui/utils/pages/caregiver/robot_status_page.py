@@ -174,7 +174,13 @@ def _robot_id_from_action_name(action_name):
 class RobotStatusLoadWorker(QObject):
     finished = pyqtSignal(bool, object)
 
-    def __init__(self, *, selected_map_id=None, cached_map_assets_by_map_id=None):
+    def __init__(
+        self,
+        *,
+        selected_map_id=None,
+        cached_map_assets_by_map_id=None,
+        include_map_payload: bool = True,
+    ):
         super().__init__()
         self.selected_map_id = str(selected_map_id or "").strip() or None
         self.cached_map_assets_by_map_id = (
@@ -182,11 +188,13 @@ class RobotStatusLoadWorker(QObject):
             if isinstance(cached_map_assets_by_map_id, dict)
             else {}
         )
+        self.include_map_payload = bool(include_map_payload)
 
     def run(self):
         try:
             bundle = CaregiverRemoteService().get_robot_status_bundle() or {}
-            self._attach_map_payload(bundle)
+            if self.include_map_payload:
+                self._attach_map_payload(bundle)
             self.finished.emit(True, bundle)
         except Exception as exc:
             self.finished.emit(False, str(exc))
@@ -532,16 +540,18 @@ class RobotStatusPage(QWidget):
         root.addWidget(cards_wrap)
         root.addLayout(bottom_row, 1)
 
-    def refresh_data(self):
+    def refresh_data(self, *, include_map_payload: bool = True):
         if self.load_thread is not None:
             return
 
+        include_map_payload = bool(include_map_payload) or self._needs_map_payload()
         self._set_refresh_loading(True, "로봇 상태를 불러오는 중입니다.")
         self.load_thread, self.load_worker = start_worker_thread(
             self,
             worker=RobotStatusLoadWorker(
                 selected_map_id=self.selected_map_id,
                 cached_map_assets_by_map_id=dict(self._map_asset_cache),
+                include_map_payload=include_map_payload,
             ),
             finished_handler=self._handle_load_finished,
             clear_handler=self._clear_load_thread,
@@ -549,7 +559,12 @@ class RobotStatusPage(QWidget):
 
     def _poll_visible_snapshot(self):
         if self.isVisible():
-            self.refresh_data()
+            self.refresh_data(include_map_payload=False)
+
+    def _needs_map_payload(self):
+        if not self.map_profiles or not self.selected_map_id:
+            return True
+        return self.selected_map_id not in self._map_asset_cache
 
     def _handle_load_finished(self, ok, payload):
         if not ok:
@@ -577,11 +592,12 @@ class RobotStatusPage(QWidget):
         self.robots = [
             robot for robot in bundle.get("robots") or [] if isinstance(robot, dict)
         ]
-        self.map_profiles = [
-            profile
-            for profile in bundle.get("map_profiles") or []
-            if isinstance(profile, dict)
-        ]
+        if "map_profiles" in bundle:
+            self.map_profiles = [
+                profile
+                for profile in bundle.get("map_profiles") or []
+                if isinstance(profile, dict)
+            ]
         self.selected_map_id = (
             str(bundle.get("selected_map_id") or "").strip()
             or self.selected_map_id
@@ -866,7 +882,7 @@ class RobotStatusPage(QWidget):
         if not selected_map_id or selected_map_id == self.selected_map_id:
             return
         self.selected_map_id = selected_map_id
-        self.refresh_data()
+        self.refresh_data(include_map_payload=True)
 
     def _apply_robot_table(self, robots):
         self.table.setRowCount(len(robots))

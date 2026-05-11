@@ -287,6 +287,31 @@ def test_robot_status_page_preserves_selected_robot_detail_after_refresh():
         page.close()
 
 
+def test_robot_status_page_preserves_map_payload_on_runtime_only_refresh():
+    _app()
+
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False)
+
+    try:
+        page.apply_robot_status_bundle(_bundle())
+
+        runtime_bundle = {
+            "summary": _bundle()["summary"],
+            "robots": _bundle()["robots"],
+            "delivery_composition": _bundle()["delivery_composition"],
+        }
+        page.apply_robot_status_bundle(runtime_bundle)
+
+        assert page.map_selector.count() == 2
+        assert page.selected_map_id == "map_0504"
+        assert page.robot_map_canvas.map_loaded is True
+        assert page.robot_map_canvas.visible_robot_ids == ["pinky2"]
+    finally:
+        page.close()
+
+
 def test_robot_status_page_orders_pinky_cards_above_jetcobot_cards():
     _app()
 
@@ -373,14 +398,18 @@ def test_robot_status_page_polls_snapshot_only_when_visible(monkeypatch):
     calls = []
 
     try:
-        monkeypatch.setattr(page, "refresh_data", lambda: calls.append("refresh"))
+        monkeypatch.setattr(
+            page,
+            "refresh_data",
+            lambda **kwargs: calls.append(kwargs),
+        )
 
         page._poll_visible_snapshot()
         page.show()
         app.processEvents()
         page._poll_visible_snapshot()
 
-        assert calls == ["refresh"]
+        assert calls == [{"include_map_payload": False}]
     finally:
         page.close()
 
@@ -548,6 +577,58 @@ def test_robot_status_load_worker_reuses_cached_map_assets(monkeypatch):
     assert calls == ["get_robot_status_bundle", "list_map_profiles"]
     assert emitted[0][0] is True
     assert emitted[0][1]["map_assets"] == cached_assets
+
+
+def test_robot_status_load_worker_skips_map_payload_when_disabled(monkeypatch):
+    _app()
+
+    import ui.utils.pages.caregiver.robot_status_page as robot_status_page
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusLoadWorker
+
+    calls = []
+
+    class FakeCaregiverRemoteService:
+        def get_robot_status_bundle(self):
+            calls.append("get_robot_status_bundle")
+            bundle = _bundle()
+            bundle.pop("map_profiles", None)
+            bundle.pop("selected_map_id", None)
+            bundle.pop("map_assets", None)
+            return bundle
+
+    class FakeCoordinateConfigRemoteService:
+        def list_map_profiles(self):
+            calls.append("list_map_profiles")
+            return {"result_code": "OK", "map_profiles": []}
+
+        def get_map_asset(self, *, asset_type, map_id=None, encoding=None):
+            calls.append(f"get_map_asset:{asset_type}:{map_id}:{encoding}")
+            return {"result_code": "OK"}
+
+    monkeypatch.setattr(
+        robot_status_page,
+        "CaregiverRemoteService",
+        FakeCaregiverRemoteService,
+    )
+    monkeypatch.setattr(
+        robot_status_page,
+        "CoordinateConfigRemoteService",
+        FakeCoordinateConfigRemoteService,
+    )
+
+    worker = RobotStatusLoadWorker(
+        selected_map_id="map_0504",
+        include_map_payload=False,
+    )
+    emitted = []
+    worker.finished.connect(lambda ok, payload: emitted.append((ok, payload)))
+
+    worker.run()
+
+    assert calls == ["get_robot_status_bundle"]
+    assert emitted[0][0] is True
+    assert "map_profiles" not in emitted[0][1]
+    assert "map_assets" not in emitted[0][1]
 
 
 def test_robot_status_page_uses_shared_worker_thread_helper():
