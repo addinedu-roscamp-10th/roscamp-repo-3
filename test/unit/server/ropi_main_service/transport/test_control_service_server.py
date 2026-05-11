@@ -96,6 +96,7 @@ def control_service_server(monkeypatch):
     monkeypatch.setenv("AI_FALL_STREAM_ENABLED", "false")
     monkeypatch.setenv("GUIDE_PHASE_SNAPSHOT_POLL_ENABLED", "false")
     monkeypatch.setenv("ACTION_FEEDBACK_EVENT_POLL_ENABLED", "false")
+    monkeypatch.setenv("ROBOT_STATUS_EVENT_POLL_ENABLED", "false")
     return tcp_server.ControlServiceServer()
 
 
@@ -106,7 +107,10 @@ def test_heartbeat_with_db_check_puts_db_status_under_payload(control_service_se
         payload={"check_db": True},
     )
 
-    with patch("server.ropi_main_service.persistence.connection.test_connection", return_value=(True, {"ok": 1})):
+    with patch(
+        "server.ropi_main_service.persistence.connection.test_connection",
+        return_value=(True, {"ok": 1}),
+    ):
         response = control_service_server.dispatch_frame(request)
 
     assert response.is_response is True
@@ -164,7 +168,9 @@ def test_if_gui_008_dispatches_kiosk_visitor_lookup_service(control_service_serv
     assert response.payload["reason_code"] == "KEYWORD_EMPTY"
 
 
-def test_if_gui_009_dispatches_kiosk_visitor_registration_service(control_service_server):
+def test_if_gui_009_dispatches_kiosk_visitor_registration_service(
+    control_service_server,
+):
     request = TCPFrame(
         message_code=MESSAGE_CODE_GUIDE_VISITOR_REGISTRATION,
         sequence_no=42,
@@ -185,7 +191,9 @@ def test_if_gui_009_dispatches_kiosk_visitor_registration_service(control_servic
     assert response.payload["reason_code"] == "PRIVACY_CONSENT_REQUIRED"
 
 
-def test_if_gui_010_dispatches_kiosk_visitor_care_history_service(control_service_server):
+def test_if_gui_010_dispatches_kiosk_visitor_care_history_service(
+    control_service_server,
+):
     request = TCPFrame(
         message_code=MESSAGE_CODE_GUIDE_VISITOR_CARE_HISTORY_QUERY,
         sequence_no=43,
@@ -251,7 +259,9 @@ def test_rpc_dispatch_routes_to_registered_service(control_service_server):
         },
     )
 
-    with patch.dict(tcp_server.SERVICE_REGISTRY, {"task_request": FakeTaskRequestService}):
+    with patch.dict(
+        tcp_server.SERVICE_REGISTRY, {"task_request": FakeTaskRequestService}
+    ):
         response = control_service_server.dispatch_frame(payload)
 
     assert response.payload == ["기저귀", "물티슈"]
@@ -480,12 +490,17 @@ def test_async_heartbeat_with_db_check_uses_async_connection(control_service_ser
         return True, {"ok": 1}
 
     async def scenario():
-        with patch(
-            "server.ropi_main_service.persistence.async_connection.async_test_connection",
-            new=fake_async_test_connection,
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("DB heartbeat should not use thread fallback"),
+        with (
+            patch(
+                "server.ropi_main_service.persistence.async_connection.async_test_connection",
+                new=fake_async_test_connection,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "DB heartbeat should not use thread fallback"
+                ),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -495,7 +510,9 @@ def test_async_heartbeat_with_db_check_uses_async_connection(control_service_ser
     assert response.payload["db"] == {"ok": True, "detail": {"ok": 1}}
 
 
-def test_async_heartbeat_with_ros_check_uses_async_readiness_service(control_service_server):
+def test_async_heartbeat_with_ros_check_uses_async_readiness_service(
+    control_service_server,
+):
     request = TCPFrame(
         message_code=MESSAGE_CODE_HEARTBEAT,
         sequence_no=18,
@@ -515,12 +532,17 @@ def test_async_heartbeat_with_ros_check_uses_async_readiness_service(control_ser
             }
 
     async def scenario():
-        with patch(
-            "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService",
-            return_value=FakeReadinessService(),
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("ROS heartbeat should not use thread fallback"),
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.RosRuntimeReadinessService",
+                return_value=FakeReadinessService(),
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "ROS heartbeat should not use thread fallback"
+                ),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -558,12 +580,15 @@ def test_async_dispatch_login_uses_native_async_auth(control_service_server):
             }
 
     async def scenario():
-        with patch(
-            "server.ropi_main_service.transport.tcp_server.AuthService",
-            return_value=FakeAuthService(),
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("login should not use thread fallback"),
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.AuthService",
+                return_value=FakeAuthService(),
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError("login should not use thread fallback"),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -593,12 +618,15 @@ def test_async_rpc_dispatch_awaits_async_service_method(control_service_server):
             return {"summary": {"available_robot_count": 2}}
 
     async def scenario():
-        with patch.dict(
-            tcp_server.SERVICE_REGISTRY,
-            {"caregiver": FakeAsyncCaregiverFacade},
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("async RPC should not use thread fallback"),
+        with (
+            patch.dict(
+                tcp_server.SERVICE_REGISTRY,
+                {"caregiver": FakeAsyncCaregiverFacade},
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError("async RPC should not use thread fallback"),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -666,12 +694,15 @@ def test_async_fall_evidence_image_dispatch_prefers_async_service(
             }
 
     async def scenario():
-        with patch.dict(
-            tcp_server.SERVICE_REGISTRY,
-            {"fall_evidence_image": FakeFallEvidenceImageService},
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("IF-PAT-007 should not use thread fallback"),
+        with (
+            patch.dict(
+                tcp_server.SERVICE_REGISTRY,
+                {"fall_evidence_image": FakeFallEvidenceImageService},
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError("IF-PAT-007 should not use thread fallback"),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -685,7 +716,11 @@ def test_async_fall_evidence_image_dispatch_prefers_async_service(
 def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
     class FakeCaregiverService:
         def get_dashboard_summary(self):
-            return {"available_robot_count": 1, "waiting_job_count": 0, "running_job_count": 1}
+            return {
+                "available_robot_count": 1,
+                "waiting_job_count": 0,
+                "running_job_count": 1,
+            }
 
         def get_robot_board_data(self):
             return []
@@ -725,12 +760,15 @@ def test_caregiver_facade_attaches_action_feedback_to_running_tasks():
                 ],
             }
 
-    with patch(
-        "server.ropi_main_service.application.caregiver_rpc_facade.CaregiverService",
-        FakeCaregiverService,
-    ), patch(
-        "server.ropi_main_service.application.caregiver_rpc_facade.RosActionFeedbackService",
-        FakeActionFeedbackService,
+    with (
+        patch(
+            "server.ropi_main_service.application.caregiver_rpc_facade.CaregiverService",
+            FakeCaregiverService,
+        ),
+        patch(
+            "server.ropi_main_service.application.caregiver_rpc_facade.RosActionFeedbackService",
+            FakeActionFeedbackService,
+        ),
     ):
         bundle = CaregiverRpcFacade().get_dashboard_bundle()
 
@@ -803,12 +841,15 @@ def test_async_rpc_dispatch_offloads_sync_service_method(control_service_server)
         return func(*args, **kwargs)
 
     async def scenario():
-        with patch.dict(
-            tcp_server.SERVICE_REGISTRY,
-            {"task_request": FakeTaskRequestService},
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            new=fake_to_thread,
+        with (
+            patch.dict(
+                tcp_server.SERVICE_REGISTRY,
+                {"task_request": FakeTaskRequestService},
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                new=fake_to_thread,
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -844,12 +885,17 @@ def test_async_delivery_create_task_uses_native_async_service(control_service_se
             }
 
     async def scenario():
-        with patch(
-            "server.ropi_main_service.transport.tcp_server.build_delivery_request_service",
-            return_value=FakeAsyncDeliveryRequestService(),
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("delivery create should not use thread fallback"),
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.build_delivery_request_service",
+                return_value=FakeAsyncDeliveryRequestService(),
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "delivery create should not use thread fallback"
+                ),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -886,12 +932,17 @@ def test_async_patrol_create_task_uses_native_async_service(control_service_serv
             }
 
     async def scenario():
-        with patch(
-            "server.ropi_main_service.transport.tcp_server.build_patrol_request_service",
-            return_value=FakeAsyncTaskRequestService(),
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("patrol create should not use thread fallback"),
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.build_patrol_request_service",
+                return_value=FakeAsyncTaskRequestService(),
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "patrol create should not use thread fallback"
+                ),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -938,12 +989,17 @@ def test_async_guide_create_task_uses_native_async_service(control_service_serve
             }
 
     async def scenario():
-        with patch.dict(
-            tcp_server.SERVICE_REGISTRY,
-            {"visit_guide": FakeAsyncVisitGuideService},
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("guide create should not use thread fallback"),
+        with (
+            patch.dict(
+                tcp_server.SERVICE_REGISTRY,
+                {"visit_guide": FakeAsyncVisitGuideService},
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "guide create should not use thread fallback"
+                ),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -1182,16 +1238,20 @@ def test_async_guide_command_rpc_publishes_task_update(control_service_server):
 
     class FakeAsyncVisitGuideService:
         async def async_send_guide_command(self, **payload):
-            return True, "안내 제어 명령이 수락되었습니다.", {
-                "accepted": True,
-                "result_code": "ACCEPTED",
-                "result_message": "안내 제어 명령이 수락되었습니다.",
-                "task_id": payload["task_id"],
-                "task_type": "GUIDE",
-                "task_status": "RUNNING",
-                "phase": "WAIT_TARGET_TRACKING",
-                "assigned_robot_id": payload["pinky_id"],
-            }
+            return (
+                True,
+                "안내 제어 명령이 수락되었습니다.",
+                {
+                    "accepted": True,
+                    "result_code": "ACCEPTED",
+                    "result_message": "안내 제어 명령이 수락되었습니다.",
+                    "task_id": payload["task_id"],
+                    "task_type": "GUIDE",
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_TARGET_TRACKING",
+                    "assigned_robot_id": payload["pinky_id"],
+                },
+            )
 
     class FakeTaskEventStreamHub:
         async def publish(self, event_type, payload):
@@ -1267,16 +1327,20 @@ def test_async_guide_start_driving_rpc_publishes_task_update(control_service_ser
 
     class FakeAsyncVisitGuideService:
         async def async_start_guide_driving(self, **payload):
-            return True, "안내 주행을 시작했습니다.", {
-                "result_code": "ACCEPTED",
-                "result_message": "안내 주행을 시작했습니다.",
-                "task_id": payload["task_id"],
-                "task_type": "GUIDE",
-                "task_status": "RUNNING",
-                "phase": "GUIDANCE_RUNNING",
-                "assigned_robot_id": "pinky1",
-                "target_track_id": payload["target_track_id"],
-            }
+            return (
+                True,
+                "안내 주행을 시작했습니다.",
+                {
+                    "result_code": "ACCEPTED",
+                    "result_message": "안내 주행을 시작했습니다.",
+                    "task_id": payload["task_id"],
+                    "task_type": "GUIDE",
+                    "task_status": "RUNNING",
+                    "phase": "GUIDANCE_RUNNING",
+                    "assigned_robot_id": "pinky1",
+                    "target_track_id": payload["target_track_id"],
+                },
+            )
 
     class FakeTaskEventStreamHub:
         async def publish(self, event_type, payload):
@@ -1300,7 +1364,9 @@ def test_async_guide_start_driving_rpc_publishes_task_update(control_service_ser
     assert published_events[0][1]["phase"] == "GUIDANCE_RUNNING"
 
 
-def test_async_guide_start_driving_rejection_publishes_task_update(control_service_server):
+def test_async_guide_start_driving_rejection_publishes_task_update(
+    control_service_server,
+):
     request = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,
         sequence_no=44,
@@ -1317,18 +1383,22 @@ def test_async_guide_start_driving_rejection_publishes_task_update(control_servi
 
     class FakeAsyncVisitGuideService:
         async def async_start_guide_driving(self, **payload):
-            return False, "안내 목적지 좌표가 설정되어 있지 않습니다.", {
-                "result_code": "REJECTED",
-                "result_message": "안내 목적지 좌표가 설정되어 있지 않습니다.",
-                "reason_code": "GUIDE_DESTINATION_NOT_CONFIGURED",
-                "task_id": payload["task_id"],
-                "task_type": "GUIDE",
-                "task_status": "RUNNING",
-                "phase": "READY_TO_START_GUIDANCE",
-                "guide_phase": "READY_TO_START_GUIDANCE",
-                "assigned_robot_id": "pinky1",
-                "target_track_id": payload["target_track_id"],
-            }
+            return (
+                False,
+                "안내 목적지 좌표가 설정되어 있지 않습니다.",
+                {
+                    "result_code": "REJECTED",
+                    "result_message": "안내 목적지 좌표가 설정되어 있지 않습니다.",
+                    "reason_code": "GUIDE_DESTINATION_NOT_CONFIGURED",
+                    "task_id": payload["task_id"],
+                    "task_type": "GUIDE",
+                    "task_status": "RUNNING",
+                    "phase": "READY_TO_START_GUIDANCE",
+                    "guide_phase": "READY_TO_START_GUIDANCE",
+                    "assigned_robot_id": "pinky1",
+                    "target_track_id": payload["target_track_id"],
+                },
+            )
 
     class FakeTaskEventStreamHub:
         async def publish(self, event_type, payload):
@@ -1406,12 +1476,17 @@ def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_updat
 
     async def scenario():
         control_service_server.task_event_stream_hub = FakeTaskEventStreamHub()
-        with patch(
-            "server.ropi_main_service.transport.tcp_server.build_patrol_request_service",
-            return_value=FakeAsyncTaskRequestService(),
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("patrol resume should not use thread fallback"),
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.build_patrol_request_service",
+                return_value=FakeAsyncTaskRequestService(),
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "patrol resume should not use thread fallback"
+                ),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -1448,7 +1523,9 @@ def test_async_patrol_resume_task_dispatches_if_pat_002_and_publishes_task_updat
     ]
 
 
-def test_async_rpc_dispatch_routes_delivery_cancel_to_async_service(control_service_server):
+def test_async_rpc_dispatch_routes_delivery_cancel_to_async_service(
+    control_service_server,
+):
     request = TCPFrame(
         message_code=MESSAGE_CODE_INTERNAL_RPC,
         sequence_no=19,
@@ -1473,12 +1550,17 @@ def test_async_rpc_dispatch_routes_delivery_cancel_to_async_service(control_serv
             }
 
     async def scenario():
-        with patch.dict(
-            tcp_server.SERVICE_REGISTRY,
-            {"task_request": FakeDeliveryRequestService},
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
-            side_effect=AssertionError("delivery cancel should not use thread fallback"),
+        with (
+            patch.dict(
+                tcp_server.SERVICE_REGISTRY,
+                {"task_request": FakeDeliveryRequestService},
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "delivery cancel should not use thread fallback"
+                ),
+            ),
         ):
             return await control_service_server.async_dispatch_frame(request)
 
@@ -1608,7 +1690,9 @@ def test_async_response_build_does_not_block_event_loop(control_service_server):
 
     async def scenario():
         started_at = time.monotonic()
-        response_task = asyncio.create_task(control_service_server._build_response_frame(request))
+        response_task = asyncio.create_task(
+            control_service_server._build_response_frame(request)
+        )
         await asyncio.sleep(0.01)
         elapsed_before_dispatch_finishes = time.monotonic() - started_at
         response = await response_task
@@ -1648,7 +1732,9 @@ def test_serve_forever_closes_background_writer_before_db_pool(control_service_s
     async def scenario():
         control_service_server._server = FakeTcpServer()
         control_service_server.db_writer = FakeBackgroundDbWriter()
-        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
+        control_service_server.delivery_workflow_task_manager = (
+            FakeWorkflowTaskManager()
+        )
 
         with patch(
             "server.ropi_main_service.transport.tcp_server.close_pool",
@@ -1691,14 +1777,19 @@ def test_start_failure_closes_background_writer_and_db_pool(control_service_serv
 
     async def scenario():
         control_service_server.db_writer = FakeBackgroundDbWriter()
-        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
+        control_service_server.delivery_workflow_task_manager = (
+            FakeWorkflowTaskManager()
+        )
 
-        with patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
-            new=fake_start_server,
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.close_pool",
-            new=fake_close_pool,
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
+                new=fake_start_server,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.close_pool",
+                new=fake_close_pool,
+            ),
         ):
             with pytest.raises(OSError, match="bind failed"):
                 await control_service_server.start()
@@ -1752,20 +1843,27 @@ def test_start_wires_guide_phase_snapshot_poller(control_service_server, monkeyp
 
     async def scenario():
         control_service_server.db_writer = FakeBackgroundDbWriter()
-        control_service_server.delivery_workflow_task_manager = FakeWorkflowTaskManager()
+        control_service_server.delivery_workflow_task_manager = (
+            FakeWorkflowTaskManager()
+        )
 
-        with patch(
-            "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
-            new=fake_start_server,
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.close_pool",
-            new=fake_close_pool,
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.start_guide_phase_snapshot_polling_if_enabled",
-            new=fake_start_guide_phase_snapshot_polling_if_enabled,
-        ), patch(
-            "server.ropi_main_service.transport.tcp_server.start_fall_inference_stream_if_enabled",
-            return_value=None,
+        with (
+            patch(
+                "server.ropi_main_service.transport.tcp_server.asyncio.start_server",
+                new=fake_start_server,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.close_pool",
+                new=fake_close_pool,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.start_guide_phase_snapshot_polling_if_enabled",
+                new=fake_start_guide_phase_snapshot_polling_if_enabled,
+            ),
+            patch(
+                "server.ropi_main_service.transport.tcp_server.start_fall_inference_stream_if_enabled",
+                return_value=None,
+            ),
         ):
             await control_service_server.start()
             await control_service_server._shutdown_resources()
@@ -1861,7 +1959,9 @@ def test_start_wires_action_feedback_event_poller(control_service_server, monkey
     )
 
 
-def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_service_server):
+def test_delivery_create_task_rejects_when_ros_service_is_unavailable(
+    control_service_server,
+):
     request = TCPFrame(
         message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
         sequence_no=5,
@@ -1877,22 +1977,34 @@ def test_delivery_create_task_rejects_when_ros_service_is_unavailable(control_se
         },
     )
 
-    with patch(
-        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-        return_value={
-            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-            "destination_goal_poses": {
-                "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+    with (
+        patch(
+            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+            return_value={
+                "pickup_goal_pose": {
+                    "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                },
+                "destination_goal_poses": {
+                    "delivery_room_301": {
+                        "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                    },
+                },
+                "return_to_dock_goal_pose": {
+                    "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                },
             },
-            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-        },
-    ), patch(
-        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
-        return_value=object(),
-    ), patch(
-        "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService"
-    ) as readiness_service_cls:
-        readiness_service_cls.return_value.get_status.side_effect = RuntimeError("socket missing")
+        ),
+        patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+            return_value=object(),
+        ),
+        patch(
+            "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService"
+        ) as readiness_service_cls,
+    ):
+        readiness_service_cls.return_value.get_status.side_effect = RuntimeError(
+            "socket missing"
+        )
         response = control_service_server.dispatch_frame(request)
 
     assert response.payload["result_code"] == "REJECTED"
@@ -1916,18 +2028,27 @@ def test_delivery_create_task_rejects_unknown_destination_id(control_service_ser
         },
     )
 
-    with patch(
-        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-        return_value={
-            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-            "destination_goal_poses": {
-                "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+    with (
+        patch(
+            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+            return_value={
+                "pickup_goal_pose": {
+                    "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                },
+                "destination_goal_poses": {
+                    "delivery_room_301": {
+                        "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                    },
+                },
+                "return_to_dock_goal_pose": {
+                    "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                },
             },
-            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-        },
-    ), patch(
-        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
-        return_value=object(),
+        ),
+        patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+            return_value=object(),
+        ),
     ):
         response = control_service_server.dispatch_frame(request)
 
@@ -1936,7 +2057,9 @@ def test_delivery_create_task_rejects_unknown_destination_id(control_service_ser
     assert "room1" in response.payload["result_message"]
 
 
-def test_delivery_create_task_logs_ros_runtime_readiness_details(control_service_server, caplog):
+def test_delivery_create_task_logs_ros_runtime_readiness_details(
+    control_service_server, caplog
+):
     request = TCPFrame(
         message_code=MESSAGE_CODE_DELIVERY_CREATE_TASK,
         sequence_no=7,
@@ -1954,21 +2077,31 @@ def test_delivery_create_task_logs_ros_runtime_readiness_details(control_service
 
     caplog.set_level(logging.WARNING)
 
-    with patch(
-        "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-        return_value={
-            "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-            "destination_goal_poses": {
-                "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+    with (
+        patch(
+            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+            return_value={
+                "pickup_goal_pose": {
+                    "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                },
+                "destination_goal_poses": {
+                    "delivery_room_301": {
+                        "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                    },
+                },
+                "return_to_dock_goal_pose": {
+                    "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                },
             },
-            "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-        },
-    ), patch(
-        "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
-        return_value=object(),
-    ), patch(
-        "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService"
-    ) as readiness_service_cls:
+        ),
+        patch(
+            "server.ropi_main_service.transport.tcp_server.asyncio.get_running_loop",
+            return_value=object(),
+        ),
+        patch(
+            "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService"
+        ) as readiness_service_cls,
+    ):
         readiness_service_cls.return_value.get_status.return_value = {
             "ready": False,
             "checks": [

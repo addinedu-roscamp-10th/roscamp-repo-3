@@ -5,20 +5,30 @@ from server.ropi_main_service.application.delivery_config import (
     get_delivery_navigation_config,
     get_delivery_runtime_config,
 )
-from server.ropi_main_service.application.delivery_orchestrator import DeliveryOrchestrator
+from server.ropi_main_service.application.delivery_orchestrator import (
+    DeliveryOrchestrator,
+)
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
-from server.ropi_main_service.application.goal_pose_navigation import GoalPoseNavigationService
+from server.ropi_main_service.application.goal_pose_navigation import (
+    GoalPoseNavigationService,
+)
 from server.ropi_main_service.application.goal_pose_resolvers import (
     FixedGoalPoseResolver,
     MappedGoalPoseResolver,
 )
-from server.ropi_main_service.application.manipulation_command import ManipulationCommandService
-from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
+from server.ropi_main_service.application.manipulation_command import (
+    ManipulationCommandService,
+)
+from server.ropi_main_service.application.runtime_readiness import (
+    RosRuntimeReadinessService,
+)
 from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.observability import log_event
-from server.ropi_main_service.persistence.repositories.task_request_repository import TaskRequestRepository
+from server.ropi_main_service.persistence.repositories.task_request_repository import (
+    TaskRequestRepository,
+)
 
 
 DeliveryRequestService = TaskRequestService
@@ -168,10 +178,12 @@ def _build_delivery_request_precheck(
     return_to_dock_goal_pose,
     runtime_config,
 ):
-    _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status = _build_delivery_precheck_helpers(
-        pickup_goal_pose=pickup_goal_pose,
-        destination_goal_poses=destination_goal_poses,
-        return_to_dock_goal_pose=return_to_dock_goal_pose,
+    _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status = (
+        _build_delivery_precheck_helpers(
+            pickup_goal_pose=pickup_goal_pose,
+            destination_goal_poses=destination_goal_poses,
+            return_to_dock_goal_pose=return_to_dock_goal_pose,
+        )
     )
 
     def _precheck(**kwargs):
@@ -181,7 +193,9 @@ def _build_delivery_request_precheck(
             return static_response
 
         try:
-            ros_status = RosRuntimeReadinessService(runtime_config=runtime_config).get_status()
+            ros_status = RosRuntimeReadinessService(
+                runtime_config=runtime_config
+            ).get_status()
         except Exception as exc:
             return _handle_ros_unavailable(exc, destination_id)
 
@@ -197,10 +211,12 @@ def _build_async_delivery_request_precheck(
     return_to_dock_goal_pose,
     runtime_config,
 ):
-    _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status = _build_delivery_precheck_helpers(
-        pickup_goal_pose=pickup_goal_pose,
-        destination_goal_poses=destination_goal_poses,
-        return_to_dock_goal_pose=return_to_dock_goal_pose,
+    _run_static_precheck, _handle_ros_unavailable, _evaluate_ros_status = (
+        _build_delivery_precheck_helpers(
+            pickup_goal_pose=pickup_goal_pose,
+            destination_goal_poses=destination_goal_poses,
+            return_to_dock_goal_pose=return_to_dock_goal_pose,
+        )
     )
 
     async def _async_precheck(**kwargs):
@@ -210,7 +226,9 @@ def _build_async_delivery_request_precheck(
             return static_response
 
         try:
-            ros_status = await RosRuntimeReadinessService(runtime_config=runtime_config).async_get_status()
+            ros_status = await RosRuntimeReadinessService(
+                runtime_config=runtime_config
+            ).async_get_status()
         except Exception as exc:
             return _handle_ros_unavailable(exc, destination_id)
 
@@ -219,7 +237,12 @@ def _build_async_delivery_request_precheck(
     return _async_precheck
 
 
-def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> TaskRequestService:
+def build_delivery_request_service(
+    *,
+    loop=None,
+    workflow_task_manager=None,
+    task_update_publisher=None,
+) -> TaskRequestService:
     runtime_config = get_delivery_runtime_config()
     navigation_config = get_delivery_navigation_config()
     pickup_goal_pose = navigation_config["pickup_goal_pose"]
@@ -245,23 +268,37 @@ def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> 
         )
 
     if pickup_goal_pose is not None and destination_goal_poses and loop is not None:
-        workflow_task_manager = workflow_task_manager or get_default_workflow_task_manager()
-        goal_pose_navigation_service = GoalPoseNavigationService(runtime_config=runtime_config)
-        manipulation_command_service = ManipulationCommandService(runtime_config=runtime_config)
+        workflow_task_manager = (
+            workflow_task_manager or get_default_workflow_task_manager()
+        )
+        goal_pose_navigation_service = GoalPoseNavigationService(
+            runtime_config=runtime_config
+        )
+        manipulation_command_service = ManipulationCommandService(
+            runtime_config=runtime_config
+        )
         orchestrator = DeliveryOrchestrator(
             goal_pose_navigation_service=goal_pose_navigation_service,
             manipulation_command_service=manipulation_command_service,
             pickup_goal_pose_resolver=FixedGoalPoseResolver(pickup_goal_pose),
-            destination_goal_pose_resolver=MappedGoalPoseResolver(destination_goal_poses),
-            return_to_dock_goal_pose_resolver=FixedGoalPoseResolver(return_to_dock_goal_pose),
+            destination_goal_pose_resolver=MappedGoalPoseResolver(
+                destination_goal_poses
+            ),
+            return_to_dock_goal_pose_resolver=FixedGoalPoseResolver(
+                return_to_dock_goal_pose
+            ),
             runtime_config=runtime_config,
         )
 
         async def _record_cancelled_workflow_result(*, task_id, workflow_response):
             try:
-                await delivery_request_repository.async_record_delivery_task_cancelled_result(
+                response = await delivery_request_repository.async_record_delivery_task_cancelled_result(
                     task_id=task_id,
                     workflow_response=workflow_response,
+                )
+                await _publish_workflow_task_update(
+                    response,
+                    source="DELIVERY_WORKFLOW_RESULT",
                 )
             except Exception:
                 logger.exception(
@@ -271,15 +308,37 @@ def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> 
 
         async def _record_workflow_result(*, task_id, workflow_response):
             try:
-                await delivery_request_repository.async_record_delivery_task_workflow_result(
+                response = await delivery_request_repository.async_record_delivery_task_workflow_result(
                     task_id=task_id,
                     workflow_response=workflow_response,
+                )
+                await _publish_workflow_task_update(
+                    response,
+                    source="DELIVERY_WORKFLOW_RESULT",
                 )
             except Exception:
                 logger.exception(
                     "delivery workflow result persistence failed",
                     extra={"task_id": task_id},
                 )
+
+        async def _publish_workflow_task_update(response, *, source):
+            if task_update_publisher is None:
+                return
+            publish_from_response = getattr(
+                task_update_publisher,
+                "publish_from_response",
+                None,
+            )
+            if publish_from_response is None:
+                return
+            result = publish_from_response(
+                response,
+                source=source,
+                task_type="DELIVERY",
+            )
+            if asyncio.iscoroutine(result):
+                await result
 
         def _start_delivery_workflow(**kwargs):
             task_id = kwargs.get("task_id")
@@ -332,7 +391,10 @@ def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> 
                     )
                     return
                 except Exception as exc:
-                    logger.exception("delivery workflow background task failed", extra={"task_id": task_id})
+                    logger.exception(
+                        "delivery workflow background task failed",
+                        extra={"task_id": task_id},
+                    )
                     _record_workflow_result_in_background(
                         {
                             "result_code": "FAILED",
@@ -343,7 +405,11 @@ def build_delivery_request_service(*, loop=None, workflow_task_manager=None) -> 
                     return
 
                 result = _normalize_workflow_response(result)
-                level = logging.INFO if str(result.get("result_code") or "").upper() == "SUCCESS" else logging.WARNING
+                level = (
+                    logging.INFO
+                    if str(result.get("result_code") or "").upper() == "SUCCESS"
+                    else logging.WARNING
+                )
                 log_event(
                     logger,
                     level,

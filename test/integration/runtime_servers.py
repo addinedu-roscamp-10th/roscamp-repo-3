@@ -8,7 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from server.ropi_main_service.ipc.uds_protocol import decode_message_bytes, encode_message
+from server.ropi_main_service.ipc.uds_protocol import (
+    decode_message_bytes,
+    encode_message,
+)
 from server.ropi_main_service.transport.tcp_protocol import (
     MESSAGE_CODE_FALL_EVIDENCE_IMAGE_QUERY,
     MESSAGE_CODE_FALL_INFERENCE_RESULT_SUBSCRIBE,
@@ -169,7 +172,9 @@ def runtime_ros_service_stub(tmp_path_factory):
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client_sock:
                 client_sock.connect(str(socket_path))
-                client_sock.sendall(encode_message({"command": "shutdown_probe", "payload": {}}))
+                client_sock.sendall(
+                    encode_message({"command": "shutdown_probe", "payload": {}})
+                )
         except OSError:
             pass
         server_thread.join(timeout=5)
@@ -460,6 +465,7 @@ def _start_control_server(*, server_port, ros_socket_path, extra_env):
             "AI_FALL_STREAM_ENABLED": "false",
             "GUIDE_PHASE_SNAPSHOT_POLL_ENABLED": "false",
             "ACTION_FEEDBACK_EVENT_POLL_ENABLED": "false",
+            "ROBOT_STATUS_EVENT_POLL_ENABLED": "false",
             **extra_env,
         },
     )

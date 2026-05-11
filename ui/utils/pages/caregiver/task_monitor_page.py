@@ -1244,6 +1244,9 @@ class TaskMonitorPage(QWidget):
         self._clear_task_cancel_thread()
 
     def reset_page(self):
+        if self.task_event_thread is None and self.snapshot_thread is None:
+            self._start_snapshot_load(status_text="상태 재동기화 중")
+            return
         if self.task_table.rowCount() > 0:
             self._render_detail(
                 self._tasks.get("task_id:" + str(self._selected_task_id))

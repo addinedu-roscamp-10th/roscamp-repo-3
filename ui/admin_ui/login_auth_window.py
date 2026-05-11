@@ -1,6 +1,11 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFrame
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QFrame,
 )
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from ui.utils.network.heartbeat import HeartbeatMonitor
@@ -19,7 +24,9 @@ class LoginWorker(QObject):
 
     def run(self):
         try:
-            ok, payload = LoginClient().authenticate(self.login_id, self.password, self.role)
+            ok, payload = LoginClient().authenticate(
+                self.login_id, self.password, self.role
+            )
             self.finished.emit(ok, payload)
         except Exception as exc:
             self.finished.emit(False, str(exc))
@@ -254,27 +261,35 @@ class LoginAuthWindow(QWidget):
 
             session_data = payload
             if session_data.get("role") != self.role:
-                self._set_inline_status("로그인 역할이 현재 앱과 일치하지 않습니다.", "warning")
+                self._set_inline_status(
+                    "로그인 역할이 현재 앱과 일치하지 않습니다.", "warning"
+                )
                 return
 
-            SessionManager.login(UserSession(
-                user_id=session_data["user_id"],
-                name=session_data["name"],
-                role=session_data["role"]
-            ))
+            SessionManager.login(
+                UserSession(
+                    user_id=session_data["user_id"],
+                    name=session_data["name"],
+                    role=session_data["role"],
+                )
+            )
 
             if session_data["role"] == "caregiver":
                 from ui.admin_ui.main_window import CaregiverMainWindow
-                self.main_window = CaregiverMainWindow()
+
+                self.main_window = CaregiverMainWindow(event_stream_enabled=True)
             else:
                 from ui.user_ui.main_window import VisitorMainWindow
+
                 self.main_window = VisitorMainWindow()
 
             self.main_window.show()
             self.close()
 
         except Exception as e:
-            self._set_inline_status(f"로그인 후 화면 전환 중 오류가 발생했습니다. {e}", "warning")
+            self._set_inline_status(
+                f"로그인 후 화면 전환 중 오류가 발생했습니다. {e}", "warning"
+            )
 
         finally:
             if self.isVisible():

@@ -246,3 +246,90 @@ def test_caregiver_shell_status_strip_only_appears_on_status_context_pages():
             assert has_status_strip is expected_visible
     finally:
         window.close()
+
+
+def test_caregiver_main_window_fans_out_admin_event_stream(monkeypatch):
+    _app()
+
+    from ui.admin_ui.main_window import CaregiverMainWindow
+    from ui.utils.pages.caregiver.delivery_request_form import DeliveryRequestForm
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+    monkeypatch.setattr(RobotStatusPage, "refresh_data", lambda self: None)
+
+    window = CaregiverMainWindow()
+    received = []
+
+    try:
+        window.home_page.apply_stream_event = lambda event: received.append(
+            ("home", event["event_type"])
+        )
+        window.task_btn.click()
+        window.task_page.apply_stream_event = lambda event: received.append(
+            ("task_request", event["event_type"])
+        )
+        window.robot_status_btn.click()
+        window.robot_status_page.apply_stream_event = lambda event: received.append(
+            ("robot_status", event["event_type"])
+        )
+
+        window._handle_admin_event_batch(
+            {
+                "batch_end_seq": 7,
+                "events": [
+                    {"event_type": "TASK_UPDATED", "payload": {"task_id": 101}},
+                    {
+                        "event_type": "PINKY_UPDATED",
+                        "payload": {"pinky_id": "pinky2"},
+                    },
+                ],
+            }
+        )
+
+        assert window._admin_event_last_seq == 7
+        assert received == [
+            ("home", "TASK_UPDATED"),
+            ("task_request", "TASK_UPDATED"),
+            ("robot_status", "TASK_UPDATED"),
+            ("home", "PINKY_UPDATED"),
+            ("task_request", "PINKY_UPDATED"),
+            ("robot_status", "PINKY_UPDATED"),
+        ]
+    finally:
+        window.close()
+
+
+def test_caregiver_main_window_restarts_admin_event_stream_after_failure(
+    monkeypatch,
+):
+    _app()
+
+    import ui.admin_ui.main_window as main_window
+    from ui.admin_ui.main_window import CaregiverMainWindow
+
+    scheduled = []
+    restart_calls = []
+
+    window = CaregiverMainWindow()
+
+    monkeypatch.setattr(
+        main_window.QTimer,
+        "singleShot",
+        lambda delay_ms, callback: scheduled.append((delay_ms, callback)),
+    )
+
+    try:
+        window._start_admin_event_stream = lambda: restart_calls.append("restart")
+        window._admin_event_stream_enabled = True
+
+        window._handle_admin_event_stream_failed("connection failed")
+        window._clear_admin_event_stream_thread()
+
+        assert scheduled == [(1000, window._start_admin_event_stream)]
+
+        scheduled[0][1]()
+
+        assert restart_calls == ["restart"]
+    finally:
+        window.close()

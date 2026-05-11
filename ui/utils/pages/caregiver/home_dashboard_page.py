@@ -106,6 +106,7 @@ ROS_ERROR_MARKERS = (
     "ROPI_ROS_SERVICE_SOCKET",
 )
 
+
 def _status_of(task: dict) -> str:
     return _display(task.get("task_status"), "UNKNOWN").upper()
 
@@ -374,7 +375,9 @@ class RobotBoardCard(QFrame):
 class FlowColumn(QFrame):
     cancel_requested = pyqtSignal(object)
 
-    def __init__(self, column_key: str, title: str, tasks: list, *, canceling_task_id=None):
+    def __init__(
+        self, column_key: str, title: str, tasks: list, *, canceling_task_id=None
+    ):
         super().__init__()
         self.column_key = column_key
         self.setObjectName("card")
@@ -394,7 +397,9 @@ class FlowColumn(QFrame):
 
         if tasks:
             for task in tasks:
-                task_card = self._build_task_card(task, canceling_task_id=canceling_task_id)
+                task_card = self._build_task_card(
+                    task, canceling_task_id=canceling_task_id
+                )
                 root.addWidget(task_card)
         else:
             empty = QLabel("현재 비어 있음")
@@ -440,7 +445,9 @@ class FlowColumn(QFrame):
             row.addWidget(value_label, 1)
             tc.addLayout(row)
 
-        cancel_button = self._build_cancel_button(task, canceling_task_id=canceling_task_id)
+        cancel_button = self._build_cancel_button(
+            task, canceling_task_id=canceling_task_id
+        )
         if cancel_button is not None:
             tc.addWidget(cancel_button)
 
@@ -532,6 +539,7 @@ class CaregiverHomePage(QWidget):
         self.cancel_worker = None
         self._last_flow_data = {}
         self._canceling_task_id = None
+        self._stream_refresh_pending = False
 
         self._build_ui()
         if autoload:
@@ -671,7 +679,9 @@ class CaregiverHomePage(QWidget):
         timeline_title.setObjectName("sectionTitle")
 
         self.timeline_table = QTableWidget(0, 4)
-        self.timeline_table.setHorizontalHeaderLabels(["시간", "작업 ID", "이벤트", "상세"])
+        self.timeline_table.setHorizontalHeaderLabels(
+            ["시간", "작업 ID", "이벤트", "상세"]
+        )
         self.timeline_table.horizontalHeader().setStretchLastSection(True)
 
         tw.addWidget(timeline_title)
@@ -736,6 +746,31 @@ class CaregiverHomePage(QWidget):
         self.dashboard_worker = None
         self.refresh_button.setEnabled(True)
 
+    def apply_stream_event(self, event):
+        event = event or {}
+        event_type = str(event.get("event_type") or "").strip().upper()
+        if event_type in {
+            "TASK_UPDATED",
+            "PINKY_UPDATED",
+            "ARM_UPDATED",
+            "ALERT_CREATED",
+            "FALL_ALERT_CREATED",
+        }:
+            self._schedule_stream_refresh()
+
+    def _schedule_stream_refresh(self):
+        if self._stream_refresh_pending:
+            return
+        self._stream_refresh_pending = True
+        QTimer.singleShot(200, self._run_stream_refresh)
+
+    def _run_stream_refresh(self):
+        if self.dashboard_thread is not None:
+            QTimer.singleShot(200, self._run_stream_refresh)
+            return
+        self._stream_refresh_pending = False
+        self.load_dashboard_data()
+
     def apply_summary_data(self, summary, *, robots=None):
         summary = summary or {}
         robots = robots or []
@@ -772,7 +807,9 @@ class CaregiverHomePage(QWidget):
         states = {
             "available_robots": (
                 "teal" if available_robot_count > 0 else "red",
-                "운영 가능 로봇" if available_robot_count > 0 else "운영 가능 로봇 없음",
+                "운영 가능 로봇"
+                if available_robot_count > 0
+                else "운영 가능 로봇 없음",
             ),
             "waiting_tasks": (
                 "amber" if waiting_job_count > 0 else "neutral",

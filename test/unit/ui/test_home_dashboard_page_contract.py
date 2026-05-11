@@ -163,7 +163,7 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
                     "battery_percent": None,
                     "last_seen_at": "2026-05-03T12:01:00",
                     "chip_type": "green",
-                }
+                },
             ]
         )
 
@@ -202,6 +202,67 @@ def test_home_dashboard_robot_board_formats_location_and_last_seen_for_operators
         assert not any("현재 구역:" in text for text in labels)
         assert not any("T12:00:00" in text for text in labels)
         assert not any("192.168." in text for text in labels)
+    finally:
+        page.close()
+
+
+def test_home_dashboard_schedules_refresh_from_admin_stream_events():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    calls = []
+
+    try:
+        page._schedule_stream_refresh = lambda: calls.append("refresh")
+
+        page.apply_stream_event(
+            {"event_type": "TASK_UPDATED", "payload": {"task_id": 1}}
+        )
+        page.apply_stream_event(
+            {"event_type": "PINKY_UPDATED", "payload": {"pinky_id": "pinky2"}}
+        )
+        page.apply_stream_event({"event_type": "IGNORED", "payload": {}})
+
+        assert calls == ["refresh", "refresh"]
+    finally:
+        page.close()
+
+
+def test_home_dashboard_defers_stream_refresh_while_snapshot_load_is_running(
+    monkeypatch,
+):
+    _app()
+
+    import ui.utils.pages.caregiver.home_dashboard_page as home_dashboard_page
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    scheduled_callbacks = []
+    load_calls = []
+
+    try:
+        monkeypatch.setattr(
+            home_dashboard_page.QTimer,
+            "singleShot",
+            lambda _delay, callback: scheduled_callbacks.append(callback),
+        )
+        page.load_dashboard_data = lambda: load_calls.append("load")
+        page.dashboard_thread = object()
+        page._stream_refresh_pending = True
+
+        page._run_stream_refresh()
+
+        assert page._stream_refresh_pending is True
+        assert load_calls == []
+        assert scheduled_callbacks == [page._run_stream_refresh]
+
+        page.dashboard_thread = None
+        scheduled_callbacks.pop()()
+
+        assert page._stream_refresh_pending is False
+        assert load_calls == ["load"]
     finally:
         page.close()
 
@@ -266,7 +327,9 @@ def test_home_dashboard_normalizes_task_flow_into_spec_columns():
             }
         )
 
-        columns = {column.column_key: column for column in page.findChildren(FlowColumn)}
+        columns = {
+            column.column_key: column for column in page.findChildren(FlowColumn)
+        }
         assert list(columns) == [
             "WAITING",
             "ASSIGNED",
@@ -356,10 +419,7 @@ def test_home_dashboard_task_cards_use_operator_labels_instead_of_raw_codes():
         assert "301호" in labels
         assert "최근" in labels
         assert "ROS 브릿지에 연결할 수 없습니다." in labels
-        assert any(
-            text.startswith("ROS service command failed")
-            for text in labels
-        )
+        assert any(text.startswith("ROS service command failed") for text in labels)
         key_labels = [
             label
             for label in page.findChildren(QLabel)
@@ -420,10 +480,11 @@ def test_home_dashboard_cancel_failure_uses_structured_operator_banner():
         assert page.status_banner.parentWidget() is page
         assert page.status_banner.parentWidget().objectName() != "homeTimeCard"
         assert any(
-            text.startswith("상세: ROS service command failed")
-            for text in labels
+            text.startswith("상세: ROS service command failed") for text in labels
         )
-        assert not any("CLIENT_ERROR / ROS_SERVICE_UNAVAILABLE" in text for text in labels)
+        assert not any(
+            "CLIENT_ERROR / ROS_SERVICE_UNAVAILABLE" in text for text in labels
+        )
     finally:
         page.close()
 
@@ -460,7 +521,9 @@ def test_home_dashboard_cancel_worker_uses_common_task_cancel_rpc(monkeypatch):
         }
     )
     emitted = []
-    worker.finished.connect(lambda success, response: emitted.append((success, response)))
+    worker.finished.connect(
+        lambda success, response: emitted.append((success, response))
+    )
 
     worker.run()
 

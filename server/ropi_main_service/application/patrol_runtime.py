@@ -6,7 +6,9 @@ from server.ropi_main_service.application.workflow_task_manager import (
 )
 from server.ropi_main_service.application.patrol_orchestrator import PatrolOrchestrator
 from server.ropi_main_service.application.patrol_config import get_patrol_runtime_config
-from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
+from server.ropi_main_service.application.runtime_readiness import (
+    RosRuntimeReadinessService,
+)
 from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.observability import log_event
 from server.ropi_main_service.persistence.repositories.patrol_task_execution_repository import (
@@ -148,6 +150,7 @@ def build_patrol_request_service(
     patrol_execution_repository=None,
     patrol_orchestrator=None,
     task_request_repository=None,
+    task_update_publisher=None,
 ) -> TaskRequestService:
     runtime_config = get_patrol_runtime_config()
     task_request_repository = task_request_repository or _new_task_request_repository()
@@ -162,14 +165,22 @@ def build_patrol_request_service(
         async_patrol_request_precheck = _build_async_patrol_request_precheck(
             runtime_config=runtime_config,
         )
-        workflow_task_manager = workflow_task_manager or get_default_workflow_task_manager()
-        patrol_execution_repository = patrol_execution_repository or PatrolTaskExecutionRepository()
+        workflow_task_manager = (
+            workflow_task_manager or get_default_workflow_task_manager()
+        )
+        patrol_execution_repository = (
+            patrol_execution_repository or PatrolTaskExecutionRepository()
+        )
         patrol_orchestrator = patrol_orchestrator or PatrolOrchestrator(
             runtime_config=runtime_config,
         )
 
         async def _run_patrol_workflow(*, task_id):
-            snapshot = await patrol_execution_repository.async_get_patrol_execution_snapshot(task_id)
+            snapshot = (
+                await patrol_execution_repository.async_get_patrol_execution_snapshot(
+                    task_id
+                )
+            )
             if snapshot is None:
                 return {
                     "result_code": "FAILED",
@@ -177,8 +188,10 @@ def build_patrol_request_service(
                     "reason_code": "PATROL_TASK_NOT_FOUND",
                 }
 
-            start_response = await patrol_execution_repository.async_record_patrol_execution_started(
-                task_id
+            start_response = (
+                await patrol_execution_repository.async_record_patrol_execution_started(
+                    task_id
+                )
             )
             if start_response.get("result_code") != "ACCEPTED":
                 return start_response
@@ -190,15 +203,34 @@ def build_patrol_request_service(
 
         async def _record_workflow_result(*, task_id, workflow_response):
             try:
-                await task_request_repository.async_record_patrol_task_workflow_result(
+                response = await task_request_repository.async_record_patrol_task_workflow_result(
                     task_id=task_id,
                     workflow_response=workflow_response,
                 )
+                await _publish_workflow_task_update(response)
             except Exception:
                 logger.exception(
                     "patrol workflow result persistence failed",
                     extra={"task_id": task_id},
                 )
+
+        async def _publish_workflow_task_update(response):
+            if task_update_publisher is None:
+                return
+            publish_from_response = getattr(
+                task_update_publisher,
+                "publish_from_response",
+                None,
+            )
+            if publish_from_response is None:
+                return
+            result = publish_from_response(
+                response,
+                source="PATROL_WORKFLOW_RESULT",
+                task_type="PATROL",
+            )
+            if asyncio.iscoroutine(result):
+                await result
 
         def _start_patrol_workflow(**kwargs):
             task_id = str(kwargs.get("task_id") or "").strip()
@@ -219,14 +251,21 @@ def build_patrol_request_service(
                         "reason_code": "WORKFLOW_TASK_CANCELLED",
                     }
                 except Exception as exc:
-                    logger.exception("patrol workflow background task failed", extra={"task_id": task_id})
+                    logger.exception(
+                        "patrol workflow background task failed",
+                        extra={"task_id": task_id},
+                    )
                     result = {
                         "result_code": "FAILED",
                         "result_message": f"patrol workflow background task failed: {exc}",
                         "reason_code": "WORKFLOW_UNHANDLED_EXCEPTION",
                     }
 
-                level = logging.INFO if _is_successful_patrol_result(result) else logging.WARNING
+                level = (
+                    logging.INFO
+                    if _is_successful_patrol_result(result)
+                    else logging.WARNING
+                )
                 log_event(
                     logger,
                     level,

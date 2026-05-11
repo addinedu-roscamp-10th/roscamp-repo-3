@@ -12,7 +12,9 @@ pytest_plugins = ("runtime_db_seeders", "runtime_servers")
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 from server.ropi_main_service.persistence.connection import fetch_one, get_connection
-from server.ropi_main_service.persistence.repositories.task_request_repository import DeliveryRequestRepository
+from server.ropi_main_service.persistence.repositories.task_request_repository import (
+    DeliveryRequestRepository,
+)
 from runtime_waiting import wait_for_condition, wait_for_qt
 from ui.utils.network import tcp_client
 from ui.utils.network.service_clients import (
@@ -36,25 +38,36 @@ def safe_fetch_one(query: str):
 
 
 def build_if_del_001_payload() -> dict:
-    products = DeliveryRequestRepository().get_all_products()
-    assert products, "The remote DB has no item rows for IF-DEL-001 integration testing."
+    repository = DeliveryRequestRepository()
+    products = repository.get_all_products()
+    assert products, (
+        "The remote DB has no item rows for IF-DEL-001 integration testing."
+    )
+    destination_rows = [
+        row
+        for row in repository.get_enabled_goal_poses()
+        if str(row.get("purpose") or "").upper() == "DESTINATION"
+    ]
+    assert destination_rows, (
+        "The remote DB has no enabled delivery destination goal pose rows."
+    )
 
     product = products[0]
+    destination_id = str(destination_rows[0]["goal_pose_id"])
+    request_suffix = uuid.uuid4().hex
 
     caregiver_row = safe_fetch_one(
         "SELECT CAST(caregiver_id AS CHAR) AS caregiver_id FROM caregiver LIMIT 1"
     )
     return {
-        "request_id": "runtime-if-del-001",
-        "caregiver_id": (
-            caregiver_row["caregiver_id"] if caregiver_row else "1"
-        ),
+        "request_id": f"runtime-if-del-001-{request_suffix}",
+        "caregiver_id": (caregiver_row["caregiver_id"] if caregiver_row else "1"),
         "item_id": product["item_id"],
         "quantity": 1,
-        "destination_id": "delivery_room_301",
+        "destination_id": destination_id,
         "priority": "NORMAL",
         "notes": "runtime integration test",
-        "idempotency_key": "runtime-if-del-001-idem",
+        "idempotency_key": f"runtime-if-del-001-idem-{request_suffix}",
     }
 
 
@@ -84,7 +97,9 @@ def qapp():
 @pytest.fixture
 def patched_ui_endpoint(runtime_control_server, monkeypatch):
     monkeypatch.setattr(tcp_client, "CONTROL_SERVER_HOST", SERVER_HOST)
-    monkeypatch.setattr(tcp_client, "CONTROL_SERVER_PORT", runtime_control_server["port"])
+    monkeypatch.setattr(
+        tcp_client, "CONTROL_SERVER_PORT", runtime_control_server["port"]
+    )
     monkeypatch.setattr(tcp_client, "CONTROL_SERVER_TIMEOUT", 5.0)
     return runtime_control_server
 
@@ -118,13 +133,12 @@ def test_control_server_subscribes_ai_fall_stream_and_starts_fall_alert(
 
     updated = wait_for_condition(
         lambda: (
-            safe_fetch_one(
-                "SELECT phase FROM task "
-                f"WHERE task_id = {int(task_id)}"
-            )
-            or {}
-        ).get("phase")
-        == "WAIT_FALL_RESPONSE",
+            (
+                safe_fetch_one(f"SELECT phase FROM task WHERE task_id = {int(task_id)}")
+                or {}
+            ).get("phase")
+            == "WAIT_FALL_RESPONSE"
+        ),
         timeout=10.0,
     )
     if not updated:
@@ -138,12 +152,10 @@ def test_control_server_subscribes_ai_fall_stream_and_starts_fall_alert(
         )
 
     task_row = safe_fetch_one(
-        "SELECT phase, latest_reason_code FROM task "
-        f"WHERE task_id = {int(task_id)}"
+        f"SELECT phase, latest_reason_code FROM task WHERE task_id = {int(task_id)}"
     )
     patrol_row = safe_fetch_one(
-        "SELECT patrol_status FROM patrol_task_detail "
-        f"WHERE task_id = {int(task_id)}"
+        f"SELECT patrol_status FROM patrol_task_detail WHERE task_id = {int(task_id)}"
     )
     inference_row = safe_fetch_one(
         "SELECT robot_id, result_json FROM ai_inference_log "
@@ -162,7 +174,10 @@ def test_control_server_subscribes_ai_fall_stream_and_starts_fall_alert(
     assert json.loads(inference_row["result_json"])["pinky_id"] == "pinky3"
     assert event_row["event_name"] == "FALL_ALERT_CREATED"
     event_payload = json.loads(event_row["payload_json"])
-    assert event_payload["trigger_result"]["evidence_image_id"] == "it-pat-005-evidence-541"
+    assert (
+        event_payload["trigger_result"]["evidence_image_id"]
+        == "it-pat-005-evidence-541"
+    )
     assert event_payload["trigger_result"]["evidence_image_available"] is True
 
 
@@ -247,8 +262,7 @@ def test_ui_client_cancel_patrol_task_hits_real_server_and_db(
         f"WHERE task_id = {int(task_id)}"
     )
     patrol_row = safe_fetch_one(
-        "SELECT patrol_status FROM patrol_task_detail "
-        f"WHERE task_id = {int(task_id)}"
+        f"SELECT patrol_status FROM patrol_task_detail WHERE task_id = {int(task_id)}"
     )
     event_row = safe_fetch_one(
         "SELECT event_name, reason_code FROM task_event_log "
@@ -264,7 +278,9 @@ def test_ui_client_cancel_patrol_task_hits_real_server_and_db(
     assert event_row["reason_code"] == "USER_CANCEL_REQUESTED"
 
 
-def test_ui_client_create_delivery_task_hits_real_server(patched_ui_endpoint, runtime_delivery_schema):
+def test_ui_client_create_delivery_task_hits_real_server(
+    patched_ui_endpoint, runtime_delivery_schema
+):
     payload = build_if_del_001_payload()
 
     response = DeliveryRequestRemoteService().create_delivery_task(**payload)
@@ -342,12 +358,10 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(
         assert start_payload["guide_phase"] == "WAIT_TARGET_TRACKING"
 
         running_task_row = safe_fetch_one(
-            "SELECT task_status, phase, started_at FROM task "
-            f"WHERE task_id = {task_id}"
+            f"SELECT task_status, phase, started_at FROM task WHERE task_id = {task_id}"
         )
         running_guide_row = safe_fetch_one(
-            "SELECT guide_phase FROM guide_task_detail "
-            f"WHERE task_id = {task_id}"
+            f"SELECT guide_phase FROM guide_task_detail WHERE task_id = {task_id}"
         )
         running_event_row = safe_fetch_one(
             "SELECT event_name, result_code FROM task_event_log "
@@ -376,8 +390,7 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(
         assert driving_payload["command_response"]["accepted"] is True
 
         driving_task_row = safe_fetch_one(
-            "SELECT task_status, phase FROM task "
-            f"WHERE task_id = {task_id}"
+            f"SELECT task_status, phase FROM task WHERE task_id = {task_id}"
         )
         driving_guide_row = safe_fetch_one(
             "SELECT guide_phase, target_track_id FROM guide_task_detail "
@@ -397,7 +410,9 @@ def test_kiosk_create_guide_task_hits_real_server_and_db(
             cleanup_conn.close()
 
 
-def test_task_request_page_loads_items_from_real_server(patched_ui_endpoint, qapp, runtime_delivery_schema):
+def test_task_request_page_loads_items_from_real_server(
+    patched_ui_endpoint, qapp, runtime_delivery_schema
+):
     page = TaskRequestPage()
     page.show()
 
@@ -500,7 +515,9 @@ def test_kiosk_staff_call_home_hits_real_server_and_db(patched_ui_endpoint, qapp
         wait_for_qt(qapp, lambda: True, timeout=0.1)
 
 
-def test_task_request_page_submit_request_hits_if_del_001(patched_ui_endpoint, qapp, runtime_delivery_schema):
+def test_task_request_page_submit_request_hits_if_del_001(
+    patched_ui_endpoint, qapp, runtime_delivery_schema
+):
     SessionManager.login(build_runtime_caregiver_session())
     page = TaskRequestPage()
     page.show()

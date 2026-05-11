@@ -9,11 +9,17 @@ _EXPORTS = {
     "DeliveryRequestService": ("task_request", "DeliveryRequestService"),
     "DeliveryRuntimeConfig": ("delivery_config", "DeliveryRuntimeConfig"),
     "DeliveryService": ("task_request", "DeliveryRequestService"),
-    "DeliveryWorkflowTaskManager": ("delivery_workflow_task_manager", "DeliveryWorkflowTaskManager"),
+    "DeliveryWorkflowTaskManager": (
+        "delivery_workflow_task_manager",
+        "DeliveryWorkflowTaskManager",
+    ),
     "FixedGoalPoseResolver": ("goal_pose_resolvers", "FixedGoalPoseResolver"),
     "FallEvidenceImageService": ("fall_evidence_image", "FallEvidenceImageService"),
     "FmsConfigService": ("fms_config", "FmsConfigService"),
-    "FallResponseCommandService": ("fall_response_command", "FallResponseCommandService"),
+    "FallResponseCommandService": (
+        "fall_response_command",
+        "FallResponseCommandService",
+    ),
     "GuideCommandService": ("guide_command", "GuideCommandService"),
     "GuideRuntimeService": ("guide_runtime", "GuideRuntimeService"),
     "GuidePhaseSnapshotRuntimePoller": (
@@ -24,11 +30,18 @@ _EXPORTS = {
     "InventoryService": ("inventory", "InventoryService"),
     "KioskVisitorService": ("kiosk_visitor", "KioskVisitorService"),
     "MappedGoalPoseResolver": ("goal_pose_resolvers", "MappedGoalPoseResolver"),
-    "ManipulationCommandService": ("manipulation_command", "ManipulationCommandService"),
+    "ManipulationCommandService": (
+        "manipulation_command",
+        "ManipulationCommandService",
+    ),
     "PatientService": ("patient", "PatientService"),
     "PatrolResumeService": ("patrol_resume", "PatrolResumeService"),
     "PatrolTaskCreateService": ("patrol_task_create", "PatrolTaskCreateService"),
     "RosRuntimeReadinessService": ("runtime_readiness", "RosRuntimeReadinessService"),
+    "RobotStatusEventRuntime": (
+        "robot_status_event_runtime",
+        "RobotStatusEventRuntime",
+    ),
     "StaffCallService": ("staff_call", "StaffCallService"),
     "TaskRequestService": ("task_request", "TaskRequestService"),
     "TaskMonitorService": ("task_monitor", "TaskMonitorService"),
@@ -36,9 +49,15 @@ _EXPORTS = {
     "VisitorInfoService": ("visitor_info", "VisitorInfoService"),
     "VisitorRegisterService": ("visitor_register", "VisitorRegisterService"),
     "WorkflowTaskManager": ("workflow_task_manager", "WorkflowTaskManager"),
-    "build_delivery_request_service": ("delivery_runtime", "build_delivery_request_service"),
+    "build_delivery_request_service": (
+        "delivery_runtime",
+        "build_delivery_request_service",
+    ),
     "build_patrol_request_service": ("patrol_runtime", "build_patrol_request_service"),
-    "get_delivery_navigation_config": ("delivery_config", "get_delivery_navigation_config"),
+    "get_delivery_navigation_config": (
+        "delivery_config",
+        "get_delivery_navigation_config",
+    ),
     "get_delivery_runtime_config": ("delivery_config", "get_delivery_runtime_config"),
     "get_default_delivery_workflow_task_manager": (
         "delivery_workflow_task_manager",
@@ -51,6 +70,10 @@ _EXPORTS = {
     "start_guide_phase_snapshot_polling_if_enabled": (
         "guide_phase_snapshot_runtime",
         "start_guide_phase_snapshot_polling_if_enabled",
+    ),
+    "start_robot_status_event_polling_if_enabled": (
+        "robot_status_event_runtime",
+        "start_robot_status_event_polling_if_enabled",
     ),
 }
 

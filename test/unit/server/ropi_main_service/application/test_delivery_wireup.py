@@ -108,7 +108,9 @@ def test_async_create_delivery_task_starts_delivery_workflow_after_acceptance():
         delivery_workflow_starter=workflow_starter,
     )
 
-    response = asyncio.run(service.async_create_delivery_task(**build_request_payload()))
+    response = asyncio.run(
+        service.async_create_delivery_task(**build_request_payload())
+    )
 
     assert response["result_code"] == "ACCEPTED"
     assert workflow_starter.calls == [
@@ -163,7 +165,9 @@ def test_async_create_patrol_task_starts_patrol_workflow_after_acceptance():
         patrol_workflow_starter=workflow_starter,
     )
 
-    response = asyncio.run(service.async_create_patrol_task(**build_patrol_request_payload()))
+    response = asyncio.run(
+        service.async_create_patrol_task(**build_patrol_request_payload())
+    )
 
     assert response["result_code"] == "ACCEPTED"
     assert workflow_starter.calls == [{"task_id": "2001"}]
@@ -210,31 +214,47 @@ def test_build_delivery_request_service_async_precheck_uses_async_ros_readiness(
             pass
 
         def get_status(self):
-            raise AssertionError("async delivery precheck should not use sync ROS readiness")
+            raise AssertionError(
+                "async delivery precheck should not use sync ROS readiness"
+            )
 
         async def async_get_status(self):
             return {"ready": True, "checks": []}
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        with patch(
-            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-            return_value={
-                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-                "destination_goal_poses": {
-                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+        with (
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+                return_value={
+                    "pickup_goal_pose": {
+                        "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                    },
+                    "destination_goal_poses": {
+                        "delivery_room_301": {
+                            "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                        },
+                    },
+                    "return_to_dock_goal_pose": {
+                        "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                    },
                 },
-                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-            },
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService",
-            FakeReadinessService,
-        ), patch(
-            "server.ropi_main_service.application.task_request.asyncio.to_thread",
-            side_effect=AssertionError("async delivery precheck should not use thread fallback"),
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.RosRuntimeReadinessService",
+                FakeReadinessService,
+            ),
+            patch(
+                "server.ropi_main_service.application.task_request.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "async delivery precheck should not use thread fallback"
+                ),
+            ),
         ):
             service = delivery_runtime.build_delivery_request_service(loop=loop)
-            return await service._async_run_delivery_request_precheck(**build_request_payload())
+            return await service._async_run_delivery_request_precheck(
+                **build_request_payload()
+            )
 
     response = asyncio.run(scenario())
 
@@ -249,7 +269,9 @@ def test_build_delivery_request_service_starts_async_orchestrator_without_thread
             pass
 
         def run(self, **kwargs):
-            raise AssertionError("delivery workflow should not use sync orchestrator.run")
+            raise AssertionError(
+                "delivery workflow should not use sync orchestrator.run"
+            )
 
         async def async_run(self, **kwargs):
             calls.append(kwargs)
@@ -257,21 +279,33 @@ def test_build_delivery_request_service_starts_async_orchestrator_without_thread
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        with patch(
-            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-            return_value={
-                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-                "destination_goal_poses": {
-                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+        with (
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+                return_value={
+                    "pickup_goal_pose": {
+                        "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                    },
+                    "destination_goal_poses": {
+                        "delivery_room_301": {
+                            "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                        },
+                    },
+                    "return_to_dock_goal_pose": {
+                        "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                    },
                 },
-                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-            },
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
-            FakeDeliveryOrchestrator,
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.asyncio.to_thread",
-            side_effect=AssertionError("delivery workflow should not be started via to_thread"),
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
+                FakeDeliveryOrchestrator,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.asyncio.to_thread",
+                side_effect=AssertionError(
+                    "delivery workflow should not be started via to_thread"
+                ),
+            ),
         ):
             service = delivery_runtime.build_delivery_request_service(loop=loop)
             service._start_delivery_workflow_if_needed(
@@ -318,21 +352,31 @@ def test_build_delivery_request_service_records_cancelled_workflow_result():
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        with patch(
-            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-            return_value={
-                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-                "destination_goal_poses": {
-                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+        with (
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+                return_value={
+                    "pickup_goal_pose": {
+                        "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                    },
+                    "destination_goal_poses": {
+                        "delivery_room_301": {
+                            "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                        },
+                    },
+                    "return_to_dock_goal_pose": {
+                        "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                    },
                 },
-                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-            },
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
-            FakeDeliveryRequestRepository,
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
-            FakeDeliveryOrchestrator,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
+                FakeDeliveryRequestRepository,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
+                FakeDeliveryOrchestrator,
+            ),
         ):
             service = delivery_runtime.build_delivery_request_service(loop=loop)
             service._start_delivery_workflow_if_needed(
@@ -363,11 +407,21 @@ def test_build_delivery_request_service_records_cancelled_workflow_result():
 
 def test_build_delivery_request_service_records_successful_workflow_result():
     repository_calls = []
+    published_updates = []
 
     class FakeDeliveryRequestRepository:
         async def async_record_delivery_task_workflow_result(self, **kwargs):
             repository_calls.append(kwargs)
-            return {"result_code": "SUCCESS", "task_status": "COMPLETED"}
+            return {
+                "result_code": "SUCCESS",
+                "task_id": 101,
+                "task_status": "COMPLETED",
+                "assigned_robot_id": "pinky2",
+            }
+
+    class FakeTaskUpdatePublisher:
+        async def publish_from_response(self, response, *, source, task_type=None):
+            published_updates.append((response, source, task_type))
 
     class FakeDeliveryOrchestrator:
         def __init__(self, **kwargs):
@@ -381,23 +435,36 @@ def test_build_delivery_request_service_records_successful_workflow_result():
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        with patch(
-            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-            return_value={
-                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-                "destination_goal_poses": {
-                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+        with (
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+                return_value={
+                    "pickup_goal_pose": {
+                        "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                    },
+                    "destination_goal_poses": {
+                        "delivery_room_301": {
+                            "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                        },
+                    },
+                    "return_to_dock_goal_pose": {
+                        "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                    },
                 },
-                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-            },
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
-            FakeDeliveryRequestRepository,
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
-            FakeDeliveryOrchestrator,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
+                FakeDeliveryRequestRepository,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
+                FakeDeliveryOrchestrator,
+            ),
         ):
-            service = delivery_runtime.build_delivery_request_service(loop=loop)
+            service = delivery_runtime.build_delivery_request_service(
+                loop=loop,
+                task_update_publisher=FakeTaskUpdatePublisher(),
+            )
             service._start_delivery_workflow_if_needed(
                 response={
                     "result_code": "ACCEPTED",
@@ -421,6 +488,18 @@ def test_build_delivery_request_service_records_successful_workflow_result():
             },
         }
     ]
+    assert published_updates == [
+        (
+            {
+                "result_code": "SUCCESS",
+                "task_id": 101,
+                "task_status": "COMPLETED",
+                "assigned_robot_id": "pinky2",
+            },
+            "DELIVERY_WORKFLOW_RESULT",
+            "DELIVERY",
+        )
+    ]
 
 
 def test_build_delivery_request_service_records_failed_workflow_result_when_orchestrator_raises():
@@ -440,21 +519,31 @@ def test_build_delivery_request_service_records_failed_workflow_result_when_orch
 
     async def scenario():
         loop = asyncio.get_running_loop()
-        with patch(
-            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-            return_value={
-                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-                "destination_goal_poses": {
-                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+        with (
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+                return_value={
+                    "pickup_goal_pose": {
+                        "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                    },
+                    "destination_goal_poses": {
+                        "delivery_room_301": {
+                            "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                        },
+                    },
+                    "return_to_dock_goal_pose": {
+                        "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                    },
                 },
-                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-            },
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
-            FakeDeliveryRequestRepository,
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
-            FakeDeliveryOrchestrator,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
+                FakeDeliveryRequestRepository,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
+                FakeDeliveryOrchestrator,
+            ),
         ):
             service = delivery_runtime.build_delivery_request_service(loop=loop)
             service._start_delivery_workflow_if_needed(
@@ -501,21 +590,31 @@ def test_build_delivery_request_service_records_failed_result_when_workflow_task
     async def scenario():
         loop = asyncio.get_running_loop()
         workflow_task_manager = DeliveryWorkflowTaskManager()
-        with patch(
-            "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
-            return_value={
-                "pickup_goal_pose": {"pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}},
-                "destination_goal_poses": {
-                    "delivery_room_301": {"pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}},
+        with (
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.get_delivery_navigation_config",
+                return_value={
+                    "pickup_goal_pose": {
+                        "pose": {"position": {"x": 1.0, "y": 2.0, "z": 0.0}}
+                    },
+                    "destination_goal_poses": {
+                        "delivery_room_301": {
+                            "pose": {"position": {"x": 3.0, "y": 4.0, "z": 0.0}}
+                        },
+                    },
+                    "return_to_dock_goal_pose": {
+                        "pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}
+                    },
                 },
-                "return_to_dock_goal_pose": {"pose": {"position": {"x": 5.0, "y": 6.0, "z": 0.0}}},
-            },
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
-            FakeDeliveryRequestRepository,
-        ), patch(
-            "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
-            FakeDeliveryOrchestrator,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
+                FakeDeliveryRequestRepository,
+            ),
+            patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryOrchestrator",
+                FakeDeliveryOrchestrator,
+            ),
         ):
             service = delivery_runtime.build_delivery_request_service(
                 loop=loop,

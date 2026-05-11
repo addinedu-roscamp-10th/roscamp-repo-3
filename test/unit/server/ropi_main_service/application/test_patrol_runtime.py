@@ -94,6 +94,11 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
     repository = FakeRepository()
     orchestrator = FakeOrchestrator(repository=repository)
     task_request_repository = FakeTaskRequestRepository()
+    published_updates = []
+
+    class FakeTaskUpdatePublisher:
+        async def publish_from_response(self, response, *, source, task_type=None):
+            published_updates.append((response, source, task_type))
 
     async def scenario():
         service = patrol_runtime.build_patrol_request_service(
@@ -102,6 +107,7 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
             patrol_execution_repository=repository,
             patrol_orchestrator=orchestrator,
             task_request_repository=task_request_repository,
+            task_update_publisher=FakeTaskUpdatePublisher(),
         )
         service.patrol_workflow_starter(task_id="2001")
         await workflow_task_manager.join(timeout_sec=1.0)
@@ -138,6 +144,13 @@ def test_build_patrol_request_service_starts_background_patrol_workflow():
                 "result_message": "patrol completed",
             },
         }
+    ]
+    assert published_updates == [
+        (
+            {"result_code": "SUCCEEDED", "task_status": "COMPLETED"},
+            "PATROL_WORKFLOW_RESULT",
+            "PATROL",
+        )
     ]
 
 

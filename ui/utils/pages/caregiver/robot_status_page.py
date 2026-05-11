@@ -5,7 +5,7 @@ import binascii
 import math
 import re
 
-from PyQt6.QtCore import QPointF
+from PyQt6.QtCore import QPointF, QTimer
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QPen
 from PyQt6.QtWidgets import (
@@ -82,7 +82,9 @@ def _is_ok_response(response):
 
 def _format_response_error(response, default_message):
     response = response if isinstance(response, dict) else {}
-    return str(response.get("result_message") or response.get("reason_code") or default_message)
+    return str(
+        response.get("result_message") or response.get("reason_code") or default_message
+    )
 
 
 def _decode_base64_asset(value):
@@ -111,7 +113,9 @@ def _selected_map_id(*, preferred_map_id, map_profiles, robots):
         if map_id and map_id in map_ids:
             robot_map_counts[map_id] = robot_map_counts.get(map_id, 0) + 1
     if robot_map_counts:
-        return sorted(robot_map_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        return sorted(robot_map_counts.items(), key=lambda item: (-item[1], item[0]))[
+            0
+        ][0]
 
     for profile in map_profiles or []:
         if not isinstance(profile, dict):
@@ -143,6 +147,24 @@ def _robot_display_sort_key(robot: dict):
 def _natural_robot_id_key(robot_id: str):
     parts = re.split(r"(\d+)", robot_id)
     return [int(part) if part.isdigit() else part for part in parts]
+
+
+def _pose_location_text(pose):
+    if not isinstance(pose, dict):
+        return "-"
+    x = _optional_float(pose.get("x"))
+    y = _optional_float(pose.get("y"))
+    if x is None or y is None:
+        return "-"
+    return f"x={x:.2f}, y={y:.2f}"
+
+
+def _robot_id_from_action_name(action_name):
+    parts = str(action_name or "").strip("/").split("/")
+    if len(parts) >= 3 and parts[0] == "ropi":
+        if parts[1] in {"control", "arm"}:
+            return parts[2] or None
+    return None
 
 
 class RobotStatusLoadWorker(QObject):
@@ -332,7 +354,13 @@ class RobotStatusCard(QFrame):
 
 
 class RobotStatusPage(QWidget):
-    def __init__(self, *, autoload: bool = True):
+    def __init__(
+        self,
+        *,
+        autoload: bool = True,
+        auto_poll: bool = True,
+        poll_interval_ms: int = 2000,
+    ):
         super().__init__()
         self._worker_stop_wait_ms = 1000
         self.load_thread = None
@@ -341,11 +369,17 @@ class RobotStatusPage(QWidget):
         self.robots = []
         self.map_profiles = []
         self.selected_map_id = None
+        self._last_bundle = {}
         self._syncing_map_selector = False
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(max(1000, int(poll_interval_ms)))
+        self._poll_timer.timeout.connect(self._poll_visible_snapshot)
 
         self._build_ui()
         if autoload:
             self.refresh_data()
+        if auto_poll:
+            self._poll_timer.start()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -403,7 +437,9 @@ class RobotStatusPage(QWidget):
         location_title.setObjectName("sectionTitle")
         self.map_selector = QComboBox()
         self.map_selector.setObjectName("robotMapSelector")
-        self.map_selector.currentIndexChanged.connect(self._handle_map_selection_changed)
+        self.map_selector.currentIndexChanged.connect(
+            self._handle_map_selection_changed
+        )
         location_header.addWidget(location_title)
         location_header.addStretch()
         location_header.addWidget(self.map_selector)
@@ -487,6 +523,10 @@ class RobotStatusPage(QWidget):
             clear_handler=self._clear_load_thread,
         )
 
+    def _poll_visible_snapshot(self):
+        if self.isVisible():
+            self.refresh_data()
+
     def _handle_load_finished(self, ok, payload):
         if not ok:
             self._show_status(f"로봇 상태를 불러오지 못했습니다. {payload}")
@@ -503,6 +543,7 @@ class RobotStatusPage(QWidget):
 
     def apply_robot_status_bundle(self, bundle):
         bundle = bundle or {}
+        self._last_bundle = dict(bundle)
         summary = bundle.get("summary") or {}
         self.robots = [
             robot for robot in bundle.get("robots") or [] if isinstance(robot, dict)
@@ -534,6 +575,186 @@ class RobotStatusPage(QWidget):
             self._render_detail(self.robots[0])
         else:
             self.detail_list.set_rows([], empty_text="표시할 로봇 상태가 없습니다.")
+
+    def apply_stream_event(self, event):
+        event = event or {}
+        event_type = str(event.get("event_type") or "").strip().upper()
+        payload = event.get("payload") or {}
+        if not isinstance(payload, dict):
+            return
+
+        if event_type == "PINKY_UPDATED":
+            self._apply_robot_runtime_patch(self._pinky_event_to_robot_patch(payload))
+            return
+
+        if event_type == "ARM_UPDATED":
+            self._apply_robot_runtime_patch(self._arm_event_to_robot_patch(payload))
+            return
+
+        if event_type == "ACTION_FEEDBACK_UPDATED":
+            self._apply_robot_runtime_patch(
+                self._feedback_event_to_robot_patch(payload)
+            )
+            return
+
+        if event_type == "TASK_UPDATED":
+            self._apply_robot_runtime_patch(self._task_event_to_robot_patch(payload))
+
+    def _pinky_event_to_robot_patch(self, payload):
+        robot_id = str(payload.get("pinky_id") or payload.get("robot_id") or "").strip()
+        if not robot_id:
+            return None
+        pose = payload.get("current_pose") or payload.get("pose")
+        current_location = payload.get("zone_name") or _pose_location_text(pose)
+        return {
+            "robot_id": robot_id,
+            "robot_type": "MOBILE",
+            "connection_status": payload.get("connection_status"),
+            "runtime_state": payload.get("pinky_state") or payload.get("runtime_state"),
+            "battery_percent": payload.get("battery_percent"),
+            "current_location": current_location,
+            "current_pose": self._normalize_runtime_pose(robot_id, pose),
+            "current_task_id": payload.get("active_task_id"),
+            "current_phase": payload.get("current_phase"),
+            "last_seen_at": payload.get("last_seen_at"),
+            "fault_code": payload.get("fault_code"),
+        }
+
+    def _arm_event_to_robot_patch(self, payload):
+        robot_id = str(payload.get("robot_id") or payload.get("arm_id") or "").strip()
+        if not robot_id:
+            return None
+        station_role = str(payload.get("station_role") or "").strip()
+        station_roles = []
+        if station_role:
+            station_roles.append(
+                {
+                    "task_type": "DELIVERY",
+                    "station_role": station_role,
+                }
+            )
+        return {
+            "robot_id": robot_id,
+            "robot_type": "ARM",
+            "connection_status": payload.get("connection_status") or "ONLINE",
+            "runtime_state": payload.get("arm_state") or payload.get("runtime_state"),
+            "current_task_id": payload.get("active_task_id"),
+            "last_seen_at": payload.get("last_seen_at"),
+            "fault_code": payload.get("fault_code"),
+            "station_roles": station_roles,
+        }
+
+    def _feedback_event_to_robot_patch(self, payload):
+        pose = payload.get("current_pose") or payload.get("pose")
+        robot_id = payload.get("robot_id") or _robot_id_from_action_name(
+            payload.get("action_name")
+        )
+        if not robot_id:
+            task_id = str(payload.get("task_id") or "").strip()
+            for robot in self.robots:
+                if str(robot.get("current_task_id") or "").strip() == task_id:
+                    robot_id = robot.get("robot_id")
+                    break
+        robot_id = str(robot_id or "").strip()
+        if not robot_id:
+            return None
+        return {
+            "robot_id": robot_id,
+            "current_pose": self._normalize_runtime_pose(robot_id, pose),
+            "current_location": _pose_location_text(pose),
+            "runtime_state": payload.get("patrol_status"),
+            "current_task_id": payload.get("task_id"),
+        }
+
+    def _task_event_to_robot_patch(self, payload):
+        robot_id = str(payload.get("assigned_robot_id") or "").strip()
+        if not robot_id:
+            return None
+        return {
+            "robot_id": robot_id,
+            "current_task_id": payload.get("task_id"),
+            "current_phase": payload.get("phase") or payload.get("task_status"),
+        }
+
+    def _normalize_runtime_pose(self, robot_id, pose):
+        if not isinstance(pose, dict):
+            return None
+        x = _optional_float(pose.get("x"))
+        y = _optional_float(pose.get("y"))
+        if x is None or y is None:
+            return None
+        existing_pose = {}
+        for robot in self.robots:
+            if str(robot.get("robot_id") or "") == str(robot_id):
+                existing_pose = robot.get("current_pose") or {}
+                break
+        return {
+            "map_id": str(
+                pose.get("map_id")
+                or existing_pose.get("map_id")
+                or self.selected_map_id
+                or ""
+            ).strip(),
+            "frame_id": str(
+                pose.get("frame_id") or existing_pose.get("frame_id") or "map"
+            ),
+            "x": x,
+            "y": y,
+            "yaw": _optional_float(pose.get("yaw"), default=0.0),
+            "updated_at": pose.get("updated_at"),
+        }
+
+    def _apply_robot_runtime_patch(self, patch):
+        if not isinstance(patch, dict):
+            return
+        robot_id = str(patch.get("robot_id") or "").strip()
+        if not robot_id:
+            return
+
+        updated = False
+        robots = []
+        for robot in self.robots:
+            if str(robot.get("robot_id") or "").strip() == robot_id:
+                merged = dict(robot)
+                for key, value in patch.items():
+                    if value is not None:
+                        merged[key] = value
+                robots.append(merged)
+                updated = True
+            else:
+                robots.append(robot)
+
+        if not updated:
+            robots.append(
+                {
+                    "display_name": robot_id,
+                    "capabilities": [],
+                    **{key: value for key, value in patch.items() if value is not None},
+                }
+            )
+
+        bundle = dict(self._last_bundle)
+        bundle["robots"] = robots
+        bundle["summary"] = self._build_summary_from_robots(robots)
+        self.apply_robot_status_bundle(bundle)
+
+    @staticmethod
+    def _build_summary_from_robots(robots):
+        summary = {
+            "total_robot_count": len(robots or []),
+            "online_robot_count": 0,
+            "offline_robot_count": 0,
+            "caution_robot_count": 0,
+        }
+        for robot in robots or []:
+            status = str(robot.get("connection_status") or "").upper()
+            if status == "ONLINE":
+                summary["online_robot_count"] += 1
+            elif status == "OFFLINE":
+                summary["offline_robot_count"] += 1
+            else:
+                summary["caution_robot_count"] += 1
+        return summary
 
     def _apply_summary(self, summary):
         for key, _title in SUMMARY_ITEMS:
@@ -680,6 +901,7 @@ class RobotStatusPage(QWidget):
         self.refresh_data()
 
     def shutdown(self):
+        self._poll_timer.stop()
         stop_worker_thread(
             self.load_thread,
             wait_ms=self._worker_stop_wait_ms,

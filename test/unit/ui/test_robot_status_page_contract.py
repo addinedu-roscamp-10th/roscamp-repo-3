@@ -4,7 +4,14 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame, QComboBox, QWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QComboBox,
+    QWidget,
+)
 
 
 _APP = None
@@ -281,6 +288,70 @@ def test_robot_status_page_orders_pinky_cards_above_jetcobot_cards():
         page.close()
 
 
+def test_robot_status_page_applies_robot_runtime_stream_event():
+    _app()
+
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False)
+
+    try:
+        page.apply_robot_status_bundle(_bundle())
+
+        page.apply_stream_event(
+            {
+                "event_type": "PINKY_UPDATED",
+                "payload": {
+                    "pinky_id": "pinky2",
+                    "pinky_state": "MOVING",
+                    "battery_percent": 73.0,
+                    "active_task_id": 1002,
+                    "current_phase": "DELIVERY_DESTINATION",
+                    "connection_status": "ONLINE",
+                    "pose": {
+                        "map_id": "map_0504",
+                        "frame_id": "map",
+                        "x": 2.5,
+                        "y": 1.5,
+                        "yaw": 0.2,
+                    },
+                    "last_seen_at": "2026-05-03T12:02:00",
+                },
+            }
+        )
+
+        labels = _label_texts(page)
+        assert page.table.item(0, 0).text() == "pinky2"
+        assert page.table.item(0, 5).text() == "MOVING"
+        assert page.table.item(0, 6).text() == "73%"
+        assert page.table.item(0, 7).text() == "1002"
+        assert page.robot_map_canvas.visible_robot_ids == ["pinky2"]
+        assert any("x=2.50, y=1.50" in text for text in labels)
+    finally:
+        page.close()
+
+
+def test_robot_status_page_polls_snapshot_only_when_visible(monkeypatch):
+    app = _app()
+
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False, auto_poll=False)
+    calls = []
+
+    try:
+        monkeypatch.setattr(page, "refresh_data", lambda: calls.append("refresh"))
+
+        page._poll_visible_snapshot()
+        page.show()
+        app.processEvents()
+        page._poll_visible_snapshot()
+
+        assert calls == ["refresh"]
+    finally:
+        page.close()
+
+
 def test_robot_status_load_worker_uses_caregiver_robot_status_rpc(monkeypatch):
     _app()
 
@@ -344,9 +415,9 @@ def test_robot_status_load_worker_uses_caregiver_robot_status_rpc(monkeypatch):
     assert emitted[0][0] is True
     assert emitted[0][1]["summary"]["total_robot_count"] == 5
     assert emitted[0][1]["selected_map_id"] == "map_0504"
-    assert emitted[0][1]["map_assets"]["pgm_bytes"] == _map_assets("map_0504")[
-        "pgm_bytes"
-    ]
+    assert (
+        emitted[0][1]["map_assets"]["pgm_bytes"] == _map_assets("map_0504")["pgm_bytes"]
+    )
 
 
 def test_robot_status_page_uses_shared_worker_thread_helper():

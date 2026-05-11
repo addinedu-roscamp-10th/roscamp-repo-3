@@ -12,18 +12,27 @@ from server.ropi_main_service.application.auth import AuthService
 from server.ropi_main_service.application.action_feedback_event_runtime import (
     start_action_feedback_event_polling_if_enabled,
 )
-from server.ropi_main_service.application.delivery_runtime import build_delivery_request_service
+from server.ropi_main_service.application.delivery_runtime import (
+    build_delivery_request_service,
+)
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
 from server.ropi_main_service.application.guide_phase_snapshot_runtime import (
     start_guide_phase_snapshot_polling_if_enabled,
 )
+from server.ropi_main_service.application.robot_status_event_runtime import (
+    start_robot_status_event_polling_if_enabled,
+)
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
 )
-from server.ropi_main_service.application.patrol_runtime import build_patrol_request_service
-from server.ropi_main_service.application.runtime_readiness import RosRuntimeReadinessService
+from server.ropi_main_service.application.patrol_runtime import (
+    build_patrol_request_service,
+)
+from server.ropi_main_service.application.runtime_readiness import (
+    RosRuntimeReadinessService,
+)
 from server.ropi_main_service.application.rpc_service_registry import SERVICE_REGISTRY
 from server.ropi_main_service.observability import configure_logging, log_event
 from server.ropi_main_service.persistence.async_connection import close_pool
@@ -98,9 +107,7 @@ def _ai_server_endpoint():
         return None
 
     port = (
-        os.getenv("AI_FALL_EVIDENCE_PORT")
-        or os.getenv("AI_FALL_STREAM_PORT")
-        or "6000"
+        os.getenv("AI_FALL_EVIDENCE_PORT") or os.getenv("AI_FALL_STREAM_PORT") or "6000"
     )
     return host, int(port)
 
@@ -151,7 +158,9 @@ async def _async_check_ai_server_status():
 
 
 class ControlServiceServer:
-    def __init__(self, host: str = CONTROL_SERVER_HOST, port: int = CONTROL_SERVER_PORT):
+    def __init__(
+        self, host: str = CONTROL_SERVER_HOST, port: int = CONTROL_SERVER_PORT
+    ):
         self.host = host
         self.port = port
         self._server = None
@@ -192,10 +201,16 @@ class ControlServiceServer:
             auth_service_factory=lambda: AuthService(),
             ros_readiness_service_factory=lambda: RosRuntimeReadinessService(),
             delivery_request_service_builder=(
-                lambda **kwargs: build_delivery_request_service(**kwargs)
+                lambda **kwargs: build_delivery_request_service(
+                    task_update_publisher=self.task_update_event_publisher,
+                    **kwargs,
+                )
             ),
             patrol_request_service_builder=(
-                lambda **kwargs: build_patrol_request_service(**kwargs)
+                lambda **kwargs: build_patrol_request_service(
+                    task_update_publisher=self.task_update_event_publisher,
+                    **kwargs,
+                )
             ),
             sync_ai_status_checker=lambda: _check_ai_server_status(),
             async_ai_status_checker=lambda: _async_check_ai_server_status(),
@@ -208,6 +223,7 @@ class ControlServiceServer:
         self.fall_inference_stream_task = None
         self.action_feedback_event_poll_task = None
         self.guide_phase_snapshot_poll_task = None
+        self.robot_status_event_poll_task = None
 
     def dispatch_frame(self, frame: TCPFrame, *, loop=None) -> TCPFrame:
         result = self.frame_router.dispatch(frame, loop=loop)
@@ -316,6 +332,11 @@ class ControlServiceServer:
                 task_update_publisher=self.task_update_event_publisher,
                 workflow_task_manager=self.delivery_workflow_task_manager,
             )
+        )
+        self.robot_status_event_poll_task = start_robot_status_event_polling_if_enabled(
+            loop=asyncio.get_running_loop(),
+            task_event_publisher=self.task_event_stream_hub,
+            workflow_task_manager=self.delivery_workflow_task_manager,
         )
         try:
             self._server = await asyncio.start_server(

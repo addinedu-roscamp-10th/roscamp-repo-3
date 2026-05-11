@@ -1,8 +1,9 @@
-from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout
-)
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout
 
 from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+from ui.utils.core.worker_threads import start_worker_thread
+from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.admin_shell import AdminShell
 
@@ -19,7 +20,7 @@ class CaregiverMainWindow(QMainWindow):
         ("alerts", "알림/로그"),
     ]
 
-    def __init__(self):
+    def __init__(self, *, event_stream_enabled=False):
         super().__init__()
         self.setWindowTitle("보호사 메인")
         self.login_window = None
@@ -30,8 +31,15 @@ class CaregiverMainWindow(QMainWindow):
         self.inventory_page = None
         self.patient_page = None
         self.alert_page = None
+        self.admin_event_thread = None
+        self.admin_event_worker = None
+        self._admin_event_last_seq = 0
+        self._admin_event_stream_enabled = bool(event_stream_enabled)
+        self._admin_event_restart_requested = False
         self._build_ui()
         self._fit_to_screen()
+        if self._admin_event_stream_enabled:
+            self._start_admin_event_stream()
 
     def _build_ui(self):
         central = QWidget()
@@ -80,6 +88,7 @@ class CaregiverMainWindow(QMainWindow):
             screen = self.windowHandle().screen()
         if screen is None:
             from PyQt6.QtWidgets import QApplication
+
             screen = QApplication.primaryScreen()
 
         if screen is None:
@@ -118,6 +127,7 @@ class CaregiverMainWindow(QMainWindow):
 
     def logout(self):
         from ui.admin_ui.login_auth_window import LoginAuthWindow
+
         SessionManager.logout()
         self.login_window = LoginAuthWindow(role="caregiver")
         self.login_window.show()
@@ -129,10 +139,12 @@ class CaregiverMainWindow(QMainWindow):
 
     def show_task_page(self):
         from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
+
         self._show_or_create_page("task_page", TaskRequestPage, "task_request")
 
     def show_task_monitor_page(self):
         from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
         self._show_or_create_page("task_monitor_page", TaskMonitorPage, "task_monitor")
 
     def show_coordinate_settings_page(self):
@@ -148,21 +160,97 @@ class CaregiverMainWindow(QMainWindow):
 
     def show_robot_status_page(self):
         from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
         self._show_or_create_page("robot_status_page", RobotStatusPage, "robot_status")
 
     def show_inventory_page(self):
-        from ui.utils.pages.caregiver.inventory_management_page import InventoryManagementPage
-        self._show_or_create_page("inventory_page", InventoryManagementPage, "inventory")
+        from ui.utils.pages.caregiver.inventory_management_page import (
+            InventoryManagementPage,
+        )
+
+        self._show_or_create_page(
+            "inventory_page", InventoryManagementPage, "inventory"
+        )
 
     def show_patient_page(self):
         from ui.utils.pages.caregiver.patient_info_page import PatientInfoPage
+
         self._show_or_create_page("patient_page", PatientInfoPage, "patient")
 
     def show_alert_page(self):
         from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
+
         self._show_or_create_page("alert_page", AlertLogPage, "alerts")
 
+    def _start_admin_event_stream(self):
+        if not self._admin_event_stream_enabled:
+            return
+        if self.admin_event_thread is not None:
+            return
+        self._admin_event_restart_requested = False
+
+        self.admin_event_thread, self.admin_event_worker = start_worker_thread(
+            self,
+            worker=TaskEventStreamWorker(
+                consumer_id="ui-admin-console",
+                last_seq=self._admin_event_last_seq,
+            ),
+            clear_handler=self._clear_admin_event_stream_thread,
+            worker_signal_connections={
+                "batch_received": self._handle_admin_event_batch,
+                "failed": self._handle_admin_event_stream_failed,
+            },
+        )
+
+    def _handle_admin_event_batch(self, batch):
+        if not isinstance(batch, dict):
+            return
+        try:
+            self._admin_event_last_seq = int(
+                batch.get("batch_end_seq") or self._admin_event_last_seq
+            )
+        except (TypeError, ValueError):
+            pass
+
+        for event in batch.get("events") or []:
+            if isinstance(event, dict):
+                self._fanout_admin_stream_event(event)
+
+    def _fanout_admin_stream_event(self, event):
+        for page in (
+            self.home_page,
+            self.task_page,
+            self.robot_status_page,
+        ):
+            handler = getattr(page, "apply_stream_event", None)
+            if handler is not None:
+                handler(event)
+
+    def _handle_admin_event_stream_failed(self, _error):
+        if self._admin_event_stream_enabled:
+            self._admin_event_restart_requested = True
+
+    def _clear_admin_event_stream_thread(self):
+        self.admin_event_thread = None
+        self.admin_event_worker = None
+        if self._admin_event_stream_enabled and self._admin_event_restart_requested:
+            self._admin_event_restart_requested = False
+            QTimer.singleShot(1000, self._start_admin_event_stream)
+
+    def _stop_admin_event_stream_thread(self):
+        self._admin_event_stream_enabled = False
+        self._admin_event_restart_requested = False
+        worker = self.admin_event_worker
+        thread = self.admin_event_thread
+        if worker is not None:
+            worker.stop()
+        if thread is not None and thread.isRunning():
+            thread.quit()
+            thread.wait(1000)
+        self._clear_admin_event_stream_thread()
+
     def closeEvent(self, event):
+        self._stop_admin_event_stream_thread()
         for page in [
             self.home_page,
             self.task_page,

@@ -825,3 +825,22 @@ def test_task_monitor_page_starts_patrol_resume_from_modal_payload(monkeypatch):
         SessionManager.logout()
         page.shutdown()
         page.close()
+
+
+def test_task_monitor_page_reloads_snapshot_when_reentered_after_stream_stop():
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+    calls = []
+
+    try:
+        page._start_snapshot_load = lambda **kwargs: calls.append(kwargs) or True
+
+        page.reset_page()
+
+        assert calls == [{"status_text": "상태 재동기화 중"}]
+    finally:
+        page.shutdown()
+        page.close()
