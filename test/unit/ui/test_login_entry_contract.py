@@ -47,7 +47,7 @@ def test_legacy_login_role_window_is_removed_from_product_code():
     assert not (PROJECT_ROOT / "ui/admin_ui/login_role_window.py").exists()
 
 
-def test_caregiver_login_window_is_caregiver_only_product_entry(monkeypatch):
+def test_admin_login_window_uses_control_operator_product_copy(monkeypatch):
     _app()
 
     from ui.admin_ui import login_auth_window
@@ -68,10 +68,14 @@ def test_caregiver_login_window_is_caregiver_only_product_entry(monkeypatch):
         assert window.objectName() == "loginAuthRoot"
         assert window.findChild(QLabel, "loginBrandTitle").text() == "ROPI"
         assert window.findChild(QLabel, "loginServerStatus") is not None
-        assert window.id_input.placeholderText() == "요양보호사 ID 입력"
+        assert window.windowTitle() == "ROPI 관제 운영자 로그인"
+        assert "관제 운영 콘솔" in texts
+        assert "관제 운영자 로그인" in texts
+        assert window.id_input.placeholderText() == "관제 운영자 ID 입력"
         assert window.pw_input.placeholderText() == "비밀번호 입력"
         assert window.login_btn.text() == "로그인"
         assert "뒤로가기" not in texts
+        assert all("요양보호사" not in text for text in texts)
         assert all("방문객" not in text and "방문자" not in text for text in texts)
     finally:
         window.close()

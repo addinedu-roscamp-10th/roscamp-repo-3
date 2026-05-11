@@ -201,7 +201,7 @@ class AdminSidebar(QFrame):
         self,
         nav_items: Sequence[NavItem],
         user_name: str,
-        user_role: str = "요양보호사",
+        user_role: str = "관제 운영자",
         on_logout: Callable[[], None] | None = None,
     ):
         super().__init__()
@@ -274,7 +274,7 @@ class AdminShell(QWidget):
         self,
         nav_items: Sequence[NavItem],
         user_name: str,
-        user_role: str = "요양보호사",
+        user_role: str = "관제 운영자",
         on_logout: Callable[[], None] | None = None,
     ):
         super().__init__()

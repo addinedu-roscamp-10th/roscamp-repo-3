@@ -246,7 +246,7 @@ class TaskRequestPage(QWidget):
             "작업 취소 확인",
             (
                 "이 작업을 취소하시겠습니까?\n\n"
-                f"task_id: {task_id}\n"
+                f"작업 번호: {task_id}\n"
                 f"상태: {self.task_status_label.text()}\n"
                 f"배정 로봇: {self.assigned_robot_id_label.text()}"
             ),

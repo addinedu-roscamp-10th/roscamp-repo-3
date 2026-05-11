@@ -141,7 +141,7 @@ class RobotStatusCard(QFrame):
 
         robot_id_row, self.robot_id_text_label, self.robot_id_label = _metric_row(
             "로봇",
-            "pinky2",
+            "배정 대기",
         )
         (
             robot_state_row,
@@ -149,7 +149,7 @@ class RobotStatusCard(QFrame):
             self.robot_state_label,
         ) = _metric_row(
             "상태",
-            "feedback 수신 전",
+            "상태 업데이트 대기",
             "robotStateChip",
         )
         robot_pose_row, self.robot_pose_text_label, self.robot_pose_label = _metric_row(
@@ -166,7 +166,7 @@ class RobotStatusCard(QFrame):
         self.robot_map_placeholder.setObjectName("robotMapPlaceholder")
         map_layout = QVBoxLayout(self.robot_map_placeholder)
         map_layout.setContentsMargins(16, 16, 16, 16)
-        self.robot_map_label = QLabel("지도 / 위치 placeholder")
+        self.robot_map_label = QLabel("지도 / 위치 대기")
         self.robot_map_label.setObjectName("mutedText")
         self.robot_map_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         map_layout.addWidget(self.robot_map_label)
@@ -183,7 +183,7 @@ class RobotStatusCard(QFrame):
         self.robot_state_text_label.setText("상태")
         self.robot_pose_text_label.setText("위치")
         self.robot_destination_text_label.setText("목적지")
-        self.robot_map_label.setText("지도 / 위치 placeholder")
+        self.robot_map_label.setText("지도 / 위치 대기")
 
     def set_patrol_context(self):
         self.robot_id_text_label.setText("로봇")
@@ -197,7 +197,7 @@ class RobotStatusCard(QFrame):
 
     def update_patrol(self, assigned_robot_id):
         self.robot_id_label.setText(_display_unassigned_robot(assigned_robot_id))
-        self.robot_state_label.setText("feedback 수신 전")
+        self.robot_state_label.setText("상태 업데이트 대기")
         self.robot_pose_label.setText("미수신")
         self.robot_destination_label.setText("미수신")
 
@@ -225,7 +225,7 @@ class RequestResultCard(QFrame):
             "사유"
         )
         task_id_row, self.task_id_text_label, self.task_id_label = _metric_row(
-            "task_id"
+            "작업 번호"
         )
         task_status_row, self.task_status_text_label, self.task_status_label = (
             _metric_row("상태")

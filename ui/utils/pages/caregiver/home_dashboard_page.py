@@ -871,7 +871,7 @@ class CaregiverHomePage(QWidget):
         task = task if isinstance(task, dict) else {}
         task_id = _task_id_value(task)
         if task_id is None:
-            self._show_status("취소할 task_id가 없습니다.")
+            self._show_status("취소할 작업 번호가 없습니다.")
             return
         if self.cancel_thread is not None:
             self._show_status("이전 취소 요청을 처리하는 중입니다.")
@@ -880,7 +880,7 @@ class CaregiverHomePage(QWidget):
         current_user = SessionManager.current_user()
         caregiver_id = getattr(current_user, "user_id", None)
         if not str(caregiver_id or "").strip().isdigit():
-            self._show_status("취소 요청자 caregiver_id가 없습니다.")
+            self._show_status("취소 요청자 정보를 확인할 수 없습니다.")
             return
 
         self._canceling_task_id = task_id

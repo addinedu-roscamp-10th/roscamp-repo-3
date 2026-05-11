@@ -503,6 +503,8 @@ def test_kiosk_guide_confirmation_creates_db_backed_guide_task_before_command():
         assert session["resident_name"] == "김*수"
         assert session["room_no"] == "301"
         assert session["destination_id"] == "delivery_room_301"
+        assert "요청번호: 3001" in page.inline_status.text()
+        assert "task_id" not in page.inline_status.text()
     finally:
         page.close()
 
@@ -644,7 +646,9 @@ def test_kiosk_progress_page_prefers_db_backed_guide_session_status():
 
         assert page.robot_state_chip.text() == "대상 확인 중"
         assert page.distance_label.text() == "로봇이 안내 대상을 확인하고 있습니다."
+        assert "요청번호: 3001" in page.request_id_label.text()
         assert "상태: 대상 확인 대기" in page.request_id_label.text()
+        assert "task_id" not in page.request_id_label.text()
     finally:
         page.close()
 

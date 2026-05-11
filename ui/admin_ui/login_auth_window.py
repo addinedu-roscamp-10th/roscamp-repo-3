@@ -45,7 +45,7 @@ class LoginAuthWindow(QWidget):
         self.status_text = None
         self.heartbeat = HeartbeatMonitor(parent=self)
 
-        self.setWindowTitle("ROPI 요양보호사 로그인")
+        self.setWindowTitle("ROPI 관제 운영자 로그인")
         self.resize(1120, 720)
         self._build_ui()
         self.heartbeat.status_changed.connect(self._update_server_status)
@@ -68,7 +68,7 @@ class LoginAuthWindow(QWidget):
         hero_layout.setContentsMargins(34, 34, 34, 34)
         hero_layout.setSpacing(20)
 
-        hero_title = QLabel("요양보호사 운영 콘솔")
+        hero_title = QLabel("관제 운영 콘솔")
         hero_title.setObjectName("loginHeroTitle")
         hero_title.setWordWrap(True)
 
@@ -81,7 +81,7 @@ class LoginAuthWindow(QWidget):
         feature_row = QHBoxLayout()
         feature_row.setSpacing(12)
         for title, desc in [
-            ("작업 요청", "운반, 순찰, 안내 task 생성"),
+            ("작업 요청", "운반, 순찰 작업 생성"),
             ("상태 확인", "로봇과 관제 서버 상태 추적"),
             ("운영 기록", "알림, 오류, 처리 결과 확인"),
         ]:
@@ -138,7 +138,7 @@ class LoginAuthWindow(QWidget):
         status_layout.setContentsMargins(14, 10, 14, 10)
         status_layout.setSpacing(10)
 
-        status_label = QLabel("Control Service")
+        status_label = QLabel("관제 서버")
         status_label.setObjectName("loginStatusLabel")
 
         self.status_text = QLabel("관제 서버 확인 중")
@@ -162,7 +162,7 @@ class LoginAuthWindow(QWidget):
         return card_wrap
 
     def _build_login_card(self):
-        role_text = "요양보호사" if self.role == "caregiver" else "방문객"
+        role_text = "관제 운영자" if self.role == "caregiver" else "방문객"
 
         panel = QFrame()
         panel.setObjectName("loginCard")

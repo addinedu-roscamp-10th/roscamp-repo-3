@@ -337,8 +337,8 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
 
         if success:
             task_id = response_payload.get("task_id")
-            if task_id is not None and "task_id" not in str(message):
-                message = f"{message} (task_id={task_id})"
+            if task_id is not None and "작업 번호" not in str(message):
+                message = f"{message} (작업 번호: {task_id})"
             self.show_inline_status(message, "success")
             self.quantity_input.setValue(1)
             self.detail_input.clear()

@@ -446,7 +446,7 @@ class KioskGuideConfirmationPage(QWidget):
                 if command_success
                 else f"{name} 어르신 안내 요청은 접수되었습니다. 로봇 호출 상태를 확인 중입니다."
             )
-            self.inline_status.setText(f"{status_message} (task_id={task_id})")
+            self.inline_status.setText(f"{status_message} (요청번호: {task_id})")
             if self.go_progress_page:
                 self.go_progress_page(self.selected_patient, session)
             return

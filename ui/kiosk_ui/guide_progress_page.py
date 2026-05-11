@@ -265,7 +265,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
             name = str(self.selected_patient.get("name", "-")).strip() or "-"
             room = str(self.selected_patient.get("room", "-")).strip() or "-"
             self.request_id_label.setText(
-                f"안내 대상: {name} 어르신 / 목적지: {room} / task_id: {task_id}"
+                f"안내 대상: {name} 어르신 / 목적지: {room} / 요청번호: {task_id}"
             )
         else:
             self.request_id_label.setText("안내 대상: -")
@@ -493,7 +493,7 @@ class KioskRobotGuidanceProgressPage(QWidget):
             task_id = str(session.get("task_id", "-")).strip() or "-"
             phase_label = self._guide_phase_label(phase, task_status)
             self.request_id_label.setText(
-                f"안내 대상: {name} 어르신 / 목적지: {room} / task_id: {task_id} / 상태: {phase_label}"
+                f"안내 대상: {name} 어르신 / 목적지: {room} / 요청번호: {task_id} / 상태: {phase_label}"
             )
 
     def _apply_command_warning(self):

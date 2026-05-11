@@ -346,7 +346,7 @@ class PatrolRuntimePanel(QWidget):
             alert_task_row,
             _alert_task_text,
             self.fall_alert_task_label,
-        ) = _metric_row("task_id")
+        ) = _metric_row("작업 번호")
         (
             evidence_row,
             _evidence_text,
@@ -465,7 +465,7 @@ class PatrolRuntimePanel(QWidget):
     def _reset_inactive_state(self):
         self.patrol_area_label.setText("-")
         self.patrol_robot_label.setText("-")
-        self.patrol_status_label.setText("feedback 수신 전")
+        self.patrol_status_label.setText("상태 업데이트 대기")
         self.patrol_waypoint_label.setText("미수신")
         self.patrol_distance_label.setText("미수신")
         self.patrol_location_label.setText("미수신")
@@ -498,7 +498,7 @@ class PatrolRuntimePanel(QWidget):
                 task.get("patrol_status"),
                 cls._latest_feedback(task).get("patrol_status"),
             )
-            or "feedback 수신 전"
+            or "상태 업데이트 대기"
         )
 
     @classmethod

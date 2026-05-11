@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -40,7 +41,7 @@ def test_shared_admin_shell_components_expose_ropi_contract():
         SystemStatusStrip,
     )
 
-    sidebar = AdminSidebar(nav_items=NAV_ITEMS, user_name="테스트 보호사")
+    sidebar = AdminSidebar(nav_items=NAV_ITEMS, user_name="테스트 운영자")
     header = PageHeader(title="작업 현황", subtitle="전체 시나리오 상태")
     time_card = PageTimeCard(show_last_update=False)
     status_header = PageHeader(
@@ -54,7 +55,10 @@ def test_shared_admin_shell_components_expose_ropi_contract():
     try:
         assert sidebar.objectName() == "adminSidebar"
         assert sidebar.findChild(QLabel, "sidebarBrand").text() == "ROPI"
-        assert sidebar.findChild(QLabel, "userName").text() == "테스트 보호사"
+        assert sidebar.findChild(QLabel, "userName").text() == "테스트 운영자"
+        sidebar_labels = _label_texts(sidebar)
+        assert "관제 운영자" in sidebar_labels
+        assert all("요양보호사" not in text for text in sidebar_labels)
 
         side_buttons = [
             button.text()
@@ -101,6 +105,7 @@ def test_caregiver_main_window_uses_shared_admin_shell_contract():
     window = CaregiverMainWindow()
 
     try:
+        assert window.windowTitle() == "ROPI 관제 콘솔"
         assert hasattr(window, "admin_shell")
         assert window.findChild(QFrame, "adminSidebar") is not None
         assert window.findChild(QStackedWidget, "adminPageStack") is window.stack
@@ -112,6 +117,8 @@ def test_caregiver_main_window_uses_shared_admin_shell_contract():
         assert brand.text() == "ROPI"
 
         labels = _label_texts(window)
+        assert "관제 운영자" in labels
+        assert all("요양보호사" not in text for text in labels)
         assert all("CareBot" not in text for text in labels)
         assert all("RoboCare" not in text for text in labels)
         assert all("OPERATIONAL CONSOLE" not in text for text in labels)
@@ -125,6 +132,21 @@ def test_caregiver_main_window_uses_shared_admin_shell_contract():
         assert side_buttons == [label for _, label in NAV_ITEMS]
     finally:
         window.close()
+
+
+def test_admin_login_visible_copy_uses_operator_wording():
+    source_path = (
+        Path(__file__).resolve().parents[3]
+        / "ui"
+        / "admin_ui"
+        / "login_auth_window.py"
+    )
+    source = source_path.read_text(encoding="utf-8")
+
+    assert "ROPI 관제 운영자 로그인" in source
+    assert "관제 운영 콘솔" in source
+    assert "관제 운영자 로그인" in source
+    assert "요양보호사" not in source
 
 
 def test_caregiver_common_shell_routes_placeholder_pages():

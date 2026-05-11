@@ -92,15 +92,15 @@ class PatrolResumeDialog(QDialog):
         title.setObjectName("sectionTitle")
 
         task_row, _task_label, self.task_id_label = _metric_row(
-            "task_id",
+            "작업 번호",
             _display(self.task_id),
         )
 
-        member_label = QLabel("조치 대상 member_id")
+        member_label = QLabel("조치 대상 어르신 ID")
         member_label.setObjectName("fieldLabel")
         self.member_id_input = QLineEdit()
         self.member_id_input.setObjectName("patrolResumeMemberIdInput")
-        self.member_id_input.setPlaceholderText("member_id")
+        self.member_id_input.setPlaceholderText("숫자 ID")
         self.member_id_input.setMinimumHeight(42)
 
         memo_label = QLabel("조치 내용")
@@ -154,11 +154,11 @@ class PatrolResumeDialog(QDialog):
         action_memo = self.action_memo_input.toPlainText().strip()
 
         if not self.task_id:
-            raise ValueError("재개할 순찰 task_id가 없습니다.")
+            raise ValueError("재개할 순찰 작업 번호가 없습니다.")
         if not str(caregiver_id or "").strip():
-            raise ValueError("caregiver_id가 없습니다.")
+            raise ValueError("요청자 정보를 확인할 수 없습니다.")
         if not member_id.isdigit():
-            raise ValueError("member_id를 숫자로 입력하세요.")
+            raise ValueError("조치 대상 어르신 ID를 숫자로 입력하세요.")
         if not action_memo:
             raise ValueError("현장 조치 메모를 입력하세요.")
 
@@ -475,7 +475,7 @@ class TaskMonitorPage(QWidget):
         self.task_table = QTableWidget(0, 5)
         self.task_table.setObjectName("taskMonitorTable")
         self.task_table.setHorizontalHeaderLabels(
-            ["task_id", "유형", "상태", "단계", "로봇"]
+            ["작업 번호", "유형", "상태", "단계", "로봇"]
         )
         self.task_table.horizontalHeader().setStretchLastSection(True)
         self.task_table.setSelectionBehavior(
@@ -502,7 +502,9 @@ class TaskMonitorPage(QWidget):
         detail_title = QLabel("작업 상세")
         detail_title.setObjectName("sectionTitle")
 
-        task_id_row, _task_id_text, self.detail_task_id_label = _metric_row("task_id")
+        task_id_row, _task_id_text, self.detail_task_id_label = _metric_row(
+            "작업 번호"
+        )
         task_type_row, _task_type_text, self.detail_task_type_label = _metric_row(
             "유형"
         )
@@ -882,14 +884,14 @@ class TaskMonitorPage(QWidget):
         task = self._current_task() or {}
         task_id = _task_key(task.get("task_id"))
         if task_id is None:
-            self.cancel_status_label.setText("취소할 task_id가 없습니다.")
+            self.cancel_status_label.setText("취소할 작업 번호가 없습니다.")
             self.cancel_status_label.setHidden(False)
             return
 
         current_user = SessionManager.current_user()
         caregiver_id = getattr(current_user, "user_id", None)
         if not str(caregiver_id or "").strip().isdigit():
-            self.cancel_status_label.setText("취소 요청자 caregiver_id가 없습니다.")
+            self.cancel_status_label.setText("취소 요청자 정보를 확인할 수 없습니다.")
             self.cancel_status_label.setHidden(False)
             return
 

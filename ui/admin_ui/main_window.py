@@ -22,7 +22,7 @@ class CaregiverMainWindow(QMainWindow):
 
     def __init__(self, *, event_stream_enabled=False):
         super().__init__()
-        self.setWindowTitle("보호사 메인")
+        self.setWindowTitle("ROPI 관제 콘솔")
         self.login_window = None
         self.task_page = None
         self.task_monitor_page = None
@@ -51,12 +51,12 @@ class CaregiverMainWindow(QMainWindow):
         layout.setSpacing(0)
 
         current_user = SessionManager.current_user()
-        user_name = current_user.name if current_user else "김보호 보호사"
+        user_name = current_user.name if current_user else "관제 운영자"
 
         self.admin_shell = AdminShell(
             nav_items=self.NAV_ITEMS,
             user_name=user_name,
-            user_role="요양보호사",
+            user_role="관제 운영자",
             on_logout=self.logout,
         )
         self.shell = self.admin_shell

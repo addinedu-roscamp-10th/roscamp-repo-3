@@ -158,8 +158,8 @@ def test_task_request_page_uses_content_height_form_card_and_robot_placeholder(m
         assert "전송 전 payload 기준 필드를 확인합니다." not in _label_texts(page.preview_card)
         assert "작업 생성 후 로봇 feedback 수신 시 위치와 상태를 갱신합니다." not in _label_texts(page.robot_status_card)
         assert "서버가 반환한 IF-DEL-001 응답 필드를 그대로 표시합니다." not in _label_texts(page.result_card)
-        assert page.robot_id_label.text() == "pinky2"
-        assert page.robot_state_label.text() == "feedback 수신 전"
+        assert page.robot_id_label.text() == "배정 대기"
+        assert page.robot_state_label.text() == "상태 업데이트 대기"
         assert page.robot_state_label.objectName() == "robotStateChip"
         assert page.robot_pose_label.text() == "미수신"
         assert page.robot_destination_label.text() == "delivery_room_301"
@@ -226,7 +226,7 @@ def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
         assert page.preview_destination.text() == "작업 생성 후 확정"
         assert page.preview_priority.text() == "긴급"
         assert page.robot_id_label.text() == "미정"
-        assert page.robot_state_label.text() == "feedback 수신 전"
+        assert page.robot_state_label.text() == "상태 업데이트 대기"
         assert page.robot_pose_label.text() == "미수신"
         assert page.robot_destination_label.text() == "미수신"
         assert page.robot_map_label.text() == "순찰 요청 미리보기"
