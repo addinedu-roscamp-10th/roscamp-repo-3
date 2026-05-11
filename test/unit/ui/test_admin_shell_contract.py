@@ -105,7 +105,11 @@ def test_page_time_card_keeps_stable_size_for_different_page_actions():
 
     from ui.utils.widgets.admin_shell import (
         ADMIN_SIDEBAR_WIDTH,
+        PAGE_TIME_CARD_ACTION_ROW_HEIGHT,
+        PAGE_TIME_CARD_CLOCK_ROW_HEIGHT,
         PAGE_TIME_CARD_HEIGHT,
+        PAGE_TIME_CARD_META_ROW_HEIGHT,
+        PAGE_TIME_CARD_STATUS_ROW_HEIGHT,
         PAGE_TIME_CARD_WIDTH,
         PAGE_TIME_CARD_BUTTON_HEIGHT,
         PageTimeCard,
@@ -145,11 +149,26 @@ def test_page_time_card_keeps_stable_size_for_different_page_actions():
         assert len({card.sizeHint().width() for card in cards}) == 1
         assert PAGE_TIME_CARD_WIDTH <= 340
         assert ADMIN_SIDEBAR_WIDTH <= 240
+        _, top_margin, _, bottom_margin = plain_card.layout().getContentsMargins()
+        required_height = (
+            top_margin
+            + bottom_margin
+            + PAGE_TIME_CARD_CLOCK_ROW_HEIGHT
+            + PAGE_TIME_CARD_META_ROW_HEIGHT * 2
+            + PAGE_TIME_CARD_STATUS_ROW_HEIGHT
+            + PAGE_TIME_CARD_ACTION_ROW_HEIGHT
+            + plain_card.layout().spacing() * 4
+        )
+        assert PAGE_TIME_CARD_HEIGHT - required_height >= 16
 
         qss = MAIN_QSS.read_text(encoding="utf-8")
         assert "QWidget#timeCardActionRow QPushButton" in qss
-        assert f"min-height: {PAGE_TIME_CARD_BUTTON_HEIGHT}px" in qss
-        assert f"max-height: {PAGE_TIME_CARD_BUTTON_HEIGHT}px" in qss
+        action_button_qss = qss.split("QWidget#timeCardActionRow QPushButton", 1)[
+            1
+        ].split("}", 1)[0]
+        assert "padding: 4px 10px;" in action_button_qss
+        assert "min-height:" not in action_button_qss
+        assert "max-height:" not in action_button_qss
         assert f"min-width: {ADMIN_SIDEBAR_WIDTH}px" in qss
         assert f"max-width: {ADMIN_SIDEBAR_WIDTH}px" in qss
     finally:

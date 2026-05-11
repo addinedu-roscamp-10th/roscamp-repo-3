@@ -590,10 +590,8 @@ QPushButton#secondaryButton {
 }
 
 QWidget#timeCardActionRow QPushButton {
-    padding: 7px 10px;
+    padding: 4px 10px;
     border-radius: 10px;
-    min-height: 42px;
-    max-height: 42px;
 }
 
 QPushButton#scenarioTabButton {

@@ -1,9 +1,6 @@
 from pathlib import Path
 
-from ui.utils.widgets.admin_shell import (
-    ADMIN_SIDEBAR_WIDTH,
-    PAGE_TIME_CARD_BUTTON_HEIGHT,
-)
+from ui.utils.widgets.admin_shell import ADMIN_SIDEBAR_WIDTH
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -12,6 +9,10 @@ QSS_PATH = ROOT / "ui" / "utils" / "styles" / "main.qss"
 
 def _stylesheet() -> str:
     return QSS_PATH.read_text(encoding="utf-8")
+
+
+def _selector_block(qss: str, selector: str) -> str:
+    return qss.split(selector, 1)[1].split("}", 1)[0]
 
 
 def test_main_qss_uses_ropi_admin_design_tokens():
@@ -41,8 +42,10 @@ def test_main_qss_defines_shared_admin_shell_components():
     assert f"min-width: {ADMIN_SIDEBAR_WIDTH}px" in qss
     assert f"max-width: {ADMIN_SIDEBAR_WIDTH}px" in qss
     assert "QWidget#timeCardActionRow QPushButton" in qss
-    assert f"min-height: {PAGE_TIME_CARD_BUTTON_HEIGHT}px" in qss
-    assert f"max-height: {PAGE_TIME_CARD_BUTTON_HEIGHT}px" in qss
+    action_button_qss = _selector_block(qss, "QWidget#timeCardActionRow QPushButton")
+    assert "padding: 4px 10px;" in action_button_qss
+    assert "min-height:" not in action_button_qss
+    assert "max-height:" not in action_button_qss
 
 
 def test_main_qss_defines_task_request_page_components():
