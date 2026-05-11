@@ -140,6 +140,17 @@ def test_alert_log_page_applies_server_bundle_to_summary_table_and_detail():
         assert "로봇 ID" in labels
         assert "pinky2" in labels
         assert page.findChildren(QFrame, "keyValueRow")
+        payload_rows = [
+            row
+            for row in page.findChildren(QFrame, "keyValueRow")
+            if getattr(row, "key_label", None) is not None
+            and row.key_label.text() == "상세 payload"
+        ]
+        assert payload_rows
+        payload_key = payload_rows[0].key_label
+        assert payload_key.minimumWidth() >= (
+            payload_key.fontMetrics().horizontalAdvance("상세 payload") + 20
+        )
         assert "event_id" not in labels
         assert "occurred_at" not in labels
         assert "task_id" not in labels

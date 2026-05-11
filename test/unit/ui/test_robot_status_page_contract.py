@@ -171,7 +171,13 @@ def test_robot_status_page_matches_phase1_layout_contract():
         assert location_panel is not None
         assert location_panel.parentWidget() is robot_cards_panel
         assert location_panel.minimumHeight() >= 320
-        assert page.findChild(QComboBox, "robotMapSelector") is not None
+        map_selector = page.findChild(QComboBox, "robotMapSelector")
+        assert map_selector is not None
+        assert map_selector.minimumWidth() >= 320
+        assert map_selector.minimumContentsLength() >= 28
+        assert map_selector.sizeAdjustPolicy() == (
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
         assert page.findChild(QWidget, "robotLocationMapCanvas") is not None
         assert "로봇 위치 맵" in labels
         assert "로봇 위치 요약" not in labels

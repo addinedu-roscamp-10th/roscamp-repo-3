@@ -12,6 +12,8 @@ CHIP_OBJECT_NAMES = {
     "red": "chipRed",
     "yellow": "chipYellow",
 }
+KEY_VALUE_KEY_MIN_WIDTH = 96
+KEY_VALUE_KEY_TEXT_PADDING = 20
 
 
 def display_text(value, default="-") -> str:
@@ -91,8 +93,16 @@ class KeyValueRow(QFrame):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(10)
 
-        self.key_label = QLabel(display_text(key))
+        key_text = display_text(key)
+        self.key_label = QLabel(key_text)
         self.key_label.setObjectName(key_object_name)
+        self.key_label.setMinimumWidth(
+            max(
+                KEY_VALUE_KEY_MIN_WIDTH,
+                self.key_label.fontMetrics().horizontalAdvance(key_text)
+                + KEY_VALUE_KEY_TEXT_PADDING,
+            )
+        )
 
         self.value_label = QLabel(display_text(value))
         self.value_label.setObjectName(value_object_name)
@@ -194,6 +204,7 @@ class SummaryCard(QFrame):
 __all__ = [
     "KeyValueList",
     "KeyValueRow",
+    "KEY_VALUE_KEY_MIN_WIDTH",
     "StatusChip",
     "SummaryCard",
     "battery_text",

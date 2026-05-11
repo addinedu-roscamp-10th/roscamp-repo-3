@@ -442,6 +442,11 @@ class RobotStatusPage(QWidget):
         location_title.setObjectName("sectionTitle")
         self.map_selector = QComboBox()
         self.map_selector.setObjectName("robotMapSelector")
+        self.map_selector.setMinimumWidth(340)
+        self.map_selector.setMinimumContentsLength(32)
+        self.map_selector.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
         self.map_selector.currentIndexChanged.connect(
             self._handle_map_selection_changed
         )
