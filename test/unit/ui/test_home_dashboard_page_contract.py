@@ -604,6 +604,141 @@ def test_home_dashboard_patches_existing_task_flow_from_task_stream_event():
         page.close()
 
 
+def test_home_dashboard_patches_warning_kpi_and_timeline_from_alert_stream_event():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    refresh_calls = []
+
+    try:
+        page.apply_summary_data(
+            {
+                "available_robot_count": 1,
+                "total_robot_count": 2,
+                "waiting_job_count": 0,
+                "running_job_count": 1,
+                "warning_error_count": 0,
+            }
+        )
+        page.apply_timeline_data(
+            [
+                {
+                    "occurred_at": "2026-05-11T20:00:00",
+                    "task_id": 100,
+                    "event_type": "TASK_UPDATED",
+                    "message": "기존 이벤트",
+                }
+            ]
+        )
+        page.show()
+        app.processEvents()
+        page._schedule_stream_refresh = lambda: refresh_calls.append("refresh")
+
+        event = {
+            "event_type": "ALERT_CREATED",
+            "payload": {
+                "alert_id": "fall-17",
+                "task_id": 2001,
+                "pinky_id": "pinky3",
+                "zone_name": "3층 복도",
+                "result_seq": 44,
+                "occurred_at": "2026-05-11T20:15:54",
+                "message": "낙상 의심 알림",
+            },
+        }
+
+        page.apply_stream_event(event)
+        page.apply_stream_event(event)
+
+        assert refresh_calls == []
+        assert page.kpi_cards["warning_errors"].value_label.text() == "1건"
+        assert page.timeline_table.rowCount() == 2
+        assert page.timeline_table.item(0, 0).text() == "2026.05.11 20:15"
+        assert page.timeline_table.item(0, 1).text() == "2001"
+        assert page.timeline_table.item(0, 2).text() == "ALERT_CREATED"
+        assert page.timeline_table.item(0, 3).text() == "낙상 의심 알림"
+        assert page.timeline_table.item(1, 3).text() == "기존 이벤트"
+    finally:
+        page.close()
+
+
+def test_home_dashboard_patches_alert_carried_by_task_updated_without_reload():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import (
+        CaregiverHomePage,
+        FLOW_COLUMNS,
+    )
+
+    page = CaregiverHomePage(autoload=False)
+    refresh_calls = []
+
+    try:
+        page.apply_summary_data(
+            {
+                "available_robot_count": 1,
+                "total_robot_count": 2,
+                "waiting_job_count": 0,
+                "running_job_count": 1,
+                "warning_error_count": 0,
+            }
+        )
+        page.apply_flow_board_data(
+            {
+                "IN_PROGRESS": [
+                    {
+                        "task_id": 2001,
+                        "task_type": "PATROL",
+                        "task_status": "RUNNING",
+                        "phase": "RUNNING",
+                        "robot_id": "pinky3",
+                        "description": "patrolling",
+                    }
+                ]
+            }
+        )
+        page.apply_timeline_data([])
+        page.show()
+        app.processEvents()
+        page._schedule_stream_refresh = lambda: refresh_calls.append("refresh")
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": 2001,
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_FALL_RESPONSE",
+                    "assigned_robot_id": "pinky3",
+                    "result_message": "낙상 대응 시작",
+                    "fall_alert": {
+                        "alert_id": "fall-18",
+                        "zone_name": "3층 복도",
+                        "result_seq": 45,
+                    },
+                },
+            }
+        )
+
+        columns = {
+            column_key: page.flow_grid.itemAtPosition(0, index).widget()
+            for index, (column_key, _title, _statuses) in enumerate(FLOW_COLUMNS)
+        }
+        flow_labels = _label_texts(columns["IN_PROGRESS"])
+        assert refresh_calls == []
+        assert page.kpi_cards["warning_errors"].value_label.text() == "1건"
+        assert page.timeline_table.rowCount() == 1
+        assert page.timeline_table.item(0, 1).text() == "2001"
+        assert page.timeline_table.item(0, 2).text() == "FALL_ALERT_CREATED"
+        assert page.timeline_table.item(0, 3).text() == "낙상 대응 시작"
+        assert "낙상 대응 대기" in flow_labels
+    finally:
+        page.close()
+
+
 def test_home_dashboard_task_cards_expose_home_cancel_action():
     _app()
 

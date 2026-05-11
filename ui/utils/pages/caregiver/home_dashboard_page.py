@@ -557,6 +557,9 @@ class CaregiverHomePage(QWidget):
         self._last_summary = {}
         self._last_robots = []
         self._last_flow_data = {}
+        self._last_timeline_rows = []
+        self._timeline_event_keys = set()
+        self._has_summary_snapshot = False
         self._canceling_task_id = None
         self._stream_refresh_pending = False
         self._deferred_stream_refresh = False
@@ -814,14 +817,21 @@ class CaregiverHomePage(QWidget):
 
         if event_type == "TASK_UPDATED":
             payload = event.get("payload") if isinstance(event, dict) else {}
-            if self.isVisible() and self._apply_task_stream_event(
-                payload if isinstance(payload, dict) else {},
-            ):
-                return
+            payload = payload if isinstance(payload, dict) else {}
+            if self.isVisible():
+                self._apply_fall_alert_from_task_payload(payload)
+                if self._apply_task_stream_event(payload):
+                    return
             self._schedule_stream_refresh()
             return
 
         if event_type in {"ALERT_CREATED", "FALL_ALERT_CREATED"}:
+            payload = event.get("payload") if isinstance(event, dict) else {}
+            if self.isVisible() and self._apply_alert_stream_event(
+                event_type,
+                payload if isinstance(payload, dict) else {},
+            ):
+                return
             self._schedule_stream_refresh()
 
     def _apply_robot_stream_event(self, event_type: str, payload: dict) -> bool:
@@ -1007,6 +1017,82 @@ class CaregiverHomePage(QWidget):
         )
         self.apply_summary_data(summary, robots=self._last_robots)
 
+    def _apply_fall_alert_from_task_payload(self, payload: dict) -> bool:
+        fall_alert = payload.get("fall_alert")
+        if not isinstance(fall_alert, dict):
+            return False
+
+        alert_payload = dict(fall_alert)
+        for source_key, target_key in (
+            ("task_id", "task_id"),
+            ("assigned_robot_id", "pinky_id"),
+            ("robot_id", "pinky_id"),
+            ("result_message", "message"),
+            ("occurred_at", "occurred_at"),
+        ):
+            if alert_payload.get(target_key) in (None, "") and payload.get(
+                source_key
+            ) not in (None, ""):
+                alert_payload[target_key] = payload.get(source_key)
+
+        return self._apply_alert_stream_event("FALL_ALERT_CREATED", alert_payload)
+
+    def _apply_alert_stream_event(self, event_type: str, payload: dict) -> bool:
+        if not self._has_summary_snapshot:
+            return False
+
+        row = self._timeline_row_from_alert_event(event_type, payload)
+        if row is None:
+            return False
+
+        event_key = self._timeline_event_key(row)
+        if event_key in self._timeline_event_keys:
+            return True
+
+        self._increment_warning_error_count()
+        self.apply_timeline_data([row, *self._last_timeline_rows])
+        self._mark_last_update()
+        return True
+
+    @staticmethod
+    def _timeline_row_from_alert_event(event_type: str, payload: dict) -> dict | None:
+        task_id = payload.get("task_id")
+        alert_id = payload.get("alert_id") or payload.get("event_id")
+        if task_id in (None, "") and alert_id in (None, ""):
+            return None
+
+        message = (
+            payload.get("message")
+            or payload.get("result_message")
+            or payload.get("detail")
+            or payload.get("zone_name")
+            or "낙상 알림 생성"
+        )
+        return {
+            "event_id": alert_id,
+            "alert_id": alert_id,
+            "occurred_at": (
+                payload.get("occurred_at")
+                or payload.get("created_at")
+                or payload.get("frame_ts")
+                or payload.get("timestamp")
+            ),
+            "task_id": task_id,
+            "event_type": event_type,
+            "message": message,
+            "result_seq": payload.get("result_seq"),
+            "frame_id": payload.get("frame_id"),
+        }
+
+    def _increment_warning_error_count(self):
+        summary = dict(self._last_summary)
+        try:
+            current_count = int(summary.get("warning_error_count") or 0)
+        except (TypeError, ValueError):
+            current_count = 0
+        summary["warning_error_count"] = current_count + 1
+        self.apply_summary_data(summary, robots=self._last_robots)
+
     def _schedule_stream_refresh(self):
         if not self.isVisible():
             self._deferred_stream_refresh = True
@@ -1037,6 +1123,7 @@ class CaregiverHomePage(QWidget):
         summary = summary or {}
         robots = robots or []
         self._last_summary = dict(summary) if isinstance(summary, dict) else {}
+        self._has_summary_snapshot = True
         available_robot_count = int(summary.get("available_robot_count") or 0)
         total_robot_count = summary.get("total_robot_count")
         if total_robot_count is None:
@@ -1131,6 +1218,12 @@ class CaregiverHomePage(QWidget):
 
     def apply_timeline_data(self, rows):
         rows = list(rows or [])[:20]
+        self._last_timeline_rows = rows
+        self._timeline_event_keys = {
+            event_key
+            for event_key in (self._timeline_event_key(row) for row in rows)
+            if event_key is not None
+        }
         self.timeline_table.setRowCount(len(rows))
 
         for r, row in enumerate(rows):
@@ -1302,6 +1395,27 @@ class CaregiverHomePage(QWidget):
 
         values = list(row or [])
         return (values + ["", "", "", ""])[:4]
+
+    @staticmethod
+    def _timeline_event_key(row):
+        if isinstance(row, dict):
+            event_id = row.get("event_id") or row.get("alert_id")
+            if event_id not in (None, ""):
+                return ("id", str(event_id))
+            return (
+                "row",
+                str(row.get("event_type") or row.get("event_name") or ""),
+                str(row.get("task_id") or row.get("work_id") or ""),
+                str(row.get("result_seq") or ""),
+                str(row.get("frame_id") or ""),
+                str(row.get("occurred_at") or row.get("timeline_time") or ""),
+                str(row.get("message") or row.get("detail") or ""),
+            )
+
+        values = list(row or [])
+        if not values:
+            return None
+        return ("list", *tuple(str(value) for value in values[:4]))
 
     @staticmethod
     def clear_layout(layout):
