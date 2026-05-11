@@ -527,6 +527,64 @@ def test_coordinate_zone_settings_page_keyboard_events_work_from_admin_shell_win
         shell.close()
 
 
+def test_coordinate_page_height_stays_scoped_after_visiting_tall_shell_page():
+    app = _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+    from ui.utils.widgets.admin_shell import AdminShell
+
+    shell = AdminShell(
+        [
+            ("coordinates", "좌표/구역 설정"),
+            ("tall", "긴 페이지"),
+        ],
+        "tester",
+    )
+    page = CoordinateZoneSettingsPage()
+    tall_page = QFrame()
+    tall_page.setMinimumHeight(1600)
+
+    try:
+        shell.add_page("coordinates", page)
+        shell.set_page("coordinates")
+        shell.resize(1400, 900)
+        shell.show()
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        app.processEvents()
+
+        initial_page_height = page.height()
+        initial_canvas_height = page.map_canvas.height()
+        initial_target_rect = page.map_canvas.image_target_rect()
+        initial_vertical_padding = (
+            page.map_canvas.height() - initial_target_rect.height()
+        )
+
+        shell.add_page("tall", tall_page)
+        shell.set_page("tall")
+        app.processEvents()
+        shell.set_page("coordinates")
+        app.processEvents()
+
+        returned_target_rect = page.map_canvas.image_target_rect()
+        returned_vertical_padding = (
+            page.map_canvas.height() - returned_target_rect.height()
+        )
+
+        assert page.height() <= initial_page_height + 24
+        assert page.map_canvas.height() <= initial_canvas_height + 24
+        assert returned_vertical_padding <= initial_vertical_padding + 24
+    finally:
+        page.shutdown()
+        shell.close()
+
+
 def test_coordinate_zone_settings_page_shortcut_override_uses_page_undo_history():
     _app()
 

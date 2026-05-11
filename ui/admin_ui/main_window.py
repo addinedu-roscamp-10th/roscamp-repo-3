@@ -63,11 +63,11 @@ class CaregiverMainWindow(QMainWindow):
         self.admin_shell.nav_requested.connect(self._handle_nav)
 
         self.stack = self.admin_shell.stack
-        self.page_scroll = self.admin_shell.page_scroll
         self.home_page = CaregiverHomePage()
 
         self.admin_shell.add_page("home", self.home_page)
         self.admin_shell.set_page("home")
+        self.page_scroll = self.admin_shell.page_scroll
 
         self.home_btn = self.admin_shell.sidebar.button("home")
         self.task_btn = self.admin_shell.sidebar.button("task_request")
@@ -109,6 +109,7 @@ class CaregiverMainWindow(QMainWindow):
         if hasattr(page, "reset_page"):
             page.reset_page()
         self.admin_shell.set_page(page_key)
+        self.page_scroll = self.admin_shell.page_scroll
 
     def _handle_nav(self, key):
         handlers = {
@@ -135,6 +136,7 @@ class CaregiverMainWindow(QMainWindow):
 
     def show_home_page(self):
         self.admin_shell.set_page("home")
+        self.page_scroll = self.admin_shell.page_scroll
         self.home_page.load_dashboard_data()
 
     def show_task_page(self):

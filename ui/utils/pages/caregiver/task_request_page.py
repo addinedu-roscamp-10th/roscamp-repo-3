@@ -76,6 +76,10 @@ class TaskRequestPage(QWidget):
 
         self.form_host = QFrame()
         self.form_host.setObjectName("formHost")
+        self.form_host.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self.form_layout = QVBoxLayout(self.form_host)
         self.form_layout.setContentsMargins(0, 0, 0, 0)
         self.form_layout.setSpacing(0)
@@ -85,7 +89,7 @@ class TaskRequestPage(QWidget):
         self.form_scroll.setObjectName("requestFormScroll")
         self.form_scroll.setWidgetResizable(True)
         self.form_scroll.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
         )
         self.form_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -169,7 +173,7 @@ class TaskRequestPage(QWidget):
         for form in self.forms:
             form.hide()
             form.setSizePolicy(
-                QSizePolicy.Policy.Preferred,
+                QSizePolicy.Policy.Expanding,
                 QSizePolicy.Policy.Fixed,
             )
             self.form_layout.addWidget(form)
@@ -202,10 +206,12 @@ class TaskRequestPage(QWidget):
         self.patrol_form.set_patrol_areas(options.get("patrol_areas") or [])
 
     def _resize_form_container(self, form):
-        form.adjustSize()
         form_height = form.sizeHint().height()
         self.form_scroll.setFixedHeight(form_height)
         self.form_host.setFixedHeight(form_height)
+        form.setMinimumHeight(form_height)
+        form.updateGeometry()
+        self.form_host.updateGeometry()
         self.left_card.updateGeometry()
 
     def _set_active_tab(self, form):

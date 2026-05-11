@@ -266,6 +266,44 @@ class AdminSidebar(QFrame):
         self.nav_requested.emit(key)
 
 
+class AdminPageStack(QStackedWidget):
+    def __init__(self):
+        super().__init__()
+        self._page_scrolls: dict[QWidget, QScrollArea] = {}
+        self._scroll_pages: dict[QScrollArea, QWidget] = {}
+
+    def add_page(self, page: QWidget) -> QScrollArea:
+        existing_scroll = self._page_scrolls.get(page)
+        if existing_scroll is not None:
+            return existing_scroll
+
+        scroll = QScrollArea()
+        scroll.setObjectName("adminPageScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(page)
+
+        self._page_scrolls[page] = scroll
+        self._scroll_pages[scroll] = page
+        super().addWidget(scroll)
+        return scroll
+
+    def setCurrentWidget(self, widget: QWidget) -> None:
+        target = self._page_scrolls.get(widget, widget)
+        super().setCurrentWidget(target)
+
+    def currentWidget(self) -> QWidget | None:
+        current = super().currentWidget()
+        return self._scroll_pages.get(current, current)
+
+    def current_scroll_area(self) -> QScrollArea | None:
+        current = super().currentWidget()
+        if isinstance(current, QScrollArea):
+            return current
+        return None
+
+
 class AdminShell(QWidget):
     nav_requested = pyqtSignal(str)
     page_changed = pyqtSignal(str)
@@ -293,24 +331,18 @@ class AdminShell(QWidget):
         )
         self.sidebar.nav_requested.connect(self.nav_requested.emit)
 
-        self.stack = QStackedWidget()
+        self.stack = AdminPageStack()
         self.stack.setObjectName("adminPageStack")
-
-        self.page_scroll = QScrollArea()
-        self.page_scroll.setObjectName("adminPageScroll")
-        self.page_scroll.setWidgetResizable(True)
-        self.page_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.page_scroll.setWidget(self.stack)
+        self.page_scroll = None
 
         root.addWidget(self.sidebar)
-        root.addWidget(self.page_scroll, 1)
+        root.addWidget(self.stack, 1)
 
     def add_page(self, key: str, page: QWidget) -> None:
         if key in self._pages:
             return
         self._pages[key] = page
-        self.stack.addWidget(page)
+        self.stack.add_page(page)
 
     def has_page(self, key: str) -> bool:
         return key in self._pages
@@ -322,11 +354,14 @@ class AdminShell(QWidget):
         page = self._pages[key]
         self.stack.setCurrentWidget(page)
         self.sidebar.set_active(key)
-        self.page_scroll.verticalScrollBar().setValue(0)
+        self.page_scroll = self.stack.current_scroll_area()
+        if self.page_scroll is not None:
+            self.page_scroll.verticalScrollBar().setValue(0)
         self.page_changed.emit(key)
 
 
 __all__ = [
+    "AdminPageStack",
     "AdminShell",
     "AdminSidebar",
     "NavItem",

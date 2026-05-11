@@ -171,6 +171,46 @@ def test_task_request_page_uses_content_height_form_card_and_robot_placeholder(m
         page.close()
 
 
+def test_task_request_tabs_keep_form_width_when_active_tab_is_reclicked(
+    monkeypatch,
+):
+    app = _app()
+
+    from ui.utils.pages.caregiver.task_request_page import (
+        DeliveryRequestForm,
+        TaskRequestPage,
+    )
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+
+    page = TaskRequestPage()
+
+    try:
+        page.resize(1200, 800)
+        page.show()
+        app.processEvents()
+
+        page.patrol_btn.click()
+        app.processEvents()
+        patrol_width = page.patrol_form.width()
+
+        page.patrol_btn.click()
+        app.processEvents()
+
+        assert page.patrol_form.width() == patrol_width
+
+        page.delivery_btn.click()
+        app.processEvents()
+        delivery_width = page.delivery_form.width()
+
+        page.delivery_btn.click()
+        app.processEvents()
+
+        assert page.delivery_form.width() == delivery_width
+    finally:
+        page.close()
+
+
 def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
     _app()
 
