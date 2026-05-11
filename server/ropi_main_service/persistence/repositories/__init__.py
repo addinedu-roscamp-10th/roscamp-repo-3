@@ -1,6 +1,7 @@
 from .caregiver_repository import CaregiverRepository
 from .coordinate_config_repository import CoordinateConfigRepository
 from .delivery_task_create_repository import DeliveryTaskCreateRepository
+from .delivery_task_execution_repository import DeliveryTaskExecutionRepository
 from .delivery_request_event_repository import DeliveryRequestEventRepository
 from .fms_config_repository import FmsConfigRepository
 from .inventory_repository import InventoryRepository
@@ -35,6 +36,7 @@ __all__ = [
     "DeliveryRequestRepository",
     "DeliveryRequestEventRepository",
     "DeliveryTaskCreateRepository",
+    "DeliveryTaskExecutionRepository",
     "FmsConfigRepository",
     "GuideTaskRepository",
     "GuideTaskLifecycleRepository",

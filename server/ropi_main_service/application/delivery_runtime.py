@@ -322,6 +322,18 @@ def build_delivery_request_service(
                     extra={"task_id": task_id},
                 )
 
+        async def _record_workflow_started(*, task_id):
+            response = (
+                await delivery_request_repository.async_record_delivery_execution_started(
+                    task_id=task_id,
+                )
+            )
+            await _publish_workflow_task_update(
+                response,
+                source="DELIVERY_WORKFLOW_STARTED",
+            )
+            return response
+
         async def _publish_workflow_task_update(response, *, source):
             if task_update_publisher is None:
                 return
@@ -340,10 +352,28 @@ def build_delivery_request_service(
             if asyncio.iscoroutine(result):
                 await result
 
+        async def _run_delivery_workflow(**workflow_kwargs):
+            start_response = await _record_workflow_started(
+                task_id=workflow_kwargs.get("task_id"),
+            )
+            if str(start_response.get("result_code") or "").upper() != "ACCEPTED":
+                return {
+                    "result_code": "FAILED",
+                    "result_message": (
+                        start_response.get("result_message")
+                        or "delivery workflow start was rejected."
+                    ),
+                    "reason_code": (
+                        start_response.get("reason_code")
+                        or "DELIVERY_WORKFLOW_START_REJECTED"
+                    ),
+                }
+            return await orchestrator.async_run(**workflow_kwargs)
+
         def _start_delivery_workflow(**kwargs):
             task_id = kwargs.get("task_id")
             background_task = workflow_task_manager.create_task(
-                orchestrator.async_run(**kwargs),
+                _run_delivery_workflow(**kwargs),
                 name=f"delivery_workflow_{task_id}",
                 loop=loop,
                 cancel_on_shutdown=True,

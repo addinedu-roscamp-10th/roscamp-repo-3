@@ -12,6 +12,9 @@ from server.ropi_main_service.persistence.repositories.delivery_task_repository 
 from server.ropi_main_service.persistence.repositories.delivery_task_create_repository import (
     DeliveryTaskCreateRepository,
 )
+from server.ropi_main_service.persistence.repositories.delivery_task_execution_repository import (
+    DeliveryTaskExecutionRepository,
+)
 from server.ropi_main_service.persistence.repositories.delivery_task_cancel_repository import (
     DeliveryTaskCancelRepository,
 )
@@ -62,6 +65,7 @@ class TaskRequestRepository:
         runtime_config=None,
         delivery_task_repository=None,
         delivery_task_create_repository=None,
+        delivery_task_execution_repository=None,
         delivery_task_cancel_repository=None,
         delivery_task_result_repository=None,
         patrol_runtime_config=None,
@@ -81,6 +85,9 @@ class TaskRequestRepository:
             runtime_config=self.runtime_config
         )
         self.delivery_task_cancel_repository = delivery_task_cancel_repository or DeliveryTaskCancelRepository()
+        self.delivery_task_execution_repository = (
+            delivery_task_execution_repository or DeliveryTaskExecutionRepository()
+        )
         self.delivery_task_result_repository = delivery_task_result_repository or DeliveryTaskResultRepository()
         self.patrol_task_repository = patrol_task_repository or PatrolTaskRepository()
         self.patrol_task_cancel_repository = patrol_task_cancel_repository or PatrolTaskCancelRepository()
@@ -333,6 +340,11 @@ class TaskRequestRepository:
         return await self.delivery_task_cancel_repository.async_record_delivery_task_cancel_result(
             task_id=task_id,
             cancel_response=cancel_response,
+        )
+
+    async def async_record_delivery_execution_started(self, *, task_id):
+        return await self.delivery_task_execution_repository.async_record_delivery_execution_started(
+            task_id=task_id,
         )
 
     def get_patrol_task_cancel_target(self, task_id):

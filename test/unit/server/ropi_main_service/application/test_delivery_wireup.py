@@ -263,6 +263,8 @@ def test_build_delivery_request_service_async_precheck_uses_async_ros_readiness(
 
 def test_build_delivery_request_service_starts_async_orchestrator_without_thread_offload():
     calls = []
+    repository_calls = []
+    published_updates = []
 
     class FakeDeliveryOrchestrator:
         def __init__(self, **kwargs):
@@ -276,6 +278,30 @@ def test_build_delivery_request_service_starts_async_orchestrator_without_thread
         async def async_run(self, **kwargs):
             calls.append(kwargs)
             return {"result_code": "SUCCESS"}
+
+    class FakeDeliveryRequestRepository:
+        async def async_record_delivery_execution_started(self, **kwargs):
+            repository_calls.append(("start", kwargs))
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 101,
+                "task_status": "RUNNING",
+                "phase": "DELIVERY_PICKUP",
+                "assigned_robot_id": "pinky2",
+            }
+
+        async def async_record_delivery_task_workflow_result(self, **kwargs):
+            repository_calls.append(("result", kwargs))
+            return {
+                "result_code": "SUCCESS",
+                "task_id": 101,
+                "task_status": "COMPLETED",
+                "assigned_robot_id": "pinky2",
+            }
+
+    class FakeTaskUpdatePublisher:
+        async def publish_from_response(self, response, *, source, task_type=None):
+            published_updates.append((response, source, task_type))
 
     async def scenario():
         loop = asyncio.get_running_loop()
@@ -301,13 +327,20 @@ def test_build_delivery_request_service_starts_async_orchestrator_without_thread
                 FakeDeliveryOrchestrator,
             ),
             patch(
+                "server.ropi_main_service.application.delivery_runtime.DeliveryRequestRepository",
+                FakeDeliveryRequestRepository,
+            ),
+            patch(
                 "server.ropi_main_service.application.delivery_runtime.asyncio.to_thread",
                 side_effect=AssertionError(
                     "delivery workflow should not be started via to_thread"
                 ),
             ),
         ):
-            service = delivery_runtime.build_delivery_request_service(loop=loop)
+            service = delivery_runtime.build_delivery_request_service(
+                loop=loop,
+                task_update_publisher=FakeTaskUpdatePublisher(),
+            )
             service._start_delivery_workflow_if_needed(
                 response={
                     "result_code": "ACCEPTED",
@@ -318,9 +351,11 @@ def test_build_delivery_request_service_starts_async_orchestrator_without_thread
                 destination_id="delivery_room_301",
             )
             await asyncio.sleep(0)
+            await asyncio.sleep(0)
 
     asyncio.run(scenario())
 
+    assert repository_calls[0] == ("start", {"task_id": "101"})
     assert calls == [
         {
             "task_id": "101",
@@ -329,12 +364,32 @@ def test_build_delivery_request_service_starts_async_orchestrator_without_thread
             "destination_id": "delivery_room_301",
         }
     ]
+    assert published_updates[0] == (
+        {
+            "result_code": "ACCEPTED",
+            "task_id": 101,
+            "task_status": "RUNNING",
+            "phase": "DELIVERY_PICKUP",
+            "assigned_robot_id": "pinky2",
+        },
+        "DELIVERY_WORKFLOW_STARTED",
+        "DELIVERY",
+    )
 
 
 def test_build_delivery_request_service_records_cancelled_workflow_result():
     repository_calls = []
 
     class FakeDeliveryRequestRepository:
+        async def async_record_delivery_execution_started(self, **kwargs):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 101,
+                "task_status": "RUNNING",
+                "phase": "DELIVERY_PICKUP",
+                "assigned_robot_id": "pinky2",
+            }
+
         async def async_record_delivery_task_cancelled_result(self, **kwargs):
             repository_calls.append(kwargs)
             return {"result_code": "CANCELLED"}
@@ -410,6 +465,15 @@ def test_build_delivery_request_service_records_successful_workflow_result():
     published_updates = []
 
     class FakeDeliveryRequestRepository:
+        async def async_record_delivery_execution_started(self, **kwargs):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 101,
+                "task_status": "RUNNING",
+                "phase": "DELIVERY_PICKUP",
+                "assigned_robot_id": "pinky2",
+            }
+
         async def async_record_delivery_task_workflow_result(self, **kwargs):
             repository_calls.append(kwargs)
             return {
@@ -491,6 +555,17 @@ def test_build_delivery_request_service_records_successful_workflow_result():
     assert published_updates == [
         (
             {
+                "result_code": "ACCEPTED",
+                "task_id": 101,
+                "task_status": "RUNNING",
+                "phase": "DELIVERY_PICKUP",
+                "assigned_robot_id": "pinky2",
+            },
+            "DELIVERY_WORKFLOW_STARTED",
+            "DELIVERY",
+        ),
+        (
+            {
                 "result_code": "SUCCESS",
                 "task_id": 101,
                 "task_status": "COMPLETED",
@@ -506,6 +581,15 @@ def test_build_delivery_request_service_records_failed_workflow_result_when_orch
     repository_calls = []
 
     class FakeDeliveryRequestRepository:
+        async def async_record_delivery_execution_started(self, **kwargs):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 101,
+                "task_status": "RUNNING",
+                "phase": "DELIVERY_PICKUP",
+                "assigned_robot_id": "pinky2",
+            }
+
         async def async_record_delivery_task_workflow_result(self, **kwargs):
             repository_calls.append(kwargs)
             return {"result_code": "FAILED", "task_status": "FAILED"}
@@ -576,6 +660,15 @@ def test_build_delivery_request_service_records_failed_result_when_workflow_task
     repository_calls = []
 
     class FakeDeliveryRequestRepository:
+        async def async_record_delivery_execution_started(self, **kwargs):
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 101,
+                "task_status": "RUNNING",
+                "phase": "DELIVERY_PICKUP",
+                "assigned_robot_id": "pinky2",
+            }
+
         async def async_record_delivery_task_workflow_result(self, **kwargs):
             repository_calls.append(kwargs)
             return {"result_code": "FAILED", "task_status": "FAILED"}
