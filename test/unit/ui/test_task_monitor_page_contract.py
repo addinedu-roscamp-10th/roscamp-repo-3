@@ -844,3 +844,41 @@ def test_task_monitor_page_reloads_snapshot_when_reentered_after_stream_stop():
     finally:
         page.shutdown()
         page.close()
+
+
+def test_task_monitor_page_auto_reconnects_stream_after_failure(monkeypatch):
+    _app()
+
+    import ui.utils.pages.caregiver.task_monitor_page as task_monitor_page
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+    calls = []
+    scheduled_delays = []
+
+    try:
+        page._last_event_seq = 42
+        monkeypatch.setattr(
+            task_monitor_page.QTimer,
+            "singleShot",
+            lambda delay, callback: (
+                scheduled_delays.append(delay),
+                callback(),
+            ),
+        )
+        monkeypatch.setattr(
+            page,
+            "_start_task_event_stream",
+            lambda *, last_seq=0: calls.append(last_seq),
+        )
+
+        page._handle_task_event_stream_failed("connection lost")
+        page._clear_task_event_stream_thread()
+
+        assert scheduled_delays == [page._stream_auto_reconnect_delay_ms]
+        assert calls == [42]
+        assert page.stream_status_label.text() == "이벤트 스트림 자동 재연결 중"
+        assert page.reconnect_stream_btn.isEnabled() is True
+    finally:
+        page.shutdown()
+        page.close()

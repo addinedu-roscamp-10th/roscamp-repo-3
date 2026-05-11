@@ -2,7 +2,7 @@ import base64
 import binascii
 import logging
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -408,6 +408,8 @@ class TaskMonitorPage(QWidget):
         self._row_by_task_id = {}
         self._selected_task_id = None
         self._last_event_seq = 0
+        self._stream_auto_reconnect_requested = False
+        self._stream_auto_reconnect_delay_ms = 1000
         self._resume_dialog = None
         self.snapshot_thread = None
         self.snapshot_worker = None
@@ -1114,6 +1116,7 @@ class TaskMonitorPage(QWidget):
 
     def reconnect_task_event_stream(self):
         self.stream_status_label.setText("이벤트 스트림 재연결 중")
+        self._stream_auto_reconnect_requested = False
         self._stop_task_event_stream_thread()
         self._start_task_event_stream(last_seq=self._last_event_seq)
 
@@ -1157,6 +1160,7 @@ class TaskMonitorPage(QWidget):
         if self.task_event_thread is not None:
             return
 
+        self._stream_auto_reconnect_requested = False
         self.stream_status_label.setText("이벤트 스트림 연결 중")
         self.reconnect_stream_btn.setEnabled(True)
         self.task_event_thread, self.task_event_worker = start_worker_thread(
@@ -1195,15 +1199,29 @@ class TaskMonitorPage(QWidget):
         logger.debug("task monitor event stream stopped: %s", error)
         self.stream_status_label.setText(f"이벤트 스트림 중단: {error}")
         self.reconnect_stream_btn.setEnabled(True)
+        self._stream_auto_reconnect_requested = True
 
     def _clear_task_event_stream_thread(self):
         self.task_event_thread = None
         self.task_event_worker = None
+        if self._stream_auto_reconnect_requested:
+            self._stream_auto_reconnect_requested = False
+            QTimer.singleShot(
+                self._stream_auto_reconnect_delay_ms,
+                self._restart_task_event_stream_after_failure,
+            )
+
+    def _restart_task_event_stream_after_failure(self):
+        if self.task_event_thread is not None:
+            return
+        self.stream_status_label.setText("이벤트 스트림 자동 재연결 중")
+        self._start_task_event_stream(last_seq=self._last_event_seq)
 
     def _mark_last_update(self, source):
         self.time_card.mark_updated(source)
 
     def _stop_task_event_stream_thread(self):
+        self._stream_auto_reconnect_requested = False
         worker = self.task_event_worker
         thread = self.task_event_thread
         if worker is not None:
