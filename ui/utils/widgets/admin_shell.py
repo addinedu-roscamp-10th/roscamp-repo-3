@@ -16,13 +16,14 @@ from PyQt6.QtWidgets import (
 
 
 NavItem = tuple[str, str]
-PAGE_TIME_CARD_WIDTH = 360
-PAGE_TIME_CARD_HEIGHT = 150
-PAGE_TIME_CARD_ACTION_ROW_HEIGHT = 34
+ADMIN_SIDEBAR_WIDTH = 240
+PAGE_TIME_CARD_WIDTH = 340
+PAGE_TIME_CARD_HEIGHT = 160
+PAGE_TIME_CARD_ACTION_ROW_HEIGHT = 44
 PAGE_TIME_CARD_CLOCK_ROW_HEIGHT = 30
 PAGE_TIME_CARD_META_ROW_HEIGHT = 16
 PAGE_TIME_CARD_STATUS_ROW_HEIGHT = 18
-PAGE_TIME_CARD_BUTTON_HEIGHT = 32
+PAGE_TIME_CARD_BUTTON_HEIGHT = 42
 
 
 class SystemStatusStrip(QFrame):
@@ -239,6 +240,7 @@ class AdminSidebar(QFrame):
     ):
         super().__init__()
         self.setObjectName("adminSidebar")
+        self.setFixedWidth(ADMIN_SIDEBAR_WIDTH)
         self._buttons: dict[str, QPushButton] = {}
 
         root = QVBoxLayout(self)

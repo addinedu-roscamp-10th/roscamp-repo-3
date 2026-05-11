@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame, QStackedW
 
 
 _APP = None
+REPO_ROOT = Path(__file__).resolve().parents[3]
+MAIN_QSS = REPO_ROOT / "ui" / "utils" / "styles" / "main.qss"
 
 
 NAV_ITEMS = [
@@ -102,8 +104,10 @@ def test_page_time_card_keeps_stable_size_for_different_page_actions():
     _app()
 
     from ui.utils.widgets.admin_shell import (
+        ADMIN_SIDEBAR_WIDTH,
         PAGE_TIME_CARD_HEIGHT,
         PAGE_TIME_CARD_WIDTH,
+        PAGE_TIME_CARD_BUTTON_HEIGHT,
         PageTimeCard,
     )
 
@@ -131,9 +135,23 @@ def test_page_time_card_keeps_stable_size_for_different_page_actions():
             assert card.status_label.isHidden() is False
             assert card.action_row.objectName() == "timeCardActionRow"
             assert card.action_row.minimumHeight() == card.action_row.maximumHeight()
+            assert card.action_row.minimumHeight() >= PAGE_TIME_CARD_BUTTON_HEIGHT
+            for button in card.action_row.findChildren(QPushButton):
+                assert button.minimumHeight() == PAGE_TIME_CARD_BUTTON_HEIGHT
+                assert button.maximumHeight() == PAGE_TIME_CARD_BUTTON_HEIGHT
+                assert PAGE_TIME_CARD_BUTTON_HEIGHT >= 40
 
         assert len({card.sizeHint().height() for card in cards}) == 1
         assert len({card.sizeHint().width() for card in cards}) == 1
+        assert PAGE_TIME_CARD_WIDTH <= 340
+        assert ADMIN_SIDEBAR_WIDTH <= 240
+
+        qss = MAIN_QSS.read_text(encoding="utf-8")
+        assert "QWidget#timeCardActionRow QPushButton" in qss
+        assert f"min-height: {PAGE_TIME_CARD_BUTTON_HEIGHT}px" in qss
+        assert f"max-height: {PAGE_TIME_CARD_BUTTON_HEIGHT}px" in qss
+        assert f"min-width: {ADMIN_SIDEBAR_WIDTH}px" in qss
+        assert f"max-width: {ADMIN_SIDEBAR_WIDTH}px" in qss
     finally:
         for card in cards:
             card.close()
@@ -143,13 +161,17 @@ def test_caregiver_main_window_uses_shared_admin_shell_contract():
     _app()
 
     from ui.admin_ui.main_window import CaregiverMainWindow
+    from ui.utils.widgets.admin_shell import ADMIN_SIDEBAR_WIDTH
 
     window = CaregiverMainWindow()
 
     try:
         assert window.windowTitle() == "ROPI 관제 콘솔"
         assert hasattr(window, "admin_shell")
-        assert window.findChild(QFrame, "adminSidebar") is not None
+        sidebar = window.findChild(QFrame, "adminSidebar")
+        assert sidebar is not None
+        assert sidebar.minimumWidth() == ADMIN_SIDEBAR_WIDTH
+        assert sidebar.maximumWidth() == ADMIN_SIDEBAR_WIDTH
         assert window.findChild(QStackedWidget, "adminPageStack") is window.stack
         assert not hasattr(window, "system_health_btn")
         assert not hasattr(window, "system_health_page")
@@ -165,7 +187,6 @@ def test_caregiver_main_window_uses_shared_admin_shell_contract():
         assert all("RoboCare" not in text for text in labels)
         assert all("OPERATIONAL CONSOLE" not in text for text in labels)
 
-        sidebar = window.findChild(QFrame, "adminSidebar")
         side_buttons = [
             button.text()
             for button in sidebar.findChildren(QPushButton)

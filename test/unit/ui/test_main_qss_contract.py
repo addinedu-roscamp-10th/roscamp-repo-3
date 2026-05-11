@@ -1,5 +1,10 @@
 from pathlib import Path
 
+from ui.utils.widgets.admin_shell import (
+    ADMIN_SIDEBAR_WIDTH,
+    PAGE_TIME_CARD_BUTTON_HEIGHT,
+)
+
 
 ROOT = Path(__file__).resolve().parents[3]
 QSS_PATH = ROOT / "ui" / "utils" / "styles" / "main.qss"
@@ -33,8 +38,11 @@ def test_main_qss_defines_shared_admin_shell_components():
     assert "QLabel#systemStatusOnline" in qss
     assert "QLabel#systemStatusWarning" in qss
     assert "QLabel#systemStatusError" in qss
-    assert "min-width: 260px" in qss
-    assert "max-width: 260px" in qss
+    assert f"min-width: {ADMIN_SIDEBAR_WIDTH}px" in qss
+    assert f"max-width: {ADMIN_SIDEBAR_WIDTH}px" in qss
+    assert "QWidget#timeCardActionRow QPushButton" in qss
+    assert f"min-height: {PAGE_TIME_CARD_BUTTON_HEIGHT}px" in qss
+    assert f"max-height: {PAGE_TIME_CARD_BUTTON_HEIGHT}px" in qss
 
 
 def test_main_qss_defines_task_request_page_components():
@@ -90,7 +98,7 @@ def test_main_qss_defines_kiosk_ui_components():
         "QLabel#kioskHeroTitle",
         "QFrame#kioskActionCard",
         "QFrame#kioskActionCardBody",
-        "QFrame#kioskActionCard[accent=\"blue\"]",
+        'QFrame#kioskActionCard[accent="blue"]',
         "QFrame#kioskIconBubble",
         "QPushButton#kioskGhostButton",
         "QFrame#kioskFooterBar",
@@ -102,7 +110,7 @@ def test_main_qss_defines_kiosk_ui_components():
         "QFrame#kioskRegistrationFormCard",
         "QFrame#kioskRegistrationResidentCard",
         "QFrame#kioskPurposeOptionCard",
-        "QFrame#kioskPurposeOptionCard[selected=\"true\"]",
+        'QFrame#kioskPurposeOptionCard[selected="true"]',
         "QFrame#kioskPurposeIconBubble",
         "QLabel#kioskPurposeLabel",
         "QCheckBox#kioskPrivacyCheckbox",
@@ -141,7 +149,10 @@ def test_main_qss_defines_kiosk_ui_components():
     assert "QWidget#kioskGuideConfirmationPage {\n    background: #F9F9FF" in qss
     assert "QWidget#kioskProgressPage {\n    background: #F9F9FF" in qss
     assert "QFrame#kioskRegistrationCanvas {\n    background: #F9F9FF" in qss
-    assert "qlineargradient" not in qss.split("QFrame#kioskRegistrationCanvas", 1)[1].split("}", 1)[0]
+    assert (
+        "qlineargradient"
+        not in qss.split("QFrame#kioskRegistrationCanvas", 1)[1].split("}", 1)[0]
+    )
     assert "QFrame#kioskRegistrationTopBar" in qss
     assert "QPushButton#kioskSearchFooterButton {\n    min-height: 72px" in qss
     assert "QLineEdit#kioskRegistrationInput" in qss

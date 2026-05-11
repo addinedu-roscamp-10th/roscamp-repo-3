@@ -159,8 +159,8 @@ QFrame#adminSidebar,
 QFrame#sidebar {
     background: #EEF4F7;
     border-right: 1px solid #D8E0E8;
-    min-width: 260px;
-    max-width: 260px;
+    min-width: 240px;
+    max-width: 240px;
 }
 
 QLabel#sidebarBrand {
@@ -587,6 +587,13 @@ QPushButton#secondaryButton {
     border: 1px solid #D8E0E8;
     color: #344054;
     font-weight: 800;
+}
+
+QWidget#timeCardActionRow QPushButton {
+    padding: 7px 10px;
+    border-radius: 10px;
+    min-height: 42px;
+    max-height: 42px;
 }
 
 QPushButton#scenarioTabButton {
