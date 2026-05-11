@@ -104,12 +104,13 @@ class GoalPoseNavigationService:
         )
 
         normalized_goal_pose = self._normalize_goal_pose(goal_pose)
+        normalized_timeout_sec = int(timeout_sec)
         target_pinky_id = str(pinky_id or self.runtime_config.pinky_id).strip()
         goal = {
-            "task_id": task_id,
-            "nav_phase": nav_phase,
+            "task_id": str(task_id).strip(),
+            "nav_phase": str(nav_phase).strip(),
             "goal_pose": normalized_goal_pose,
-            "timeout_sec": timeout_sec,
+            "timeout_sec": normalized_timeout_sec,
         }
 
         return (
@@ -118,7 +119,7 @@ class GoalPoseNavigationService:
                 "pinky_id": target_pinky_id,
                 "goal": goal,
             },
-            self._build_ipc_timeout_sec(timeout_sec),
+            self._build_ipc_timeout_sec(normalized_timeout_sec),
         )
 
     @staticmethod

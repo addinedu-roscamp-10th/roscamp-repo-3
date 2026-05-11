@@ -129,6 +129,25 @@ def test_navigate_delivery_destination_sends_if_com_007_command_to_ros_service()
     assert spec.target_endpoint == "/ropi/control/pinky2/navigate_to_goal"
 
 
+def test_navigate_casts_timeout_sec_to_int32_goal_field():
+    command_client = FakeRosCommandClient()
+    service = GoalPoseNavigationService(
+        command_client=command_client,
+        command_execution_recorder=RecordingCommandExecutionRecorder(),
+    )
+
+    service.navigate(
+        task_id="task_delivery_001",
+        nav_phase="DELIVERY_DESTINATION",
+        goal_pose=build_goal_pose(),
+        timeout_sec=120.0,
+    )
+
+    forwarded_timeout_sec = command_client.calls[0]["payload"]["goal"]["timeout_sec"]
+    assert forwarded_timeout_sec == 120
+    assert isinstance(forwarded_timeout_sec, int)
+
+
 def test_async_navigate_uses_async_ros_service_command_client():
     command_client = FakeAsyncRosCommandClient()
     command_execution_recorder = RecordingCommandExecutionRecorder()
