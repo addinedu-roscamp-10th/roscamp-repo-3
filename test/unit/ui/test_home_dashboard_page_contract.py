@@ -604,6 +604,64 @@ def test_home_dashboard_patches_existing_task_flow_from_task_stream_event():
         page.close()
 
 
+def test_home_dashboard_adds_new_task_from_task_stream_event():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import (
+        CaregiverHomePage,
+        FLOW_COLUMNS,
+    )
+
+    page = CaregiverHomePage(autoload=False)
+    refresh_calls = []
+
+    try:
+        page.apply_summary_data(
+            {
+                "available_robot_count": 1,
+                "total_robot_count": 2,
+                "waiting_job_count": 0,
+                "running_job_count": 0,
+                "warning_error_count": 0,
+            }
+        )
+        page.apply_flow_board_data({})
+        page.show()
+        app.processEvents()
+        page._schedule_stream_refresh = lambda: refresh_calls.append("refresh")
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": 301,
+                    "task_type": "DELIVERY",
+                    "task_status": "WAITING_DISPATCH",
+                    "phase": "WAITING_DISPATCH",
+                    "assigned_robot_id": "pinky2",
+                    "result_message": "운반 요청 접수",
+                    "cancellable": True,
+                },
+            }
+        )
+
+        columns = {
+            column_key: page.flow_grid.itemAtPosition(0, index).widget()
+            for index, (column_key, _title, _statuses) in enumerate(FLOW_COLUMNS)
+        }
+        labels = _label_texts(columns["WAITING"])
+        assert refresh_calls == []
+        assert columns["WAITING"].task_count_label.text() == "1건"
+        assert page.kpi_cards["waiting_tasks"].value_label.text() == "1건"
+        assert page.kpi_cards["running_tasks"].value_label.text() == "0건"
+        assert "작업 #301 · 운반" in labels
+        assert "배차 대기" in labels
+        assert "pinky2" in labels
+        assert "운반 요청 접수" in labels
+    finally:
+        page.close()
+
+
 def test_home_dashboard_patches_warning_kpi_and_timeline_from_alert_stream_event():
     app = _app()
 

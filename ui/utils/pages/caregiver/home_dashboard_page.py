@@ -965,13 +965,22 @@ class CaregiverHomePage(QWidget):
             next_tasks.append(task_data)
 
         if not patched:
-            return False
+            if not self._task_patch_is_renderable(patch):
+                return False
+            next_tasks.append(dict(patch))
 
         next_flow_data = self._normalize_flow_data(next_tasks)
         self.apply_flow_board_data(next_flow_data)
         self._apply_task_flow_kpi_counts(next_flow_data)
         self._mark_last_update()
         return True
+
+    @staticmethod
+    def _task_patch_is_renderable(task: dict) -> bool:
+        return _task_id_value(task) is not None and task.get("task_status") not in (
+            None,
+            "",
+        )
 
     @staticmethod
     def _task_patch_from_stream_payload(payload: dict) -> dict:
