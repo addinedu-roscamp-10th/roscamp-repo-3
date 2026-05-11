@@ -2,6 +2,7 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout
 
 from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+from ui.utils.core.stream_refresh import StreamReconnectState
 from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.session.session_manager import SessionManager
@@ -35,7 +36,9 @@ class CaregiverMainWindow(QMainWindow):
         self.admin_event_worker = None
         self._admin_event_last_seq = 0
         self._admin_event_stream_enabled = bool(event_stream_enabled)
-        self._admin_event_restart_requested = False
+        self.admin_event_reconnect = StreamReconnectState(delay_ms=1000)
+        if not self._admin_event_stream_enabled:
+            self.admin_event_reconnect.cancel()
         self._build_ui()
         self._fit_to_screen()
         if self._admin_event_stream_enabled:
@@ -189,7 +192,8 @@ class CaregiverMainWindow(QMainWindow):
             return
         if self.admin_event_thread is not None:
             return
-        self._admin_event_restart_requested = False
+        self.admin_event_reconnect.enable()
+        self.admin_event_reconnect.reset_request()
 
         self.admin_event_thread, self.admin_event_worker = start_worker_thread(
             self,
@@ -240,18 +244,19 @@ class CaregiverMainWindow(QMainWindow):
 
     def _handle_admin_event_stream_failed(self, _error):
         if self._admin_event_stream_enabled:
-            self._admin_event_restart_requested = True
+            self.admin_event_reconnect.enable()
+            self.admin_event_reconnect.request_restart()
 
     def _clear_admin_event_stream_thread(self):
         self.admin_event_thread = None
         self.admin_event_worker = None
-        if self._admin_event_stream_enabled and self._admin_event_restart_requested:
-            self._admin_event_restart_requested = False
-            QTimer.singleShot(1000, self._start_admin_event_stream)
+        delay_ms = self.admin_event_reconnect.consume_restart_request()
+        if self._admin_event_stream_enabled and delay_ms is not None:
+            QTimer.singleShot(delay_ms, self._start_admin_event_stream)
 
     def _stop_admin_event_stream_thread(self):
         self._admin_event_stream_enabled = False
-        self._admin_event_restart_requested = False
+        self.admin_event_reconnect.cancel()
         worker = self.admin_event_worker
         thread = self.admin_event_thread
         if worker is not None:

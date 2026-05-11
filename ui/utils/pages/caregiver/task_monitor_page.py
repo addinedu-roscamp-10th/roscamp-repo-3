@@ -31,6 +31,7 @@ from ui.utils.pages.caregiver.task_monitor_detail_panels import (
 from ui.utils.pages.caregiver.task_event_stream_worker import TaskEventStreamWorker
 from ui.utils.pages.caregiver.task_request_workers import PatrolResumeWorker
 from ui.utils.core.responses import normalize_ui_response
+from ui.utils.core.stream_refresh import StreamReconnectState
 from ui.utils.core.worker_threads import start_worker_thread
 from ui.utils.network.service_clients import TaskMonitorRemoteService
 from ui.utils.session.session_manager import SessionManager
@@ -410,8 +411,8 @@ class TaskMonitorPage(QWidget):
         self._row_by_task_id = {}
         self._selected_task_id = None
         self._last_event_seq = 0
-        self._stream_auto_reconnect_requested = False
-        self._stream_auto_reconnect_delay_ms = 1000
+        self.stream_reconnect = StreamReconnectState(delay_ms=1000)
+        self._stream_auto_reconnect_delay_ms = self.stream_reconnect.delay_ms
         self._resume_dialog = None
         self.snapshot_thread = None
         self.snapshot_worker = None
@@ -1118,7 +1119,7 @@ class TaskMonitorPage(QWidget):
 
     def reconnect_task_event_stream(self):
         self.stream_status_label.setText("이벤트 스트림 재연결 중")
-        self._stream_auto_reconnect_requested = False
+        self.stream_reconnect.reset_request()
         self._stop_task_event_stream_thread()
         self._start_task_event_stream(last_seq=self._last_event_seq)
 
@@ -1162,7 +1163,8 @@ class TaskMonitorPage(QWidget):
         if self.task_event_thread is not None:
             return
 
-        self._stream_auto_reconnect_requested = False
+        self.stream_reconnect.enable()
+        self.stream_reconnect.reset_request()
         self.stream_status_label.setText("이벤트 스트림 연결 중")
         self.reconnect_stream_btn.setEnabled(True)
         self.task_event_thread, self.task_event_worker = start_worker_thread(
@@ -1201,17 +1203,14 @@ class TaskMonitorPage(QWidget):
         logger.debug("task monitor event stream stopped: %s", error)
         self.stream_status_label.setText(f"이벤트 스트림 중단: {error}")
         self.reconnect_stream_btn.setEnabled(True)
-        self._stream_auto_reconnect_requested = True
+        self.stream_reconnect.request_restart()
 
     def _clear_task_event_stream_thread(self):
         self.task_event_thread = None
         self.task_event_worker = None
-        if self._stream_auto_reconnect_requested:
-            self._stream_auto_reconnect_requested = False
-            QTimer.singleShot(
-                self._stream_auto_reconnect_delay_ms,
-                self._restart_task_event_stream_after_failure,
-            )
+        delay_ms = self.stream_reconnect.consume_restart_request()
+        if delay_ms is not None:
+            QTimer.singleShot(delay_ms, self._restart_task_event_stream_after_failure)
 
     def _restart_task_event_stream_after_failure(self):
         if self.task_event_thread is not None:
@@ -1223,7 +1222,7 @@ class TaskMonitorPage(QWidget):
         self.time_card.mark_updated(source)
 
     def _stop_task_event_stream_thread(self):
-        self._stream_auto_reconnect_requested = False
+        self.stream_reconnect.reset_request()
         worker = self.task_event_worker
         thread = self.task_event_thread
         if worker is not None:

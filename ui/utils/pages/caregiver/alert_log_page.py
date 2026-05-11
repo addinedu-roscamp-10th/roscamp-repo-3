@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.utils.core.stream_refresh import DebouncedRefresh
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import CaregiverRemoteService
 from ui.utils.widgets.admin_common import (
@@ -92,9 +93,12 @@ class AlertLogPage(QWidget):
         self.filter_timer = QTimer(self)
         self.filter_timer.setSingleShot(True)
         self.filter_timer.timeout.connect(self._run_debounced_filter_refresh)
-        self.stream_refresh_timer = QTimer(self)
-        self.stream_refresh_timer.setSingleShot(True)
-        self.stream_refresh_timer.timeout.connect(self._run_debounced_stream_refresh)
+        self.stream_refresh = DebouncedRefresh(
+            owner=self,
+            interval_ms=self._stream_refresh_debounce_ms,
+            callback=self._run_debounced_stream_refresh,
+        )
+        self.stream_refresh_timer = self.stream_refresh.timer
 
         self._build_ui()
         if autoload:
@@ -272,7 +276,7 @@ class AlertLogPage(QWidget):
         event = event or {}
         event_type = str(event.get("event_type") or "").strip().upper()
         if event_type in STREAM_REFRESH_EVENT_TYPES:
-            self.stream_refresh_timer.start(self._stream_refresh_debounce_ms)
+            self.stream_refresh.schedule()
 
     def _run_debounced_stream_refresh(self):
         self.refresh_data()
@@ -418,7 +422,7 @@ class AlertLogPage(QWidget):
     def shutdown(self):
         self._shutting_down = True
         self.filter_timer.stop()
-        self.stream_refresh_timer.stop()
+        self.stream_refresh.stop()
         stop_worker_thread(
             self.load_thread,
             wait_ms=self._worker_stop_wait_ms,

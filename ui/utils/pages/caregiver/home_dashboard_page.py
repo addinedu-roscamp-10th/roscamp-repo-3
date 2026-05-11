@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 
 from server.ropi_main_service.transport.tcp_protocol import MESSAGE_CODE_HEARTBEAT
 from ui.utils.core.responses import normalize_ui_response
+from ui.utils.core.stream_refresh import VisibleDeferredRefresh
 from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.tcp_client import send_request
 from ui.utils.network.service_clients import (
@@ -561,8 +562,16 @@ class CaregiverHomePage(QWidget):
         self._timeline_event_keys = set()
         self._has_summary_snapshot = False
         self._canceling_task_id = None
-        self._stream_refresh_pending = False
-        self._deferred_stream_refresh = False
+        self.stream_refresh_scheduler = VisibleDeferredRefresh(
+            owner=self,
+            interval_ms=200,
+            callback=lambda: self.load_dashboard_data(),
+            is_busy=lambda: self.dashboard_thread is not None,
+            single_shot=lambda delay, _callback: QTimer.singleShot(
+                delay,
+                self._run_stream_refresh,
+            ),
+        )
         self._auto_system_status_poll = (
             bool(autoload)
             if auto_system_status_poll is None
@@ -1103,30 +1112,30 @@ class CaregiverHomePage(QWidget):
         self.apply_summary_data(summary, robots=self._last_robots)
 
     def _schedule_stream_refresh(self):
-        if not self.isVisible():
-            self._deferred_stream_refresh = True
-            return
-        if self._stream_refresh_pending:
-            return
-        self._stream_refresh_pending = True
-        QTimer.singleShot(200, self._run_stream_refresh)
+        self.stream_refresh_scheduler.schedule()
 
     def _run_stream_refresh(self):
-        if not self.isVisible():
-            self._stream_refresh_pending = False
-            self._deferred_stream_refresh = True
-            return
-        if self.dashboard_thread is not None:
-            QTimer.singleShot(200, self._run_stream_refresh)
-            return
-        self._stream_refresh_pending = False
-        self.load_dashboard_data()
+        self.stream_refresh_scheduler.run()
 
     def showEvent(self, event):
         super().showEvent(event)
-        if self._deferred_stream_refresh:
-            self._deferred_stream_refresh = False
-            self._schedule_stream_refresh()
+        self.stream_refresh_scheduler.handle_show()
+
+    @property
+    def _stream_refresh_pending(self):
+        return self.stream_refresh_scheduler.pending
+
+    @_stream_refresh_pending.setter
+    def _stream_refresh_pending(self, value):
+        self.stream_refresh_scheduler.pending = bool(value)
+
+    @property
+    def _deferred_stream_refresh(self):
+        return self.stream_refresh_scheduler.deferred
+
+    @_deferred_stream_refresh.setter
+    def _deferred_stream_refresh(self, value):
+        self.stream_refresh_scheduler.deferred = bool(value)
 
     def apply_summary_data(self, summary, *, robots=None):
         summary = summary or {}
