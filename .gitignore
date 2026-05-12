@@ -214,6 +214,10 @@ log/
 
 # custom
 system_design/
+!system_design/
+system_design/*
+!system_design/gui_design.md
+!system_design/gui_design_ko.md
 .codex/
 .serena
 A_Ros2_project/
@@ -231,6 +235,5 @@ wireframes/
 /local_refs/
 reference/
 
-# Final presentation demo local files
-ui/presentation_demo/
-test/unit/ui/test_presentation_admin_home_demo.py
+# Final presentation demo generated files
+ui/presentation_demo/exports/
