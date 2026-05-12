@@ -1015,6 +1015,7 @@ QPlainTextEdit#alertPayloadText {
     border-radius: 12px;
     font-family: "JetBrains Mono", "Consolas", monospace;
     font-size: 12px;
+    font-weight: 900;
     padding: 10px;
 }
 

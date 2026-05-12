@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QPlainTextEdit,
     QSizePolicy,
+    QWidget,
 )
 
 
@@ -148,8 +149,11 @@ def test_alert_log_page_applies_server_bundle_to_summary_table_and_detail():
         assert "pinky2" in labels
         assert page.findChildren(QFrame, "keyValueRow")
         payload_label = page.findChild(QLabel, "alertPayloadLabel")
+        payload_label_row = page.findChild(QWidget, "alertPayloadLabelRow")
         payload_text = page.findChild(QPlainTextEdit, "alertPayloadText")
         assert payload_label is not None
+        assert payload_label_row is not None
+        assert payload_label.parentWidget() is payload_label_row
         assert payload_label.text() == "상세 payload"
         assert payload_label.isHidden() is False
         expected_payload_label_width = max(
@@ -164,6 +168,7 @@ def test_alert_log_page_applies_server_bundle_to_summary_table_and_detail():
         )
         assert payload_text is not None
         assert payload_text.isReadOnly() is True
+        assert payload_text.font().bold() is True
         assert '"phase": "DELIVERY_DESTINATION"' in payload_text.toPlainText()
         assert not any(
             getattr(row, "key_label", None) is not None
