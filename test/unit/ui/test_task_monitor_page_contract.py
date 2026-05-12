@@ -132,6 +132,67 @@ def test_task_monitor_page_tracks_patrol_events_and_fall_marker():
         page.close()
 
 
+def test_task_monitor_page_normalizes_pose_stamped_action_feedback():
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+
+    try:
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "2002",
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "assigned_robot_id": "pinky3",
+                    "patrol_path": {"waypoint_count": 1, "poses": []},
+                },
+            }
+        )
+
+        page.apply_stream_event(
+            {
+                "event_type": "ACTION_FEEDBACK_UPDATED",
+                "payload": {
+                    "task_id": "2002",
+                    "received_at": "2026-05-11T20:15:54+00:00",
+                    "current_pose": {
+                        "map_id": "map_0504",
+                        "header": {"frame_id": "map"},
+                        "pose": {
+                            "position": {"x": "1.2", "y": 0.4, "z": 0.0},
+                            "orientation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0,
+                                "w": 1.0,
+                            },
+                        },
+                    },
+                },
+            }
+        )
+
+        task = next(
+            task for task in page._tasks.values() if task.get("task_id") == "2002"
+        )
+        assert task["current_pose"] == {
+            "map_id": "map_0504",
+            "frame_id": "map",
+            "x": 1.2,
+            "y": 0.4,
+            "yaw": 0.0,
+            "updated_at": "2026-05-11T20:15:54+00:00",
+        }
+        assert page.detail_pose_label.text() == "x=1.20, y=0.40, yaw=0.00"
+    finally:
+        page.shutdown()
+        page.close()
+
+
 def test_task_monitor_page_enables_evidence_action_from_task_updated_fall_alert():
     _app()
 

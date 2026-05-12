@@ -1035,9 +1035,12 @@ If map rendering is not yet available in MVP, show the same data as coordinate t
 `ACTION_FEEDBACK_UPDATED` may carry `patrol_status`,
 `current_waypoint_index`, `total_waypoints`, `current_pose`, and
 `distance_remaining_m`. The UI normalizes `current_pose` into the common
-runtime `pose` field for the map marker, updates the selected task's
+runtime `pose` field for the map marker using the same robot pose stream
+normalization helper as Home and Robot Status, updates the selected task's
 `patrol_path.current_waypoint_index`, and keeps the route snapshot itself from
-the task detail baseline.
+the task detail baseline. Pose normalization must preserve flat pose payloads
+and ROS `PoseStamped`-shaped payloads consistently, including map/frame
+metadata and feedback freshness when supplied.
 
 The PATROL runtime panel in the task monitor is displayed only for tasks where `task_type=PATROL`. For non-patrol tasks such as DELIVERY, or when no task is selected, hide the map overlay area itself. Do not show copy such as "This is not a patrol task" inside the overlay.
 

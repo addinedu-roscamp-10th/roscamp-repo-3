@@ -1,5 +1,3 @@
-import math
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QFrame,
@@ -10,6 +8,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui.utils.pages.caregiver.robot_stream_pose import normalize_stream_pose
 from ui.utils.widgets.admin_common import make_key_value_row
 from ui.utils.widgets.map_overlay import PatrolMapOverlay
 
@@ -62,43 +61,13 @@ def _format_pose(pose):
     return f"x={x:.2f}, y={y:.2f}, yaw={yaw:.2f}"
 
 
-def _normalize_pose(pose):
-    if not isinstance(pose, dict):
-        return pose
-    if "x" in pose and "y" in pose:
-        return pose
-
-    stamped_pose = pose.get("pose")
-    if not isinstance(stamped_pose, dict):
-        return pose
-    position = stamped_pose.get("position")
-    if not isinstance(position, dict):
-        return pose
-
-    normalized = {
-        "x": position.get("x"),
-        "y": position.get("y"),
-    }
-    orientation = stamped_pose.get("orientation")
-    if isinstance(orientation, dict):
-        normalized["yaw"] = _yaw_from_quaternion(orientation)
-    header = pose.get("header")
-    if isinstance(header, dict) and header.get("frame_id") not in (None, ""):
-        normalized["frame_id"] = header.get("frame_id")
-    return normalized
-
-
-def _yaw_from_quaternion(orientation):
-    try:
-        x = float(orientation.get("x", 0.0))
-        y = float(orientation.get("y", 0.0))
-        z = float(orientation.get("z", 0.0))
-        w = float(orientation.get("w", 1.0))
-    except (TypeError, ValueError):
-        return 0.0
-    siny_cosp = 2.0 * ((w * z) + (x * y))
-    cosy_cosp = 1.0 - (2.0 * ((y * y) + (z * z)))
-    return math.atan2(siny_cosp, cosy_cosp)
+def _normalize_pose(pose, *, fallback_map_id=None, updated_at=None):
+    normalized = normalize_stream_pose(
+        pose,
+        fallback_map_id=fallback_map_id,
+        updated_at=updated_at,
+    )
+    return normalized if normalized is not None else pose
 
 
 class TaskResultInfoPanel(QFrame):

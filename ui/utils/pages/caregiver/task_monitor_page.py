@@ -676,7 +676,11 @@ class TaskMonitorPage(QWidget):
             )
             pose = latest_feedback.get("current_pose") or latest_feedback.get("pose")
             if pose is not None:
-                normalized["pose"] = _normalize_pose(pose)
+                normalized["pose"] = _normalize_pose(
+                    pose,
+                    updated_at=latest_feedback.get("received_at")
+                    or latest_feedback.get("last_seen_at"),
+                )
                 normalized["current_pose"] = normalized["pose"]
             for key in (
                 "patrol_status",
@@ -692,7 +696,11 @@ class TaskMonitorPage(QWidget):
             if not normalized.get("assigned_robot_id"):
                 normalized["assigned_robot_id"] = latest_robot.get("robot_id")
             if latest_robot.get("pose") is not None and not normalized.get("pose"):
-                normalized["pose"] = _normalize_pose(latest_robot.get("pose"))
+                normalized["pose"] = _normalize_pose(
+                    latest_robot.get("pose"),
+                    updated_at=latest_robot.get("last_seen_at")
+                    or latest_robot.get("received_at"),
+                )
 
         latest_alert = normalized.get("latest_alert")
         if isinstance(latest_alert, dict):
@@ -735,7 +743,14 @@ class TaskMonitorPage(QWidget):
 
     def _apply_action_feedback_updated(self, payload):
         pose = payload.get("current_pose") or payload.get("pose")
-        normalized_pose = _normalize_pose(pose) if pose is not None else None
+        normalized_pose = (
+            _normalize_pose(
+                pose,
+                updated_at=payload.get("received_at") or payload.get("last_seen_at"),
+            )
+            if pose is not None
+            else None
+        )
         normalized_payload = {
             "task_id": payload.get("task_id"),
             "feedback_summary": payload.get("feedback_summary"),

@@ -1034,8 +1034,12 @@ MVP에서 지도 렌더링이 아직 없으면 같은 데이터를 좌표 텍스
 `ACTION_FEEDBACK_UPDATED`는 `patrol_status`, `current_waypoint_index`,
 `total_waypoints`, `current_pose`, `distance_remaining_m`를 포함할 수 있다.
 UI는 `current_pose`를 공통 runtime `pose` 필드로 정규화해서 지도 marker에
-사용하고, 선택 task의 `patrol_path.current_waypoint_index`만 갱신한다. 순찰
-경로 snapshot 자체는 task detail 기준을 유지한다.
+사용하되, Home과 Robot Status가 쓰는 것과 같은 robot pose stream
+normalization helper를 사용한다. 선택 task의
+`patrol_path.current_waypoint_index`만 갱신하고, 순찰 경로 snapshot 자체는
+task detail 기준을 유지한다. pose normalization은 flat pose payload와 ROS
+`PoseStamped` 형태 payload를 일관되게 처리하고, 제공된 map/frame metadata와
+feedback freshness를 보존해야 한다.
 
 작업 모니터의 PATROL runtime panel은 `task_type=PATROL`인 작업에서만 표시한다. DELIVERY 등 비순찰 작업이나 선택된 작업이 없는 상태에서는 map overlay 영역 자체를 숨기고, overlay 안에 "순찰 작업이 아님" 같은 비순찰 안내 문구를 표시하지 않는다.
 
