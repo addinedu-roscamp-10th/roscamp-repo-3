@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -8,6 +10,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -226,8 +229,20 @@ class AlertLogPage(QWidget):
         detail_title = QLabel("이벤트 상세")
         detail_title.setObjectName("sectionTitle")
         self.detail_list = KeyValueList("이벤트를 선택하세요.")
+        self.payload_label = QLabel("상세 payload")
+        self.payload_label.setObjectName("alertPayloadLabel")
+        self.payload_text = QPlainTextEdit()
+        self.payload_text.setObjectName("alertPayloadText")
+        self.payload_text.setReadOnly(True)
+        self.payload_text.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.payload_text.setMinimumHeight(140)
+        self.payload_text.setMaximumHeight(280)
+        self.payload_label.setHidden(True)
+        self.payload_text.setHidden(True)
         detail_layout.addWidget(detail_title)
         detail_layout.addWidget(self.detail_list)
+        detail_layout.addWidget(self.payload_label)
+        detail_layout.addWidget(self.payload_text)
 
         related_card = QFrame()
         related_card.setObjectName("noticeCard")
@@ -339,6 +354,7 @@ class AlertLogPage(QWidget):
             self._render_detail(self.events[0])
         else:
             self.detail_list.set_rows([], empty_text="표시할 운영 이벤트가 없습니다.")
+            self._render_payload(None)
             self.related_list.set_rows([], empty_text="선택된 이벤트가 없습니다.")
             self._sync_related_actions({})
 
@@ -382,9 +398,9 @@ class AlertLogPage(QWidget):
             ("결과 코드", _display(event.get("result_code"))),
             ("사유 코드", _display(event.get("reason_code"))),
             ("메시지", _display(event.get("message"), "")),
-            ("상세 payload", _display(event.get("payload"))),
         ]
         self.detail_list.set_rows(detail_rows)
+        self._render_payload(event.get("payload"))
         self.related_list.set_rows(
             [
                 ("작업 ID", _display(event.get("task_id"))),
@@ -392,6 +408,21 @@ class AlertLogPage(QWidget):
             ]
         )
         self._sync_related_actions(event)
+
+    def _render_payload(self, payload):
+        payload_text = self._format_payload_text(payload)
+        has_payload = bool(payload_text)
+        self.payload_label.setHidden(not has_payload)
+        self.payload_text.setHidden(not has_payload)
+        self.payload_text.setPlainText(payload_text)
+
+    @staticmethod
+    def _format_payload_text(payload) -> str:
+        if payload in (None, ""):
+            return ""
+        if isinstance(payload, (dict, list)):
+            return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        return str(payload)
 
     def _sync_related_actions(self, event):
         task_id = event.get("task_id")

@@ -3,7 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame, QPlainTextEdit
 
 
 _APP = None
@@ -140,16 +140,18 @@ def test_alert_log_page_applies_server_bundle_to_summary_table_and_detail():
         assert "로봇 ID" in labels
         assert "pinky2" in labels
         assert page.findChildren(QFrame, "keyValueRow")
-        payload_rows = [
-            row
-            for row in page.findChildren(QFrame, "keyValueRow")
-            if getattr(row, "key_label", None) is not None
+        payload_label = page.findChild(QLabel, "alertPayloadLabel")
+        payload_text = page.findChild(QPlainTextEdit, "alertPayloadText")
+        assert payload_label is not None
+        assert payload_label.text() == "상세 payload"
+        assert payload_label.isHidden() is False
+        assert payload_text is not None
+        assert payload_text.isReadOnly() is True
+        assert '"phase": "DELIVERY_DESTINATION"' in payload_text.toPlainText()
+        assert not any(
+            getattr(row, "key_label", None) is not None
             and row.key_label.text() == "상세 payload"
-        ]
-        assert payload_rows
-        payload_key = payload_rows[0].key_label
-        assert payload_key.minimumWidth() >= (
-            payload_key.fontMetrics().horizontalAdvance("상세 payload") + 20
+            for row in page.findChildren(QFrame, "keyValueRow")
         )
         assert "event_id" not in labels
         assert "occurred_at" not in labels
@@ -161,6 +163,67 @@ def test_alert_log_page_applies_server_bundle_to_summary_table_and_detail():
         assert page.related_task_button.isEnabled() is True
         assert page.related_robot_button.property("robot_id") == "pinky2"
         assert page.related_robot_button.isEnabled() is True
+    finally:
+        page.close()
+
+
+def test_alert_log_page_renders_large_payload_in_full_width_text_area():
+    _app()
+
+    from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
+
+    long_error = "ROS_ACTION_FAILED:" + " navigation-timeout" * 80
+    page = AlertLogPage(autoload=False)
+
+    try:
+        page.apply_alert_log_bundle(
+            {
+                "summary": {
+                    "total_event_count": 1,
+                    "warning_count": 0,
+                    "error_count": 1,
+                    "critical_count": 0,
+                },
+                "events": [
+                    {
+                        "event_id": 77,
+                        "occurred_at": "2026-05-11T20:15:54",
+                        "severity": "ERROR",
+                        "source_component": "Control Service",
+                        "task_id": 2001,
+                        "robot_id": "pinky3",
+                        "event_type": "TASK_FAILED",
+                        "result_code": "FAILED",
+                        "reason_code": "ROS_ACTION_FAILED",
+                        "message": "navigation failed",
+                        "payload": {
+                            "exception": long_error,
+                            "context": {
+                                "action_name": "/ropi/control/pinky3/navigate_to_goal",
+                                "retry_count": 3,
+                                "waypoints": [
+                                    {"x": 1.25, "y": 0.42, "yaw": 0.0},
+                                    {"x": 2.5, "y": 1.1, "yaw": 1.57},
+                                ],
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+        page.table.selectRow(0)
+        page._handle_table_selection()
+
+        payload_label = page.findChild(QLabel, "alertPayloadLabel")
+        payload_text = page.findChild(QPlainTextEdit, "alertPayloadText")
+        assert payload_label.text() == "상세 payload"
+        assert payload_label.isHidden() is False
+        assert payload_text.isHidden() is False
+        assert payload_text.lineWrapMode() == QPlainTextEdit.LineWrapMode.WidgetWidth
+        text = payload_text.toPlainText()
+        assert long_error in text
+        assert "/ropi/control/pinky3/navigate_to_goal" in text
+        assert '"waypoints"' in text
     finally:
         page.close()
 
