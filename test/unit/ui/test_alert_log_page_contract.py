@@ -3,7 +3,14 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame, QPlainTextEdit
+from PyQt6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QPlainTextEdit,
+    QSizePolicy,
+)
 
 
 _APP = None
@@ -145,6 +152,16 @@ def test_alert_log_page_applies_server_bundle_to_summary_table_and_detail():
         assert payload_label is not None
         assert payload_label.text() == "상세 payload"
         assert payload_label.isHidden() is False
+        expected_payload_label_width = max(
+            96,
+            payload_label.fontMetrics().horizontalAdvance("상세 payload") + 20,
+        )
+        assert payload_label.minimumWidth() >= expected_payload_label_width
+        assert payload_label.maximumWidth() == payload_label.minimumWidth()
+        assert (
+            payload_label.sizePolicy().horizontalPolicy()
+            == QSizePolicy.Policy.Fixed
+        )
         assert payload_text is not None
         assert payload_text.isReadOnly() is True
         assert '"phase": "DELIVERY_DESTINATION"' in payload_text.toPlainText()
