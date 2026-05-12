@@ -278,6 +278,8 @@ QFrame#actionCard,
 QFrame#robotStatusCard,
 QFrame#robotCardsPanel,
 QFrame#robotLocationMapPanel,
+QFrame#homeOperationMapPanel,
+QFrame#homeTaskFlowPanel,
 QFrame#noticeCard {
     background: #FFFFFF;
     border: 1px solid #D8E0E8;

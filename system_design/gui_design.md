@@ -495,6 +495,7 @@ The home dashboard must answer the following questions.
 | --- | --- |
 | Page Header | Home-only hero panel with title `Operations Dashboard`, description, heartbeat-based system status chips, and a separate manual refresh/time card |
 | KPI Row | Available robots, waiting tasks, in-progress tasks, warnings/errors |
+| Operations Map + Task Flow Row | DB-backed operations map on the left and the task flow board on the right |
 | Robot Board | Per-robot status cards |
 | Task Flow Board | Task Kanban by status |
 | Recent Timeline | Recent events/task changes |
@@ -523,6 +524,12 @@ The lightweight heartbeat refresh must not reload the KPI row, robot board, task
 IF-COM-003 stream-triggered dashboard convergence should run only when Home is visible or should be deferred until Home becomes visible. Hidden-page stream events must not continuously run full dashboard bundle reloads in the background.
 
 High-frequency robot status events should not reload the full dashboard bundle when a Home snapshot is already rendered. `PINKY_UPDATED` and `ARM_UPDATED` should patch the matching Robot Board card from the event payload and update the Home last-refresh indicator. For `TASK_UPDATED`, Home may patch an existing task card or add a new task card, then recompute the waiting/running task KPI from the rendered task flow, when an initial task-flow snapshot exists and the event payload includes the minimum renderable task identity/status fields. `ALERT_CREATED` / `FALL_ALERT_CREATED`, including the same alert object carried as `TASK_UPDATED.fall_alert`, should increment the Home warning/error KPI once per alert and prepend one recent timeline row when an initial Home snapshot already exists. A full dashboard reload remains the convergence fallback when no prior snapshot exists, after reconnect, or when the event payload is insufficient to build a local patch.
+
+#### Operations Map
+
+Home displays an operations map in the main dashboard area, visually matching the presentation demo's map-and-flow split but using live Control Service data only. The map loads DB-managed `map_profile` and map assets through `coordinate_config` RPC, not bundled demo assets or hard-coded sample data. Robot markers are derived from the dashboard bundle's `robots[*].current_pose`; robots without a current pose or whose pose belongs to a different selected map are not plotted.
+
+The map is a quick operational context panel, not the full coordinate editor. It should show the selected map ID, plotted robot count, and a concise loading/error state. If map assets are unavailable, Home keeps the rest of the dashboard usable and shows an operator-facing map status message.
 
 Example:
 
@@ -557,7 +564,7 @@ Robot online state is based on recent runtime heartbeat, not on seeded or stale 
 
 The task flow board uses a Kanban form. It displays the board title directly above the scroll area and does not add a separate explanatory subtitle such as "shows requested tasks by status."
 
-The board should have its own scroll area so many task cards do not stretch the whole dashboard. Flow columns must use the same waiting/running definitions as the KPI row; for example `READY` is a waiting task, not an assigned task.
+On Home, the board is placed to the right of the operations map. It must continue to render the real DB-backed `flow_data` from `caregiver.get_dashboard_bundle`; it must not use presentation-demo fixtures. The board should have its own scroll area so many task cards do not stretch the whole dashboard. Flow columns must use the same waiting/running definitions as the KPI row; for example `READY` is a waiting task, not an assigned task.
 
 Recommended columns:
 

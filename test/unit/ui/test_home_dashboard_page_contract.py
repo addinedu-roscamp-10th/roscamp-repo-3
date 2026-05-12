@@ -1,3 +1,4 @@
+import base64
 import os
 from pathlib import Path
 
@@ -22,6 +23,16 @@ def _app():
 
 def _label_texts(widget) -> list[str]:
     return [label.text() for label in widget.findChildren(QLabel)]
+
+
+def _map_assets(map_id="map_0504"):
+    return {
+        "map_id": map_id,
+        "yaml_text": "image: map.pgm\nresolution: 1.0\norigin: [0.0, 0.0, 0.0]\n",
+        "pgm_bytes": b"P5\n4 4\n255\n" + (b"\x00" * 16),
+        "yaml_sha256": f"{map_id}-yaml",
+        "pgm_sha256": f"{map_id}-pgm",
+    }
 
 
 def test_home_dashboard_page_matches_phase1_layout_contract():
@@ -58,12 +69,173 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         assert "경고/오류" in labels
         assert "현재 요청된 작업을 상태별로 분류해 보여줍니다." not in labels
 
+        map_flow_row = page.findChild(QFrame, "homeMapFlowRow")
+        map_panel = page.findChild(QFrame, "homeOperationMapPanel")
+        flow_panel = page.findChild(QFrame, "homeTaskFlowPanel")
+        map_canvas = page.findChild(QFrame, "homeOperationMapCanvas")
+        assert map_flow_row is not None
+        assert map_panel is not None
+        assert flow_panel is not None
+        assert map_canvas is not None
+        assert map_panel.parentWidget() is map_flow_row
+        assert flow_panel.parentWidget() is map_flow_row
+        assert "운영 맵" in labels
+
         flow_scroll = page.findChild(QScrollArea, "flowBoardScroll")
         assert flow_scroll is not None
+        assert flow_scroll.parentWidget() is flow_panel
         assert flow_scroll.widgetResizable() is True
         assert flow_scroll.maximumHeight() <= 460
     finally:
         page.close()
+
+
+def test_home_dashboard_map_uses_dashboard_robot_pose_and_db_assets():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+
+    try:
+        robots = [
+            {
+                "robot_id": "pinky2",
+                "connection_status": "ONLINE",
+                "current_pose": {
+                    "map_id": "map_0504",
+                    "x": 1.0,
+                    "y": 1.0,
+                    "yaw": 0.5,
+                },
+            },
+            {
+                "robot_id": "pinky3",
+                "connection_status": "ONLINE",
+                "current_pose": {
+                    "map_id": "map_other",
+                    "x": 2.0,
+                    "y": 2.0,
+                    "yaw": 0.0,
+                },
+            },
+        ]
+
+        page.apply_home_map_data(
+            {
+                "selected_map_id": "map_0504",
+                "map_assets": _map_assets("map_0504"),
+            },
+            robots=robots,
+        )
+
+        assert page.home_map_canvas.map_loaded is True
+        assert page.home_map_canvas.visible_robot_ids == ["pinky2"]
+        assert "map_0504" in page.home_map_status_label.text()
+        assert "표시 1대 / 전체 2대" in page.home_map_status_label.text()
+    finally:
+        page.close()
+
+
+def test_home_dashboard_load_worker_attaches_db_backed_map_assets(monkeypatch):
+    _app()
+
+    import ui.utils.pages.caregiver.home_dashboard_page as home_dashboard_page
+    from ui.utils.pages.caregiver.home_dashboard_page import DashboardLoadWorker
+
+    calls = []
+    pgm_bytes = _map_assets("map_0504")["pgm_bytes"]
+
+    class FakeCaregiverRemoteService:
+        def get_dashboard_bundle(self):
+            calls.append("get_dashboard_bundle")
+            return {
+                "summary": {},
+                "robots": [
+                    {
+                        "robot_id": "pinky2",
+                        "connection_status": "ONLINE",
+                        "current_pose": {
+                            "map_id": "map_0504",
+                            "x": 1.0,
+                            "y": 1.0,
+                        },
+                    }
+                ],
+                "flow_data": {
+                    "IN_PROGRESS": [
+                        {
+                            "task_id": 100,
+                            "task_type": "DELIVERY",
+                            "task_status": "RUNNING",
+                        }
+                    ]
+                },
+                "timeline_rows": [],
+            }
+
+    class FakeCoordinateConfigRemoteService:
+        def list_map_profiles(self):
+            calls.append("list_map_profiles")
+            return {
+                "result_code": "OK",
+                "map_profiles": [
+                    {
+                        "map_id": "map_0504",
+                        "map_name": "patrol map",
+                        "is_active": True,
+                    }
+                ],
+            }
+
+        def get_map_asset(self, *, asset_type, map_id=None, encoding=None):
+            calls.append(f"get_map_asset:{asset_type}:{map_id}:{encoding}")
+            if asset_type == "YAML":
+                return {
+                    "result_code": "OK",
+                    "content_text": _map_assets("map_0504")["yaml_text"],
+                    "sha256": "map_0504-yaml",
+                }
+            return {
+                "result_code": "OK",
+                "content_base64": base64.b64encode(pgm_bytes).decode("ascii"),
+                "sha256": "map_0504-pgm",
+            }
+
+    monkeypatch.setattr(
+        home_dashboard_page,
+        "CaregiverRemoteService",
+        FakeCaregiverRemoteService,
+    )
+    monkeypatch.setattr(
+        home_dashboard_page,
+        "CoordinateConfigRemoteService",
+        FakeCoordinateConfigRemoteService,
+    )
+    monkeypatch.setattr(
+        home_dashboard_page,
+        "send_request",
+        lambda _code, _payload: {"ok": True, "payload": {}},
+    )
+
+    worker = DashboardLoadWorker()
+    emitted = []
+    worker.finished.connect(lambda *args: emitted.append(args))
+
+    worker.run()
+
+    assert emitted[0][0] is True
+    assert emitted[0][2][0]["robot_id"] == "pinky2"
+    assert emitted[0][3]["IN_PROGRESS"][0]["task_id"] == 100
+    map_data = emitted[0][6]
+    assert map_data["selected_map_id"] == "map_0504"
+    assert map_data["map_assets"]["pgm_bytes"] == pgm_bytes
+    assert calls == [
+        "get_dashboard_bundle",
+        "list_map_profiles",
+        "get_map_asset:YAML:map_0504:TEXT",
+        "get_map_asset:PGM:map_0504:BASE64",
+    ]
 
 
 def test_home_dashboard_updates_system_status_strip_from_load_result():

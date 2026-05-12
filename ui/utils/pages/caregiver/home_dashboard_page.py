@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import math
 from collections.abc import Iterable
 
-from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, QPointF, QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QPen
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -23,6 +27,7 @@ from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.tcp_client import send_request
 from ui.utils.network.service_clients import (
     CaregiverRemoteService,
+    CoordinateConfigRemoteService,
     TaskMonitorRemoteService,
 )
 from ui.utils.session.session_manager import SessionManager
@@ -33,6 +38,7 @@ from ui.utils.widgets.admin_common import (
     operator_datetime_text as _datetime,
 )
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
+from ui.utils.widgets.map_canvas import MapCanvasWidget
 
 
 CANCELABLE_TASK_STATUSES = {
@@ -110,6 +116,62 @@ ROS_ERROR_MARKERS = (
 HOME_SYSTEM_STATUS_POLL_INTERVAL_MS = 2000
 
 
+def _is_ok_response(response):
+    return isinstance(response, dict) and response.get("result_code", "OK") == "OK"
+
+
+def _format_response_error(response, default_message):
+    response = response if isinstance(response, dict) else {}
+    return str(
+        response.get("result_message") or response.get("reason_code") or default_message
+    )
+
+
+def _decode_base64_asset(value):
+    try:
+        return base64.b64decode(str(value or "").encode("ascii"), validate=True)
+    except (binascii.Error, ValueError):
+        return b""
+
+
+def _optional_float(value, default=None):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _selected_home_map_id(*, preferred_map_id, map_profiles, robots):
+    map_ids = [
+        str(profile.get("map_id") or "").strip()
+        for profile in map_profiles or []
+        if isinstance(profile, dict) and str(profile.get("map_id") or "").strip()
+    ]
+    preferred_map_id = str(preferred_map_id or "").strip()
+    if preferred_map_id and preferred_map_id in map_ids:
+        return preferred_map_id
+
+    robot_map_counts = {}
+    for robot in robots or []:
+        pose = robot.get("current_pose") if isinstance(robot, dict) else None
+        if not isinstance(pose, dict):
+            continue
+        map_id = str(pose.get("map_id") or "").strip()
+        if map_id and map_id in map_ids:
+            robot_map_counts[map_id] = robot_map_counts.get(map_id, 0) + 1
+    if robot_map_counts:
+        return sorted(robot_map_counts.items(), key=lambda item: (-item[1], item[0]))[
+            0
+        ][0]
+
+    for profile in map_profiles or []:
+        if not isinstance(profile, dict):
+            continue
+        if bool(profile.get("is_active")):
+            return str(profile.get("map_id") or "").strip()
+    return map_ids[0] if map_ids else None
+
+
 def _status_of(task: dict) -> str:
     return _display(task.get("task_status"), "UNKNOWN").upper()
 
@@ -175,7 +237,21 @@ def _set_style_property(widget, name: str, value: str):
 
 
 class DashboardLoadWorker(QObject):
-    finished = pyqtSignal(object, object, object, object, object, object)
+    finished = pyqtSignal(object, object, object, object, object, object, object)
+
+    def __init__(
+        self,
+        *,
+        selected_map_id=None,
+        cached_map_assets_by_map_id=None,
+    ):
+        super().__init__()
+        self.selected_map_id = str(selected_map_id or "").strip() or None
+        self.cached_map_assets_by_map_id = (
+            cached_map_assets_by_map_id
+            if isinstance(cached_map_assets_by_map_id, dict)
+            else {}
+        )
 
     def run(self):
         system_statuses = self._load_system_statuses()
@@ -185,6 +261,7 @@ class DashboardLoadWorker(QObject):
             robots = bundle.get("robots", [])
             flow_data = bundle.get("flow_data", {})
             timeline_rows = bundle.get("timeline_rows", [])
+            map_data = self._load_home_map_data(robots)
             self.finished.emit(
                 True,
                 summary,
@@ -192,9 +269,77 @@ class DashboardLoadWorker(QObject):
                 flow_data,
                 timeline_rows,
                 system_statuses,
+                map_data,
             )
         except Exception as exc:
-            self.finished.emit(False, str(exc), [], {}, [], system_statuses)
+            self.finished.emit(False, str(exc), [], {}, [], system_statuses, {})
+
+    def _load_home_map_data(self, robots):
+        map_data = {}
+        try:
+            service = CoordinateConfigRemoteService()
+            profiles_response = service.list_map_profiles()
+            if not _is_ok_response(profiles_response):
+                map_data["map_asset_error"] = _format_response_error(
+                    profiles_response,
+                    "맵 목록을 불러오지 못했습니다.",
+                )
+                return map_data
+
+            profiles = [
+                profile
+                for profile in profiles_response.get("map_profiles") or []
+                if isinstance(profile, dict)
+            ]
+            map_data["map_profiles"] = profiles
+            selected_map_id = _selected_home_map_id(
+                preferred_map_id=self.selected_map_id,
+                map_profiles=profiles,
+                robots=robots or [],
+            )
+            map_data["selected_map_id"] = selected_map_id
+            if not selected_map_id:
+                return map_data
+
+            cached_assets = self.cached_map_assets_by_map_id.get(selected_map_id)
+            if isinstance(cached_assets, dict):
+                map_data["map_assets"] = dict(cached_assets)
+                return map_data
+
+            yaml_asset = service.get_map_asset(
+                asset_type="YAML",
+                map_id=selected_map_id,
+                encoding="TEXT",
+            )
+            if not _is_ok_response(yaml_asset):
+                map_data["map_asset_error"] = _format_response_error(
+                    yaml_asset,
+                    "맵 YAML을 불러오지 못했습니다.",
+                )
+                return map_data
+
+            pgm_asset = service.get_map_asset(
+                asset_type="PGM",
+                map_id=selected_map_id,
+                encoding="BASE64",
+            )
+            if not _is_ok_response(pgm_asset):
+                map_data["map_asset_error"] = _format_response_error(
+                    pgm_asset,
+                    "맵 PGM을 불러오지 못했습니다.",
+                )
+                return map_data
+
+            map_data["map_assets"] = {
+                "map_id": selected_map_id,
+                "yaml_text": str(yaml_asset.get("content_text") or ""),
+                "pgm_bytes": _decode_base64_asset(pgm_asset.get("content_base64")),
+                "yaml_sha256": yaml_asset.get("sha256"),
+                "pgm_sha256": pgm_asset.get("sha256"),
+            }
+        except Exception as exc:
+            map_data["map_asset_error"] = str(exc)
+        return map_data
 
     @classmethod
     def _load_system_statuses(cls):
@@ -273,6 +418,76 @@ class DashboardTaskCancelWorker(QObject):
                     "cancel_requested": False,
                 },
             )
+
+
+class HomeOperationMapCanvas(MapCanvasWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("homeOperationMapCanvas")
+        self.visible_robot_ids = []
+        self.robot_markers = []
+
+    def show_robots(self, robots, *, selected_map_id):
+        self.visible_robot_ids = []
+        self.robot_markers = []
+        selected_map_id = str(selected_map_id or "").strip()
+        if not self.map_loaded or not selected_map_id:
+            self.update()
+            return
+
+        for robot in robots or []:
+            if not isinstance(robot, dict):
+                continue
+            pose = robot.get("current_pose")
+            if not isinstance(pose, dict):
+                continue
+            if str(pose.get("map_id") or "").strip() != selected_map_id:
+                continue
+            point = self.world_to_pixel(
+                {
+                    "x": pose.get("x"),
+                    "y": pose.get("y"),
+                }
+            )
+            if point is None:
+                continue
+            robot_id = _display(robot.get("robot_id") or robot.get("robot_name"))
+            self.visible_robot_ids.append(robot_id)
+            self.robot_markers.append(
+                {
+                    "robot_id": robot_id,
+                    "pixel": point,
+                    "yaw": _optional_float(pose.get("yaw"), default=0.0),
+                    "connection_status": str(
+                        robot.get("connection_status") or robot.get("status") or ""
+                    ).upper(),
+                }
+            )
+        self.update()
+
+    def draw_overlay(self, painter, target):
+        for marker in self.robot_markers:
+            point = self.to_view_point(marker.get("pixel"), target)
+            if point is None:
+                continue
+
+            status = marker.get("connection_status")
+            fill = QColor("#16A34A" if status == "ONLINE" else "#F59E0B")
+            painter.setPen(QPen(QColor("#FFFFFF"), 2))
+            painter.setBrush(fill)
+            painter.drawEllipse(point, 9, 9)
+
+            yaw = marker.get("yaw")
+            if yaw is not None:
+                heading = QPointF(
+                    point.x() + math.cos(float(yaw)) * 20.0,
+                    point.y() - math.sin(float(yaw)) * 20.0,
+                )
+                painter.setPen(QPen(fill.darker(120), 2))
+                painter.drawLine(point, heading)
+
+            painter.setPen(QPen(QColor("#111827"), 1))
+            painter.drawText(point + QPointF(11, -11), marker.get("robot_id") or "-")
 
 
 class KpiCard(QFrame):
@@ -549,6 +764,8 @@ class CaregiverHomePage(QWidget):
         self.robot_row = None
         self.timeline_table = None
         self.flow_grid = None
+        self.home_map_canvas = None
+        self.home_map_status_label = None
         self.dashboard_thread = None
         self.dashboard_worker = None
         self.system_status_thread = None
@@ -558,8 +775,12 @@ class CaregiverHomePage(QWidget):
         self._last_summary = {}
         self._last_robots = []
         self._last_flow_data = {}
+        self._last_home_map_data = {}
         self._last_timeline_rows = []
         self._timeline_event_keys = set()
+        self.home_map_profiles = []
+        self.home_selected_map_id = None
+        self._home_map_asset_cache = {}
         self._has_summary_snapshot = False
         self._canceling_task_id = None
         self.stream_refresh_scheduler = VisibleDeferredRefresh(
@@ -685,8 +906,35 @@ class CaregiverHomePage(QWidget):
         rbw.addWidget(robot_title)
         rbw.addLayout(self.robot_row)
 
+        map_flow_row = QFrame()
+        map_flow_row.setObjectName("homeMapFlowRow")
+        map_flow_layout = QHBoxLayout(map_flow_row)
+        map_flow_layout.setContentsMargins(0, 0, 0, 0)
+        map_flow_layout.setSpacing(16)
+
+        map_panel = QFrame()
+        map_panel.setObjectName("homeOperationMapPanel")
+        map_panel.setMinimumWidth(360)
+        map_panel.setMaximumWidth(560)
+        mp = QVBoxLayout(map_panel)
+        mp.setContentsMargins(20, 20, 20, 20)
+        mp.setSpacing(12)
+
+        map_title = QLabel("운영 맵")
+        map_title.setObjectName("sectionTitle")
+
+        self.home_map_canvas = HomeOperationMapCanvas()
+        self.home_map_canvas.setMinimumHeight(280)
+        self.home_map_status_label = QLabel("맵을 불러오지 않았습니다.")
+        self.home_map_status_label.setObjectName("mutedText")
+        self.home_map_status_label.setWordWrap(True)
+
+        mp.addWidget(map_title)
+        mp.addWidget(self.home_map_canvas, 1)
+        mp.addWidget(self.home_map_status_label)
+
         flow_wrap = QFrame()
-        flow_wrap.setObjectName("card")
+        flow_wrap.setObjectName("homeTaskFlowPanel")
         fw = QVBoxLayout(flow_wrap)
         fw.setContentsMargins(20, 20, 20, 20)
         fw.setSpacing(14)
@@ -711,6 +959,9 @@ class CaregiverHomePage(QWidget):
         fw.addWidget(flow_title)
         fw.addWidget(self.flow_scroll)
 
+        map_flow_layout.addWidget(map_panel, 0, Qt.AlignmentFlag.AlignTop)
+        map_flow_layout.addWidget(flow_wrap, 1, Qt.AlignmentFlag.AlignTop)
+
         timeline_wrap = QFrame()
         timeline_wrap.setObjectName("card")
         tw = QVBoxLayout(timeline_wrap)
@@ -732,8 +983,8 @@ class CaregiverHomePage(QWidget):
         root.addLayout(top)
         root.addWidget(self.status_banner)
         root.addLayout(summary_row)
+        root.addWidget(map_flow_row)
         root.addWidget(robot_board_wrap)
-        root.addWidget(flow_wrap)
         root.addWidget(timeline_wrap, 1)
 
     def _add_kpi_card(self, layout, key: str, title: str, hint: str):
@@ -751,7 +1002,10 @@ class CaregiverHomePage(QWidget):
 
         self.dashboard_thread, self.dashboard_worker = start_worker_thread(
             self,
-            worker=DashboardLoadWorker(),
+            worker=DashboardLoadWorker(
+                selected_map_id=self.home_selected_map_id,
+                cached_map_assets_by_map_id=self._home_map_asset_cache,
+            ),
             finished_handler=self._handle_dashboard_loaded,
             clear_handler=self._clear_dashboard_thread,
         )
@@ -764,6 +1018,7 @@ class CaregiverHomePage(QWidget):
         flow_data,
         timeline_rows,
         system_statuses=None,
+        map_data=None,
     ):
         self._set_system_statuses(system_statuses)
         if not ok:
@@ -773,6 +1028,7 @@ class CaregiverHomePage(QWidget):
 
         self.apply_summary_data(summary, robots=robots)
         self.apply_robot_board_data(robots)
+        self.apply_home_map_data(map_data, robots=robots)
         self.apply_flow_board_data(flow_data)
         self.apply_timeline_data(timeline_rows)
         self._mark_last_update()
@@ -865,6 +1121,8 @@ class CaregiverHomePage(QWidget):
             return False
 
         self.apply_robot_board_data(next_robots)
+        if self._last_home_map_data:
+            self.apply_home_map_data(self._last_home_map_data, robots=next_robots)
         self._mark_last_update()
         return True
 
@@ -1216,6 +1474,78 @@ class CaregiverHomePage(QWidget):
             card = RobotBoardCard(robot)
             self.robot_row.addWidget(card)
 
+    def apply_home_map_data(self, map_data, *, robots=None):
+        map_data = map_data if isinstance(map_data, dict) else {}
+        robots = [
+            dict(robot) if isinstance(robot, dict) else {}
+            for robot in (robots if robots is not None else self._last_robots)
+        ]
+        self._last_home_map_data = dict(map_data)
+
+        if "map_profiles" in map_data:
+            self.home_map_profiles = [
+                profile
+                for profile in map_data.get("map_profiles") or []
+                if isinstance(profile, dict)
+            ]
+
+        selected_map_id = (
+            str(map_data.get("selected_map_id") or "").strip()
+            or self.home_selected_map_id
+            or _selected_home_map_id(
+                preferred_map_id=None,
+                map_profiles=self.home_map_profiles,
+                robots=robots,
+            )
+        )
+        self.home_selected_map_id = selected_map_id or None
+        self._remember_home_map_assets(map_data)
+
+        assets = map_data.get("map_assets")
+        assets = assets if isinstance(assets, dict) else {}
+        if (
+            not assets
+            and selected_map_id
+            and selected_map_id in self._home_map_asset_cache
+        ):
+            assets = dict(self._home_map_asset_cache[selected_map_id])
+
+        asset_map_id = str(assets.get("map_id") or "").strip()
+        if asset_map_id and asset_map_id == selected_map_id:
+            self.home_map_canvas.load_map_from_assets(
+                yaml_text=str(assets.get("yaml_text") or ""),
+                pgm_bytes=assets.get("pgm_bytes") or b"",
+                cache_key=(
+                    asset_map_id,
+                    assets.get("yaml_sha256"),
+                    assets.get("pgm_sha256"),
+                ),
+            )
+        else:
+            self.home_map_canvas.clear_map("맵 asset 미수신")
+
+        self.home_map_canvas.show_robots(robots, selected_map_id=selected_map_id)
+        visible_count = len(self.home_map_canvas.visible_robot_ids)
+        total_count = len(robots)
+        error = str(map_data.get("map_asset_error") or "").strip()
+        if error:
+            self.home_map_status_label.setText(error)
+        elif selected_map_id:
+            self.home_map_status_label.setText(
+                f"선택 맵 {selected_map_id} · 표시 {visible_count}대 / "
+                f"전체 {total_count}대"
+            )
+        else:
+            self.home_map_status_label.setText("선택 가능한 맵이 없습니다.")
+
+    def _remember_home_map_assets(self, map_data):
+        assets = map_data.get("map_assets") if isinstance(map_data, dict) else None
+        if not isinstance(assets, dict):
+            return
+        map_id = str(assets.get("map_id") or "").strip()
+        if map_id:
+            self._home_map_asset_cache[map_id] = dict(assets)
+
     def apply_flow_board_data(self, flow_data):
         normalized = self._normalize_flow_data(flow_data)
         self._last_flow_data = {
@@ -1453,6 +1783,7 @@ __all__ = [
     "DashboardLoadWorker",
     "DashboardTaskCancelWorker",
     "FlowColumn",
+    "HomeOperationMapCanvas",
     "HomeSystemStatusWorker",
     "RobotBoardCard",
     "StatusChip",
