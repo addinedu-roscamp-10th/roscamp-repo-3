@@ -2960,13 +2960,14 @@ product-facing ROPI naming은 홈, 작업 모니터, 알림/로그에 적용한�
 
 - product-facing 로봇명만 표시: `ROPI 1`, `ROPI 2`, `ROPI 3`.
 - 작업 유형, 상태, 단계, 결과, 사유, event type, severity, action feedback state 같은 common raw code는 한국어 표시값으로 변환.
+- 알려지지 않은 uppercase snake-case code도 가능한 경우 한국어 단어로 분해해 `WAITING`, `TASK`, `WORKFLOW`, `RESULT`, `UPDATED` 같은 조각이 한국어 문구 사이에 남지 않게 한다.
 - 현재 production Admin 작업 모니터 UI 구조.
 - 일반 Task Monitor Control Service snapshot으로 로드되는 live DB-backed 작업.
 - runtime이 available할 때 일반 task event stream update.
 - 작업 목록의 로봇 column은 content-sized로 유지하며 남는 table 폭을 차지하지 않아야 함.
 
 보이는 robot/device name으로 `pinky`, `jetcobot`, `arm1`, `arm2`를 표시하지 않는다.
-한국어 값이 있는 `DELIVERY`, `PATROL`, `GUIDE`, `RUNNING`, `REJECTED`, `TASK_UPDATED`, raw `*_id` payload key 같은 common raw English code/key는 발표용 주요 text에 노출하지 않는다.
+한국어 값이 있거나 알려진 code fragment로 조합 가능한 `DELIVERY`, `PATROL`, `GUIDE`, `RUNNING`, `REJECTED`, `TASK_UPDATED`, `WORKFLOW_RESULT_RECORDED`, raw `*_id` payload key 같은 common raw English code/key는 발표용 주요 text에 노출하지 않는다.
 ROPI mapping은 presentation display adapter이며 Control Service payload key나 DB 값을 변경하지 않는다.
 
 ### 22-9. 알림/로그 데모 요구사항
@@ -2978,11 +2979,12 @@ ROPI mapping은 presentation display adapter이며 Control Service payload key�
 
 - 관련 로봇은 `ROPI 1`, `ROPI 2`, `ROPI 3`로 표시.
 - severity, event type, result code, reason code, task type, task status, phase, payload field label은 한국어 표시값으로 변환.
+- 알려지지 않은 uppercase snake-case event/reason/workflow code도 가능한 경우 한국어 단어로 분해한다.
 - 현재 production Admin 알림/로그 UI 구조.
 - `caregiver.get_alert_log_bundle`로 로드되는 live DB-backed event.
 
 보이는 robot/device name으로 `pinky`, `jetcobot`, `arm1`, `arm2`를 표시하지 않는다.
-presentation shell에서 보여주는 payload detail은 `task_id`, `assigned_robot_id`, `result_code`, `reason_code`, `task_status`, `event_type` 같은 common raw key를 한국어 label로 변환한다.
+presentation shell에서 보여주는 payload detail은 `task_id`, `assigned_robot_id`, `result_code`, `reason_code`, `task_status`, `event_type` 같은 common raw key를 한국어 label로 변환하고, uppercase snake-case value도 영어/한국어 혼합으로 남기지 않는다.
 ROPI mapping은 presentation display adapter이며 Control Service payload key나 DB 값을 변경하지 않는다.
 
 ### 22-10. 구현 및 테스트 기준
@@ -2995,7 +2997,7 @@ ROPI mapping은 presentation display adapter이며 Control Service payload key�
 | entry point | `ropi-admin-demo` |
 | shell | `AdminShell` 스타일 재사용, navigation은 데모 페이지로 제한 |
 | store | 홈 전용 in-memory presentation snapshot. 작업 요청, 작업 모니터, 알림/로그는 production Control Service/DB client 사용 |
-| display adapter | presentation-only recursive payload adapter가 monitor/log 렌더링 전에 `pinky1`, `pinky2`, `pinky3`를 `ROPI 1`, `ROPI 2`, `ROPI 3`로 매핑하고 common raw enum/code/key 값을 한국어로 변환 |
+| display adapter | presentation-only recursive payload adapter가 monitor/log 렌더링 전에 `pinky1`, `pinky2`, `pinky3`를 `ROPI 1`, `ROPI 2`, `ROPI 3`로 매핑하고 common raw enum/code/key 값과 알려지지 않은 uppercase snake-case code를 한국어로 변환 |
 | table sizing | presentation Task Monitor는 로봇 column을 stretch하지 않고 content-sized로 유지 |
 | production safety | demo-only 동작 때문에 Control Service RPC 계약을 변경하지 않음 |
 | tracking | demo source와 test는 commit 대상. 생성 screenshot/export만 ignored 유지 |
@@ -3012,6 +3014,6 @@ ROPI mapping은 presentation display adapter이며 Control Service payload key�
 - 알림/로그 page는 ROPI display mapping을 적용한 production Admin 알림/로그 동작이다.
 - 보이는 로봇명은 `ROPI 1`, `ROPI 2`, `ROPI 3`만 사용한다.
 - 주요 UI 전면 text에는 `pinky`, `jetcobot`, `arm1`, `arm2`가 나오지 않는다.
-- Monitor/Logs presentation surface에서는 common raw English code와 raw payload key name을 한국어로 변환한다.
+- Monitor/Logs presentation surface에서는 common raw English code, 알려지지 않은 uppercase snake-case code fragment, raw payload key name을 한국어로 변환한다.
 - 작업 모니터 로봇 column은 data 렌더링 후에도 좁은 content-sized 폭을 유지한다.
 - 홈 운영 맵은 저장소의 PGM/YAML을 로드하고 marker 3개를 표시한다.
