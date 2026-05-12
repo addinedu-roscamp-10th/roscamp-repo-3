@@ -142,6 +142,66 @@ def _optional_float(value, default=None):
         return default
 
 
+def _yaw_from_quaternion(orientation):
+    orientation = orientation if isinstance(orientation, dict) else {}
+    try:
+        x = float(orientation.get("x", 0.0))
+        y = float(orientation.get("y", 0.0))
+        z = float(orientation.get("z", 0.0))
+        w = float(orientation.get("w", 1.0))
+    except (TypeError, ValueError):
+        return 0.0
+    siny_cosp = 2.0 * ((w * z) + (x * y))
+    cosy_cosp = 1.0 - (2.0 * ((y * y) + (z * z)))
+    return math.atan2(siny_cosp, cosy_cosp)
+
+
+def _robot_id_from_action_name(action_name):
+    parts = str(action_name or "").strip("/").split("/")
+    if len(parts) >= 3 and parts[0] == "ropi" and parts[1] in {"control", "arm"}:
+        return parts[2] or None
+    return None
+
+
+def _normalize_stream_pose(pose, *, fallback_map_id=None, updated_at=None):
+    if not isinstance(pose, dict):
+        return None
+
+    if "x" in pose and "y" in pose:
+        x_value = pose.get("x")
+        y_value = pose.get("y")
+        yaw_value = pose.get("yaw")
+        frame_id = pose.get("frame_id")
+        map_id = pose.get("map_id")
+    else:
+        stamped_pose = pose.get("pose")
+        if not isinstance(stamped_pose, dict):
+            return None
+        position = stamped_pose.get("position")
+        if not isinstance(position, dict):
+            return None
+        x_value = position.get("x")
+        y_value = position.get("y")
+        yaw_value = _yaw_from_quaternion(stamped_pose.get("orientation"))
+        header = pose.get("header") if isinstance(pose.get("header"), dict) else {}
+        frame_id = header.get("frame_id") or pose.get("frame_id")
+        map_id = pose.get("map_id")
+
+    x = _optional_float(x_value)
+    y = _optional_float(y_value)
+    if x is None or y is None:
+        return None
+
+    return {
+        "map_id": str(map_id or fallback_map_id or "").strip(),
+        "frame_id": str(frame_id or "map"),
+        "x": x,
+        "y": y,
+        "yaw": _optional_float(yaw_value, default=0.0),
+        "updated_at": updated_at or pose.get("updated_at"),
+    }
+
+
 def _selected_home_map_id(*, preferred_map_id, map_profiles, robots):
     map_ids = [
         str(profile.get("map_id") or "").strip()
@@ -1079,7 +1139,7 @@ class CaregiverHomePage(QWidget):
     def apply_stream_event(self, event):
         event = event or {}
         event_type = str(event.get("event_type") or "").strip().upper()
-        if event_type in {"PINKY_UPDATED", "ARM_UPDATED"}:
+        if event_type in {"PINKY_UPDATED", "ARM_UPDATED", "ACTION_FEEDBACK_UPDATED"}:
             payload = event.get("payload") if isinstance(event, dict) else {}
             if self.isVisible() and self._apply_robot_stream_event(
                 event_type,
@@ -1140,10 +1200,16 @@ class CaregiverHomePage(QWidget):
             robot_id = payload.get("robot_id") or payload.get("pinky_id")
             robot_type = "MOBILE"
             state = payload.get("pinky_state") or payload.get("runtime_state")
-        else:
+        elif event_type == "ARM_UPDATED":
             robot_id = payload.get("robot_id") or payload.get("arm_id")
             robot_type = "ARM"
             state = payload.get("arm_state") or payload.get("runtime_state")
+        else:
+            robot_id = payload.get("robot_id") or _robot_id_from_action_name(
+                payload.get("action_name")
+            )
+            robot_type = "MOBILE"
+            state = payload.get("patrol_status") or payload.get("runtime_state")
 
         patch = {
             "robot_id": robot_id,
@@ -1167,13 +1233,22 @@ class CaregiverHomePage(QWidget):
             patch["current_task_id"] = payload.get("active_task_id")
         elif "current_task_id" in payload:
             patch["current_task_id"] = payload.get("current_task_id")
+        elif "task_id" in payload:
+            patch["current_task_id"] = payload.get("task_id")
 
         location = self._robot_location_from_stream_payload(payload)
         if location is not None:
             patch["current_location"] = location
 
-        if payload.get("last_seen_at") is not None:
-            patch["last_seen_at"] = payload.get("last_seen_at")
+        pose = self._robot_pose_from_stream_payload(payload)
+        if pose is not None:
+            patch["current_pose"] = pose
+
+        last_seen_at = payload.get("last_seen_at")
+        if last_seen_at is None and event_type == "ACTION_FEEDBACK_UPDATED":
+            last_seen_at = payload.get("received_at")
+        if last_seen_at is not None:
+            patch["last_seen_at"] = last_seen_at
 
         if payload.get("fault_code") is not None:
             patch["fault_code"] = payload.get("fault_code")
@@ -1223,6 +1298,15 @@ class CaregiverHomePage(QWidget):
         except (TypeError, ValueError):
             return None
         return f"좌표 x={x:.2f}, y={y:.2f}"
+
+    def _robot_pose_from_stream_payload(self, payload: dict) -> dict | None:
+        if "current_pose" not in payload and "pose" not in payload:
+            return None
+        return _normalize_stream_pose(
+            payload.get("current_pose") or payload.get("pose"),
+            fallback_map_id=payload.get("map_id") or self.home_selected_map_id,
+            updated_at=payload.get("received_at") or payload.get("last_seen_at"),
+        )
 
     def _apply_task_stream_event(self, payload: dict) -> bool:
         patch = self._task_patch_from_stream_payload(payload)

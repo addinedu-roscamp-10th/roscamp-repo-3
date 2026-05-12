@@ -663,7 +663,11 @@ class RobotStatusPage(QWidget):
             "runtime_state": payload.get("pinky_state") or payload.get("runtime_state"),
             "battery_percent": payload.get("battery_percent"),
             "current_location": current_location,
-            "current_pose": self._normalize_runtime_pose(robot_id, pose),
+            "current_pose": self._normalize_runtime_pose(
+                robot_id,
+                pose,
+                updated_at=payload.get("last_seen_at"),
+            ),
             "current_task_id": payload.get("active_task_id"),
             "current_phase": payload.get("current_phase"),
             "last_seen_at": payload.get("last_seen_at"),
@@ -710,7 +714,11 @@ class RobotStatusPage(QWidget):
             return None
         return {
             "robot_id": robot_id,
-            "current_pose": self._normalize_runtime_pose(robot_id, pose),
+            "current_pose": self._normalize_runtime_pose(
+                robot_id,
+                pose,
+                updated_at=payload.get("received_at") or payload.get("last_seen_at"),
+            ),
             "current_location": _pose_location_text(pose),
             "runtime_state": payload.get("patrol_status"),
             "current_task_id": payload.get("task_id"),
@@ -726,7 +734,7 @@ class RobotStatusPage(QWidget):
             "current_phase": payload.get("phase") or payload.get("task_status"),
         }
 
-    def _normalize_runtime_pose(self, robot_id, pose):
+    def _normalize_runtime_pose(self, robot_id, pose, *, updated_at=None):
         if not isinstance(pose, dict):
             return None
         x = _optional_float(pose.get("x"))
@@ -751,7 +759,7 @@ class RobotStatusPage(QWidget):
             "x": x,
             "y": y,
             "yaw": _optional_float(pose.get("yaw"), default=0.0),
-            "updated_at": pose.get("updated_at"),
+            "updated_at": updated_at or pose.get("updated_at"),
         }
 
     def _apply_robot_runtime_patch(self, patch):

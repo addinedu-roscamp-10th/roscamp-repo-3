@@ -519,6 +519,84 @@ def test_home_dashboard_patches_robot_board_from_robot_stream_event():
         page.close()
 
 
+def test_home_dashboard_patches_map_pose_from_action_feedback_stream_event():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    refresh_calls = []
+
+    try:
+        robots = [
+            {
+                "robot_id": "pinky2",
+                "robot_type": "MOBILE",
+                "capabilities": ["DELIVERY"],
+                "connection_status": "ONLINE",
+                "runtime_state": "RUNNING",
+                "current_location": "좌표 x=1.00, y=1.00",
+                "current_pose": {
+                    "map_id": "map_0504",
+                    "frame_id": "map",
+                    "x": 1.0,
+                    "y": 1.0,
+                    "yaw": 0.0,
+                },
+                "current_task_id": 300,
+                "last_seen_at": "2026-05-11T20:15:00",
+            }
+        ]
+        page.apply_robot_board_data(robots)
+        page.apply_home_map_data(
+            {
+                "selected_map_id": "map_0504",
+                "map_assets": _map_assets("map_0504"),
+            },
+            robots=robots,
+        )
+        page.show()
+        app.processEvents()
+        page._schedule_stream_refresh = lambda: refresh_calls.append("refresh")
+
+        page.apply_stream_event(
+            {
+                "event_type": "ACTION_FEEDBACK_UPDATED",
+                "payload": {
+                    "task_id": 301,
+                    "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                    "feedback_type": "NAVIGATION_FEEDBACK",
+                    "current_pose": {
+                        "map_id": "map_0504",
+                        "frame_id": "map",
+                        "x": 2.5,
+                        "y": 1.5,
+                        "yaw": 0.2,
+                    },
+                    "distance_remaining_m": 1.25,
+                    "received_at": "2026-05-11T20:15:54+00:00",
+                },
+            }
+        )
+
+        card = page.robot_row.itemAt(0).widget()
+        labels = _label_texts(card)
+        assert refresh_calls == []
+        assert page.home_map_canvas.visible_robot_ids == ["pinky2"]
+        assert page._last_robots[0]["current_task_id"] == 301
+        assert page._last_robots[0]["current_pose"] == {
+            "map_id": "map_0504",
+            "frame_id": "map",
+            "x": 2.5,
+            "y": 1.5,
+            "yaw": 0.2,
+            "updated_at": "2026-05-11T20:15:54+00:00",
+        }
+        assert "좌표 x=2.50, y=1.50" in labels
+    finally:
+        page.close()
+
+
 def test_home_dashboard_schedules_refresh_from_admin_stream_events():
     app = _app()
 

@@ -389,6 +389,51 @@ def test_robot_status_page_applies_robot_runtime_stream_event():
         page.close()
 
 
+def test_robot_status_page_applies_action_feedback_pose_to_map():
+    _app()
+
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False)
+
+    try:
+        page.apply_robot_status_bundle(_bundle())
+
+        page.apply_stream_event(
+            {
+                "event_type": "ACTION_FEEDBACK_UPDATED",
+                "payload": {
+                    "task_id": 1002,
+                    "action_name": "/ropi/control/pinky2/navigate_to_goal",
+                    "feedback_type": "NAVIGATION_FEEDBACK",
+                    "current_pose": {
+                        "map_id": "map_0504",
+                        "frame_id": "map",
+                        "x": 2.5,
+                        "y": 1.5,
+                        "yaw": 0.2,
+                    },
+                    "received_at": "2026-05-03T12:02:00+00:00",
+                },
+            }
+        )
+
+        labels = _label_texts(page)
+        assert page.robot_map_canvas.visible_robot_ids == ["pinky2"]
+        assert page.robots[0]["current_pose"] == {
+            "map_id": "map_0504",
+            "frame_id": "map",
+            "x": 2.5,
+            "y": 1.5,
+            "yaw": 0.2,
+            "updated_at": "2026-05-03T12:02:00+00:00",
+        }
+        assert page.table.item(0, 7).text() == "1002"
+        assert any("x=2.50, y=1.50" in text for text in labels)
+    finally:
+        page.close()
+
+
 def test_robot_status_page_polls_snapshot_only_when_visible(monkeypatch):
     app = _app()
 
