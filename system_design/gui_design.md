@@ -2810,7 +2810,8 @@ It is a presentation shell that reuses the existing Admin visual language while 
 
 ### 22-1. Demo Purpose and Boundary
 
-The demo must show a coherent ROPI product operation surface without requiring DB, ROS, Pinky, or Jetcobot runtime availability.
+The demo must show a coherent ROPI product operation surface while keeping the current Home demo screen stable.
+Home remains a hard-coded presentation snapshot, but Task Request, Task Monitor, and Alerts/Logs must use the same Control Service/DB-backed flow as the Admin UI.
 
 | Item | Demo rule |
 | --- | --- |
@@ -2819,7 +2820,7 @@ The demo must show a coherent ROPI product operation surface without requiring D
 | Internal robot names | `pinky1`, `pinky2`, `pinky3`, `jetcobot1`, `jetcobot2`, `arm1`, `arm2` may remain only as hidden fixture/internal mapping values |
 | Visible pages | Home, Task Request, Task Monitor, Alerts/Logs |
 | Hidden pages | Coordinate/Zone Settings, Robot Status, Inventory, Resident Information, System Status, and any other non-demo page |
-| Runtime dependency | No Control Service, DB, ROS endpoint, or fake ROS node is required for rendering and interaction |
+| Runtime dependency | Home can render without runtime dependencies. Task Request, Task Monitor, and Alerts/Logs require the normal Control Service/DB runtime for live operation; no fake ROS node or demo-only DB connector is introduced |
 | Git policy | Demo app, demo fixtures, and demo tests are tracked source files, not ignored local scratch files |
 | Run command | Use a page-neutral command such as `uv run ropi-admin-demo`; retire the home-only command name `ropi-admin-home-demo` |
 
@@ -2836,23 +2837,25 @@ The sidebar should contain only the pages used in the presentation:
 | Page | Demo behavior |
 | --- | --- |
 | Home | Show operating KPIs, ROPI robot board, PGM operation map with current ROPI markers, compact task flow, and recent timeline |
-| Task Request | Allow the presenter to create guide, delivery, and patrol demo tasks with the same core interaction shape as the Admin Task Request page |
-| Task Monitor | Show the created and seeded demo tasks with Korean task type/status/phase labels, selected task detail, and cancel/stop affordance where appropriate |
-| Alerts/Logs | Show Korean severity/event labels, related ROPI/task labels, and readable key/value details without raw payload-first display |
+| Task Request | Reuse the current production Admin Task Request page directly so the form layout, options loading, validation, and submit behavior stay identical |
+| Task Monitor | Reuse the current production Admin Task Monitor page and Control Service stream/snapshot flow, with only product-facing robot display names adapted for presentation |
+| Alerts/Logs | Reuse the current production Admin Alerts/Logs page and DB-backed log bundle flow, with only product-facing robot display names adapted for presentation |
 
-Task Request must not be a static mock.
-When the presenter submits a demo request, the demo runtime should create an in-memory task record, assign a ROPI robot, append a timeline/event record, and make the result visible in Home, Task Monitor, and Alerts/Logs.
+Task Request must not be a static mock or in-memory-only workflow.
+When the presenter submits a request, the production Admin request page must call the normal Control Service request path.
+Task Monitor and Alerts/Logs then observe DB-backed task/log data through their normal Admin UI loading and stream behavior.
 
 ### 22-3. Demo Data Model
 
-The demo should use a small in-memory store instead of calling the real Control Service.
-The store should support at least these records.
+The demo uses a small in-memory store only for the Home presentation snapshot.
+Task Request, Task Monitor, and Alerts/Logs must not use this store as their source of truth.
+Their records come from the same Control Service/DB APIs as the production Admin UI.
 
 | Record | Required fields |
 | --- | --- |
 | DemoRobot | `internal_robot_id`, `display_robot_name`, `task_type`, `status_label`, `location_label`, `battery_percent`, `tone` |
-| DemoTask | `task_id`, `task_type`, `status`, `phase`, `assigned_robot_name`, `destination_label`, `summary`, `created_at`, `updated_at` |
-| DemoAlertLog | `event_id`, `severity`, `event_type`, `task_id`, `robot_name`, `title`, `message`, `occurred_at`, `detail_rows` |
+| DemoTask | Home-only presentation task card fields: `task_id`, `task_type`, `status`, `phase`, `assigned_robot_name`, `destination_label`, `summary`, `created_at`, `updated_at` |
+| DemoAlertLog | Home-only presentation event fields: `event_id`, `severity`, `event_type`, `task_id`, `robot_name`, `title`, `message`, `occurred_at`, `detail_rows` |
 | DemoMapMarker | `robot_name`, `x`, `y`, `yaw`, `task_label`, `tone` |
 
 Task IDs may be presentation IDs such as `#1034`, but raw numeric IDs should remain available internally for compatibility with existing widgets.
@@ -2929,23 +2932,21 @@ Use key/value rows with Korean keys and product-facing values.
 
 ### 22-6. Task Request Demo Flow
 
-Task Request should keep the same interaction idea as production Admin UI, but use demo-safe inputs and an in-memory result.
+Task Request must be the current production Admin UI page, not a simplified presentation form.
+It keeps the existing delivery/patrol tabs, option loading, validation, submit result panel, cancel affordance, and Control Service calls.
+Guidance remains outside the Admin Task Request page when the production page excludes it.
 
-| Request type | Required input | Demo assignment | Result behavior |
-| --- | --- | --- | --- |
-| 안내 | 목적지/대상 label | `ROPI 1` | Creates a running guide task and a guide event |
-| 운반 | 물품, 목적지 | `ROPI 2` | Creates a running delivery task and a delivery event |
-| 순찰 | 순찰 구역 | `ROPI 3` | Creates a running patrol task and a patrol event |
+| Request type | Required input | Runtime behavior |
+| --- | --- | --- |
+| 운반 | Production Admin delivery form inputs | Calls the normal Control Service delivery request path |
+| 순찰 | Production Admin patrol form inputs | Calls the normal Control Service patrol request path |
+| 안내 | Not shown on this Admin page unless production Admin scope changes | Kiosk/guide flow remains outside this demo page |
 
-The submit result panel should show:
+The submit result panel is the production Admin result panel.
+Do not fork the Task Request UI for the presentation demo.
 
-- `요청 결과`
-- `작업 ID`
-- `담당 ROPI`
-- `현재 상태`
-- `다음 단계`
-
-It should not show transport/server terms such as `result_code`, `CLIENT_ERROR`, or `runtime precheck` in the main success path.
+Product-facing ROPI naming is required on Home, Task Monitor, and Alerts/Logs.
+Task Request should remain visually identical to the current Admin page.
 
 ### 22-7. Home Demo Requirements
 
@@ -2962,33 +2963,32 @@ Home should continue the current demo direction.
 
 ### 22-8. Task Monitor Demo Requirements
 
-Task Monitor is the main page for proving that the request became an observable operation.
+Task Monitor is the main page for proving that the request became an observable DB-backed operation.
+The demo page must reuse the production `TaskMonitorPage` behavior, including snapshot refresh, task event stream, cancel/stop actions, patrol runtime detail, and evidence lookup.
 
 It should show:
 
-- Korean task type chips: `안내`, `운반`, `순찰`.
-- Korean status chips: `진행 중`, `완료`, `주의`, `실패`, `취소 요청`.
 - Product-facing robot names only: `ROPI 1`, `ROPI 2`, `ROPI 3`.
-- A selected task detail panel using Korean key/value labels.
-- Scenario-specific progress text in Korean.
-- Cancel/stop action labels in Korean, for example `작업 취소` or `순찰 중단`.
+- The current production Admin Task Monitor UI structure.
+- Live DB-backed tasks loaded through the normal Task Monitor Control Service snapshot.
+- Normal task event stream updates when the runtime is available.
 
-It must not show `pinky`, `jetcobot`, `arm1`, `arm2`, `DELIVERY`, `PATROL`, `GUIDE`, `RUNNING`, or other raw enum strings in visible primary cells or detail rows.
+It must not show `pinky`, `jetcobot`, `arm1`, or `arm2` as visible robot/device names.
+The ROPI mapping is a presentation display adapter only and must not change Control Service payload keys or DB values.
 
 ### 22-9. Alerts/Logs Demo Requirements
 
-Alerts/Logs should make the demo look operational after requests and robot events.
+Alerts/Logs should make the demo look operational after requests and robot events using the DB-backed production log bundle.
+The demo page must reuse the production `AlertLogPage` behavior, including filters, refresh, selected event detail, related task/robot actions, and stream-triggered refresh.
 
 It should show:
 
-- Severity labels as `정보`, `주의`, `오류`, `긴급`.
-- Event titles such as `작업 생성`, `운반 목적지 도착`, `순찰 낙상 의심`, `안내 시작`.
-- Related task as `#1034` style ID.
 - Related robot as `ROPI 1`, `ROPI 2`, or `ROPI 3`.
-- Detail rows with Korean keys and readable Korean values.
+- The current production Admin Alerts/Logs UI structure.
+- Live DB-backed events loaded through `caregiver.get_alert_log_bundle`.
 
-Raw JSON payloads should not be the first visible representation.
-If payload-like detail is needed, show a Korean summary first and put raw debug detail behind a muted/secondary area.
+It must not show `pinky`, `jetcobot`, `arm1`, or `arm2` as visible robot/device names.
+The ROPI mapping is a presentation display adapter only and must not change Control Service payload keys or DB values.
 
 ### 22-10. Implementation and Test Baseline
 
@@ -2999,7 +2999,8 @@ Implementation should keep demo code separate from production pages as much as p
 | Package | `ui/presentation_demo` or `ui/admin_demo` |
 | Entry point | `ropi-admin-demo` |
 | Shell | Reuse `AdminShell` styling, but restrict navigation to demo pages |
-| Store | In-memory demo store with signal/callback updates between pages |
+| Store | Home-only in-memory presentation snapshot. Task Request, Task Monitor, and Alerts/Logs use production Control Service/DB clients |
+| Robot display adapter | Presentation-only recursive payload adapter maps `pinky1`, `pinky2`, `pinky3` to `ROPI 1`, `ROPI 2`, `ROPI 3` before Monitor/Logs render visible text |
 | Production safety | Do not alter Control Service RPC contracts for demo-only behavior |
 | Tracking | Demo source and tests are committed; generated screenshots/exports remain ignored |
 
@@ -3007,11 +3008,11 @@ Tests should cover:
 
 - Console script exists as `ropi-admin-demo`.
 - Demo source directory is not ignored.
-- Demo opens without Control Service.
+- Demo smoke opens without starting a Qt event loop or requiring Control Service. Live request/monitor/log operation requires the normal Control Service/DB runtime.
 - Sidebar contains only Home, Task Request, Task Monitor, Alerts/Logs.
-- Task Request submission creates a task visible in Task Monitor and Home.
-- Alerts/Logs receives a Korean event after demo request creation.
+- Task Request page is the production Admin Task Request page.
+- Task Monitor page is production Admin Task Monitor behavior with ROPI display mapping.
+- Alerts/Logs page is production Admin Alerts/Logs behavior with ROPI display mapping.
 - Visible robot names are only `ROPI 1`, `ROPI 2`, `ROPI 3`.
 - Visible main UI text does not contain `pinky`, `jetcobot`, `arm1`, `arm2`.
-- Visible main UI text does not contain raw enum values when a Korean display value exists.
 - Home operation map loads the repository PGM/YAML and shows three markers.

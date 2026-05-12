@@ -2799,7 +2799,8 @@ phase 1에서는 독립 페이지로 제공하지 않는다. 어르신 조회는
 
 ### 22-1. 데모 목적과 경계
 
-데모는 DB, ROS, Pinky, Jetcobot runtime이 없어도 일관된 ROPI 제품 운영 화면을 보여줘야 한다.
+데모는 현재 홈 발표 화면을 안정적으로 유지하면서 일관된 ROPI 제품 운영 화면을 보여줘야 한다.
+홈은 하드코딩 presentation snapshot으로 유지하지만, 작업 요청, 작업 모니터, 알림/로그는 Admin UI와 같은 Control Service/DB 연동 흐름을 사용한다.
 
 | 항목 | 데모 기준 |
 | --- | --- |
@@ -2808,7 +2809,7 @@ phase 1에서는 독립 페이지로 제공하지 않는다. 어르신 조회는
 | 내부 로봇명 | `pinky1`, `pinky2`, `pinky3`, `jetcobot1`, `jetcobot2`, `arm1`, `arm2`는 숨겨진 fixture/internal mapping 값으로만 허용 |
 | 노출 페이지 | 홈, 작업 요청, 작업 모니터, 알림/로그 |
 | 숨김 페이지 | 좌표/구역 설정, 로봇 상태, 재고 관리, 어르신 정보, 시스템 상태, 기타 비데모 페이지 |
-| runtime 의존성 | Control Service, DB, ROS endpoint, 가짜 ROS node 없이 렌더링과 상호작용 가능 |
+| runtime 의존성 | 홈은 runtime 의존성 없이 렌더링 가능. 작업 요청, 작업 모니터, 알림/로그의 실제 운영은 일반 Control Service/DB runtime을 요구하며, 가짜 ROS node나 demo-only DB connector는 만들지 않음 |
 | Git 정책 | 데모 앱, 데모 fixture, 데모 테스트는 ignored scratch 파일이 아니라 추적되는 source file |
 | 실행 명령 | page-neutral 명령인 `uv run ropi-admin-demo` 사용. home 전용 이름인 `ropi-admin-home-demo`는 폐기 |
 
@@ -2825,23 +2826,25 @@ sidebar에는 발표에서 사용할 다음 페이지 노출만 둔다.
 | 페이지 | 데모 동작 |
 | --- | --- |
 | 홈 | 운영 KPI, ROPI 로봇 보드, 현재 ROPI marker가 있는 PGM 운영 맵, 짧은 작업 흐름, 최근 이벤트 표시 |
-| 작업 요청 | Admin 작업 요청과 같은 핵심 상호작용으로 안내, 운반, 순찰 데모 작업 생성 가능 |
-| 작업 모니터 | seed 작업과 생성된 데모 작업을 한국어 작업 유형/상태/단계 label로 표시하고, 선택 작업 detail과 취소/중단 affordance 제공 |
-| 알림/로그 | 한국어 severity/event label, 관련 ROPI/task label, 읽기 쉬운 key/value detail 표시 |
+| 작업 요청 | 현재 production Admin 작업 요청 page를 직접 재사용해 form layout, option loading, validation, submit 동작을 동일하게 유지 |
+| 작업 모니터 | 현재 production Admin 작업 모니터 page와 Control Service stream/snapshot 흐름을 재사용하되, presentation용 로봇 표시명만 변환 |
+| 알림/로그 | 현재 production Admin 알림/로그 page와 DB-backed log bundle 흐름을 재사용하되, presentation용 로봇 표시명만 변환 |
 
-작업 요청은 정적인 mock이 아니어야 한다.
-발표자가 데모 요청을 제출하면 데모 runtime은 in-memory task record를 만들고, ROPI를 배정하고, timeline/event record를 추가하며, 그 결과가 홈, 작업 모니터, 알림/로그에 보여야 한다.
+작업 요청은 정적인 mock이나 in-memory-only workflow가 아니어야 한다.
+발표자가 요청을 제출하면 production Admin 요청 page가 일반 Control Service 요청 경로를 호출해야 한다.
+작업 모니터와 알림/로그는 일반 Admin UI loading/stream 동작으로 DB-backed task/log 데이터를 관측한다.
 
 ### 22-3. 데모 데이터 모델
 
-데모는 실제 Control Service 호출 대신 작은 in-memory store를 사용한다.
-최소한 다음 record를 지원해야 한다.
+데모는 홈 presentation snapshot에만 작은 in-memory store를 사용한다.
+작업 요청, 작업 모니터, 알림/로그는 이 store를 source of truth로 사용하지 않는다.
+해당 record는 production Admin UI와 같은 Control Service/DB API에서 온다.
 
 | record | 필수 필드 |
 | --- | --- |
 | DemoRobot | `internal_robot_id`, `display_robot_name`, `task_type`, `status_label`, `location_label`, `battery_percent`, `tone` |
-| DemoTask | `task_id`, `task_type`, `status`, `phase`, `assigned_robot_name`, `destination_label`, `summary`, `created_at`, `updated_at` |
-| DemoAlertLog | `event_id`, `severity`, `event_type`, `task_id`, `robot_name`, `title`, `message`, `occurred_at`, `detail_rows` |
+| DemoTask | 홈 전용 presentation task card field: `task_id`, `task_type`, `status`, `phase`, `assigned_robot_name`, `destination_label`, `summary`, `created_at`, `updated_at` |
+| DemoAlertLog | 홈 전용 presentation event field: `event_id`, `severity`, `event_type`, `task_id`, `robot_name`, `title`, `message`, `occurred_at`, `detail_rows` |
 | DemoMapMarker | `robot_name`, `x`, `y`, `yaw`, `task_label`, `tone` |
 
 작업 ID는 `#1034` 같은 발표용 ID로 표시할 수 있지만, 기존 widget 호환을 위해 내부 numeric ID는 유지할 수 있다.
@@ -2918,23 +2921,21 @@ detail panel은 `task_id: 1034`, `assigned_robot_id: pinky2` 같은 raw dictiona
 
 ### 22-6. 작업 요청 데모 흐름
 
-작업 요청은 production Admin UI와 같은 상호작용 개념을 유지하되, 데모 안전 입력과 in-memory 결과를 사용한다.
+작업 요청은 단순 presentation form이 아니라 현재 production Admin UI page여야 한다.
+기존 운반/순찰 tab, option loading, validation, submit result panel, cancel affordance, Control Service 호출을 그대로 유지한다.
+production page가 안내를 Admin 작업 요청 범위에서 제외한다면 안내는 kiosk/guide 흐름으로 남긴다.
 
-| 요청 유형 | 필수 입력 | 데모 배정 | 결과 동작 |
-| --- | --- | --- | --- |
-| 안내 | 목적지/대상 label | `ROPI 1` | 진행 중 안내 작업과 안내 event 생성 |
-| 운반 | 물품, 목적지 | `ROPI 2` | 진행 중 운반 작업과 운반 event 생성 |
-| 순찰 | 순찰 구역 | `ROPI 3` | 진행 중 순찰 작업과 순찰 event 생성 |
+| 요청 유형 | 필수 입력 | runtime 동작 |
+| --- | --- | --- |
+| 운반 | production Admin 운반 form 입력 | 일반 Control Service 운반 요청 경로 호출 |
+| 순찰 | production Admin 순찰 form 입력 | 일반 Control Service 순찰 요청 경로 호출 |
+| 안내 | production Admin 범위가 바뀌지 않는 한 이 page에는 표시하지 않음 | kiosk/guide 흐름은 이 데모 page 밖에 유지 |
 
-submit 결과 panel에는 다음을 표시한다.
+submit 결과 panel은 production Admin 결과 panel이다.
+발표 데모를 위해 작업 요청 UI를 fork하지 않는다.
 
-- `요청 결과`
-- `작업 ID`
-- `담당 ROPI`
-- `현재 상태`
-- `다음 단계`
-
-정상 성공 경로에서는 `result_code`, `CLIENT_ERROR`, `runtime precheck` 같은 transport/server 용어를 전면 표시하지 않는다.
+product-facing ROPI naming은 홈, 작업 모니터, 알림/로그에 적용한다.
+작업 요청은 현재 Admin page와 시각적으로 동일해야 한다.
 
 ### 22-7. 홈 데모 요구사항
 
@@ -2951,33 +2952,32 @@ submit 결과 panel에는 다음을 표시한다.
 
 ### 22-8. 작업 모니터 데모 요구사항
 
-작업 모니터는 요청이 실제 운영으로 관측되는 것을 보여주는 핵심 페이지이다.
+작업 모니터는 요청이 실제 DB-backed 운영으로 관측되는 것을 보여주는 핵심 페이지이다.
+데모 page는 production `TaskMonitorPage` 동작을 재사용해야 하며, snapshot refresh, task event stream, cancel/stop action, patrol runtime detail, evidence lookup을 포함한다.
 
 표시 기준은 다음과 같다.
 
-- 한국어 작업 유형 chip: `안내`, `운반`, `순찰`.
-- 한국어 상태 chip: `진행 중`, `완료`, `주의`, `실패`, `취소 요청`.
 - product-facing 로봇명만 표시: `ROPI 1`, `ROPI 2`, `ROPI 3`.
-- 선택 작업 detail panel은 한국어 key/value label 사용.
-- 시나리오별 진행 text는 한국어로 표시.
-- 취소/중단 action label은 `작업 취소`, `순찰 중단`처럼 한국어로 표시.
+- 현재 production Admin 작업 모니터 UI 구조.
+- 일반 Task Monitor Control Service snapshot으로 로드되는 live DB-backed 작업.
+- runtime이 available할 때 일반 task event stream update.
 
-보이는 primary cell이나 detail row에 `pinky`, `jetcobot`, `arm1`, `arm2`, `DELIVERY`, `PATROL`, `GUIDE`, `RUNNING` 같은 raw enum/string을 표시하지 않는다.
+보이는 robot/device name으로 `pinky`, `jetcobot`, `arm1`, `arm2`를 표시하지 않는다.
+ROPI mapping은 presentation display adapter이며 Control Service payload key나 DB 값을 변경하지 않는다.
 
 ### 22-9. 알림/로그 데모 요구사항
 
-알림/로그는 작업 요청과 로봇 이벤트 이후 운영 이력이 남는 느낌을 만들어야 한다.
+알림/로그는 DB-backed production log bundle을 사용해 작업 요청과 로봇 이벤트 이후 운영 이력이 남는 것을 보여준다.
+데모 page는 filter, refresh, selected event detail, related task/robot action, stream-triggered refresh를 포함한 production `AlertLogPage` 동작을 재사용해야 한다.
 
 표시 기준은 다음과 같다.
 
-- severity label은 `정보`, `주의`, `오류`, `긴급`.
-- event title은 `작업 생성`, `운반 목적지 도착`, `순찰 낙상 의심`, `안내 시작`처럼 표시.
-- 관련 작업은 `#1034` 형식 ID로 표시.
 - 관련 로봇은 `ROPI 1`, `ROPI 2`, `ROPI 3`로 표시.
-- detail row는 한국어 key와 읽기 쉬운 한국어 value 사용.
+- 현재 production Admin 알림/로그 UI 구조.
+- `caregiver.get_alert_log_bundle`로 로드되는 live DB-backed event.
 
-raw JSON payload를 첫 번째 표현으로 표시하지 않는다.
-payload 성격의 detail이 필요하면 먼저 한국어 요약을 보여주고, raw debug detail은 muted/secondary 영역으로 밀어낸다.
+보이는 robot/device name으로 `pinky`, `jetcobot`, `arm1`, `arm2`를 표시하지 않는다.
+ROPI mapping은 presentation display adapter이며 Control Service payload key나 DB 값을 변경하지 않는다.
 
 ### 22-10. 구현 및 테스트 기준
 
@@ -2988,7 +2988,8 @@ payload 성격의 detail이 필요하면 먼저 한국어 요약을 보여주고
 | package | `ui/presentation_demo` 또는 `ui/admin_demo` |
 | entry point | `ropi-admin-demo` |
 | shell | `AdminShell` 스타일 재사용, navigation은 데모 페이지로 제한 |
-| store | 페이지 간 signal/callback update가 가능한 in-memory demo store |
+| store | 홈 전용 in-memory presentation snapshot. 작업 요청, 작업 모니터, 알림/로그는 production Control Service/DB client 사용 |
+| robot display adapter | presentation-only recursive payload adapter가 monitor/log 렌더링 전에 `pinky1`, `pinky2`, `pinky3`를 `ROPI 1`, `ROPI 2`, `ROPI 3`로 매핑 |
 | production safety | demo-only 동작 때문에 Control Service RPC 계약을 변경하지 않음 |
 | tracking | demo source와 test는 commit 대상. 생성 screenshot/export만 ignored 유지 |
 
@@ -2996,11 +2997,11 @@ payload 성격의 detail이 필요하면 먼저 한국어 요약을 보여주고
 
 - console script가 `ropi-admin-demo`로 존재한다.
 - demo source directory가 ignore되지 않는다.
-- Control Service 없이 데모가 열린다.
+- demo smoke는 Qt event loop나 Control Service 없이 열린다. 실제 request/monitor/log 운영은 일반 Control Service/DB runtime을 요구한다.
 - sidebar에는 홈, 작업 요청, 작업 모니터, 알림/로그만 있다.
-- 작업 요청 submit 후 작업 모니터와 홈에 작업이 보인다.
-- 데모 요청 생성 후 알림/로그에 한국어 event가 생긴다.
+- 작업 요청 page는 production Admin 작업 요청 page이다.
+- 작업 모니터 page는 ROPI display mapping을 적용한 production Admin 작업 모니터 동작이다.
+- 알림/로그 page는 ROPI display mapping을 적용한 production Admin 알림/로그 동작이다.
 - 보이는 로봇명은 `ROPI 1`, `ROPI 2`, `ROPI 3`만 사용한다.
 - 주요 UI 전면 text에는 `pinky`, `jetcobot`, `arm1`, `arm2`가 나오지 않는다.
-- 한국어 표시값이 있는 raw enum은 주요 UI 전면 text에 나오지 않는다.
 - 홈 운영 맵은 저장소의 PGM/YAML을 로드하고 marker 3개를 표시한다.
