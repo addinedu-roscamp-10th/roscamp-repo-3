@@ -512,6 +512,108 @@ def test_caregiver_main_window_shows_global_fall_alert_and_routes_to_task_monito
         window.close()
 
 
+def test_caregiver_main_window_applies_fall_alert_from_admin_stream_worker(
+    monkeypatch,
+):
+    _app()
+
+    import ui.admin_ui.main_window as main_window
+    from ui.admin_ui.main_window import CaregiverMainWindow
+    from ui.utils.pages.caregiver import task_event_stream_worker
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    class FakeThread:
+        def isRunning(self):
+            return False
+
+        def quit(self):
+            pass
+
+        def wait(self, _timeout_ms):
+            pass
+
+    class FakeClient:
+        def listen(self, *, consumer_id, last_seq, on_batch):
+            assert consumer_id == "ui-admin-console"
+            assert last_seq == 0
+            on_batch(
+                {
+                    "batch_end_seq": 12,
+                    "events": [
+                        {
+                            "event_seq": 12,
+                            "event_type": "FALL_ALERT_CREATED",
+                            "payload": {
+                                "task_id": "2001",
+                                "task_type": "PATROL",
+                                "task_status": "RUNNING",
+                                "phase": "WAIT_FALL_RESPONSE",
+                                "assigned_robot_id": "pinky3",
+                                "alert_id": "fall-17",
+                                "result_seq": 541,
+                                "zone_name": "3층 복도",
+                                "evidence_image_available": True,
+                                "evidence_image_id": "fall_evidence_pinky3_541",
+                            },
+                        }
+                    ],
+                }
+            )
+
+        def close(self):
+            pass
+
+    captured_workers = []
+
+    def fake_start_worker_thread(
+        _parent,
+        *,
+        worker,
+        clear_handler,
+        worker_signal_connections,
+    ):
+        for signal_name, handler in worker_signal_connections.items():
+            getattr(worker, signal_name).connect(handler)
+        worker.finished.connect(clear_handler)
+        captured_workers.append(worker)
+        return FakeThread(), worker
+
+    monkeypatch.setattr(
+        TaskMonitorPage,
+        "_start_snapshot_load",
+        lambda self, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        task_event_stream_worker,
+        "TaskEventStreamClient",
+        FakeClient,
+    )
+    monkeypatch.setattr(main_window, "start_worker_thread", fake_start_worker_thread)
+
+    window = CaregiverMainWindow(event_stream_enabled=True)
+
+    try:
+        assert len(captured_workers) == 1
+
+        captured_workers[0].run()
+
+        assert window._admin_event_last_seq == 12
+        assert window.global_fall_alert_banner.isHidden() is False
+        assert "작업 #2001" in window.global_fall_alert_summary_label.text()
+        assert "pinky3" in window.global_fall_alert_summary_label.text()
+        assert window.global_fall_alert_evidence_button.isEnabled() is True
+
+        window.global_fall_alert_task_button.click()
+
+        assert window.stack.currentWidget() is window.task_monitor_page
+        assert window.task_monitor_page.detail_task_id_label.text() == "2001"
+        assert window.task_monitor_page.task_table.item(0, 2).text() == (
+            "RUNNING · 낙상 확인"
+        )
+    finally:
+        window.close()
+
+
 def test_caregiver_main_window_restarts_admin_event_stream_after_failure(
     monkeypatch,
 ):

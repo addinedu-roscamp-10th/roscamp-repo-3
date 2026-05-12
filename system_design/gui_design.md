@@ -426,6 +426,8 @@ The administrator shell must intercept fall-detection alerts before page fan-out
 
 Global fall alert content includes the alert title, task ID, robot ID when available, zone/pose summary, detected time when available, and actions for `View task`, `View fall photo` when evidence is available, and `Acknowledge`. `View task` navigates to Task Monitor and selects the affected task. The same stream event is still delivered to pages after the global alert is processed.
 
+The fall-alert stream path must remain testable without live ROS or AI. UI and Control Service tests may inject representative `FALL_ALERT_CREATED` batches into IF-COM-003 or its worker boundary to verify replay, global banner display, and Task Monitor row acknowledgement behavior.
+
 Admin UI pages should use shared stream refresh helpers for common event-loop behavior instead of duplicating timer state per page. The common helper scope is intentionally narrow:
 
 - debounce repeated stream-triggered refresh requests into one callback

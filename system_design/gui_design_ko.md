@@ -426,6 +426,8 @@ push 기반 UI를 구현할 때는 persistent TCP session을 UI thread 밖에서
 
 전역 낙상 알림은 알림 제목, task ID, 가능한 경우 robot ID, zone/pose 요약, 감지 시각, `작업 보기`, 증거 사진이 있을 때만 `낙상 사진 보기`, `확인` action을 포함한다. `작업 보기`는 Task Monitor로 이동하고 해당 task를 선택한다. 전역 알림 처리 후에도 같은 stream event는 기존 page들에 계속 전달한다.
 
+낙상 알림 stream 경로는 실제 ROS/AI 없이도 테스트 가능해야 한다. UI와 Control Service 테스트는 대표 `FALL_ALERT_CREATED` batch를 IF-COM-003 또는 worker 경계에 주입해 replay, 전역 banner 표시, Task Monitor row 확인 상태 전환을 검증할 수 있다.
+
 Admin UI page는 stream event-loop 공통 동작을 page마다 timer/state로 중복 구현하지 않고 shared stream refresh helper를 사용한다. 공통 helper 범위는 의도적으로 좁게 둔다.
 
 - 반복 stream-triggered refresh 요청을 하나의 callback으로 debounce

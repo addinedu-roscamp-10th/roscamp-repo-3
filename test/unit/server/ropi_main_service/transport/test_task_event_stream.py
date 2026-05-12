@@ -78,3 +78,47 @@ def test_task_event_stream_hub_replays_events_after_last_seq():
     assert len(writer.frames) == 1
     assert writer.frames[0].payload["batch_end_seq"] == 2
     assert [event["event_seq"] for event in writer.frames[0].payload["events"]] == [2]
+
+
+def test_task_event_stream_hub_replays_fall_alert_created_after_snapshot_watermark():
+    from server.ropi_main_service.transport.task_event_stream import TaskEventStreamHub
+
+    async def scenario():
+        writer = FakeStreamWriter()
+        hub = TaskEventStreamHub()
+        fall_payload = {
+            "task_id": "2001",
+            "task_type": "PATROL",
+            "task_status": "RUNNING",
+            "phase": "WAIT_FALL_RESPONSE",
+            "assigned_robot_id": "pinky3",
+            "alert_id": "fall-17",
+            "result_seq": 541,
+            "zone_name": "3층 복도",
+            "evidence_image_available": True,
+            "evidence_image_id": "fall_evidence_pinky3_541",
+        }
+
+        await hub.publish("TASK_UPDATED", {"task_id": "2001"})
+        await hub.publish("FALL_ALERT_CREATED", fall_payload)
+        ack = await hub.subscribe(
+            consumer_id="ui-admin",
+            last_seq=1,
+            writer=writer,
+        )
+        return ack, writer
+
+    ack, writer = asyncio.run(scenario())
+
+    assert ack["result_code"] == "ACCEPTED"
+    assert len(writer.frames) == 1
+    push = writer.frames[0]
+    assert push.payload["batch_end_seq"] == 2
+    assert len(push.payload["events"]) == 1
+
+    fall_event = push.payload["events"][0]
+    assert fall_event["event_seq"] == 2
+    assert fall_event["event_type"] == "FALL_ALERT_CREATED"
+    assert fall_event["payload"]["task_id"] == "2001"
+    assert fall_event["payload"]["assigned_robot_id"] == "pinky3"
+    assert fall_event["payload"]["evidence_image_available"] is True
