@@ -25,6 +25,10 @@ from ui.utils.network.service_clients import (
     CaregiverRemoteService,
     CoordinateConfigRemoteService,
 )
+from ui.utils.pages.caregiver.robot_stream_pose import (
+    normalize_stream_pose,
+    robot_id_from_action_name,
+)
 from ui.utils.widgets.admin_common import (
     KeyValueList,
     KeyValueRow,
@@ -161,14 +165,6 @@ def _pose_location_text(pose):
     if x is None or y is None:
         return "-"
     return f"x={x:.2f}, y={y:.2f}"
-
-
-def _robot_id_from_action_name(action_name):
-    parts = str(action_name or "").strip("/").split("/")
-    if len(parts) >= 3 and parts[0] == "ropi":
-        if parts[1] in {"control", "arm"}:
-            return parts[2] or None
-    return None
 
 
 class RobotStatusLoadWorker(QObject):
@@ -700,7 +696,7 @@ class RobotStatusPage(QWidget):
 
     def _feedback_event_to_robot_patch(self, payload):
         pose = payload.get("current_pose") or payload.get("pose")
-        robot_id = payload.get("robot_id") or _robot_id_from_action_name(
+        robot_id = payload.get("robot_id") or robot_id_from_action_name(
             payload.get("action_name")
         )
         if not robot_id:
@@ -735,32 +731,17 @@ class RobotStatusPage(QWidget):
         }
 
     def _normalize_runtime_pose(self, robot_id, pose, *, updated_at=None):
-        if not isinstance(pose, dict):
-            return None
-        x = _optional_float(pose.get("x"))
-        y = _optional_float(pose.get("y"))
-        if x is None or y is None:
-            return None
         existing_pose = {}
         for robot in self.robots:
             if str(robot.get("robot_id") or "") == str(robot_id):
                 existing_pose = robot.get("current_pose") or {}
                 break
-        return {
-            "map_id": str(
-                pose.get("map_id")
-                or existing_pose.get("map_id")
-                or self.selected_map_id
-                or ""
-            ).strip(),
-            "frame_id": str(
-                pose.get("frame_id") or existing_pose.get("frame_id") or "map"
-            ),
-            "x": x,
-            "y": y,
-            "yaw": _optional_float(pose.get("yaw"), default=0.0),
-            "updated_at": updated_at or pose.get("updated_at"),
-        }
+        return normalize_stream_pose(
+            pose,
+            fallback_map_id=existing_pose.get("map_id") or self.selected_map_id,
+            fallback_frame_id=existing_pose.get("frame_id"),
+            updated_at=updated_at,
+        )
 
     def _apply_robot_runtime_patch(self, patch):
         if not isinstance(patch, dict):

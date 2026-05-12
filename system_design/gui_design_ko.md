@@ -531,6 +531,8 @@ IF-COM-003 stream event 기반 dashboard 수렴은 Home이 보이는 동안에�
 
 빈번한 robot status event는 Home snapshot이 이미 렌더링된 상태에서 full dashboard bundle을 다시 조회하지 않는다. `PINKY_UPDATED`, `ARM_UPDATED`, `ACTION_FEEDBACK_UPDATED`는 event payload로 해당 Robot Board card를 patch하고 Home 마지막 갱신 표시만 갱신한다. Pinky status node가 실행 중이 아닐 때는 action feedback이 active navigation/patrol action 중 실시간 로봇 위치 소스이므로, `ACTION_FEEDBACK_UPDATED.current_pose`는 robot card 위치 문구와 Home map marker를 모두 갱신해야 한다. `TASK_UPDATED`는 초기 task-flow snapshot이 있고 event payload가 task identity/status 등 최소 렌더링 필드를 포함하면 기존 task card를 patch하거나 새 task card를 추가한 뒤 렌더링된 task flow 기준으로 대기/진행 KPI를 재계산할 수 있다. `ALERT_CREATED` / `FALL_ALERT_CREATED`와 `TASK_UPDATED.fall_alert`에 실린 동일 alert object는 초기 Home snapshot이 이미 있을 때 alert당 한 번만 Home warning/error KPI를 증가시키고 최근 timeline row를 앞에 추가한다. 이전 snapshot이 없거나 reconnect 이후 보정이 필요하거나 event payload만으로 local patch를 만들 수 없으면 full dashboard reload 수렴 경로를 유지한다.
 
+robot pose stream payload를 소비하는 Admin UI page는 flat `{x, y, yaw}` payload와 ROS `PoseStamped` 형태 payload를 한 공통 pose normalization helper로 처리한다. Home과 Robot Status가 yaw, map fallback, `action_name` 기반 robot id 파싱 규칙을 따로 유지하면 안 된다.
+
 #### 운영 맵
 
 Home은 presentation demo의 맵+작업 흐름 분할 구성을 시각 기준으로 삼되, 실제 Control Service 데이터만 사용해 운영 맵을 표시한다. 맵은 demo asset이나 하드코딩 샘플이 아니라 `coordinate_config` RPC를 통해 DB 관리 `map_profile`과 map asset을 불러온다. 로봇 marker는 dashboard bundle의 `robots[*].current_pose`와 `current_pose`를 포함한 stream patch에서 만들며, 현재 pose가 없거나 선택된 map과 다른 pose를 가진 로봇은 표시하지 않는다.
@@ -1674,6 +1676,8 @@ UI는 DB나 ROS에 직접 연결하지 않는다. bundle은 `summary`, `robots`,
 로봇 상태 새로고침은 페이지 높이를 바꾸는 page-level 상태 row를 삽입하거나 제거하지 않는다. snapshot refresh 중에도 주요 로봇 카드, 테이블, 상세 패널, 맵 영역의 치수는 안정적으로 유지한다. 로딩 상태는 새로고침 버튼의 텍스트/상태와 고정된 header 상태 필드처럼 레이아웃을 밀지 않는 방식으로 표시한다. 오류 메시지는 예약된 header/status 영역에 표시할 수 있지만 로봇 콘텐츠를 아래로 밀어내면 안 된다.
 
 주기적 robot snapshot refresh는 변경되지 않은 map profile/YAML/PGM asset을 매번 다시 다운로드하거나 location configuration service를 다시 조회하지 않는다. 1-2초 fallback refresh 경로는 runtime robot status만 조회한다. 선택된 `map_id`별로 map asset을 cache하고, 초기 로드, 선택 map 변경, cache 비어 있음 복구, 또는 명시적인 수동 새로고침이 map refresh를 요구하는 경우에만 map profile/asset을 다시 로드한다. refresh와 stream update는 해당 로봇이 여전히 존재하면 운영자가 선택한 로봇 상세를 유지해야 한다. Robot Status map marker도 status topic telemetry가 없을 때 `ACTION_FEEDBACK_UPDATED.current_pose`를 실시간 위치 소스로 받아야 한다.
+
+Robot Status는 `ACTION_FEEDBACK_UPDATED`, `PINKY_UPDATED`, snapshot-compatible stream patch 처리에서 Home과 같은 robot pose stream normalization helper를 사용한다.
 
 #### 로봇 카드
 
