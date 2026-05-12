@@ -9,7 +9,6 @@ from PyQt6.QtCore import QObject, QPointF, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPen
 from PyQt6.QtWidgets import (
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -59,6 +58,8 @@ FLOW_COLUMNS = (
     ("CANCELING", "취소 중", CANCELING_TASK_STATUSES),
     ("DONE", "완료/실패", set()),
 )
+
+HOME_FLOW_RENDER_ORDER = ("CANCELING", "IN_PROGRESS", "ASSIGNED", "WAITING", "DONE")
 
 TASK_TYPE_LABELS = {
     "DELIVERY": "운반",
@@ -763,7 +764,8 @@ class CaregiverHomePage(QWidget):
         self.kpi_cards = {}
         self.robot_row = None
         self.timeline_table = None
-        self.flow_grid = None
+        self.flow_list = None
+        self.flow_count_label = None
         self.home_map_canvas = None
         self.home_map_status_label = None
         self.dashboard_thread = None
@@ -939,8 +941,15 @@ class CaregiverHomePage(QWidget):
         fw.setContentsMargins(20, 20, 20, 20)
         fw.setSpacing(14)
 
+        flow_header = QHBoxLayout()
+        flow_header.setSpacing(8)
         flow_title = QLabel("작업 흐름 보드")
         flow_title.setObjectName("sectionTitle")
+        self.flow_count_label = QLabel("0건")
+        self.flow_count_label.setObjectName("mutedText")
+        flow_header.addWidget(flow_title)
+        flow_header.addStretch()
+        flow_header.addWidget(self.flow_count_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.flow_scroll = QScrollArea()
         self.flow_scroll.setObjectName("flowBoardScroll")
@@ -951,12 +960,12 @@ class CaregiverHomePage(QWidget):
         flow_content = QWidget()
         flow_content.setObjectName("flowBoardContent")
 
-        self.flow_grid = QGridLayout(flow_content)
-        self.flow_grid.setHorizontalSpacing(16)
-        self.flow_grid.setVerticalSpacing(16)
+        self.flow_list = QVBoxLayout(flow_content)
+        self.flow_list.setContentsMargins(0, 0, 0, 0)
+        self.flow_list.setSpacing(12)
         self.flow_scroll.setWidget(flow_content)
 
-        fw.addWidget(flow_title)
+        fw.addLayout(flow_header)
         fw.addWidget(self.flow_scroll)
 
         map_flow_layout.addWidget(map_panel, 0, Qt.AlignmentFlag.AlignTop)
@@ -1552,17 +1561,100 @@ class CaregiverHomePage(QWidget):
             column_key: [dict(task) for task in tasks]
             for column_key, tasks in normalized.items()
         }
-        self.clear_layout(self.flow_grid)
+        compact_tasks = self._compact_flow_tasks(normalized)
+        self.clear_layout(self.flow_list)
+        self.flow_count_label.setText(f"{len(compact_tasks)}건")
 
-        for index, (column_key, title, _statuses) in enumerate(FLOW_COLUMNS):
-            column = FlowColumn(
-                column_key,
-                title,
-                normalized[column_key],
-                canceling_task_id=self._canceling_task_id,
+        if not compact_tasks:
+            empty = QLabel("표시할 작업이 없습니다.")
+            empty.setObjectName("mutedText")
+            self.flow_list.addWidget(empty)
+            self.flow_list.addStretch()
+            return
+
+        for task in compact_tasks:
+            self.flow_list.addWidget(self._build_compact_task_card(task))
+        self.flow_list.addStretch()
+
+    @staticmethod
+    def _compact_flow_tasks(normalized):
+        tasks = []
+        for column_key in HOME_FLOW_RENDER_ORDER:
+            tasks.extend(
+                dict(task) if isinstance(task, dict) else {}
+                for task in normalized.get(column_key, [])
             )
-            column.cancel_requested.connect(self._request_task_cancel)
-            self.flow_grid.addWidget(column, 0, index)
+        return tasks
+
+    def _build_compact_task_card(self, task):
+        task_card = QFrame()
+        task_card.setObjectName("infoBox")
+        tc = QVBoxLayout(task_card)
+        tc.setContentsMargins(12, 12, 12, 12)
+        tc.setSpacing(8)
+
+        header = QHBoxLayout()
+        title_label = QLabel(FlowColumn._format_task_title(task))
+        title_label.setObjectName("homeTaskTitle")
+        title_label.setWordWrap(True)
+        status_chip = StatusChip(
+            _task_status_label(task.get("task_status")),
+            _task_status_chip_type(task.get("task_status")),
+        )
+        header.addWidget(title_label, 1)
+        header.addWidget(status_chip, 0, Qt.AlignmentFlag.AlignTop)
+        tc.addLayout(header)
+
+        for key, value, kind in FlowColumn._format_task_rows(task):
+            row = QHBoxLayout()
+            row.setSpacing(8)
+
+            key_label = QLabel(key)
+            key_label.setObjectName("homeTaskFieldKey")
+            key_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            value_label = QLabel(value)
+            value_label.setObjectName(
+                "homeTaskFieldDetail" if kind == "detail" else "homeTaskFieldValue"
+            )
+            value_label.setWordWrap(True)
+
+            row.addWidget(key_label, 0, Qt.AlignmentFlag.AlignTop)
+            row.addWidget(value_label, 1)
+            tc.addLayout(row)
+
+        cancel_button = self._build_compact_cancel_button(task)
+        if cancel_button is not None:
+            tc.addWidget(cancel_button)
+
+        return task_card
+
+    def _build_compact_cancel_button(self, task):
+        task_id = _task_id_value(task)
+        if task_id is None:
+            return None
+
+        status = _status_of(task)
+        cancellable = task.get("cancellable")
+        if cancellable is None:
+            cancellable = status in CANCELABLE_TASK_STATUSES
+        if not cancellable or status in CANCELING_TASK_STATUSES:
+            return None
+
+        button = QPushButton("작업 취소")
+        button.setObjectName("dangerButton")
+        button.setProperty("dashboard_cancel_task_id", task_id)
+
+        if task_id == self._canceling_task_id:
+            button.setText("취소 요청 중...")
+            button.setEnabled(False)
+
+        button.clicked.connect(
+            lambda _checked=False, selected_task=dict(task): self._request_task_cancel(
+                selected_task
+            )
+        )
+        return button
 
     def apply_timeline_data(self, rows):
         rows = list(rows or [])[:20]

@@ -562,19 +562,11 @@ Robot online state is based on recent runtime heartbeat, not on seeded or stale 
 
 #### Task Flow Board
 
-The task flow board uses a Kanban form. It displays the board title directly above the scroll area and does not add a separate explanatory subtitle such as "shows requested tasks by status."
+On Home, the task flow board is a compact one-column list placed to the right of the operations map. It displays the board title directly above the scroll area and does not add a separate explanatory subtitle such as "shows requested tasks by status."
 
-On Home, the board is placed to the right of the operations map. It must continue to render the real DB-backed `flow_data` from `caregiver.get_dashboard_bundle`; it must not use presentation-demo fixtures. The board should have its own scroll area so many task cards do not stretch the whole dashboard. Flow columns must use the same waiting/running definitions as the KPI row; for example `READY` is a waiting task, not an assigned task.
+The board must continue to render the real DB-backed `flow_data` from `caregiver.get_dashboard_bundle`; it must not use presentation-demo fixtures. Home flattens the server-provided status buckets into a single operator scan list, prioritizing canceling/running/assigned/waiting work before recently completed or failed work. KPI counts remain responsible for status distribution. Detailed status-by-status inspection belongs on Task Monitor, not Home.
 
-Recommended columns:
-
-| Column | Included statuses |
-| --- | --- |
-| Waiting | `WAITING_DISPATCH`, `READY` |
-| Assigned | `ASSIGNED` |
-| In progress | `RUNNING`, `IN_PROGRESS` |
-| Canceling | `CANCEL_REQUESTED`, `CANCELLING`, `PREEMPTING` |
-| Completed/failed | `COMPLETED`, `FAILED`, `CANCELLED` |
+The board should have its own scroll area so many task cards do not stretch the whole dashboard. The flattened list must still use the same waiting/running definitions as the KPI row; for example `READY` is a waiting task, not an assigned task.
 
 Task card display fields:
 

@@ -4,7 +4,14 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame, QScrollArea
+from PyQt6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QScrollArea,
+    QVBoxLayout,
+)
 
 
 _APP = None
@@ -86,6 +93,7 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         assert flow_scroll.parentWidget() is flow_panel
         assert flow_scroll.widgetResizable() is True
         assert flow_scroll.maximumHeight() <= 460
+        assert isinstance(flow_scroll.widget().layout(), QVBoxLayout)
     finally:
         page.close()
 
@@ -612,7 +620,7 @@ def test_home_dashboard_defers_stream_refresh_while_snapshot_load_is_running(
         page.close()
 
 
-def test_home_dashboard_normalizes_task_flow_into_spec_columns():
+def test_home_dashboard_normalizes_task_flow_into_compact_one_column_list():
     _app()
 
     from ui.utils.pages.caregiver.home_dashboard_page import (
@@ -672,21 +680,20 @@ def test_home_dashboard_normalizes_task_flow_into_spec_columns():
             }
         )
 
-        columns = {
-            column.column_key: column for column in page.findChildren(FlowColumn)
-        }
-        assert list(columns) == [
-            "WAITING",
-            "ASSIGNED",
-            "IN_PROGRESS",
-            "CANCELING",
-            "DONE",
+        task_titles = [
+            label.text()
+            for label in page.findChildren(QLabel)
+            if label.objectName() == "homeTaskTitle"
         ]
-        assert columns["WAITING"].task_count_label.text() == "1건"
-        assert columns["ASSIGNED"].task_count_label.text() == "1건"
-        assert columns["IN_PROGRESS"].task_count_label.text() == "1건"
-        assert columns["CANCELING"].task_count_label.text() == "1건"
-        assert columns["DONE"].task_count_label.text() == "1건"
+        assert page.findChildren(FlowColumn) == []
+        assert page.flow_count_label.text() == "5건"
+        assert task_titles == [
+            "작업 #104 · 순찰",
+            "작업 #103 · 운반",
+            "작업 #102 · 순찰",
+            "작업 #101 · 운반",
+            "작업 #105 · 운반",
+        ]
     finally:
         page.close()
 
@@ -696,8 +703,6 @@ def test_home_dashboard_patches_existing_task_flow_from_task_stream_event():
 
     from ui.utils.pages.caregiver.home_dashboard_page import (
         CaregiverHomePage,
-        FLOW_COLUMNS,
-        FlowColumn,
     )
 
     page = CaregiverHomePage(autoload=False)
@@ -756,15 +761,9 @@ def test_home_dashboard_patches_existing_task_flow_from_task_stream_event():
             }
         )
 
-        columns = {
-            column_key: page.flow_grid.itemAtPosition(0, index).widget()
-            for index, (column_key, _title, _statuses) in enumerate(FLOW_COLUMNS)
-        }
-        labels = _label_texts(columns["IN_PROGRESS"])
+        labels = _label_texts(page.findChild(QFrame, "homeTaskFlowPanel"))
         assert refresh_calls == []
-        assert isinstance(columns["WAITING"], FlowColumn)
-        assert columns["WAITING"].task_count_label.text() == "0건"
-        assert columns["IN_PROGRESS"].task_count_label.text() == "2건"
+        assert page.flow_count_label.text() == "2건"
         assert page.kpi_cards["waiting_tasks"].value_label.text() == "0건"
         assert page.kpi_cards["running_tasks"].value_label.text() == "2건"
         assert "작업 #101 · 운반" in labels
@@ -781,7 +780,6 @@ def test_home_dashboard_adds_new_task_from_task_stream_event():
 
     from ui.utils.pages.caregiver.home_dashboard_page import (
         CaregiverHomePage,
-        FLOW_COLUMNS,
     )
 
     page = CaregiverHomePage(autoload=False)
@@ -817,13 +815,9 @@ def test_home_dashboard_adds_new_task_from_task_stream_event():
             }
         )
 
-        columns = {
-            column_key: page.flow_grid.itemAtPosition(0, index).widget()
-            for index, (column_key, _title, _statuses) in enumerate(FLOW_COLUMNS)
-        }
-        labels = _label_texts(columns["WAITING"])
+        labels = _label_texts(page.findChild(QFrame, "homeTaskFlowPanel"))
         assert refresh_calls == []
-        assert columns["WAITING"].task_count_label.text() == "1건"
+        assert page.flow_count_label.text() == "1건"
         assert page.kpi_cards["waiting_tasks"].value_label.text() == "1건"
         assert page.kpi_cards["running_tasks"].value_label.text() == "0건"
         assert "작업 #301 · 운반" in labels
@@ -899,7 +893,6 @@ def test_home_dashboard_patches_alert_carried_by_task_updated_without_reload():
 
     from ui.utils.pages.caregiver.home_dashboard_page import (
         CaregiverHomePage,
-        FLOW_COLUMNS,
     )
 
     page = CaregiverHomePage(autoload=False)
@@ -953,11 +946,7 @@ def test_home_dashboard_patches_alert_carried_by_task_updated_without_reload():
             }
         )
 
-        columns = {
-            column_key: page.flow_grid.itemAtPosition(0, index).widget()
-            for index, (column_key, _title, _statuses) in enumerate(FLOW_COLUMNS)
-        }
-        flow_labels = _label_texts(columns["IN_PROGRESS"])
+        flow_labels = _label_texts(page.findChild(QFrame, "homeTaskFlowPanel"))
         assert refresh_calls == []
         assert page.kpi_cards["warning_errors"].value_label.text() == "1건"
         assert page.timeline_table.rowCount() == 1

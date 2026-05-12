@@ -562,19 +562,11 @@ Home은 presentation demo의 맵+작업 흐름 분할 구성을 시각 기준으
 
 #### Task Flow Board
 
-작업 flow board는 칸반 형태를 사용한다. board 제목은 scroll 영역 바로 위에만 표시하고, "현재 요청된 작업을 상태별로 분류해 보여줍니다." 같은 별도 설명 문구는 두지 않는다.
+Home의 작업 flow board는 운영 맵 오른쪽에 배치하는 compact 1컬럼 목록이다. board 제목은 scroll 영역 바로 위에만 표시하고, "현재 요청된 작업을 상태별로 분류해 보여줍니다." 같은 별도 설명 문구는 두지 않는다.
 
-Home에서는 작업 flow board를 운영 맵 오른쪽에 배치한다. 이 보드는 `caregiver.get_dashboard_bundle`에서 받은 실제 DB 연동 `flow_data`를 계속 렌더링해야 하며 presentation demo fixture를 사용하면 안 된다. 작업 카드가 많아져도 전체 대시보드가 과도하게 길어지지 않도록 board 내부에 별도 scroll 영역을 둔다. 컬럼 분류는 KPI row와 같은 기준을 사용한다. 예를 들어 `READY`는 배정 작업이 아니라 대기 작업이다.
+이 보드는 `caregiver.get_dashboard_bundle`에서 받은 실제 DB 연동 `flow_data`를 계속 렌더링해야 하며 presentation demo fixture를 사용하면 안 된다. Home은 서버가 준 status bucket을 하나의 운영자 scan list로 펼치며, 취소 중/진행/배정/대기 작업을 최근 완료/실패 작업보다 우선 표시한다. 상태별 분포는 KPI count가 담당한다. 상태별 상세 확인은 Home이 아니라 Task Monitor의 역할이다.
 
-권장 컬럼:
-
-| 컬럼 | 포함 상태 |
-| --- | --- |
-| 대기 | `WAITING_DISPATCH`, `READY` |
-| 배정 | `ASSIGNED` |
-| 진행 | `RUNNING`, `IN_PROGRESS` |
-| 취소 중 | `CANCEL_REQUESTED`, `CANCELLING`, `PREEMPTING` |
-| 완료/실패 | `COMPLETED`, `FAILED`, `CANCELLED` |
+작업 카드가 많아져도 전체 대시보드가 과도하게 길어지지 않도록 board 내부에 별도 scroll 영역을 둔다. 펼친 목록도 KPI row와 같은 대기/진행 기준을 사용해야 한다. 예를 들어 `READY`는 배정 작업이 아니라 대기 작업이다.
 
 작업 카드 표시 필드:
 
