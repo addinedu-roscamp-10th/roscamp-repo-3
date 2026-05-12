@@ -16,6 +16,8 @@
 - `unit/device/`: device workspace/package 구조 계약
 - `unit/ui/`: UI 쪽 network client 단위 테스트
 
+`unit/ui/` PyQt 테스트는 전용 `conftest.py`가 파일 단위 subprocess로 격리한다. PyQt/offscreen backend는 한 Python process에서 많은 widget show/processEvents를 누적하면 C++ 레벨 abort가 날 수 있으므로, UI 단위 테스트의 안정성 기준은 process-level QApplication 격리다. 각 subprocess 안에서도 공통 fixture가 테스트 전후에 남아 있는 top-level widget을 `close()` 처리해 다음 fixture 단계의 visible widget 누수를 막는다.
+
 `integration/` 정리 규칙:
 
 - `test_*.py`: `pytest`가 수집하는 정식 통합 테스트
