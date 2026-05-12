@@ -230,3 +230,7 @@ wireframes/
 !/test/local/README.md
 /local_refs/
 reference/
+
+# Final presentation demo local files
+ui/presentation_demo/
+test/unit/ui/test_presentation_admin_home_demo.py
