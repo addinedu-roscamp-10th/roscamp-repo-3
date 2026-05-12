@@ -115,6 +115,7 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
         assert isinstance(window.alerts_page, PresentationAlertsLogPage)
         assert isinstance(window.alerts_page, AlertLogPage)
         assert not hasattr(window.request_page, "submit_demo_request")
+        assert "추종" not in texts
         assert "좌표/구역 설정" not in texts
         assert "로봇 상태" not in texts
         assert "재고 관리" not in texts
@@ -161,6 +162,11 @@ def test_robot_display_adapter_maps_runtime_robot_names_recursively():
         "assigned_robot_id": "pinky2",
         "latest_robot": {"robot_id": "pinky3"},
         "message": "pinky2 moved while arm1 and jetcobot2 are hidden",
+        "task_type": "DELIVERY",
+        "task_status": "RUNNING",
+        "phase": "DELIVERY_DESTINATION",
+        "event_type": "TASK_UPDATED",
+        "reason_code": "PATROL_RUNTIME_NOT_READY",
         "events": [{"robot_id": "pinky1"}],
     }
 
@@ -175,6 +181,11 @@ def test_robot_display_adapter_maps_runtime_robot_names_recursively():
     assert translated["assigned_robot_id"] == "ROPI 2"
     assert translated["latest_robot"]["robot_id"] == "ROPI 3"
     assert translated["events"][0]["robot_id"] == "ROPI 1"
+    assert translated["task_type"] == "운반"
+    assert translated["task_status"] == "진행 중"
+    assert translated["phase"] == "목적지 이동"
+    assert translated["event_type"] == "작업 갱신"
+    assert translated["reason_code"] == "순찰 실행 준비 안 됨"
     assert "ROPI 2" in translated["message"]
     assert "운반 장치" in translated["message"]
     assert "pinky" not in str(translated).lower()
@@ -201,6 +212,8 @@ def test_demo_task_monitor_uses_db_page_with_ropi_display_mapping():
                         "phase": "DELIVERY_DESTINATION",
                         "assigned_robot_id": "pinky2",
                         "latest_robot": {"robot_id": "pinky2"},
+                        "result_code": "REJECTED",
+                        "latest_reason_code": "PATROL_RUNTIME_NOT_READY",
                     }
                 ]
             }
@@ -210,7 +223,18 @@ def test_demo_task_monitor_uses_db_page_with_ropi_display_mapping():
         text_blob = " ".join(texts)
 
         assert "ROPI 2" in texts
+        assert "운반" in texts
+        assert "진행 중" in texts
+        assert "목적지 이동" in texts
+        assert "거절" in texts
+        assert "순찰 실행 준비 안 됨" in texts
         assert "pinky2" not in text_blob.lower()
+        assert "DELIVERY" not in text_blob
+        assert "RUNNING" not in text_blob
+        assert "DELIVERY_DESTINATION" not in text_blob
+        assert "REJECTED" not in text_blob
+        assert "PATROL_RUNTIME_NOT_READY" not in text_blob
+        assert page.task_table.columnWidth(4) <= 96
     finally:
         page.shutdown()
         page.close()
@@ -245,9 +269,13 @@ def test_demo_alert_logs_uses_db_page_with_ropi_display_mapping():
                         "task_id": 1034,
                         "robot_id": "pinky3",
                         "event_type": "TASK_UPDATED",
-                        "message": "pinky3 patrol update",
+                        "message": "pinky3 PATROL RUNNING update",
+                        "result_code": "ACCEPTED",
+                        "reason_code": "PATROL_RUNTIME_NOT_READY",
                         "payload": {
                             "assigned_robot_id": "pinky3",
+                            "task_status": "RUNNING",
+                            "phase": "PATROL_RUNNING",
                             "arm_id": "arm1",
                         },
                     }
@@ -259,9 +287,21 @@ def test_demo_alert_logs_uses_db_page_with_ropi_display_mapping():
         text_blob = " ".join(texts)
 
         assert "ROPI 3" in texts
+        assert "정보" in texts
+        assert "작업 갱신" in texts
+        assert "접수" in texts
+        assert "순찰 실행 준비 안 됨" in texts
+        assert "담당 ROPI" in text_blob
+        assert "진행 중" in text_blob
+        assert "순찰 중" in text_blob
         assert "pinky3" not in text_blob.lower()
         assert "arm1" not in text_blob.lower()
         assert "운반 장치" in text_blob
+        assert "TASK_UPDATED" not in text_blob
+        assert "PATROL_RUNTIME_NOT_READY" not in text_blob
+        assert "assigned_robot_id" not in text_blob
+        assert "task_status" not in text_blob
+        assert "phase" not in text_blob
     finally:
         page.shutdown()
         page.close()

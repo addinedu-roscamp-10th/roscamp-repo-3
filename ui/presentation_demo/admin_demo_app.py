@@ -10,8 +10,12 @@ from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMainWindow,
+    QPlainTextEdit,
+    QPushButton,
+    QTableWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -26,6 +30,8 @@ from ui.presentation_demo.admin_demo_data import (
 )
 from ui.presentation_demo.robot_display import (
     runtime_robot_id_for_display,
+    translate_robot_display_text,
+    translate_robot_identity_payload,
     translate_robot_display_payload,
 )
 from ui.utils.core.styles import load_stylesheet
@@ -472,20 +478,75 @@ class PresentationTaskMonitorPage(TaskMonitorPage):
     def __init__(self, *, autostart_stream=True):
         super().__init__(autostart_stream=False)
         self.consumer_id = "ui-presentation-admin-demo"
+        self._configure_task_table()
         if autostart_stream:
             self._start_snapshot_load()
 
     def apply_snapshot(self, snapshot):
-        super().apply_snapshot(translate_robot_display_payload(snapshot))
+        super().apply_snapshot(translate_robot_identity_payload(snapshot))
+        self._translate_visible_texts()
+        self._fit_robot_column()
 
     def apply_stream_event(self, event):
-        super().apply_stream_event(translate_robot_display_payload(event))
+        super().apply_stream_event(translate_robot_identity_payload(event))
+        self._translate_visible_texts()
+        self._fit_robot_column()
+
+    def _handle_table_selection_changed(self):
+        super()._handle_table_selection_changed()
+        self._translate_visible_texts()
+        self._fit_robot_column()
+
+    def _select_task(self, task_id):
+        super()._select_task(task_id)
+        self._translate_visible_texts()
+        self._fit_robot_column()
+
+    def _configure_task_table(self) -> None:
+        header = self.task_table.horizontalHeader()
+        header.setStretchLastSection(False)
+        for column in range(self.task_table.columnCount()):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self._fit_robot_column()
+
+    def _fit_robot_column(self) -> None:
+        if self.task_table.columnCount() <= 4:
+            return
+        self.task_table.setColumnWidth(4, 82)
+
+    def _translate_visible_texts(self) -> None:
+        translate_widget_texts(self)
 
 
 class PresentationAlertsLogPage(AlertLogPage):
     def __init__(self, *, autoload: bool = True):
         super().__init__(autoload=autoload)
         self.robot_id_input.setPlaceholderText("예: ROPI 2")
+        self.source_input.setPlaceholderText("예: 관제 서버")
+        self.event_type_input.setPlaceholderText("예: 작업 실패")
+        self.payload_label.setText("상세\n내용")
+        self.table.setHorizontalHeaderLabels(
+            [
+                "이벤트 번호",
+                "발생 시각",
+                "심각도",
+                "출처",
+                "작업 번호",
+                "로봇",
+                "이벤트",
+                "메시지",
+            ]
+        )
+        for index in range(self.severity_combo.count()):
+            value = self.severity_combo.itemData(index)
+            if value:
+                self.severity_combo.setItemText(
+                    index,
+                    translate_robot_display_text(str(value)),
+                )
+        translate_widget_texts(self)
 
     def _collect_filters(self):
         filters = super()._collect_filters()
@@ -494,6 +555,29 @@ class PresentationAlertsLogPage(AlertLogPage):
 
     def apply_alert_log_bundle(self, bundle):
         super().apply_alert_log_bundle(translate_robot_display_payload(bundle))
+        translate_widget_texts(self)
+
+
+def translate_widget_texts(widget: QWidget) -> None:
+    for label in widget.findChildren(QLabel):
+        label.setText(translate_robot_display_text(label.text()))
+
+    for button in widget.findChildren(QPushButton):
+        button.setText(translate_robot_display_text(button.text()))
+
+    for text_edit in widget.findChildren(QPlainTextEdit):
+        text_edit.setPlainText(translate_robot_display_text(text_edit.toPlainText()))
+
+    for table in widget.findChildren(QTableWidget):
+        for column in range(table.columnCount()):
+            header_item = table.horizontalHeaderItem(column)
+            if header_item is not None:
+                header_item.setText(translate_robot_display_text(header_item.text()))
+        for row in range(table.rowCount()):
+            for column in range(table.columnCount()):
+                item = table.item(row, column)
+                if item is not None:
+                    item.setText(translate_robot_display_text(item.text()))
 
 
 class PresentationAdminDemoWindow(QMainWindow):
@@ -530,6 +614,7 @@ class PresentationAdminDemoWindow(QMainWindow):
         )
         self.home_page = PresentationHomePage(self.store)
         self.request_page = TaskRequestPage()
+        self._hide_task_request_follow_tab()
         self.monitor_page = PresentationTaskMonitorPage(
             autostart_stream=autostart_runtime
         )
@@ -547,6 +632,13 @@ class PresentationAdminDemoWindow(QMainWindow):
 
     def _refresh_pages(self, snapshot: DemoSnapshot) -> None:
         self.home_page.refresh_from_store(snapshot)
+
+    def _hide_task_request_follow_tab(self) -> None:
+        follow_btn = getattr(self.request_page, "follow_btn", None)
+        if follow_btn is None:
+            return
+        follow_btn.setText("")
+        follow_btn.setHidden(True)
 
     def closeEvent(self, event):
         for page in (self.request_page, self.monitor_page, self.alerts_page):
