@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -86,6 +87,9 @@ DISPLAY_VALUE_LABELS = {
     "ROS_RUNTIME_NOT_READY": "로봇 런타임 준비 안 됨",
     "DESTINATION_CONFIG_MISSING": "목적지 설정 없음",
     "CLIENT_RESPONSE_INVALID": "응답 형식 오류",
+    "WORKFLOW_RESULT_RECORDED": "업무 흐름 결과 기록됨",
+    "WAITING_FMS_RESERVATION": "FMS 예약 대기",
+    "TASK_STATE_HISTORY": "작업 상태 이력",
 }
 
 DISPLAY_KEY_LABELS = {
@@ -97,6 +101,7 @@ DISPLAY_KEY_LABELS = {
     "event_type": "이벤트",
     "feedback_summary": "피드백",
     "frame_id": "좌표계",
+    "history_name": "이력 이름",
     "latest_reason_code": "최근 사유",
     "message": "메시지",
     "phase": "단계",
@@ -107,9 +112,89 @@ DISPLAY_KEY_LABELS = {
     "severity": "심각도",
     "source_component": "출처",
     "task_id": "작업 번호",
+    "task_history": "작업 이력",
     "task_status": "상태",
     "task_type": "작업 유형",
+    "waiting_state": "대기 상태",
+    "workflow_event": "업무 흐름 이벤트",
 }
+
+DISPLAY_TOKEN_LABELS = {
+    "ACTION": "동작",
+    "ALERT": "알림",
+    "ARM": "운반 장치",
+    "ASSIGNED": "배정됨",
+    "CANCEL": "취소",
+    "CANCELLED": "취소됨",
+    "CANCELLING": "취소 중",
+    "CLIENT": "클라이언트",
+    "COMMAND": "명령",
+    "COMPLETED": "완료됨",
+    "CONFIG": "설정",
+    "CREATED": "생성됨",
+    "DESTINATION": "목적지",
+    "DETECTED": "감지됨",
+    "DISPATCH": "배정",
+    "DOCK": "충전 위치",
+    "ERROR": "오류",
+    "EVIDENCE": "증거",
+    "FAILED": "실패",
+    "FALL": "낙상",
+    "FEEDBACK": "피드백",
+    "FINISHED": "완료됨",
+    "FMS": "FMS",
+    "FOUND": "찾음",
+    "GUIDANCE": "안내",
+    "GUIDE": "안내",
+    "HANDOVER": "인계",
+    "HISTORY": "이력",
+    "ID": "번호",
+    "IMAGE": "이미지",
+    "INVALID": "유효하지 않음",
+    "LATEST": "최근",
+    "LOCATION": "위치",
+    "MESSAGE": "메시지",
+    "MISSING": "없음",
+    "MOVE": "이동",
+    "NOT": "안 됨",
+    "PATH": "경로",
+    "PATROL": "순찰",
+    "PHASE": "단계",
+    "PICKUP": "픽업",
+    "PINKY": "로봇",
+    "POSE": "위치",
+    "READY": "준비",
+    "RECORDED": "기록됨",
+    "REJECTED": "거절됨",
+    "RESERVATION": "예약",
+    "RESPONSE": "응답",
+    "RESULT": "결과",
+    "RETURN": "복귀",
+    "ROBOT": "로봇",
+    "ROS": "로봇 런타임",
+    "RUNTIME": "실행",
+    "RUNNING": "진행 중",
+    "SERVICE": "서비스",
+    "START": "시작",
+    "STATE": "상태",
+    "STATUS": "상태",
+    "STREAM": "스트림",
+    "SUMMARY": "요약",
+    "TARGET": "대상",
+    "TASK": "작업",
+    "TO": "이동",
+    "TRACKING": "추적",
+    "TRANSPORT": "전송",
+    "UNAVAILABLE": "연결 안 됨",
+    "UPDATED": "갱신됨",
+    "WAIT": "대기",
+    "WAITING": "대기",
+    "WAYPOINT": "경유지",
+    "WORKFLOW": "업무 흐름",
+    "ZONE": "구역",
+}
+
+_UPPER_SNAKE_CODE_RE = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
 
 _TEXT_REPLACEMENTS = tuple(
     sorted(
@@ -133,6 +218,31 @@ _TEXT_REPLACEMENTS = tuple(
 )
 
 
+def _translate_payload_key(key: Any) -> str:
+    text = str(key)
+    if text in DISPLAY_KEY_LABELS:
+        return DISPLAY_KEY_LABELS[text]
+    if "_" not in text:
+        return text
+    labels = [
+        DISPLAY_TOKEN_LABELS.get(part.upper())
+        for part in text.split("_")
+        if part
+    ]
+    if labels and all(labels):
+        return " ".join(labels)
+    return text
+
+
+def _translate_snake_code(code: str) -> str:
+    if code in DISPLAY_VALUE_LABELS:
+        return DISPLAY_VALUE_LABELS[code]
+    labels = [DISPLAY_TOKEN_LABELS.get(part) for part in code.split("_")]
+    if labels and all(labels):
+        return " ".join(labels)
+    return code
+
+
 def display_robot_name(value: Any) -> str:
     text = str(value or "").strip()
     return ROBOT_DISPLAY_NAMES.get(text, DEVICE_DISPLAY_NAMES.get(text, text))
@@ -149,6 +259,10 @@ def runtime_robot_id_for_display(value: Any) -> str | None:
 
 def translate_robot_display_text(value: str) -> str:
     text = DISPLAY_VALUE_LABELS.get(value, value)
+    text = _UPPER_SNAKE_CODE_RE.sub(
+        lambda match: _translate_snake_code(match.group(0)),
+        text,
+    )
     for raw, display in _TEXT_REPLACEMENTS:
         text = text.replace(raw, display)
     return text
@@ -161,13 +275,11 @@ def translate_robot_display_payload(payload: Any, *, translate_keys: bool = Fals
     if isinstance(payload, Mapping):
         return {
             (
-                DISPLAY_KEY_LABELS.get(str(key), str(key))
-                if translate_keys
-                else key
+                _translate_payload_key(key) if translate_keys else key
             ): translate_robot_display_payload(
-                value,
-                translate_keys=translate_keys or key == "payload",
-            )
+                    value,
+                    translate_keys=translate_keys or key == "payload",
+                )
             for key, value in payload.items()
         }
 
