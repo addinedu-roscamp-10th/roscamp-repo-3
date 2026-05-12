@@ -170,6 +170,8 @@ def test_robot_display_adapter_maps_runtime_robot_names_recursively():
         "workflow_event": "WORKFLOW_RESULT_RECORDED",
         "waiting_state": "WAITING_FMS_RESERVATION",
         "history_name": "TASK_STATE_HISTORY",
+        "confirm_phase": "WAIT_GUIDE_START_CONFIRM",
+        "mixed_status": "WAIT 안내 START CONFIRM",
         "events": [{"robot_id": "pinky1"}],
     }
 
@@ -192,6 +194,8 @@ def test_robot_display_adapter_maps_runtime_robot_names_recursively():
     assert translated["workflow_event"] == "업무 흐름 결과 기록됨"
     assert translated["waiting_state"] == "FMS 예약 대기"
     assert translated["history_name"] == "작업 상태 이력"
+    assert translated["confirm_phase"] == "안내 시작 확인 대기"
+    assert translated["mixed_status"] == "대기 안내 시작 확인"
     assert "ROPI 2" in translated["message"]
     assert "운반 장치" in translated["message"]
     assert "pinky" not in str(translated).lower()
@@ -221,7 +225,9 @@ def test_demo_task_monitor_uses_db_page_with_ropi_display_mapping():
                         "result_code": "REJECTED",
                         "latest_reason_code": "PATROL_RUNTIME_NOT_READY",
                         "result_message": "WORKFLOW_RESULT_RECORDED",
-                        "feedback_summary": "WAITING_FMS_RESERVATION",
+                        "feedback_summary": (
+                            "WAITING_FMS_RESERVATION / WAIT_GUIDE_START_CONFIRM"
+                        ),
                     }
                 ]
             }
@@ -238,6 +244,7 @@ def test_demo_task_monitor_uses_db_page_with_ropi_display_mapping():
         assert "순찰 실행 준비 안 됨" in texts
         assert "업무 흐름 결과 기록됨" in text_blob
         assert "FMS 예약 대기" in text_blob
+        assert "안내 시작 확인 대기" in text_blob
         assert "pinky2" not in text_blob.lower()
         assert "DELIVERY" not in text_blob
         assert "RUNNING" not in text_blob
@@ -246,6 +253,9 @@ def test_demo_task_monitor_uses_db_page_with_ropi_display_mapping():
         assert "PATROL_RUNTIME_NOT_READY" not in text_blob
         assert "WORKFLOW_RESULT_RECORDED" not in text_blob
         assert "WAITING_FMS_RESERVATION" not in text_blob
+        assert "WAIT_GUIDE_START_CONFIRM" not in text_blob
+        assert "START" not in text_blob
+        assert "CONFIRM" not in text_blob
         assert page.task_table.columnWidth(4) <= 96
     finally:
         page.shutdown()
@@ -291,6 +301,7 @@ def test_demo_alert_logs_uses_db_page_with_ropi_display_mapping():
                             "workflow_event": "WORKFLOW_RESULT_RECORDED",
                             "waiting_state": "WAITING_FMS_RESERVATION",
                             "task_history": "TASK_STATE_HISTORY",
+                            "guide_confirm": "WAIT 안내 START CONFIRM",
                             "arm_id": "arm1",
                         },
                     }
@@ -312,6 +323,7 @@ def test_demo_alert_logs_uses_db_page_with_ropi_display_mapping():
         assert "업무 흐름" in text_blob
         assert "FMS 예약 대기" in text_blob
         assert "작업 상태 이력" in text_blob
+        assert "대기 안내 시작 확인" in text_blob
         assert "pinky3" not in text_blob.lower()
         assert "arm1" not in text_blob.lower()
         assert "운반 장치" in text_blob
@@ -323,6 +335,9 @@ def test_demo_alert_logs_uses_db_page_with_ropi_display_mapping():
         assert "WORKFLOW_RESULT_RECORDED" not in text_blob
         assert "WAITING_FMS_RESERVATION" not in text_blob
         assert "TASK_STATE_HISTORY" not in text_blob
+        assert "WAIT" not in text_blob
+        assert "START" not in text_blob
+        assert "CONFIRM" not in text_blob
     finally:
         page.shutdown()
         page.close()

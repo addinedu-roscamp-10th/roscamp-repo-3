@@ -67,6 +67,14 @@ DISPLAY_VALUE_LABELS = {
     "RETURN_TO_DOCK": "복귀 중",
     "WAIT_TARGET_TRACKING": "안내 대상 확인",
     "READY_TO_START_GUIDANCE": "안내 시작 준비",
+    "WAIT_GUIDE_START_CONFIRM": "안내 시작 확인 대기",
+    "WAIT_GUIDANCE_START_CONFIRM": "안내 시작 확인 대기",
+    "GUIDE_START_CONFIRM": "안내 시작 확인",
+    "GUIDANCE_START_CONFIRM": "안내 시작 확인",
+    "START_GUIDE_CONFIRM": "안내 시작 확인",
+    "START_GUIDANCE_CONFIRM": "안내 시작 확인",
+    "WAIT_START_CONFIRM": "시작 확인 대기",
+    "START_CONFIRM": "시작 확인",
     "GUIDANCE_RUNNING": "안내 주행 중",
     "GUIDANCE_FINISHED": "안내 완료",
     "PATROL_RUNNING": "순찰 중",
@@ -100,7 +108,9 @@ DISPLAY_KEY_LABELS = {
     "event_id": "이벤트 번호",
     "event_type": "이벤트",
     "feedback_summary": "피드백",
+    "confirm_phase": "확인 단계",
     "frame_id": "좌표계",
+    "guide_confirm": "안내 확인",
     "history_name": "이력 이름",
     "latest_reason_code": "최근 사유",
     "message": "메시지",
@@ -131,6 +141,9 @@ DISPLAY_TOKEN_LABELS = {
     "COMMAND": "명령",
     "COMPLETED": "완료됨",
     "CONFIG": "설정",
+    "CONFIRM": "확인",
+    "CONFIRMATION": "확인",
+    "CONFIRMED": "확인됨",
     "CREATED": "생성됨",
     "DESTINATION": "목적지",
     "DETECTED": "감지됨",
@@ -195,6 +208,7 @@ DISPLAY_TOKEN_LABELS = {
 }
 
 _UPPER_SNAKE_CODE_RE = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
+_UPPER_TOKEN_RE = re.compile(r"\b[A-Z]{2,}\b")
 
 _TEXT_REPLACEMENTS = tuple(
     sorted(
@@ -237,8 +251,9 @@ def _translate_payload_key(key: Any) -> str:
 def _translate_snake_code(code: str) -> str:
     if code in DISPLAY_VALUE_LABELS:
         return DISPLAY_VALUE_LABELS[code]
-    labels = [DISPLAY_TOKEN_LABELS.get(part) for part in code.split("_")]
-    if labels and all(labels):
+    parts = [part for part in code.split("_") if part]
+    labels = [DISPLAY_TOKEN_LABELS.get(part, part) for part in parts]
+    if labels and any(label != part for label, part in zip(labels, parts)):
         return " ".join(labels)
     return code
 
@@ -261,6 +276,10 @@ def translate_robot_display_text(value: str) -> str:
     text = DISPLAY_VALUE_LABELS.get(value, value)
     text = _UPPER_SNAKE_CODE_RE.sub(
         lambda match: _translate_snake_code(match.group(0)),
+        text,
+    )
+    text = _UPPER_TOKEN_RE.sub(
+        lambda match: DISPLAY_TOKEN_LABELS.get(match.group(0), match.group(0)),
         text,
     )
     for raw, display in _TEXT_REPLACEMENTS:
