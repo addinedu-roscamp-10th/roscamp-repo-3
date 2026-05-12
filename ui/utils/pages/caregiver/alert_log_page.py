@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -24,7 +24,6 @@ from ui.utils.core.worker_threads import start_worker_thread, stop_worker_thread
 from ui.utils.network.service_clients import CaregiverRemoteService
 from ui.utils.widgets.admin_common import (
     KEY_VALUE_KEY_MIN_WIDTH,
-    KEY_VALUE_KEY_TEXT_PADDING,
     KeyValueList,
     SummaryCard,
     display_text as _display,
@@ -232,41 +231,45 @@ class AlertLogPage(QWidget):
         detail_title = QLabel("이벤트 상세")
         detail_title.setObjectName("sectionTitle")
         self.detail_list = KeyValueList("이벤트를 선택하세요.")
-        self.payload_label_row = QWidget()
-        self.payload_label_row.setObjectName("alertPayloadLabelRow")
-        payload_label_layout = QHBoxLayout(self.payload_label_row)
-        payload_label_layout.setContentsMargins(0, 0, 0, 0)
-        payload_label_layout.setSpacing(0)
-        self.payload_label = QLabel("상세 payload")
+        self.payload_row = QFrame()
+        self.payload_row.setObjectName("alertPayloadRow")
+        payload_layout = QHBoxLayout(self.payload_row)
+        payload_layout.setContentsMargins(12, 10, 12, 10)
+        payload_layout.setSpacing(10)
+        self.payload_label = QLabel("상세\npayload")
         self.payload_label.setObjectName("alertPayloadLabel")
-        payload_label_width = max(
-            KEY_VALUE_KEY_MIN_WIDTH,
-            self.payload_label.fontMetrics().horizontalAdvance("상세 payload")
-            + KEY_VALUE_KEY_TEXT_PADDING,
-        )
-        self.payload_label.setFixedWidth(payload_label_width)
+        self.payload_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.payload_label.setFixedWidth(KEY_VALUE_KEY_MIN_WIDTH)
         self.payload_label.setSizePolicy(
             QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Fixed,
         )
-        payload_label_layout.addWidget(self.payload_label)
-        payload_label_layout.addStretch(1)
         self.payload_text = QPlainTextEdit()
         self.payload_text.setObjectName("alertPayloadText")
         self.payload_text.setReadOnly(True)
+        self.payload_text.setFrameShape(QFrame.Shape.NoFrame)
         self.payload_text.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.payload_text.setMinimumHeight(140)
         self.payload_text.setMaximumHeight(280)
-        payload_font = self.payload_text.font()
+        self.payload_text.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        payload_font = self.font()
         payload_font.setBold(True)
         self.payload_text.setFont(payload_font)
-        self.payload_label_row.setHidden(True)
+        payload_layout.addWidget(
+            self.payload_label,
+            0,
+            Qt.AlignmentFlag.AlignTop,
+        )
+        payload_layout.addWidget(self.payload_text, 1)
+        self.payload_row.setHidden(True)
         self.payload_label.setHidden(True)
         self.payload_text.setHidden(True)
         detail_layout.addWidget(detail_title)
         detail_layout.addWidget(self.detail_list)
-        detail_layout.addWidget(self.payload_label_row)
-        detail_layout.addWidget(self.payload_text)
+        detail_layout.addWidget(self.payload_row)
 
         related_card = QFrame()
         related_card.setObjectName("noticeCard")
@@ -436,7 +439,7 @@ class AlertLogPage(QWidget):
     def _render_payload(self, payload):
         payload_text = self._format_payload_text(payload)
         has_payload = bool(payload_text)
-        self.payload_label_row.setHidden(not has_payload)
+        self.payload_row.setHidden(not has_payload)
         self.payload_label.setHidden(not has_payload)
         self.payload_text.setHidden(not has_payload)
         self.payload_text.setPlainText(payload_text)

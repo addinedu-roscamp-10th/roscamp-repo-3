@@ -970,7 +970,8 @@ QFrame#keyValueList {
     border: none;
 }
 
-QFrame#keyValueRow {
+QFrame#keyValueRow,
+QFrame#alertPayloadRow {
     background: #FFFFFF;
     border: 1px solid #E2E8F0;
     border-radius: 14px;
@@ -987,7 +988,8 @@ QLabel#sideMetricLabel {
     padding: 5px 7px;
 }
 
-QLabel#keyValueKey {
+QLabel#keyValueKey,
+QLabel#alertPayloadLabel {
     background: #EAF5F2;
     color: #005C55;
     border: 1px solid #B9D8D3;
@@ -998,25 +1000,14 @@ QLabel#keyValueKey {
     padding: 5px 7px;
 }
 
-QLabel#alertPayloadLabel {
-    background: #EAF5F2;
-    color: #005C55;
-    border: 1px solid #B9D8D3;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 900;
-    padding: 5px 7px;
-}
-
 QPlainTextEdit#alertPayloadText {
-    background: #FFFFFF;
+    background: transparent;
     color: #16202A;
-    border: 1px solid #E2E8F0;
-    border-radius: 12px;
-    font-family: "JetBrains Mono", "Consolas", monospace;
-    font-size: 12px;
+    border: none;
+    border-radius: 0px;
+    font-size: 13px;
     font-weight: 900;
-    padding: 10px;
+    padding: 0px;
 }
 
 QLabel#sideMetricValue,

@@ -78,6 +78,19 @@ def test_main_qss_defines_task_request_page_components():
     assert "QLabel#resultMessage" in qss
 
 
+def test_main_qss_styles_alert_payload_as_detail_value_area():
+    qss = _stylesheet()
+
+    assert "QFrame#alertPayloadRow" in qss
+    assert "QLabel#keyValueKey,\nQLabel#alertPayloadLabel" in qss
+    payload_text_qss = _selector_block(qss, "QPlainTextEdit#alertPayloadText")
+    assert "background: transparent;" in payload_text_qss
+    assert "border: none;" in payload_text_qss
+    assert "font-size: 13px;" in payload_text_qss
+    assert "font-weight: 900;" in payload_text_qss
+    assert "font-family" not in payload_text_qss
+
+
 def test_main_qss_defines_home_dashboard_components():
     qss = _stylesheet()
 
