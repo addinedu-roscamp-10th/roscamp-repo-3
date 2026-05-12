@@ -2960,14 +2960,14 @@ product-facing ROPI naming은 홈, 작업 모니터, 알림/로그에 적용한�
 
 - product-facing 로봇명만 표시: `ROPI 1`, `ROPI 2`, `ROPI 3`.
 - 작업 유형, 상태, 단계, 결과, 사유, event type, severity, action feedback state 같은 common raw code는 한국어 표시값으로 변환.
-- 알려지지 않은 uppercase snake-case code도 가능한 경우 한국어 단어로 분해해 `WAITING`, `TASK`, `WORKFLOW`, `RESULT`, `UPDATED` 같은 조각이 한국어 문구 사이에 남지 않게 한다.
+- 알려지지 않은 uppercase snake-case code와 standalone uppercase code token도 가능한 경우 한국어 단어로 분해해 `WAIT`, `WAITING`, `START`, `CONFIRM`, `TASK`, `WORKFLOW`, `RESULT`, `UPDATED` 같은 조각이 한국어 문구 사이에 남지 않게 한다.
 - 현재 production Admin 작업 모니터 UI 구조.
 - 일반 Task Monitor Control Service snapshot으로 로드되는 live DB-backed 작업.
 - runtime이 available할 때 일반 task event stream update.
 - 작업 목록의 로봇 column은 content-sized로 유지하며 남는 table 폭을 차지하지 않아야 함.
 
 보이는 robot/device name으로 `pinky`, `jetcobot`, `arm1`, `arm2`를 표시하지 않는다.
-한국어 값이 있거나 알려진 code fragment로 조합 가능한 `DELIVERY`, `PATROL`, `GUIDE`, `RUNNING`, `REJECTED`, `TASK_UPDATED`, `WORKFLOW_RESULT_RECORDED`, raw `*_id` payload key 같은 common raw English code/key는 발표용 주요 text에 노출하지 않는다.
+한국어 값이 있거나 알려진 code fragment로 조합 가능한 `DELIVERY`, `PATROL`, `GUIDE`, `RUNNING`, `REJECTED`, `TASK_UPDATED`, `WORKFLOW_RESULT_RECORDED`, `WAIT_GUIDE_START_CONFIRM`, raw `*_id` payload key 같은 common raw English code/key는 발표용 주요 text에 노출하지 않는다.
 ROPI mapping은 presentation display adapter이며 Control Service payload key나 DB 값을 변경하지 않는다.
 
 ### 22-9. 알림/로그 데모 요구사항
@@ -2997,7 +2997,7 @@ ROPI mapping은 presentation display adapter이며 Control Service payload key�
 | entry point | `ropi-admin-demo` |
 | shell | `AdminShell` 스타일 재사용, navigation은 데모 페이지로 제한 |
 | store | 홈 전용 in-memory presentation snapshot. 작업 요청, 작업 모니터, 알림/로그는 production Control Service/DB client 사용 |
-| display adapter | presentation-only recursive payload adapter가 monitor/log 렌더링 전에 `pinky1`, `pinky2`, `pinky3`를 `ROPI 1`, `ROPI 2`, `ROPI 3`로 매핑하고 common raw enum/code/key 값과 알려지지 않은 uppercase snake-case code를 한국어로 변환 |
+| display adapter | presentation-only recursive payload adapter가 monitor/log 렌더링 전에 `pinky1`, `pinky2`, `pinky3`를 `ROPI 1`, `ROPI 2`, `ROPI 3`로 매핑하고 common raw enum/code/key 값, 알려지지 않은 uppercase snake-case code, standalone uppercase code token을 한국어로 변환 |
 | table sizing | presentation Task Monitor는 로봇 column을 stretch하지 않고 content-sized로 유지 |
 | production safety | demo-only 동작 때문에 Control Service RPC 계약을 변경하지 않음 |
 | tracking | demo source와 test는 commit 대상. 생성 screenshot/export만 ignored 유지 |

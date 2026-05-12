@@ -2971,14 +2971,14 @@ It should show:
 
 - Product-facing robot names only: `ROPI 1`, `ROPI 2`, `ROPI 3`.
 - Korean display values for common raw codes such as task type, status, phase, result code, reason code, event type, severity, and action feedback state.
-- Unknown uppercase snake-case codes should be decomposed into Korean words when possible so fragments such as `WAITING`, `TASK`, `WORKFLOW`, `RESULT`, and `UPDATED` do not remain mixed with Korean copy.
+- Unknown uppercase snake-case codes and standalone uppercase code tokens should be decomposed into Korean words when possible so fragments such as `WAIT`, `WAITING`, `START`, `CONFIRM`, `TASK`, `WORKFLOW`, `RESULT`, and `UPDATED` do not remain mixed with Korean copy.
 - The current production Admin Task Monitor UI structure.
 - Live DB-backed tasks loaded through the normal Task Monitor Control Service snapshot.
 - Normal task event stream updates when the runtime is available.
 - The robot table column should be content-sized and must not consume the remaining table width.
 
 It must not show `pinky`, `jetcobot`, `arm1`, or `arm2` as visible robot/device names.
-It should not expose common raw English codes such as `DELIVERY`, `PATROL`, `GUIDE`, `RUNNING`, `REJECTED`, `TASK_UPDATED`, `WORKFLOW_RESULT_RECORDED`, or raw `*_id`-style payload keys in primary presentation text when a Korean value exists or can be composed from known code fragments.
+It should not expose common raw English codes such as `DELIVERY`, `PATROL`, `GUIDE`, `RUNNING`, `REJECTED`, `TASK_UPDATED`, `WORKFLOW_RESULT_RECORDED`, `WAIT_GUIDE_START_CONFIRM`, or raw `*_id`-style payload keys in primary presentation text when a Korean value exists or can be composed from known code fragments.
 The ROPI mapping is a presentation display adapter only and must not change Control Service payload keys or DB values.
 
 ### 22-9. Alerts/Logs Demo Requirements
@@ -3008,7 +3008,7 @@ Implementation should keep demo code separate from production pages as much as p
 | Entry point | `ropi-admin-demo` |
 | Shell | Reuse `AdminShell` styling, but restrict navigation to demo pages |
 | Store | Home-only in-memory presentation snapshot. Task Request, Task Monitor, and Alerts/Logs use production Control Service/DB clients |
-| Display adapter | Presentation-only recursive payload adapter maps `pinky1`, `pinky2`, `pinky3` to `ROPI 1`, `ROPI 2`, `ROPI 3`, translates common raw enum/code/key values, and decomposes unknown uppercase snake-case codes before Monitor/Logs render visible text |
+| Display adapter | Presentation-only recursive payload adapter maps `pinky1`, `pinky2`, `pinky3` to `ROPI 1`, `ROPI 2`, `ROPI 3`, translates common raw enum/code/key values, and decomposes unknown uppercase snake-case codes plus standalone uppercase code tokens before Monitor/Logs render visible text |
 | Table sizing | Presentation Task Monitor keeps the robot column content-sized instead of stretching it |
 | Production safety | Do not alter Control Service RPC contracts for demo-only behavior |
 | Tracking | Demo source and tests are committed; generated screenshots/exports remain ignored |
