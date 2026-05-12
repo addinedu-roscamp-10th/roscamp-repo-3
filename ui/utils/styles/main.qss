@@ -266,6 +266,30 @@ QLabel#statusChip {
     border: 1px solid #D8E0E8;
 }
 
+QFrame#globalFallAlertBanner {
+    background: #7F1D1D;
+    border: none;
+    border-radius: 0px;
+}
+
+QLabel#globalFallAlertTitle {
+    color: #FFFFFF;
+    font-size: 17px;
+    font-weight: 900;
+}
+
+QLabel#globalFallAlertSummary {
+    color: #FEE2E2;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+QLabel#globalFallAlertDetail {
+    color: #FECACA;
+    font-size: 12px;
+    font-weight: 700;
+}
+
 QFrame#card,
 QFrame#glassPanel,
 QFrame#footerBox,
@@ -663,6 +687,18 @@ QPushButton#dangerButton {
 QPushButton#dangerButton:hover {
     background: #B91C1C;
     color: #FFFFFF;
+}
+
+QPushButton#secondaryDangerButton {
+    background: #FEE2E2;
+    border: 1px solid #FCA5A5;
+    color: #991B1B;
+    font-weight: 900;
+}
+
+QPushButton#secondaryDangerButton:hover {
+    background: #FECACA;
+    color: #7F1D1D;
 }
 
 QPushButton#softGreenButton {

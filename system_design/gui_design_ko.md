@@ -422,6 +422,10 @@ push 기반 UI를 구현할 때는 persistent TCP session을 UI thread 밖에서
 
 관리자 shell은 dashboard-oriented page를 위한 공유 IF-COM-003 subscription 하나를 소유한다. Shell은 hard-coded page tuple을 유지하지 않고, 등록된 shell page 중 `apply_stream_event(event)`를 노출하는 page를 열거해 event object를 fan-out한다. Task Monitor처럼 독립 event stream을 소유하는 page는 공유 관리자 fan-out에서 명시적으로 opt-out한다.
 
+관리자 shell은 page fan-out 전에 낙상 감지 알림을 먼저 감지해야 한다. `FALL_ALERT_CREATED`, 낙상 유형의 `ALERT_CREATED`, `TASK_UPDATED.payload.fall_alert`은 어느 page에서든 보이는 전역 낙상 알림 banner/toast를 1개 만든다. 전역 알림은 `alert_id` 기준으로 중복 제거하고, `alert_id`가 없으면 `task_id + result_seq + occurred_at` 기준으로 중복 제거한다. 운영자가 확인할 때까지 유지하며, 현재 page에서 입력 중인 form 상태를 버리면 안 된다.
+
+전역 낙상 알림은 알림 제목, task ID, 가능한 경우 robot ID, zone/pose 요약, 감지 시각, `작업 보기`, 증거 사진이 있을 때만 `낙상 사진 보기`, `확인` action을 포함한다. `작업 보기`는 Task Monitor로 이동하고 해당 task를 선택한다. 전역 알림 처리 후에도 같은 stream event는 기존 page들에 계속 전달한다.
+
 Admin UI page는 stream event-loop 공통 동작을 page마다 timer/state로 중복 구현하지 않고 shared stream refresh helper를 사용한다. 공통 helper 범위는 의도적으로 좁게 둔다.
 
 - 반복 stream-triggered refresh 요청을 하나의 callback으로 debounce
@@ -886,6 +890,8 @@ PAT-001 응답에서 오른쪽 결과 패널에 표시할 필드:
 | `created_at` | 생성 시각 |
 | `updated_at` | 마지막 갱신 시각 |
 | `result` | 완료/실패/취소 결과 |
+
+순찰 task에서 낙상 알림을 받으면 해당 task가 선택되어 있지 않아도 row를 즉시 강조한다. 미확인 상태는 연한 빨간 row, status 컬럼의 빨간 알림 badge, 짧은 pulse/blink 힌트를 사용한다. pulse는 일시적이어야 하며, 운영자가 전역 알림을 확인하거나 해당 task를 선택할 때까지 row는 안정적인 빨간 강조 상태를 유지한다. 확인 후에는 움직임 없는 낮은 강도의 낙상 알림 marker를 유지해 사고 이력을 계속 찾을 수 있게 한다.
 
 #### 스트림 및 새로고침 상태
 

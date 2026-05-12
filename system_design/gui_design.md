@@ -422,6 +422,10 @@ When implementing push-based UI, the persistent TCP session should be read outsi
 
 The administrator shell owns one shared IF-COM-003 subscription for dashboard-oriented pages. It fans out event objects by enumerating registered shell pages that expose `apply_stream_event(event)` instead of maintaining a hard-coded page tuple. Pages that own an independent event stream, such as the Task Monitor snapshot-handoff subscription, explicitly opt out of the shared administrator fan-out.
 
+The administrator shell must intercept fall-detection alerts before page fan-out. `FALL_ALERT_CREATED`, fall-type `ALERT_CREATED`, and `TASK_UPDATED.payload.fall_alert` create one global fall alert banner/toast that is visible from every page. The global alert is deduplicated by `alert_id`, or by `task_id + result_seq + occurred_at` when no alert ID exists. It remains visible until the operator acknowledges it. It must not discard the current page's in-progress form state.
+
+Global fall alert content includes the alert title, task ID, robot ID when available, zone/pose summary, detected time when available, and actions for `View task`, `View fall photo` when evidence is available, and `Acknowledge`. `View task` navigates to Task Monitor and selects the affected task. The same stream event is still delivered to pages after the global alert is processed.
+
 Admin UI pages should use shared stream refresh helpers for common event-loop behavior instead of duplicating timer state per page. The common helper scope is intentionally narrow:
 
 - debounce repeated stream-triggered refresh requests into one callback
@@ -886,6 +890,8 @@ It is more detailed than the home dashboard and more task-centered than the aler
 | `created_at` | Created time |
 | `updated_at` | Last updated time |
 | `result` | Completion/failure/cancellation result |
+
+When a patrol task receives a fall alert, the corresponding row is highlighted immediately even if the task is not selected. The unacknowledged state uses a red-tinted row, a red alert badge in the status column, and a short pulse/blink hint. The pulse is temporary; the row must remain steadily red until the operator acknowledges the global alert or selects the task. After acknowledgement, keep a lower-intensity fall-alert marker so the incident remains discoverable without constant motion.
 
 #### Stream and Refresh State
 

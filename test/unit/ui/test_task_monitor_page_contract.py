@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QFrame, QLabel
 
 from ui.utils.session.session_manager import SessionManager, UserSession
@@ -200,6 +201,117 @@ def test_task_monitor_page_requires_explicit_evidence_available_flag():
         assert page.evidence_image_btn.isEnabled() is False
         assert page.evidence_status_label.isHidden() is False
         assert page.evidence_status_label.text() == "증거사진을 사용할 수 없습니다."
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_task_monitor_page_marks_fall_alert_row_until_acknowledged():
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+
+    try:
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": "2001",
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "phase": "MOVE_TO_WAYPOINT",
+                    "assigned_robot_id": "pinky3",
+                },
+            }
+        )
+        page.apply_stream_event(
+            {
+                "event_type": "FALL_ALERT_CREATED",
+                "payload": {
+                    "task_id": "2001",
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_FALL_RESPONSE",
+                    "assigned_robot_id": "pinky3",
+                    "alert_id": "fall-17",
+                    "result_seq": 541,
+                    "evidence_image_available": True,
+                    "evidence_image_id": "fall_evidence_pinky3_541",
+                    "zone_name": "3층 복도",
+                },
+            }
+        )
+
+        status_item = page.task_table.item(0, 2)
+
+        assert status_item.text() == "RUNNING · 낙상 감지"
+        assert (
+            status_item.data(Qt.ItemDataRole.UserRole)
+            == "fall_alert_unacknowledged"
+        )
+        assert status_item.background().color().name() == "#fee2e2"
+        assert page.task_table.property("fallAlertPulseTaskId") == "2001"
+
+        page.acknowledge_fall_alert("2001")
+
+        status_item = page.task_table.item(0, 2)
+
+        assert status_item.text() == "RUNNING · 낙상 확인"
+        assert (
+            status_item.data(Qt.ItemDataRole.UserRole)
+            == "fall_alert_acknowledged"
+        )
+        assert status_item.background().color().name() == "#fff7ed"
+        assert page.task_table.property("fallAlertPulseTaskId") is None
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_task_monitor_page_acknowledges_fall_alert_when_operator_selects_row():
+    _app()
+
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    page = TaskMonitorPage(autostart_stream=False)
+
+    try:
+        for task_id in ("2001", "2002"):
+            page.apply_stream_event(
+                {
+                    "event_type": "TASK_UPDATED",
+                    "payload": {
+                        "task_id": task_id,
+                        "task_type": "PATROL",
+                        "task_status": "RUNNING",
+                        "phase": "MOVE_TO_WAYPOINT",
+                        "assigned_robot_id": "pinky3",
+                    },
+                }
+            )
+        page.apply_stream_event(
+            {
+                "event_type": "FALL_ALERT_CREATED",
+                "payload": {
+                    "task_id": "2001",
+                    "task_type": "PATROL",
+                    "task_status": "RUNNING",
+                    "phase": "WAIT_FALL_RESPONSE",
+                    "assigned_robot_id": "pinky3",
+                    "alert_id": "fall-17",
+                    "result_seq": 541,
+                },
+            }
+        )
+
+        assert page.task_table.item(0, 2).text() == "RUNNING · 낙상 감지"
+
+        page.task_table.selectRow(1)
+        page.task_table.selectRow(0)
+
+        assert page.task_table.item(0, 2).text() == "RUNNING · 낙상 확인"
     finally:
         page.shutdown()
         page.close()

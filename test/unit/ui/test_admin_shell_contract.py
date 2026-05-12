@@ -436,6 +436,82 @@ def test_caregiver_main_window_fans_out_admin_event_stream(monkeypatch):
         window.close()
 
 
+def test_caregiver_main_window_shows_global_fall_alert_and_routes_to_task_monitor(
+    monkeypatch,
+):
+    _app()
+
+    from ui.admin_ui.main_window import CaregiverMainWindow
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+
+    monkeypatch.setattr(
+        TaskMonitorPage,
+        "_start_snapshot_load",
+        lambda self, **_kwargs: True,
+    )
+
+    window = CaregiverMainWindow()
+
+    try:
+        banner = window.findChild(QFrame, "globalFallAlertBanner")
+
+        assert banner is not None
+        assert banner.isHidden() is True
+
+        window._handle_admin_event_batch(
+            {
+                "batch_end_seq": 8,
+                "events": [
+                    {
+                        "event_type": "FALL_ALERT_CREATED",
+                        "payload": {
+                            "task_id": "2001",
+                            "task_type": "PATROL",
+                            "task_status": "RUNNING",
+                            "phase": "WAIT_FALL_RESPONSE",
+                            "assigned_robot_id": "pinky3",
+                            "alert_id": "fall-17",
+                            "result_seq": 541,
+                            "zone_name": "3층 복도",
+                            "evidence_image_available": True,
+                            "evidence_image_id": "fall_evidence_pinky3_541",
+                        },
+                    },
+                    {
+                        "event_type": "FALL_ALERT_CREATED",
+                        "payload": {
+                            "task_id": "2001",
+                            "alert_id": "fall-17",
+                            "result_seq": 541,
+                        },
+                    },
+                ],
+            }
+        )
+
+        assert banner.isHidden() is False
+        assert len(window._global_fall_alert_keys) == 1
+        assert "낙상 의심 감지" in window.global_fall_alert_title_label.text()
+        assert "작업 #2001" in window.global_fall_alert_summary_label.text()
+        assert "pinky3" in window.global_fall_alert_summary_label.text()
+        assert "3층 복도" in window.global_fall_alert_summary_label.text()
+        assert window.global_fall_alert_task_button.isEnabled() is True
+        assert window.global_fall_alert_evidence_button.isHidden() is False
+        assert window.global_fall_alert_evidence_button.isEnabled() is True
+
+        window.global_fall_alert_task_button.click()
+
+        assert window.task_monitor_page is not None
+        assert window.stack.currentWidget() is window.task_monitor_page
+        assert window.task_monitor_page.detail_task_id_label.text() == "2001"
+        assert window.task_monitor_page.task_table.item(0, 2).text() == (
+            "RUNNING · 낙상 확인"
+        )
+        assert banner.isHidden() is True
+    finally:
+        window.close()
+
+
 def test_caregiver_main_window_restarts_admin_event_stream_after_failure(
     monkeypatch,
 ):

@@ -44,6 +44,14 @@ WAITING_FALL_RESPONSE_PHASES = {
     "WAIT_FALL_RESPONSE",
     "WAITING_FALL_RESPONSE",
 }
+FALL_ALERT_UNACKNOWLEDGED = "fall_alert_unacknowledged"
+FALL_ALERT_ACKNOWLEDGED = "fall_alert_acknowledged"
+FALL_ALERT_ROW_STATE_ROLE = Qt.ItemDataRole.UserRole
+FALL_ALERT_ROW_COLOR = QColor("#FEE2E2")
+FALL_ALERT_ROW_ACK_COLOR = QColor("#FFF7ED")
+FALL_ALERT_ROW_TEXT_COLOR = QColor("#7F1D1D")
+FALL_ALERT_ROW_ACK_TEXT_COLOR = QColor("#7C2D12")
+FALL_ALERT_PULSE_DURATION_MS = 1200
 CANCELLABLE_TASK_STATUSES = {
     "WAITING",
     "WAITING_DISPATCH",
@@ -409,6 +417,9 @@ class TaskMonitorPage(QWidget):
         self.consumer_id = "ui-admin-task-monitor"
         self._tasks = {}
         self._row_by_task_id = {}
+        self._fall_alert_task_states = {}
+        self._fall_alert_pulse_task_ids = set()
+        self._programmatic_table_selection = False
         self._selected_task_id = None
         self._last_event_seq = 0
         self.stream_reconnect = StreamReconnectState(delay_ms=1000)
@@ -627,6 +638,8 @@ class TaskMonitorPage(QWidget):
             task = self._merge_task_payload(normalized_payload)
             if task is None:
                 continue
+            if self._task_has_fall_alert(task):
+                self._mark_fall_alert_task(task["task_id"])
             if first_task_id is None:
                 first_task_id = task["task_id"]
             self._upsert_task_row(task)
@@ -642,6 +655,9 @@ class TaskMonitorPage(QWidget):
             self.task_table.setRowCount(0)
             self._tasks.clear()
             self._row_by_task_id.clear()
+            self._fall_alert_task_states.clear()
+            self._fall_alert_pulse_task_ids.clear()
+            self.task_table.setProperty("fallAlertPulseTaskId", None)
             self._selected_task_id = None
             self.empty_state_label.setHidden(False)
         finally:
@@ -712,6 +728,8 @@ class TaskMonitorPage(QWidget):
         if task is None:
             return
         self._sync_patrol_path_progress(task)
+        if self._task_has_fall_alert(task):
+            self._mark_fall_alert_task(task["task_id"])
         self._upsert_task_row(task)
         self._select_task_if_needed(task["task_id"])
 
@@ -759,6 +777,7 @@ class TaskMonitorPage(QWidget):
         alert = dict(task.get("fall_alert") or {})
         alert.update(payload)
         task["fall_alert"] = alert
+        self._mark_fall_alert_task(task["task_id"])
         self._upsert_task_row(task)
         self._select_task(task["task_id"])
 
@@ -795,11 +814,84 @@ class TaskMonitorPage(QWidget):
                 item = QTableWidgetItem()
                 self.task_table.setItem(row, column, item)
             item.setText(str(value))
+        self._apply_task_row_alert_style(task_id)
 
         self.empty_state_label.setHidden(self.task_table.rowCount() > 0)
 
         if self._selected_task_id == task_id:
             self._render_detail(task)
+
+    def _task_has_fall_alert(self, task):
+        return isinstance((task or {}).get("fall_alert"), dict) and bool(
+            task.get("fall_alert")
+        )
+
+    def _mark_fall_alert_task(self, task_id):
+        task_id = _task_key(task_id)
+        if task_id is None:
+            return
+        if self._fall_alert_task_states.get(task_id) != FALL_ALERT_ACKNOWLEDGED:
+            self._fall_alert_task_states[task_id] = FALL_ALERT_UNACKNOWLEDGED
+        self._fall_alert_pulse_task_ids.add(task_id)
+        self.task_table.setProperty("fallAlertPulseTaskId", task_id)
+        QTimer.singleShot(
+            FALL_ALERT_PULSE_DURATION_MS,
+            lambda task_id=task_id: self._clear_fall_alert_pulse(task_id),
+        )
+        self._apply_task_row_alert_style(task_id)
+
+    def acknowledge_fall_alert(self, task_id):
+        task_id = _task_key(task_id)
+        if task_id is None:
+            return
+        if task_id not in self._fall_alert_task_states:
+            return
+        self._fall_alert_task_states[task_id] = FALL_ALERT_ACKNOWLEDGED
+        self._fall_alert_pulse_task_ids.discard(task_id)
+        if self.task_table.property("fallAlertPulseTaskId") == task_id:
+            self.task_table.setProperty("fallAlertPulseTaskId", None)
+        self._apply_task_row_alert_style(task_id)
+
+    def _clear_fall_alert_pulse(self, task_id):
+        task_id = _task_key(task_id)
+        if task_id is None:
+            return
+        self._fall_alert_pulse_task_ids.discard(task_id)
+        if self.task_table.property("fallAlertPulseTaskId") == task_id:
+            self.task_table.setProperty("fallAlertPulseTaskId", None)
+        self._apply_task_row_alert_style(task_id)
+
+    def _apply_task_row_alert_style(self, task_id):
+        row = self._row_by_task_id.get(task_id)
+        if row is None:
+            return
+
+        state = self._fall_alert_task_states.get(task_id)
+        task = self._tasks.get("task_id:" + task_id, {})
+        status_text = _display(task.get("task_status"))
+        if state == FALL_ALERT_UNACKNOWLEDGED:
+            status_text = f"{status_text} · 낙상 감지"
+            background = FALL_ALERT_ROW_COLOR
+            foreground = FALL_ALERT_ROW_TEXT_COLOR
+        elif state == FALL_ALERT_ACKNOWLEDGED:
+            status_text = f"{status_text} · 낙상 확인"
+            background = FALL_ALERT_ROW_ACK_COLOR
+            foreground = FALL_ALERT_ROW_ACK_TEXT_COLOR
+        else:
+            background = QColor("#FFFFFF")
+            foreground = QColor("#111827")
+
+        for column in range(self.task_table.columnCount()):
+            item = self.task_table.item(row, column)
+            if item is None:
+                continue
+            item.setBackground(background)
+            item.setForeground(foreground)
+            item.setData(FALL_ALERT_ROW_STATE_ROLE, state)
+
+        status_item = self.task_table.item(row, 2)
+        if status_item is not None:
+            status_item.setText(status_text)
 
     def _select_task_if_needed(self, task_id):
         if self._selected_task_id is None:
@@ -816,7 +908,11 @@ class TaskMonitorPage(QWidget):
 
         row = self._row_by_task_id.get(task_id)
         if row is not None:
-            self.task_table.selectRow(row)
+            self._programmatic_table_selection = True
+            try:
+                self.task_table.selectRow(row)
+            finally:
+                self._programmatic_table_selection = False
 
         self._selected_task_id = task_id
         self._render_detail(self._tasks.get("task_id:" + task_id))
@@ -830,6 +926,8 @@ class TaskMonitorPage(QWidget):
             return
         self._selected_task_id = task_id_item.text()
         self._render_detail(self._tasks.get("task_id:" + self._selected_task_id))
+        if not self._programmatic_table_selection:
+            self.acknowledge_fall_alert(self._selected_task_id)
 
     def _render_detail(self, task):
         task = task or {}
