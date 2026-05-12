@@ -5,7 +5,15 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QFrame
+from PyQt6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QFrame,
+    QTableWidget,
+)
 
 
 _APP = None
@@ -21,7 +29,20 @@ def _app():
 def _display_texts(widget) -> list[str]:
     label_texts = [label.text() for label in widget.findChildren(QLabel)]
     button_texts = [button.text() for button in widget.findChildren(QPushButton)]
-    return label_texts + button_texts
+    placeholder_texts = [
+        line_edit.placeholderText() for line_edit in widget.findChildren(QLineEdit)
+    ]
+    table_texts: list[str] = []
+    for table in widget.findChildren(QTableWidget):
+        for row in range(table.rowCount()):
+            for column in range(table.columnCount()):
+                item = table.item(row, column)
+                if item is not None:
+                    table_texts.append(item.text())
+    plain_texts = [
+        text.toPlainText() for text in widget.findChildren(QPlainTextEdit)
+    ]
+    return label_texts + button_texts + placeholder_texts + table_texts + plain_texts
 
 
 def test_admin_demo_fixture_uses_ropi_product_labels_and_korean_values():
@@ -59,12 +80,19 @@ def test_admin_demo_fixture_uses_ropi_product_labels_and_korean_values():
     )
 
 
-def test_admin_demo_window_has_only_presentation_pages_without_control_service():
+def test_admin_demo_window_has_home_presentation_and_production_pages():
     _app()
 
     from ui.presentation_demo.admin_demo_app import create_demo_window
+    from ui.presentation_demo.admin_demo_app import (
+        PresentationAlertsLogPage,
+        PresentationTaskMonitorPage,
+    )
+    from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+    from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
 
-    window = create_demo_window()
+    window = create_demo_window(autostart_runtime=False)
 
     try:
         texts = _display_texts(window)
@@ -81,6 +109,12 @@ def test_admin_demo_window_has_only_presentation_pages_without_control_service()
         assert window.admin_shell.has_page("task_request")
         assert window.admin_shell.has_page("task_monitor")
         assert window.admin_shell.has_page("alerts")
+        assert type(window.request_page) is TaskRequestPage
+        assert isinstance(window.monitor_page, PresentationTaskMonitorPage)
+        assert isinstance(window.monitor_page, TaskMonitorPage)
+        assert isinstance(window.alerts_page, PresentationAlertsLogPage)
+        assert isinstance(window.alerts_page, AlertLogPage)
+        assert not hasattr(window.request_page, "submit_demo_request")
         assert "좌표/구역 설정" not in texts
         assert "로봇 상태" not in texts
         assert "재고 관리" not in texts
@@ -112,48 +146,125 @@ def test_admin_demo_window_has_only_presentation_pages_without_control_service()
             token not in lowered
             for token in ("pinky", "jetcobot", "arm1", "arm2")
         )
-        assert all(
-            token not in text_blob
-            for token in ("DELIVERY", "PATROL", "GUIDE", "RUNNING", "WARNING")
-        )
     finally:
         window.close()
 
 
-def test_admin_demo_task_request_updates_home_monitor_and_alerts():
+def test_robot_display_adapter_maps_runtime_robot_names_recursively():
+    from ui.presentation_demo.robot_display import (
+        display_robot_name,
+        runtime_robot_id_for_display,
+        translate_robot_display_payload,
+    )
+
+    payload = {
+        "assigned_robot_id": "pinky2",
+        "latest_robot": {"robot_id": "pinky3"},
+        "message": "pinky2 moved while arm1 and jetcobot2 are hidden",
+        "events": [{"robot_id": "pinky1"}],
+    }
+
+    translated = translate_robot_display_payload(payload)
+
+    assert display_robot_name("pinky1") == "ROPI 1"
+    assert display_robot_name("pinky2") == "ROPI 2"
+    assert display_robot_name("pinky3") == "ROPI 3"
+    assert runtime_robot_id_for_display("ROPI 1") == "pinky1"
+    assert runtime_robot_id_for_display("ROPI 2") == "pinky2"
+    assert runtime_robot_id_for_display("ROPI 3") == "pinky3"
+    assert translated["assigned_robot_id"] == "ROPI 2"
+    assert translated["latest_robot"]["robot_id"] == "ROPI 3"
+    assert translated["events"][0]["robot_id"] == "ROPI 1"
+    assert "ROPI 2" in translated["message"]
+    assert "운반 장치" in translated["message"]
+    assert "pinky" not in str(translated).lower()
+    assert "arm1" not in str(translated).lower()
+    assert "jetcobot" not in str(translated).lower()
+    assert payload["assigned_robot_id"] == "pinky2"
+
+
+def test_demo_task_monitor_uses_db_page_with_ropi_display_mapping():
     _app()
 
-    from ui.presentation_demo.admin_demo_app import create_demo_window
+    from ui.presentation_demo.admin_demo_app import PresentationTaskMonitorPage
 
-    window = create_demo_window()
+    page = PresentationTaskMonitorPage(autostart_stream=False)
 
     try:
-        initial_count = len(window.store.snapshot.tasks)
-        task = window.request_page.submit_demo_request("DELIVERY")
+        page.apply_snapshot(
+            {
+                "tasks": [
+                    {
+                        "task_id": 1034,
+                        "task_type": "DELIVERY",
+                        "task_status": "RUNNING",
+                        "phase": "DELIVERY_DESTINATION",
+                        "assigned_robot_id": "pinky2",
+                        "latest_robot": {"robot_id": "pinky2"},
+                    }
+                ]
+            }
+        )
 
-        texts = _display_texts(window)
+        texts = _display_texts(page)
         text_blob = " ".join(texts)
 
-        assert len(window.store.snapshot.tasks) == initial_count + 1
-        assert task.task_id in texts
-        assert "작업 생성" in texts
-        assert "요청 결과" in texts
-        assert "담당 ROPI" in texts
         assert "ROPI 2" in texts
-        assert "운반" in texts
-        assert "작업 모니터" in texts
-        assert "알림/로그" in texts
-        assert "진행 중" in texts
-        assert "DELIVERY" not in text_blob
-        assert "RUNNING" not in text_blob
         assert "pinky2" not in text_blob.lower()
-
-        window.monitor_page.select_task("#1031")
-        assert window.monitor_page.selected_task_id == "#1031"
-        window.alerts_page.select_event("EV-1032")
-        assert window.alerts_page.selected_event_id == "EV-1032"
     finally:
-        window.close()
+        page.shutdown()
+        page.close()
+
+
+def test_demo_alert_logs_uses_db_page_with_ropi_display_mapping():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import PresentationAlertsLogPage
+
+    page = PresentationAlertsLogPage(autoload=False)
+
+    try:
+        assert page.robot_id_input.placeholderText() == "예: ROPI 2"
+        page.robot_id_input.setText("ROPI 3")
+        assert page._collect_filters()["robot_id"] == "pinky3"
+
+        page.apply_alert_log_bundle(
+            {
+                "summary": {
+                    "total_event_count": 1,
+                    "warning_count": 0,
+                    "error_count": 0,
+                    "critical_count": 0,
+                },
+                "events": [
+                    {
+                        "event_id": 2001,
+                        "occurred_at": "2026-05-12T14:35:00",
+                        "severity": "INFO",
+                        "source_component": "Control Service",
+                        "task_id": 1034,
+                        "robot_id": "pinky3",
+                        "event_type": "TASK_UPDATED",
+                        "message": "pinky3 patrol update",
+                        "payload": {
+                            "assigned_robot_id": "pinky3",
+                            "arm_id": "arm1",
+                        },
+                    }
+                ],
+            }
+        )
+
+        texts = _display_texts(page)
+        text_blob = " ".join(texts)
+
+        assert "ROPI 3" in texts
+        assert "pinky3" not in text_blob.lower()
+        assert "arm1" not in text_blob.lower()
+        assert "운반 장치" in text_blob
+    finally:
+        page.shutdown()
+        page.close()
 
 
 def test_admin_demo_smoke_mode_returns_without_event_loop():
@@ -172,7 +283,7 @@ def test_admin_demo_window_opens_maximized():
         show_demo_window,
     )
 
-    window = create_demo_window()
+    window = create_demo_window(autostart_runtime=False)
 
     try:
         show_demo_window(window)

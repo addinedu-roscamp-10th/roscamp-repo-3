@@ -12,27 +12,28 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from ui.presentation_demo.admin_demo_data import (
     DemoAdminStore,
-    DemoAlertLog,
     DemoMapMarker,
     DemoSnapshot,
     DemoTask,
-    TASK_DEFAULTS,
     build_admin_demo_snapshot,
-    display_phase,
-    display_severity,
     display_status,
-    display_task_type,
+)
+from ui.presentation_demo.robot_display import (
+    runtime_robot_id_for_display,
+    translate_robot_display_payload,
 )
 from ui.utils.core.styles import load_stylesheet
+from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
 from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
-from ui.utils.widgets.admin_common import KeyValueRow, StatusChip, battery_text
+from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
+from ui.utils.widgets.admin_common import StatusChip, battery_text
 from ui.utils.widgets.admin_shell import AdminShell, PageHeader, PageTimeCard
 from ui.utils.widgets.map_canvas import MapCanvasWidget
 
@@ -467,362 +468,32 @@ class PresentationHomePage(CaregiverHomePage):
         ]
 
 
-class PresentationTaskRequestPage(QWidget):
-    def __init__(self, store: DemoAdminStore):
-        super().__init__()
-        self.store = store
-        self.setObjectName("presentationTaskRequestPage")
+class PresentationTaskMonitorPage(TaskMonitorPage):
+    def __init__(self, *, autostart_stream=True):
+        super().__init__(autostart_stream=False)
+        self.consumer_id = "ui-presentation-admin-demo"
+        if autostart_stream:
+            self._start_snapshot_load()
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(18)
+    def apply_snapshot(self, snapshot):
+        super().apply_snapshot(translate_robot_display_payload(snapshot))
 
-        top = QHBoxLayout()
-        self.header = PageHeader(
-            "작업 요청",
-            "ROPI 안내, 운반, 순찰 작업을 데모 환경에서 생성합니다.",
-        )
-        self.time_card = PageTimeCard(
-            refresh_text="새로고침",
-            status_text="작업 요청 준비 완료",
-        )
-        top.addWidget(self.header, 1)
-        top.addWidget(self.time_card)
-        root.addLayout(top)
-
-        request_card = QFrame()
-        request_card.setObjectName("card")
-        request_layout = QVBoxLayout(request_card)
-        request_layout.setContentsMargins(20, 20, 20, 20)
-        request_layout.setSpacing(14)
-
-        title = QLabel("요청할 작업")
-        title.setObjectName("sectionTitle")
-        request_layout.addWidget(title)
-
-        button_row = QHBoxLayout()
-        button_row.setSpacing(14)
-        self.request_buttons: dict[str, QPushButton] = {}
-        for task_type in ("GUIDE", "DELIVERY", "PATROL"):
-            button_row.addWidget(self._build_request_option(task_type), 1)
-        request_layout.addLayout(button_row)
-        root.addWidget(request_card)
-
-        self.result_card = QFrame()
-        self.result_card.setObjectName("card")
-        result_layout = QVBoxLayout(self.result_card)
-        result_layout.setContentsMargins(20, 20, 20, 20)
-        result_layout.setSpacing(10)
-        result_title = QLabel("요청 결과")
-        result_title.setObjectName("sectionTitle")
-        self.result_rows = QVBoxLayout()
-        self.result_rows.setSpacing(8)
-        result_layout.addWidget(result_title)
-        result_layout.addLayout(self.result_rows)
-        root.addWidget(self.result_card)
-        root.addStretch()
-        self._show_result_placeholder()
-
-    def _build_request_option(self, task_type: str) -> QFrame:
-        defaults = TASK_DEFAULTS[task_type]
-        option = QFrame()
-        option.setObjectName("infoBox")
-        layout = QVBoxLayout(option)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
-
-        title = QLabel(display_task_type(task_type))
-        title.setObjectName("homeTaskTitle")
-        desc = QLabel(f"{defaults['robot']} · 목적지 {defaults['destination']}")
-        desc.setObjectName("homeTaskFieldDetail")
-        desc.setWordWrap(True)
-        button = QPushButton(f"{display_task_type(task_type)} 요청")
-        button.setObjectName("primaryButton")
-        button.clicked.connect(lambda _checked=False, t=task_type: self.submit_demo_request(t))
-        self.request_buttons[task_type] = button
-
-        layout.addWidget(title)
-        layout.addWidget(desc)
-        layout.addStretch()
-        layout.addWidget(button)
-        return option
-
-    def _show_result_placeholder(self) -> None:
-        clear_layout(self.result_rows)
-        placeholder = QLabel("아직 생성된 작업이 없습니다.")
-        placeholder.setObjectName("mutedText")
-        self.result_rows.addWidget(placeholder)
-
-    def submit_demo_request(self, task_type: str) -> DemoTask:
-        task = self.store.create_task(task_type)
-        self.time_card.mark_updated("요청 생성")
-        self.time_card.set_status("작업 요청 완료")
-        clear_layout(self.result_rows)
-        rows = (
-            ("작업 ID", task.task_id),
-            ("작업 유형", display_task_type(task.task_type)),
-            ("담당 ROPI", task.robot_display_id),
-            ("현재 상태", display_status(task.status)),
-            ("다음 단계", task.phase),
-            ("목적지", task.destination),
-        )
-        for key, value in rows:
-            self.result_rows.addWidget(KeyValueRow(key, value))
-        return task
+    def apply_stream_event(self, event):
+        super().apply_stream_event(translate_robot_display_payload(event))
 
 
-class PresentationTaskMonitorPage(QWidget):
-    def __init__(self, store: DemoAdminStore):
-        super().__init__()
-        self.store = store
-        self.selected_task_id = ""
-        self.setObjectName("presentationTaskMonitorPage")
+class PresentationAlertsLogPage(AlertLogPage):
+    def __init__(self, *, autoload: bool = True):
+        super().__init__(autoload=autoload)
+        self.robot_id_input.setPlaceholderText("예: ROPI 2")
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(18)
+    def _collect_filters(self):
+        filters = super()._collect_filters()
+        filters["robot_id"] = runtime_robot_id_for_display(filters.get("robot_id"))
+        return filters
 
-        top = QHBoxLayout()
-        self.header = PageHeader("작업 모니터", "ROPI 작업 진행 상태를 확인합니다.")
-        self.time_card = PageTimeCard(
-            refresh_text="새로고침",
-            status_text="작업 상태 표시 중",
-        )
-        top.addWidget(self.header, 1)
-        top.addWidget(self.time_card)
-        root.addLayout(top)
-
-        content = QHBoxLayout()
-        content.setSpacing(16)
-        list_card = QFrame()
-        list_card.setObjectName("card")
-        list_layout = QVBoxLayout(list_card)
-        list_layout.setContentsMargins(20, 20, 20, 20)
-        list_layout.setSpacing(12)
-        list_title = QLabel("작업 목록")
-        list_title.setObjectName("sectionTitle")
-        self.task_list_layout = QVBoxLayout()
-        self.task_list_layout.setSpacing(10)
-        list_layout.addWidget(list_title)
-        list_layout.addLayout(self.task_list_layout)
-        list_layout.addStretch()
-
-        detail_card = QFrame()
-        detail_card.setObjectName("card")
-        detail_layout = QVBoxLayout(detail_card)
-        detail_layout.setContentsMargins(20, 20, 20, 20)
-        detail_layout.setSpacing(12)
-        detail_title = QLabel("작업 상세")
-        detail_title.setObjectName("sectionTitle")
-        self.detail_rows = QVBoxLayout()
-        self.detail_rows.setSpacing(8)
-        self.action_button = QPushButton("작업 취소")
-        self.action_button.setObjectName("secondaryButton")
-        detail_layout.addWidget(detail_title)
-        detail_layout.addLayout(self.detail_rows)
-        detail_layout.addStretch()
-        detail_layout.addWidget(self.action_button)
-
-        content.addWidget(list_card, 3)
-        content.addWidget(detail_card, 2)
-        root.addLayout(content)
-        self.refresh(store.snapshot)
-
-    def refresh(self, snapshot: DemoSnapshot, *, prefer_latest: bool = True) -> None:
-        clear_layout(self.task_list_layout)
-        task_ids = {task.task_id for task in snapshot.tasks}
-        if prefer_latest:
-            self.selected_task_id = snapshot.tasks[0].task_id if snapshot.tasks else ""
-        elif self.selected_task_id not in task_ids:
-            self.selected_task_id = snapshot.tasks[0].task_id if snapshot.tasks else ""
-
-        for task in snapshot.tasks:
-            self.task_list_layout.addWidget(self._build_task_row(task))
-        self._refresh_detail(snapshot)
-        self.time_card.mark_updated("작업 갱신")
-
-    def _build_task_row(self, task: DemoTask) -> QFrame:
-        row = QFrame()
-        row.setObjectName("infoBox")
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
-
-        text_box = QVBoxLayout()
-        title = QLabel(f"{task.task_id} · {task.title}")
-        title.setObjectName("homeTaskTitle")
-        detail = QLabel(
-            f"{display_task_type(task.task_type)} · {task.robot_display_id} · {task.phase}"
-        )
-        detail.setObjectName("homeTaskFieldDetail")
-        detail.setWordWrap(True)
-        text_box.addWidget(title)
-        text_box.addWidget(detail)
-
-        chip = StatusChip(display_status(task.status), chip_type_for_tone(task.tone))
-        select_button = QPushButton("상세")
-        select_button.setObjectName("secondaryButton")
-        select_button.clicked.connect(
-            lambda _checked=False, task_id=task.task_id: self.select_task(task_id)
-        )
-
-        layout.addLayout(text_box, 1)
-        layout.addWidget(chip, 0, Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(select_button, 0, Qt.AlignmentFlag.AlignTop)
-        return row
-
-    def select_task(self, task_id: str) -> None:
-        self.selected_task_id = task_id
-        self.refresh(self.store.snapshot, prefer_latest=False)
-
-    def _refresh_detail(self, snapshot: DemoSnapshot) -> None:
-        clear_layout(self.detail_rows)
-        task = next(
-            (item for item in snapshot.tasks if item.task_id == self.selected_task_id),
-            None,
-        )
-        if task is None:
-            placeholder = QLabel("선택된 작업이 없습니다.")
-            placeholder.setObjectName("mutedText")
-            self.detail_rows.addWidget(placeholder)
-            self.action_button.setText("작업 취소")
-            self.action_button.setEnabled(False)
-            return
-
-        rows = (
-            ("작업 ID", task.task_id),
-            ("작업 유형", display_task_type(task.task_type)),
-            ("담당 ROPI", task.robot_display_id),
-            ("상태", display_status(task.status)),
-            ("현재 단계", task.phase),
-            ("목적지", task.destination),
-            ("진행 요약", task.summary or task.phase),
-            ("갱신 시각", task.updated_at),
-        )
-        for key, value in rows:
-            self.detail_rows.addWidget(KeyValueRow(key, value))
-        self.action_button.setEnabled(True)
-        self.action_button.setText("순찰 중단" if task.task_type == "PATROL" else "작업 취소")
-
-
-class PresentationAlertsLogPage(QWidget):
-    def __init__(self, store: DemoAdminStore):
-        super().__init__()
-        self.store = store
-        self.selected_event_id = ""
-        self.setObjectName("presentationAlertsLogPage")
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(18)
-
-        top = QHBoxLayout()
-        self.header = PageHeader("알림/로그", "ROPI 운영 이벤트를 확인합니다.")
-        self.time_card = PageTimeCard(
-            refresh_text="새로고침",
-            status_text="이벤트 표시 중",
-        )
-        top.addWidget(self.header, 1)
-        top.addWidget(self.time_card)
-        root.addLayout(top)
-
-        content = QHBoxLayout()
-        content.setSpacing(16)
-        list_card = QFrame()
-        list_card.setObjectName("card")
-        list_layout = QVBoxLayout(list_card)
-        list_layout.setContentsMargins(20, 20, 20, 20)
-        list_layout.setSpacing(12)
-        list_title = QLabel("이벤트 목록")
-        list_title.setObjectName("sectionTitle")
-        self.event_list_layout = QVBoxLayout()
-        self.event_list_layout.setSpacing(10)
-        list_layout.addWidget(list_title)
-        list_layout.addLayout(self.event_list_layout)
-        list_layout.addStretch()
-
-        detail_card = QFrame()
-        detail_card.setObjectName("card")
-        detail_layout = QVBoxLayout(detail_card)
-        detail_layout.setContentsMargins(20, 20, 20, 20)
-        detail_layout.setSpacing(12)
-        detail_title = QLabel("이벤트 상세")
-        detail_title.setObjectName("sectionTitle")
-        self.detail_rows = QVBoxLayout()
-        self.detail_rows.setSpacing(8)
-        detail_layout.addWidget(detail_title)
-        detail_layout.addLayout(self.detail_rows)
-        detail_layout.addStretch()
-
-        content.addWidget(list_card, 3)
-        content.addWidget(detail_card, 2)
-        root.addLayout(content)
-        self.refresh(store.snapshot)
-
-    def refresh(self, snapshot: DemoSnapshot, *, prefer_latest: bool = True) -> None:
-        clear_layout(self.event_list_layout)
-        event_ids = {alert.event_id for alert in snapshot.alerts}
-        if prefer_latest:
-            self.selected_event_id = snapshot.alerts[0].event_id if snapshot.alerts else ""
-        elif self.selected_event_id not in event_ids:
-            self.selected_event_id = snapshot.alerts[0].event_id if snapshot.alerts else ""
-        for alert in snapshot.alerts:
-            self.event_list_layout.addWidget(self._build_event_row(alert))
-        self._refresh_detail(snapshot)
-        self.time_card.mark_updated("이벤트 갱신")
-
-    def _build_event_row(self, alert: DemoAlertLog) -> QFrame:
-        row = QFrame()
-        row.setObjectName("infoBox")
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
-
-        text_box = QVBoxLayout()
-        title = QLabel(f"{display_severity(alert.severity)} · {alert.title}")
-        title.setObjectName("homeTaskTitle")
-        detail = QLabel(f"{alert.task_id} · {alert.robot_display_id} · {alert.message}")
-        detail.setObjectName("homeTaskFieldDetail")
-        detail.setWordWrap(True)
-        text_box.addWidget(title)
-        text_box.addWidget(detail)
-
-        select_button = QPushButton("상세")
-        select_button.setObjectName("secondaryButton")
-        select_button.clicked.connect(
-            lambda _checked=False, event_id=alert.event_id: self.select_event(event_id)
-        )
-        layout.addLayout(text_box, 1)
-        layout.addWidget(select_button, 0, Qt.AlignmentFlag.AlignTop)
-        return row
-
-    def select_event(self, event_id: str) -> None:
-        self.selected_event_id = event_id
-        self.refresh(self.store.snapshot, prefer_latest=False)
-
-    def _refresh_detail(self, snapshot: DemoSnapshot) -> None:
-        clear_layout(self.detail_rows)
-        alert = next(
-            (item for item in snapshot.alerts if item.event_id == self.selected_event_id),
-            None,
-        )
-        if alert is None:
-            placeholder = QLabel("선택된 이벤트가 없습니다.")
-            placeholder.setObjectName("mutedText")
-            self.detail_rows.addWidget(placeholder)
-            return
-
-        rows = (
-            ("이벤트 ID", alert.event_id),
-            ("심각도", display_severity(alert.severity)),
-            ("이벤트 유형", alert.event_type),
-            ("관련 작업", alert.task_id),
-            ("관련 ROPI", alert.robot_display_id),
-            ("발생 시각", alert.occurred_at),
-            ("메시지", alert.message),
-        ) + alert.detail_rows
-        for key, value in rows:
-            self.detail_rows.addWidget(KeyValueRow(key, value))
+    def apply_alert_log_bundle(self, bundle):
+        super().apply_alert_log_bundle(translate_robot_display_payload(bundle))
 
 
 class PresentationAdminDemoWindow(QMainWindow):
@@ -833,7 +504,12 @@ class PresentationAdminDemoWindow(QMainWindow):
         ("alerts", "알림/로그"),
     ]
 
-    def __init__(self, store: DemoAdminStore | None = None):
+    def __init__(
+        self,
+        store: DemoAdminStore | None = None,
+        *,
+        autostart_runtime: bool = True,
+    ):
         super().__init__()
         self.store = store or DemoAdminStore(build_admin_demo_snapshot())
         self.setWindowTitle("ROPI 관제 콘솔")
@@ -853,9 +529,11 @@ class PresentationAdminDemoWindow(QMainWindow):
             on_logout=None,
         )
         self.home_page = PresentationHomePage(self.store)
-        self.request_page = PresentationTaskRequestPage(self.store)
-        self.monitor_page = PresentationTaskMonitorPage(self.store)
-        self.alerts_page = PresentationAlertsLogPage(self.store)
+        self.request_page = TaskRequestPage()
+        self.monitor_page = PresentationTaskMonitorPage(
+            autostart_stream=autostart_runtime
+        )
+        self.alerts_page = PresentationAlertsLogPage(autoload=autostart_runtime)
         self.map_widget = self.home_page.map_widget
 
         self.admin_shell.add_page("home", self.home_page)
@@ -869,12 +547,17 @@ class PresentationAdminDemoWindow(QMainWindow):
 
     def _refresh_pages(self, snapshot: DemoSnapshot) -> None:
         self.home_page.refresh_from_store(snapshot)
-        self.monitor_page.refresh(snapshot)
-        self.alerts_page.refresh(snapshot)
+
+    def closeEvent(self, event):
+        for page in (self.request_page, self.monitor_page, self.alerts_page):
+            shutdown = getattr(page, "shutdown", None)
+            if callable(shutdown):
+                shutdown()
+        super().closeEvent(event)
 
 
-def create_demo_window() -> PresentationAdminDemoWindow:
-    return PresentationAdminDemoWindow()
+def create_demo_window(*, autostart_runtime: bool = True) -> PresentationAdminDemoWindow:
+    return PresentationAdminDemoWindow(autostart_runtime=autostart_runtime)
 
 
 def show_demo_window(window: QMainWindow) -> None:
@@ -886,8 +569,9 @@ def main(argv: list[str] | None = None) -> None:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyleSheet(load_stylesheet())
 
-    window = create_demo_window()
-    if "--smoke" in args:
+    smoke = "--smoke" in args
+    window = create_demo_window(autostart_runtime=not smoke)
+    if smoke:
         window.ensurePolished()
         window.close()
         return
