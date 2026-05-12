@@ -2961,6 +2961,7 @@ product-facing ROPI naming은 홈, 작업 모니터, 알림/로그에 적용한�
 - product-facing 로봇명만 표시: `ROPI 1`, `ROPI 2`, `ROPI 3`.
 - 작업 유형, 상태, 단계, 결과, 사유, event type, severity, action feedback state 같은 common raw code는 한국어 표시값으로 변환.
 - 알려지지 않은 uppercase snake-case code와 standalone uppercase code token도 가능한 경우 한국어 단어로 분해해 `WAIT`, `WAITING`, `START`, `CONFIRM`, `TASK`, `WORKFLOW`, `RESULT`, `UPDATED` 같은 조각이 한국어 문구 사이에 남지 않게 한다.
+- 작업 모니터에서 여는 낙상 증거사진 dialog도 발표용 표시 표면으로 본다. `evidence_image_id`, `frame_id` 같은 label, `bbox` 같은 빈 감지 문구, `fall`, `person` 같은 common detection class name은 한국어로 표시한다.
 - 현재 production Admin 작업 모니터 UI 구조.
 - 일반 Task Monitor Control Service snapshot으로 로드되는 live DB-backed 작업.
 - runtime이 available할 때 일반 task event stream update.

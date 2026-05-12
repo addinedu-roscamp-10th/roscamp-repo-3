@@ -262,6 +262,61 @@ def test_demo_task_monitor_uses_db_page_with_ropi_display_mapping():
         page.close()
 
 
+def test_demo_fall_evidence_dialog_uses_korean_presentation_labels():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import PresentationTaskMonitorPage
+
+    page = PresentationTaskMonitorPage(autostart_stream=False)
+    dialog = None
+    empty_dialog = None
+
+    try:
+        dialog = page._create_fall_evidence_dialog(
+            {
+                "result_code": "OK",
+                "evidence_image_id": "EVD-2001-44",
+                "frame_id": "camera_frame",
+                "image_width_px": 640,
+                "image_height_px": 480,
+                "detections": [
+                    {"class_name": "fall", "confidence": 0.91},
+                    {"class_name": "person", "confidence": 0.77},
+                ],
+            }
+        )
+        texts = _display_texts(dialog)
+        text_blob = " ".join(texts)
+
+        assert "증거사진 번호" in texts
+        assert "좌표계" in texts
+        assert "낙상 0.91" in text_blob
+        assert "사람 0.77" in text_blob
+        assert "evidence_image_id" not in text_blob
+        assert "frame_id" not in text_blob
+        assert "fall 0.91" not in text_blob
+        assert "person 0.77" not in text_blob
+
+        empty_dialog = page._create_fall_evidence_dialog(
+            {
+                "result_code": "OK",
+                "evidence_image_id": "EVD-2001-45",
+                "frame_id": "camera_frame",
+                "detections": [],
+            }
+        )
+        empty_text_blob = " ".join(_display_texts(empty_dialog))
+        assert "감지 영역 없음" in empty_text_blob
+        assert "bbox" not in empty_text_blob
+    finally:
+        if dialog is not None:
+            dialog.close()
+        if empty_dialog is not None:
+            empty_dialog.close()
+        page.shutdown()
+        page.close()
+
+
 def test_demo_alert_logs_uses_db_page_with_ropi_display_mapping():
     _app()
 

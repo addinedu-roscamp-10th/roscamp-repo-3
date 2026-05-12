@@ -2972,6 +2972,7 @@ It should show:
 - Product-facing robot names only: `ROPI 1`, `ROPI 2`, `ROPI 3`.
 - Korean display values for common raw codes such as task type, status, phase, result code, reason code, event type, severity, and action feedback state.
 - Unknown uppercase snake-case codes and standalone uppercase code tokens should be decomposed into Korean words when possible so fragments such as `WAIT`, `WAITING`, `START`, `CONFIRM`, `TASK`, `WORKFLOW`, `RESULT`, and `UPDATED` do not remain mixed with Korean copy.
+- The fall evidence image dialog opened from Task Monitor is also a presentation surface; labels such as `evidence_image_id` and `frame_id`, empty detection text such as `bbox`, and common detection class names such as `fall` and `person` should be displayed in Korean.
 - The current production Admin Task Monitor UI structure.
 - Live DB-backed tasks loaded through the normal Task Monitor Control Service snapshot.
 - Normal task event stream updates when the runtime is available.

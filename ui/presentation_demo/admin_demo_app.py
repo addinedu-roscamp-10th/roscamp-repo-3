@@ -37,7 +37,10 @@ from ui.presentation_demo.robot_display import (
 from ui.utils.core.styles import load_stylesheet
 from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
 from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
-from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
+from ui.utils.pages.caregiver.task_monitor_page import (
+    FallEvidenceImageDialog,
+    TaskMonitorPage,
+)
 from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
 from ui.utils.widgets.admin_common import StatusChip, battery_text
 from ui.utils.widgets.admin_shell import AdminShell, PageHeader, PageTimeCard
@@ -474,6 +477,46 @@ class PresentationHomePage(CaregiverHomePage):
         ]
 
 
+class PresentationFallEvidenceImageDialog(FallEvidenceImageDialog):
+    DETECTION_CLASS_LABELS = {
+        "fall": "낙상",
+        "person": "사람",
+        "object": "객체",
+    }
+
+    def _format_detections(self):
+        detections = self.response.get("detections")
+        if not isinstance(detections, list) or not detections:
+            return "감지 영역 없음"
+
+        parts = []
+        for detection in detections:
+            if not isinstance(detection, dict):
+                continue
+            class_name = self._display_detection_class(
+                detection.get("class_name") or detection.get("label") or "object"
+            )
+            confidence = detection.get("confidence")
+            if confidence is None:
+                parts.append(class_name)
+            else:
+                try:
+                    parts.append(f"{class_name} {float(confidence):.2f}")
+                except (TypeError, ValueError):
+                    parts.append(class_name)
+        return ", ".join(parts) or "감지 영역 없음"
+
+    @classmethod
+    def _display_detection_class(cls, value) -> str:
+        text = str(value or "").strip()
+        if not text:
+            text = "object"
+        return cls.DETECTION_CLASS_LABELS.get(
+            text.lower(),
+            translate_robot_display_text(text),
+        )
+
+
 class PresentationTaskMonitorPage(TaskMonitorPage):
     def __init__(self, *, autostart_stream=True):
         super().__init__(autostart_stream=False)
@@ -501,6 +544,11 @@ class PresentationTaskMonitorPage(TaskMonitorPage):
         super()._select_task(task_id)
         self._translate_visible_texts()
         self._fit_robot_column()
+
+    def _create_fall_evidence_dialog(self, response):
+        dialog = PresentationFallEvidenceImageDialog(response=response, parent=self)
+        translate_widget_texts(dialog)
+        return dialog
 
     def _configure_task_table(self) -> None:
         header = self.task_table.horizontalHeader()
