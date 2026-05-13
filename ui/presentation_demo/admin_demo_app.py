@@ -879,16 +879,15 @@ class PresentationTaskMonitorPage(QWidget):
         current_step = self.snapshot.lifecycle_steps[self.current_step_index]
 
         if update_task_text:
-            selected_progress = self._row_progress_for(0)
+            selected_progress = self._selected_row_progress_for()
             if self.current_phase_value_label is not None:
                 self.current_phase_value_label.setText(current_step)
             if self.latest_feedback_value_label is not None:
                 self.latest_feedback_value_label.setText(selected_progress.feedback)
-            for row_index in range(self.task_table.rowCount()):
-                progress = self._row_progress_for(row_index)
-                self._set_task_table_text(row_index, 0, progress.status)
-                self._set_task_table_text(row_index, 4, progress.phase)
-                self._set_task_table_text(row_index, 5, progress.updated_at)
+            self._apply_task_table_progress(0, selected_progress)
+            for update in self.snapshot.sparse_row_updates:
+                if update.step_index == self.current_step_index:
+                    self._apply_task_table_progress(update.row_index, update.progress)
 
         for index, step_frame in enumerate(self.step_frames):
             is_current = index == self.current_step_index
@@ -902,12 +901,15 @@ class PresentationTaskMonitorPage(QWidget):
             style.polish(step_frame)
             step_frame.update()
 
-    def _row_progress_for(self, row_index: int):
-        if row_index < 0 or row_index >= len(self.snapshot.row_progress):
-            return self.snapshot.row_progress[0][self.current_step_index]
-        progress_steps = self.snapshot.row_progress[row_index]
+    def _selected_row_progress_for(self):
+        progress_steps = self.snapshot.selected_row_progress
         progress_index = min(self.current_step_index, len(progress_steps) - 1)
         return progress_steps[progress_index]
+
+    def _apply_task_table_progress(self, row_index: int, progress) -> None:
+        self._set_task_table_text(row_index, 0, progress.status)
+        self._set_task_table_text(row_index, 4, progress.phase)
+        self._set_task_table_text(row_index, 5, progress.updated_at)
 
     def _set_task_table_text(self, row_index: int, column_index: int, text: str) -> None:
         item = self.task_table.item(row_index, column_index)

@@ -326,7 +326,7 @@ def test_demo_task_monitor_replays_delivery_lifecycle_when_task_clicked():
         page.close()
 
 
-def test_demo_task_monitor_updates_all_rows_during_lifecycle_replay():
+def test_demo_task_monitor_updates_non_delivery_rows_sparsely_during_replay():
     _app()
 
     from ui.presentation_demo.admin_demo_app import PresentationTaskMonitorPage
@@ -341,21 +341,43 @@ def test_demo_task_monitor_updates_all_rows_during_lifecycle_replay():
 
     try:
         histories = {row_index: [] for row_index in range(page.task_table.rowCount())}
+        changed_non_delivery_counts = []
 
         page.task_table.cellClicked.emit(0, 1)
         for row_index in histories:
             histories[row_index].append(row_state(row_index))
 
         while page.progress_timer.isActive():
+            before = {
+                row_index: row_state(row_index)
+                for row_index in range(1, page.task_table.rowCount())
+            }
             page._advance_delivery_progress_animation()
             for row_index in histories:
                 histories[row_index].append(row_state(row_index))
+            changed_non_delivery_counts.append(
+                sum(
+                    1
+                    for row_index, previous in before.items()
+                    if row_state(row_index) != previous
+                )
+            )
 
-        for row_index, states in histories.items():
-            phases = [phase for phase, _time in states]
-            update_times = [update_time for _phase, update_time in states]
-            assert len(set(phases)) >= 3, (row_index, phases)
-            assert len(set(update_times)) >= 3, (row_index, update_times)
+        delivery_phases = [phase for phase, _time in histories[0]]
+        delivery_times = [update_time for _phase, update_time in histories[0]]
+        assert len(set(delivery_phases)) == len(page.snapshot.lifecycle_steps)
+        assert len(set(delivery_times)) == len(page.snapshot.lifecycle_steps)
+
+        assert max(changed_non_delivery_counts) <= 2
+        assert changed_non_delivery_counts.count(0) >= 2
+        assert sum(changed_non_delivery_counts) <= 4
+        assert sum(changed_non_delivery_counts) >= 2
+
+        for row_index in range(1, page.task_table.rowCount()):
+            phases = [phase for phase, _time in histories[row_index]]
+            update_times = [update_time for _phase, update_time in histories[row_index]]
+            assert len(set(phases)) <= 2, (row_index, phases)
+            assert len(set(update_times)) <= 2, (row_index, update_times)
     finally:
         page.close()
 
