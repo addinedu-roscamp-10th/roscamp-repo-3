@@ -34,6 +34,12 @@ def generate_launch_description():
                 parameters=[params_file],
             ),
             Node(
+                package="pinky_led",
+                executable="led_server",
+                name="led_server",
+                output="screen",
+            ),
+            Node(
                 package="ropi_patrol",
                 executable="fallen_alarm_buzzer",
                 name="fallen_alarm",
