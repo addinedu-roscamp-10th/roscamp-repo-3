@@ -271,15 +271,49 @@ def test_demo_task_monitor_uses_slide_capture_fixture_without_runtime():
         assert "적재 완료" in text_blob
         assert "목적지 이동" in text_blob
         assert "전달 대기" in text_blob
-        assert (
-            "snapshot 이후 TASK_UPDATED / ACTION_FEEDBACK_UPDATED를 "
-            "병합해 작업 상태를 갱신"
-        ) in text_blob
+        assert "snapshot 이후" not in text_blob
+        assert "TASK_UPDATED" not in text_blob
+        assert "ACTION_FEEDBACK_UPDATED" not in text_blob
         assert "pinky2" not in text_blob.lower()
         assert "jetcobot" not in text_blob.lower()
         assert "arm1" not in text_blob.lower()
         assert "DELIVERY" not in text_blob
         assert "DELIVERY_DESTINATION" not in text_blob
+    finally:
+        page.close()
+
+
+def test_demo_task_monitor_replays_delivery_lifecycle_when_task_clicked():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import PresentationTaskMonitorPage
+
+    page = PresentationTaskMonitorPage()
+
+    try:
+        assert page.progress_timer.interval() == 1000
+        assert page.current_step_index == 4
+        assert page.step_current_labels[4].text() == "현재"
+
+        page.task_table.cellClicked.emit(0, 1)
+
+        assert page.progress_timer.isActive()
+        assert page.selected_task_id == "#1024"
+        assert page.current_step_index == 0
+        assert page.step_current_labels[0].text() == "현재"
+        assert page.task_table.item(0, 4).text() == "요청 접수"
+
+        for expected_index, expected_step in enumerate(
+            ("픽업 이동", "적재 완료", "목적지 이동", "전달 대기", "완료"),
+            start=1,
+        ):
+            page._advance_delivery_progress_animation()
+            assert page.current_step_index == expected_index
+            assert page.step_current_labels[expected_index].text() == "현재"
+            assert page.task_table.item(0, 4).text() == expected_step
+
+        assert not page.progress_timer.isActive()
+        assert page.task_table.item(0, 0).text() == "완료"
     finally:
         page.close()
 

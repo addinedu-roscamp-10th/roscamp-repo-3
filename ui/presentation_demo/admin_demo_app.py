@@ -4,7 +4,7 @@ import math
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtCore import QPointF, Qt, QTimer
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -593,8 +593,17 @@ class PresentationTaskMonitorPage(QWidget):
         super().__init__()
         self.snapshot = build_task_monitor_slide_snapshot()
         self.selected_task_id = self.snapshot.selected_task_id
+        self.current_step_index = self.snapshot.current_step_index
+        self.step_frames: list[QFrame] = []
+        self.step_current_labels: list[QLabel] = []
+        self.current_phase_value_label = None
+        self.latest_feedback_value_label = None
+        self.progress_timer = QTimer(self)
+        self.progress_timer.setInterval(1000)
+        self.progress_timer.timeout.connect(self._advance_delivery_progress_animation)
         self.setObjectName("presentationTaskMonitorPage")
         self._build_ui()
+        self._apply_lifecycle_step_state(update_task_text=False)
         self._apply_slide_style()
 
     def _create_fall_evidence_dialog(self, response):
@@ -603,6 +612,7 @@ class PresentationTaskMonitorPage(QWidget):
         return dialog
 
     def shutdown(self) -> None:
+        self.progress_timer.stop()
         return
 
     def _build_ui(self) -> None:
@@ -728,12 +738,8 @@ class PresentationTaskMonitorPage(QWidget):
         self.task_table.setColumnWidth(3, 90)
         self.task_table.setColumnWidth(4, 128)
         self.task_table.setMinimumHeight(300)
+        self.task_table.cellClicked.connect(self._handle_task_row_clicked)
         layout.addWidget(self.task_table, 1)
-
-        caption = QLabel(self.snapshot.technical_caption)
-        caption.setObjectName("presentationMonitorTechCaption")
-        caption.setWordWrap(True)
-        layout.addWidget(caption)
         return card
 
     def _build_detail_card(self) -> QFrame:
@@ -801,20 +807,24 @@ class PresentationTaskMonitorPage(QWidget):
         value_label = QLabel(value)
         value_label.setObjectName("presentationMonitorDetailValue")
         value_label.setWordWrap(True)
+        if key == "현재 단계":
+            self.current_phase_value_label = value_label
+        elif key == "최근 피드백":
+            self.latest_feedback_value_label = value_label
         layout.addWidget(key_label)
         layout.addWidget(value_label)
         return box
 
     def _build_lifecycle_timeline(self) -> QHBoxLayout:
         timeline = QHBoxLayout()
+        self.step_frames = []
+        self.step_current_labels = []
         timeline.setSpacing(8)
         for index, step in enumerate(self.snapshot.lifecycle_steps):
             step_box = QFrame()
             step_box.setObjectName("presentationMonitorStep")
-            step_box.setProperty(
-                "current",
-                index == self.snapshot.current_step_index,
-            )
+            step_box.setProperty("current", False)
+            step_box.setProperty("completed", False)
             step_layout = QVBoxLayout(step_box)
             step_layout.setContentsMargins(10, 10, 10, 10)
             step_layout.setSpacing(4)
@@ -834,7 +844,63 @@ class PresentationTaskMonitorPage(QWidget):
             step_layout.addWidget(label)
             step_layout.addWidget(current)
             timeline.addWidget(step_box, 1)
+            self.step_frames.append(step_box)
+            self.step_current_labels.append(current)
         return timeline
+
+    def _handle_task_row_clicked(self, row: int, column: int) -> None:
+        if row < 0 or row >= len(self.snapshot.rows):
+            return
+        selected_row = self.snapshot.rows[row]
+        self.selected_task_id = selected_row.task_id
+        if selected_row.task_id == self.snapshot.selected_task_id:
+            self.start_delivery_progress_animation()
+
+    def start_delivery_progress_animation(self) -> None:
+        self.progress_timer.stop()
+        self.current_step_index = 0
+        self._apply_lifecycle_step_state()
+        if len(self.snapshot.lifecycle_steps) > 1:
+            self.progress_timer.start()
+
+    def _advance_delivery_progress_animation(self) -> None:
+        last_index = len(self.snapshot.lifecycle_steps) - 1
+        if self.current_step_index < last_index:
+            self.current_step_index += 1
+            self._apply_lifecycle_step_state()
+        if self.current_step_index >= last_index:
+            self.progress_timer.stop()
+
+    def _apply_lifecycle_step_state(self, *, update_task_text: bool = True) -> None:
+        if not self.snapshot.lifecycle_steps:
+            return
+        last_index = len(self.snapshot.lifecycle_steps) - 1
+        self.current_step_index = max(0, min(self.current_step_index, last_index))
+        current_step = self.snapshot.lifecycle_steps[self.current_step_index]
+        current_feedback = self.snapshot.lifecycle_feedbacks[self.current_step_index]
+
+        if update_task_text:
+            if self.current_phase_value_label is not None:
+                self.current_phase_value_label.setText(current_step)
+            if self.latest_feedback_value_label is not None:
+                self.latest_feedback_value_label.setText(current_feedback)
+            if self.task_table.item(0, 4) is not None:
+                self.task_table.item(0, 4).setText(current_step)
+            if self.task_table.item(0, 0) is not None:
+                status = "완료" if self.current_step_index == last_index else "진행 중"
+                self.task_table.item(0, 0).setText(status)
+
+        for index, step_frame in enumerate(self.step_frames):
+            is_current = index == self.current_step_index
+            is_completed = index < self.current_step_index
+            step_frame.setProperty("current", is_current)
+            step_frame.setProperty("completed", is_completed)
+            if index < len(self.step_current_labels):
+                self.step_current_labels[index].setText("현재" if is_current else " ")
+            style = step_frame.style()
+            style.unpolish(step_frame)
+            style.polish(step_frame)
+            step_frame.update()
 
     def _build_callout_box(self, title: str, detail: str) -> QFrame:
         box = QFrame()
@@ -870,11 +936,6 @@ class PresentationTaskMonitorPage(QWidget):
                 font-size: 17px;
                 font-weight: 800;
             }
-            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorTechCaption {
-                color: #475569;
-                font-size: 15px;
-                font-weight: 700;
-            }
             QWidget#presentationTaskMonitorPage QTableWidget#presentationTaskTable {
                 font-size: 15px;
                 font-weight: 700;
@@ -890,6 +951,10 @@ class PresentationTaskMonitorPage(QWidget):
                 border: 1px solid #CBD5E1;
                 border-radius: 8px;
                 background: #F8FAFC;
+            }
+            QWidget#presentationTaskMonitorPage QFrame#presentationMonitorStep[completed="true"] {
+                border: 1px solid #93C5FD;
+                background: #EFF6FF;
             }
             QWidget#presentationTaskMonitorPage QFrame#presentationMonitorStep[current="true"] {
                 border: 2px solid #16A34A;

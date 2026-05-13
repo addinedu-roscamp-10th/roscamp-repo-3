@@ -184,9 +184,9 @@ class DemoTaskMonitorSlideSnapshot:
     selected_phase: str
     latest_feedback: str
     lifecycle_steps: tuple[str, ...]
+    lifecycle_feedbacks: tuple[str, ...]
     current_step_index: int
     callouts: tuple[tuple[str, str], ...]
-    technical_caption: str
 
 
 def display_task_type(task_type: str) -> str:
@@ -273,15 +273,19 @@ def build_task_monitor_slide_snapshot() -> DemoTaskMonitorSlideSnapshot:
             "전달 대기",
             "완료",
         ),
+        lifecycle_feedbacks=(
+            "요청이 접수되어 ROPI 2에 배정됨",
+            "ROPI 2가 물품 보관 위치로 이동 중",
+            "의료키트 적재 완료",
+            "303호로 이동 중",
+            "303호 앞 도착, 전달 대기 중",
+            "의료키트 전달 완료",
+        ),
         current_step_index=4,
         callouts=(
             ("작업 목록", "운반/순찰/안내를 같은 task 단위로 추적"),
             ("현재 단계", "단계와 최근 피드백으로 진행 위치 확인"),
             ("최근 피드백", "로봇 주행 결과가 UI에 반영됨"),
-        ),
-        technical_caption=(
-            "snapshot 이후 TASK_UPDATED / ACTION_FEEDBACK_UPDATED를 "
-            "병합해 작업 상태를 갱신"
         ),
     )
 
