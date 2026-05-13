@@ -135,6 +135,10 @@ ROS_ERROR_MARKERS = (
 )
 
 HOME_SYSTEM_STATUS_POLL_INTERVAL_MS = 2000
+HOME_MAP_FLOW_PANEL_MIN_WIDTH = 420
+HOME_MAP_FLOW_PANEL_MAX_WIDTH = 540
+HOME_MAP_FLOW_PANEL_HEIGHT = 396
+HOME_FLOW_SCROLL_MAX_HEIGHT = 320
 
 
 def _is_ok_response(response):
@@ -993,8 +997,10 @@ class CaregiverHomePage(QWidget):
 
         map_panel = QFrame()
         map_panel.setObjectName("homeOperationMapPanel")
-        map_panel.setMinimumWidth(520)
-        map_panel.setMaximumWidth(760)
+        map_panel.setMinimumWidth(HOME_MAP_FLOW_PANEL_MIN_WIDTH)
+        map_panel.setMaximumWidth(HOME_MAP_FLOW_PANEL_MAX_WIDTH)
+        map_panel.setFixedHeight(HOME_MAP_FLOW_PANEL_HEIGHT)
+        map_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         mp = QVBoxLayout(map_panel)
         mp.setContentsMargins(20, 20, 20, 20)
         mp.setSpacing(12)
@@ -1013,8 +1019,10 @@ class CaregiverHomePage(QWidget):
 
         flow_wrap = QFrame()
         flow_wrap.setObjectName("homeTaskFlowPanel")
-        flow_wrap.setMinimumWidth(340)
-        flow_wrap.setMaximumWidth(420)
+        flow_wrap.setMinimumWidth(HOME_MAP_FLOW_PANEL_MIN_WIDTH)
+        flow_wrap.setMaximumWidth(HOME_MAP_FLOW_PANEL_MAX_WIDTH)
+        flow_wrap.setFixedHeight(HOME_MAP_FLOW_PANEL_HEIGHT)
+        flow_wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         fw = QVBoxLayout(flow_wrap)
         fw.setContentsMargins(20, 20, 20, 20)
         fw.setSpacing(14)
@@ -1033,7 +1041,7 @@ class CaregiverHomePage(QWidget):
         self.flow_scroll.setObjectName("flowBoardScroll")
         self.flow_scroll.setWidgetResizable(True)
         self.flow_scroll.setMinimumHeight(260)
-        self.flow_scroll.setMaximumHeight(420)
+        self.flow_scroll.setMaximumHeight(HOME_FLOW_SCROLL_MAX_HEIGHT)
 
         flow_content = QWidget()
         flow_content.setObjectName("flowBoardContent")
@@ -1044,10 +1052,10 @@ class CaregiverHomePage(QWidget):
         self.flow_scroll.setWidget(flow_content)
 
         fw.addLayout(flow_header)
-        fw.addWidget(self.flow_scroll)
+        fw.addWidget(self.flow_scroll, 1)
 
         map_flow_layout.addWidget(map_panel, 1, Qt.AlignmentFlag.AlignTop)
-        map_flow_layout.addWidget(flow_wrap, 0, Qt.AlignmentFlag.AlignTop)
+        map_flow_layout.addWidget(flow_wrap, 1, Qt.AlignmentFlag.AlignTop)
 
         timeline_wrap = QFrame()
         timeline_wrap.setObjectName("card")

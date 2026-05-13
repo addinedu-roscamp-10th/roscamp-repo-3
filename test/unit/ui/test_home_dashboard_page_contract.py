@@ -87,15 +87,22 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         assert map_canvas is not None
         assert map_panel.parentWidget() is map_flow_row
         assert flow_panel.parentWidget() is map_flow_row
-        assert map_panel.minimumWidth() >= 520
-        assert flow_panel.maximumWidth() <= 440
+        map_flow_layout = map_flow_row.layout()
+        assert map_flow_layout.stretch(0) == map_flow_layout.stretch(1) == 1
+        assert map_panel.minimumWidth() == flow_panel.minimumWidth()
+        assert map_panel.maximumWidth() == flow_panel.maximumWidth()
+        assert 400 <= map_panel.minimumWidth() <= 440
+        assert map_panel.maximumWidth() <= 560
+        assert map_panel.minimumHeight() == map_panel.maximumHeight()
+        assert flow_panel.minimumHeight() == flow_panel.maximumHeight()
+        assert map_panel.minimumHeight() == flow_panel.minimumHeight()
         assert "운영 맵" in labels
 
         flow_scroll = page.findChild(QScrollArea, "flowBoardScroll")
         assert flow_scroll is not None
         assert flow_scroll.parentWidget() is flow_panel
         assert flow_scroll.widgetResizable() is True
-        assert flow_scroll.maximumHeight() <= 460
+        assert flow_scroll.maximumHeight() < flow_panel.maximumHeight()
         assert isinstance(flow_scroll.widget().layout(), QVBoxLayout)
     finally:
         page.close()
