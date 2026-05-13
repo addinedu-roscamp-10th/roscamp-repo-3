@@ -5,7 +5,15 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QPointF, Qt
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QKeySequence,
+    QPainter,
+    QPen,
+    QPolygonF,
+    QShortcut,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -15,6 +23,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QVBoxLayout,
     QWidget,
@@ -58,7 +67,7 @@ DEMO_MAP_YAML = (
     / "map_test12_0506.yaml"
 )
 DEMO_MAP_PGM = DEMO_MAP_YAML.with_suffix(".pgm")
-DEMO_MAP_CANVAS_SIZE = (528, 300)
+DEMO_MAP_CANVAS_SIZE = (600, 337)
 DEMO_MAP_FLOW_CARD_HEIGHT = DEMO_MAP_CANVAS_SIZE[1] + 72
 
 
@@ -88,8 +97,10 @@ class PresentationHomeMapWidget(MapCanvasWidget):
     marker_outer_radius_px = 14
     marker_inner_radius_px = 6
     marker_heading_length_px = 15
-    marker_label_width_px = 76
-    marker_label_height_px = 34
+    marker_label_width_px = 92
+    marker_label_height_px = 40
+    marker_name_font_size_pt = 9
+    marker_detail_font_size_pt = 8
 
     def __init__(self, markers: tuple[DemoMapMarker, ...], parent=None):
         super().__init__(parent)
@@ -174,23 +185,23 @@ class PresentationHomeMapWidget(MapCanvasWidget):
         painter.drawRoundedRect(label_rect, 10, 10)
 
         name_font = QFont()
-        name_font.setPointSize(7)
+        name_font.setPointSize(self.marker_name_font_size_pt)
         name_font.setBold(True)
         painter.setFont(name_font)
         painter.setPen(QColor("#16202A"))
         painter.drawText(
-            label_rect.adjusted(6, 2, -6, -18),
+            label_rect.adjusted(7, 3, -7, -21),
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
             marker.display_id,
         )
 
         detail_font = QFont()
-        detail_font.setPointSize(6)
+        detail_font.setPointSize(self.marker_detail_font_size_pt)
         detail_font.setBold(True)
         painter.setFont(detail_font)
         painter.setPen(color.darker(115))
         painter.drawText(
-            label_rect.adjusted(6, 17, -6, -2),
+            label_rect.adjusted(7, 20, -7, -3),
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
             marker.mission,
         )
@@ -262,7 +273,11 @@ class PresentationCompactTaskFlowCard(QFrame):
         super().__init__()
         self.setObjectName("card")
         self.setProperty("presentation_compact_flow", True)
-        self.setMinimumWidth(360)
+        self.setMinimumWidth(320)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self.setFixedHeight(DEMO_MAP_FLOW_CARD_HEIGHT)
 
         root = QVBoxLayout(self)
@@ -354,10 +369,12 @@ class PresentationHomePage(CaregiverHomePage):
         self.map_widget = None
         self.compact_flow_card = None
         self.presentation_map_card = None
+        self.presentation_map_flow_row = None
         self._detached_production_home_widgets = []
         super().__init__(autoload=False, auto_system_status_poll=False)
         self._detach_production_map_flow_row()
         self._insert_map_flow_row()
+        self._apply_presentation_home_text_scale()
         self.refresh_from_store(store.snapshot)
 
     def _detach_production_map_flow_row(self) -> None:
@@ -371,7 +388,9 @@ class PresentationHomePage(CaregiverHomePage):
 
     def _insert_map_flow_row(self) -> None:
         row = QFrame()
+        row.setObjectName("presentationMapFlowRow")
         row.setProperty("presentation_map_flow_row", True)
+        self.presentation_map_flow_row = row
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(16)
@@ -379,7 +398,10 @@ class PresentationHomePage(CaregiverHomePage):
         map_card = QFrame()
         map_card.setObjectName("card")
         map_card.setProperty("presentation_home_map", True)
-        map_card.setMaximumWidth(DEMO_MAP_CANVAS_SIZE[0] + 40)
+        map_card.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         map_card.setFixedHeight(DEMO_MAP_FLOW_CARD_HEIGHT)
         self.presentation_map_card = map_card
         root = QVBoxLayout(map_card)
@@ -400,16 +422,50 @@ class PresentationHomePage(CaregiverHomePage):
         self.compact_flow_card = PresentationCompactTaskFlowCard(self.snapshot.tasks[:3])
         row_layout.addWidget(
             map_card,
-            0,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            1,
+            Qt.AlignmentFlag.AlignTop,
         )
         row_layout.addWidget(self.compact_flow_card, 1, Qt.AlignmentFlag.AlignTop)
+        row_layout.setStretch(0, 1)
+        row_layout.setStretch(1, 1)
 
         self.layout().insertWidget(3, row)
 
         flow_wrap = self.flow_scroll.parentWidget()
         if flow_wrap is not None:
             flow_wrap.hide()
+
+    def _apply_presentation_home_text_scale(self) -> None:
+        self.setObjectName("presentationHomePage")
+        self.setStyleSheet(
+            """
+            QWidget#presentationHomePage QLabel#homeKpiTitle {
+                font-size: 16px;
+                font-weight: 800;
+            }
+            QWidget#presentationHomePage QLabel#homeKpiHint,
+            QWidget#presentationHomePage QLabel#mutedText {
+                font-size: 15px;
+                font-weight: 700;
+            }
+            QWidget#presentationHomePage QLabel#homeRobotTitle,
+            QWidget#presentationHomePage QLabel#homeTaskTitle {
+                font-size: 18px;
+                font-weight: 900;
+            }
+            QWidget#presentationHomePage QLabel#homeRobotFieldKey,
+            QWidget#presentationHomePage QLabel#homeTaskFieldKey {
+                font-size: 14px;
+                font-weight: 800;
+            }
+            QWidget#presentationHomePage QLabel#homeRobotFieldValue,
+            QWidget#presentationHomePage QLabel#homeTaskFieldValue,
+            QWidget#presentationHomePage QLabel#homeTaskFieldDetail {
+                font-size: 16px;
+                font-weight: 800;
+            }
+            """
+        )
 
     def refresh_from_store(self, snapshot: DemoSnapshot) -> None:
         self.snapshot = snapshot
@@ -662,6 +718,8 @@ class PresentationAdminDemoWindow(QMainWindow):
         self.store = store or DemoAdminStore(build_admin_demo_snapshot())
         self.setWindowTitle("ROPI 관제 콘솔")
         self.setMinimumSize(1280, 800)
+        self.fullscreen_shortcut = QShortcut(QKeySequence("F11"), self)
+        self.fullscreen_shortcut.activated.connect(self.toggle_fullscreen)
 
         central = QWidget()
         central.setObjectName("appRoot")
@@ -703,6 +761,12 @@ class PresentationAdminDemoWindow(QMainWindow):
             return
         follow_btn.setText("")
         follow_btn.setHidden(True)
+
+    def toggle_fullscreen(self) -> None:
+        if self.windowState() & Qt.WindowState.WindowFullScreen:
+            self.showMaximized()
+            return
+        self.showFullScreen()
 
     def closeEvent(self, event):
         self._shutdown_request_page_background_work()

@@ -85,6 +85,7 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
 
     from ui.presentation_demo.admin_demo_app import create_demo_window
     from ui.presentation_demo.admin_demo_app import (
+        DEMO_MAP_CANVAS_SIZE,
         PresentationAlertsLogPage,
         PresentationTaskMonitorPage,
     )
@@ -139,6 +140,14 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
             frame.property("presentation_compact_flow") is True
             for frame in window.findChildren(QFrame)
         )
+        assert window.home_page.presentation_map_flow_row is not None
+        row_layout = window.home_page.presentation_map_flow_row.layout()
+        assert row_layout.stretch(0) == 1
+        assert row_layout.stretch(1) == 1
+        assert (
+            window.home_page.presentation_map_card.maximumWidth()
+            == window.home_page.compact_flow_card.maximumWidth()
+        )
         assert (
             window.home_page.presentation_map_card.minimumHeight()
             == window.home_page.compact_flow_card.minimumHeight()
@@ -150,10 +159,20 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
         assert window.home_page.flow_scroll.parentWidget().isHidden()
         assert window.map_widget.marker_count == 3
         assert window.map_widget.route_hint_enabled is False
-        assert window.map_widget.maximumWidth() <= 560
-        assert window.map_widget.maximumHeight() <= 320
+        assert DEMO_MAP_CANVAS_SIZE[0] >= 590
+        assert DEMO_MAP_CANVAS_SIZE[1] >= 330
+        assert window.map_widget.maximumWidth() == DEMO_MAP_CANVAS_SIZE[0]
+        assert window.map_widget.maximumHeight() == DEMO_MAP_CANVAS_SIZE[1]
         assert window.map_widget.map_loaded is True
         assert window.map_widget.map_image_size is not None
+        image_width, image_height = window.map_widget.map_image_size
+        canvas_ratio = DEMO_MAP_CANVAS_SIZE[0] / DEMO_MAP_CANVAS_SIZE[1]
+        image_ratio = image_width / image_height
+        assert abs(canvas_ratio - image_ratio) < 0.01
+        home_style = window.home_page.styleSheet()
+        assert "QLabel#homeRobotFieldValue" in home_style
+        assert "QLabel#homeTaskTitle" in home_style
+        assert "font-size: 16px" in home_style
         assert all(
             token not in lowered
             for token in ("pinky", "jetcobot", "arm1", "arm2")
@@ -433,6 +452,13 @@ def test_admin_demo_window_opens_maximized():
         assert window.windowState() & Qt.WindowState.WindowMaximized
         assert window.maximumWidth() > 2000
         assert window.maximumHeight() > 1200
+        assert window.fullscreen_shortcut.key().toString() == "F11"
+
+        window.toggle_fullscreen()
+        assert window.windowState() & Qt.WindowState.WindowFullScreen
+
+        window.toggle_fullscreen()
+        assert window.windowState() & Qt.WindowState.WindowMaximized
     finally:
         window.close()
 
