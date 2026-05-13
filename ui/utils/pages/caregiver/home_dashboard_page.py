@@ -136,8 +136,8 @@ ROS_ERROR_MARKERS = (
 
 HOME_SYSTEM_STATUS_POLL_INTERVAL_MS = 2000
 HOME_MAP_FLOW_PANEL_MIN_WIDTH = 420
-HOME_MAP_FLOW_PANEL_MAX_WIDTH = 540
 HOME_MAP_FLOW_PANEL_HEIGHT = 396
+HOME_MAP_CANVAS_MAX_HEIGHT = 320
 HOME_FLOW_SCROLL_MAX_HEIGHT = 320
 
 
@@ -466,6 +466,7 @@ class HomeOperationMapCanvas(MapCanvasWidget):
         self.setObjectName("homeOperationMapCanvas")
         self.background_color = QColor("#FFFFFF")
         self.setMinimumHeight(260)
+        self.setMaximumHeight(HOME_MAP_CANVAS_MAX_HEIGHT)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed,
@@ -485,7 +486,7 @@ class HomeOperationMapCanvas(MapCanvasWidget):
     def clear_map(self, status_text="맵 미수신"):
         super().clear_map(status_text)
         self.setMinimumHeight(260)
-        self.setMaximumHeight(16777215)
+        self.setMaximumHeight(HOME_MAP_CANVAS_MAX_HEIGHT)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -498,6 +499,7 @@ class HomeOperationMapCanvas(MapCanvasWidget):
         if image_width <= 0 or image_height <= 0 or self.width() <= 0:
             return
         target_height = max(220, int(round(self.width() * image_height / image_width)))
+        target_height = min(HOME_MAP_CANVAS_MAX_HEIGHT, target_height)
         if abs(self.height() - target_height) <= 1:
             return
         self._syncing_canvas_height = True
@@ -998,7 +1000,6 @@ class CaregiverHomePage(QWidget):
         map_panel = QFrame()
         map_panel.setObjectName("homeOperationMapPanel")
         map_panel.setMinimumWidth(HOME_MAP_FLOW_PANEL_MIN_WIDTH)
-        map_panel.setMaximumWidth(HOME_MAP_FLOW_PANEL_MAX_WIDTH)
         map_panel.setFixedHeight(HOME_MAP_FLOW_PANEL_HEIGHT)
         map_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         mp = QVBoxLayout(map_panel)
@@ -1020,7 +1021,6 @@ class CaregiverHomePage(QWidget):
         flow_wrap = QFrame()
         flow_wrap.setObjectName("homeTaskFlowPanel")
         flow_wrap.setMinimumWidth(HOME_MAP_FLOW_PANEL_MIN_WIDTH)
-        flow_wrap.setMaximumWidth(HOME_MAP_FLOW_PANEL_MAX_WIDTH)
         flow_wrap.setFixedHeight(HOME_MAP_FLOW_PANEL_HEIGHT)
         flow_wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         fw = QVBoxLayout(flow_wrap)

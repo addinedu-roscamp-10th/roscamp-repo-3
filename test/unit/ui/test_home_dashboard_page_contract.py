@@ -44,11 +44,14 @@ def _map_assets(map_id="map_0504", *, width=4, height=4):
 
 
 def test_home_dashboard_page_matches_phase1_layout_contract():
-    _app()
+    app = _app()
 
     from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
 
     page = CaregiverHomePage(autoload=False)
+    page.resize(1280, 900)
+    page.show()
+    app.processEvents()
 
     try:
         labels = _label_texts(page)
@@ -92,7 +95,13 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         assert map_panel.minimumWidth() == flow_panel.minimumWidth()
         assert map_panel.maximumWidth() == flow_panel.maximumWidth()
         assert 400 <= map_panel.minimumWidth() <= 440
-        assert map_panel.maximumWidth() <= 560
+        assert map_panel.maximumWidth() > 10_000
+        row_content_width = map_flow_row.contentsRect().width()
+        combined_panel_width = (
+            map_panel.width() + flow_panel.width() + map_flow_layout.spacing()
+        )
+        assert abs(combined_panel_width - row_content_width) <= 2
+        assert abs(map_panel.width() - flow_panel.width()) <= 1
         assert map_panel.minimumHeight() == map_panel.maximumHeight()
         assert flow_panel.minimumHeight() == flow_panel.maximumHeight()
         assert map_panel.minimumHeight() == flow_panel.minimumHeight()
@@ -132,6 +141,41 @@ def test_home_dashboard_map_canvas_uses_loaded_map_ratio_without_dark_letterbox(
         expected_height = round(528 * 59 / 105)
         assert page.home_map_canvas.background_color.name().upper() == "#FFFFFF"
         assert abs(page.home_map_canvas.height() - expected_height) <= 1
+    finally:
+        page.close()
+
+
+def test_home_dashboard_map_canvas_scales_down_inside_equal_height_panel():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    page.resize(1600, 1000)
+    page.show()
+    app.processEvents()
+
+    try:
+        page.apply_home_map_data(
+            {
+                "selected_map_id": "map_test12_0506",
+                "map_assets": _map_assets(
+                    "map_test12_0506",
+                    width=105,
+                    height=59,
+                ),
+            },
+            robots=[],
+        )
+        app.processEvents()
+
+        map_panel = page.findChild(QFrame, "homeOperationMapPanel")
+        flow_panel = page.findChild(QFrame, "homeTaskFlowPanel")
+        map_canvas = page.findChild(QFrame, "homeOperationMapCanvas")
+        assert map_panel.width() == flow_panel.width()
+        assert map_panel.height() == flow_panel.height()
+        assert map_canvas.y() + map_canvas.height() <= map_panel.height()
+        assert map_canvas.width() > map_canvas.height()
     finally:
         page.close()
 
