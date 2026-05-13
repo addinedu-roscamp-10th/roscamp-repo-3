@@ -115,7 +115,7 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
         assert not isinstance(window.monitor_page, TaskMonitorPage)
         assert isinstance(window.alerts_page, PresentationAlertsLogPage)
         assert isinstance(window.alerts_page, AlertLogPage)
-        assert window.alerts_page.table.rowCount() == 5
+        assert window.alerts_page.table.rowCount() == 12
         assert window.alerts_page.table.item(0, 0).text() == "EV-20260513-014"
         assert window.alerts_page.table.item(0, 5).text() == "ROPI 3"
         assert window.alerts_page.table.item(0, 6).text() == "낙상 의심 감지"
@@ -544,7 +544,7 @@ def test_demo_alert_logs_capture_bundle_renders_operational_page_without_runtime
         normalized_text = text_blob.replace("\n", " ")
         lowered = normalized_text.lower()
 
-        assert page.table.rowCount() == 5
+        assert page.table.rowCount() == 12
         assert page.table.item(0, 0).text() == "EV-20260513-014"
         assert page.table.item(0, 2).text() == "주의"
         assert page.table.item(0, 4).text() == "#1033"
@@ -598,6 +598,85 @@ def test_demo_alert_logs_capture_bundle_renders_operational_page_without_runtime
         assert "FALL_ALERT_CREATED" not in text_blob
         assert "WARNING" not in text_blob
         assert "TASK_FAILED" not in text_blob
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_demo_alert_logs_filters_hardcoded_events_without_service_calls(monkeypatch):
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import PresentationAlertsLogPage
+    from ui.utils.pages.caregiver import alert_log_page
+
+    class FailingRemoteService:
+        def get_alert_log_bundle(self, **_filters):
+            raise AssertionError("demo alerts/logs must not call Control Service")
+
+    monkeypatch.setattr(
+        alert_log_page,
+        "CaregiverRemoteService",
+        lambda: FailingRemoteService(),
+    )
+    page = PresentationAlertsLogPage(autoload=True)
+
+    try:
+        assert page.table.rowCount() == 12
+        assert page.summary_cards["total_event_count"].value_label.text() == "12건"
+
+        page.severity_combo.setCurrentIndex(page.severity_combo.findData("WARNING"))
+        assert page.table.rowCount() == 2
+        assert page.summary_cards["total_event_count"].value_label.text() == "2건"
+        assert {
+            page.table.item(row, 2).text()
+            for row in range(page.table.rowCount())
+        } == {"주의"}
+
+        page.severity_combo.setCurrentIndex(page.severity_combo.findData(None))
+        page.period_combo.setCurrentIndex(page.period_combo.findData("LAST_1_HOUR"))
+        assert 0 < page.table.rowCount() < 12
+        assert page.table.item(0, 0).text() == "EV-20260513-014"
+        assert page.summary_cards["total_event_count"].value_label.text() == (
+            f"{page.table.rowCount()}건"
+        )
+
+        page.event_type_input.setText("운반")
+        page.refresh_data()
+        assert page.table.rowCount() >= 1
+        assert all(
+            "운반" in page.table.item(row, 6).text()
+            or "운반" in page.table.item(row, 7).text()
+            for row in range(page.table.rowCount())
+        )
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_demo_alert_logs_uses_compact_table_and_green_detail_keys():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import PresentationAlertsLogPage
+
+    page = PresentationAlertsLogPage(autoload=False)
+
+    try:
+        message_width = page.table.columnWidth(7)
+        assert page.table.columnWidth(2) <= 78
+        assert page.table.columnWidth(3) <= 112
+        assert page.table.columnWidth(4) <= 82
+        assert page.table.columnWidth(5) <= 88
+        assert message_width > page.table.columnWidth(2)
+        assert page.table.rowHeight(0) == 54
+
+        detail_keys = page.detail_list.findChildren(QLabel, "presentationAlertDetailKey")
+        assert detail_keys
+        assert all(
+            key.alignment()
+            == (Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+            for key in detail_keys
+        )
+        assert all("#DCFCE7" in key.styleSheet() for key in detail_keys)
     finally:
         page.shutdown()
         page.close()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from PyQt6.QtCore import QPointF, Qt, QTimer
@@ -20,6 +21,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMainWindow,
     QPlainTextEdit,
@@ -974,6 +976,16 @@ class PresentationTaskMonitorPage(QWidget):
 
 
 class PresentationAlertsLogPage(AlertLogPage):
+    COMPACT_COLUMN_WIDTHS = {
+        0: 148,
+        1: 112,
+        2: 68,
+        3: 104,
+        4: 72,
+        5: 78,
+        6: 132,
+    }
+
     def __init__(
         self,
         *,
@@ -982,9 +994,11 @@ class PresentationAlertsLogPage(AlertLogPage):
     ):
         super().__init__(autoload=autoload and not use_capture_bundle)
         self.use_capture_bundle = use_capture_bundle
+        self.capture_bundle = build_alert_log_capture_bundle()
         self.robot_id_input.setPlaceholderText("예: ROPI 2")
         self.source_input.setPlaceholderText("예: 관제 서버")
         self.event_type_input.setPlaceholderText("예: 낙상 의심 감지")
+        self.detail_list.setObjectName("presentationAlertDetailList")
         self.payload_label.setText("상세\n내용")
         self.table.setHorizontalHeaderLabels(
             [
@@ -1006,8 +1020,21 @@ class PresentationAlertsLogPage(AlertLogPage):
                     translate_robot_display_text(str(value)),
                 )
         translate_widget_texts(self)
+        self._configure_event_table()
         if self.use_capture_bundle:
-            self.apply_alert_log_bundle(build_alert_log_capture_bundle())
+            self.refresh_data()
+
+    def refresh_data(self):
+        if not self.use_capture_bundle:
+            super().refresh_data()
+            return
+        self._apply_capture_filters()
+
+    def apply_stream_event(self, event):
+        if not self.use_capture_bundle:
+            super().apply_stream_event(event)
+            return
+        self.refresh_data()
 
     def _collect_filters(self):
         filters = super()._collect_filters()
@@ -1018,7 +1045,22 @@ class PresentationAlertsLogPage(AlertLogPage):
         super().apply_alert_log_bundle(translate_robot_display_payload(bundle))
         if self.events:
             self.table.selectRow(0)
+        self._resize_event_table_columns()
         translate_widget_texts(self)
+
+    def _apply_event_table(self, events):
+        super()._apply_event_table(events)
+        for row_index in range(self.table.rowCount()):
+            self.table.setRowHeight(row_index, 54)
+            for column_index in range(self.table.columnCount()):
+                item = self.table.item(row_index, column_index)
+                if item is None:
+                    continue
+                alignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                if column_index in {2, 3, 4, 5}:
+                    alignment = Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+                item.setTextAlignment(int(alignment))
+        self._resize_event_table_columns()
 
     def _render_detail(self, event):
         payload = event.get("payload") if isinstance(event, dict) else None
@@ -1042,6 +1084,7 @@ class PresentationAlertsLogPage(AlertLogPage):
             ("메시지", self._event_value(event, "message")),
         ]
         self.detail_list.set_rows(detail_rows)
+        self._style_detail_key_rows()
         self._render_payload(payload)
         self.related_list.set_rows(
             [
@@ -1050,6 +1093,168 @@ class PresentationAlertsLogPage(AlertLogPage):
             ]
         )
         self._sync_related_actions(event)
+
+    def _apply_capture_filters(self) -> None:
+        filters = self._collect_filters()
+        events = [
+            event
+            for event in self.capture_bundle.get("events", [])
+            if self._capture_event_matches(event, filters)
+        ]
+        events.sort(
+            key=lambda event: (
+                self._event_datetime(event),
+                str(event.get("event_id", "")),
+            ),
+            reverse=True,
+        )
+        self.apply_alert_log_bundle(
+            {
+                "summary": self._summary_for_events(events),
+                "events": events,
+            }
+        )
+        self._show_status("필터 적용됨")
+
+    def _capture_event_matches(self, event, filters: dict) -> bool:
+        period = filters.get("period")
+        if not self._matches_period(event, period):
+            return False
+
+        severity = filters.get("severity")
+        if severity and str(event.get("severity")) != str(severity):
+            return False
+
+        source = filters.get("source_component")
+        if source and not self._contains_any(source, event.get("source_component")):
+            return False
+
+        task_id = filters.get("task_id")
+        if task_id:
+            normalized_filter = str(task_id).lstrip("#")
+            normalized_task = str(event.get("task_id", "")).lstrip("#")
+            if normalized_task != normalized_filter:
+                return False
+
+        robot_id = filters.get("robot_id")
+        if robot_id and not self._contains_any(
+            robot_id,
+            event.get("robot_id"),
+            translate_robot_display_text(str(event.get("robot_id", ""))),
+        ):
+            return False
+
+        event_type = filters.get("event_type")
+        if event_type and not self._contains_any(
+            event_type,
+            event.get("event_type"),
+            event.get("message"),
+            event.get("payload"),
+        ):
+            return False
+
+        return True
+
+    def _matches_period(self, event, period: str | None) -> bool:
+        if period in (None, "ALL"):
+            return True
+        event_time = self._event_datetime(event)
+        reference_time = self._capture_reference_time()
+        if period == "LAST_1_HOUR":
+            return event_time >= reference_time - timedelta(hours=1)
+        if period == "LAST_24_HOURS":
+            return event_time >= reference_time - timedelta(hours=24)
+        if period == "TODAY":
+            return event_time.date() == reference_time.date()
+        return True
+
+    def _capture_reference_time(self) -> datetime:
+        event_times = [
+            self._event_datetime(event)
+            for event in self.capture_bundle.get("events", [])
+        ]
+        return max(event_times) if event_times else datetime(2026, 5, 13, 14, 32, 18)
+
+    @staticmethod
+    def _event_datetime(event) -> datetime:
+        raw_value = str(event.get("occurred_at") or "")
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(raw_value[:19], fmt)
+            except ValueError:
+                continue
+        return datetime.min
+
+    @staticmethod
+    def _contains_any(needle, *candidates) -> bool:
+        query = translate_robot_display_text(str(needle or "")).casefold()
+        if not query:
+            return True
+        for candidate in candidates:
+            if candidate in (None, ""):
+                continue
+            texts = {
+                str(candidate),
+                translate_robot_display_text(str(candidate)),
+            }
+            if any(query in text.casefold() for text in texts):
+                return True
+        return False
+
+    @staticmethod
+    def _summary_for_events(events) -> dict[str, int]:
+        def count_severity(severity: str) -> int:
+            return sum(1 for event in events if event.get("severity") == severity)
+
+        return {
+            "total_event_count": len(events),
+            "warning_count": count_severity("WARNING"),
+            "error_count": count_severity("ERROR"),
+            "critical_count": count_severity("CRITICAL"),
+        }
+
+    def _configure_event_table(self) -> None:
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self._resize_event_table_columns()
+
+    def _resize_event_table_columns(self) -> None:
+        header = self.table.horizontalHeader()
+        for column_index, width in self.COMPACT_COLUMN_WIDTHS.items():
+            header.setSectionResizeMode(column_index, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(column_index, width)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
+
+    def _style_detail_key_rows(self) -> None:
+        for row in getattr(self.detail_list, "_rows", []):
+            key_label = getattr(row, "key_label", None)
+            value_label = getattr(row, "value_label", None)
+            if key_label is None:
+                continue
+            key_label.setObjectName("presentationAlertDetailKey")
+            key_label.setAlignment(
+                Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+            )
+            key_label.setFixedWidth(118)
+            key_label.setStyleSheet(
+                "QLabel#presentationAlertDetailKey {"
+                "background: #DCFCE7;"
+                "border: 1px solid #BBF7D0;"
+                "border-radius: 6px;"
+                "color: #166534;"
+                "font-weight: 800;"
+                "padding: 5px 8px;"
+                "}"
+            )
+            if value_label is not None:
+                value_label.setAlignment(
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                )
 
     @staticmethod
     def _display_value(value) -> str:
