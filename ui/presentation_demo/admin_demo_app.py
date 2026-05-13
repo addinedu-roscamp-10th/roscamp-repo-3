@@ -15,16 +15,18 @@ from PyQt6.QtGui import (
     QShortcut,
 )
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QMainWindow,
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -35,21 +37,18 @@ from ui.presentation_demo.admin_demo_data import (
     DemoSnapshot,
     DemoTask,
     build_admin_demo_snapshot,
+    build_task_monitor_slide_snapshot,
     display_status,
 )
 from ui.presentation_demo.robot_display import (
     runtime_robot_id_for_display,
     translate_robot_display_text,
-    translate_robot_identity_payload,
     translate_robot_display_payload,
 )
 from ui.utils.core.styles import load_stylesheet
 from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
 from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
-from ui.utils.pages.caregiver.task_monitor_page import (
-    FallEvidenceImageDialog,
-    TaskMonitorPage,
-)
+from ui.utils.pages.caregiver.task_monitor_page import FallEvidenceImageDialog
 from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
 from ui.utils.widgets.admin_common import StatusChip, battery_text
 from ui.utils.widgets.admin_shell import AdminShell, PageHeader, PageTimeCard
@@ -589,55 +588,340 @@ class PresentationFallEvidenceImageDialog(FallEvidenceImageDialog):
         )
 
 
-class PresentationTaskMonitorPage(TaskMonitorPage):
-    def __init__(self, *, autostart_stream=True):
-        super().__init__(autostart_stream=False)
-        self.consumer_id = "ui-presentation-admin-demo"
-        self._configure_task_table()
-        if autostart_stream:
-            self._start_snapshot_load()
-
-    def apply_snapshot(self, snapshot):
-        super().apply_snapshot(translate_robot_identity_payload(snapshot))
-        self._translate_visible_texts()
-        self._fit_robot_column()
-
-    def apply_stream_event(self, event):
-        super().apply_stream_event(translate_robot_identity_payload(event))
-        self._translate_visible_texts()
-        self._fit_robot_column()
-
-    def _handle_table_selection_changed(self):
-        super()._handle_table_selection_changed()
-        self._translate_visible_texts()
-        self._fit_robot_column()
-
-    def _select_task(self, task_id):
-        super()._select_task(task_id)
-        self._translate_visible_texts()
-        self._fit_robot_column()
+class PresentationTaskMonitorPage(QWidget):
+    def __init__(self, *, autostart_stream: bool = False):
+        super().__init__()
+        self.snapshot = build_task_monitor_slide_snapshot()
+        self.selected_task_id = self.snapshot.selected_task_id
+        self.setObjectName("presentationTaskMonitorPage")
+        self._build_ui()
+        self._apply_slide_style()
 
     def _create_fall_evidence_dialog(self, response):
         dialog = PresentationFallEvidenceImageDialog(response=response, parent=self)
         translate_widget_texts(dialog)
         return dialog
 
-    def _configure_task_table(self) -> None:
-        header = self.task_table.horizontalHeader()
-        header.setStretchLastSection(False)
-        for column in range(self.task_table.columnCount()):
-            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self._fit_robot_column()
+    def shutdown(self) -> None:
+        return
 
-    def _fit_robot_column(self) -> None:
-        if self.task_table.columnCount() <= 4:
-            return
-        self.task_table.setColumnWidth(4, 82)
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 24, 24, 24)
+        root.setSpacing(18)
 
-    def _translate_visible_texts(self) -> None:
-        translate_widget_texts(self)
+        header_row = QHBoxLayout()
+        header_row.setSpacing(16)
+        self.header = PageHeader(
+            "작업 모니터",
+            "선택 작업의 진행 단계와 최근 피드백을 한눈에 확인합니다.",
+            statuses={
+                "발표 화면": "online",
+                "데모 데이터": "online",
+            },
+            show_status=True,
+        )
+        self.time_card = PageTimeCard(status_text="발표용 작업 스냅샷")
+        self.time_card.mark_updated("slide")
+        header_row.addWidget(self.header, 1)
+        header_row.addWidget(self.time_card, 0, Qt.AlignmentFlag.AlignTop)
+        root.addLayout(header_row)
+
+        summary_row = QHBoxLayout()
+        summary_row.setSpacing(12)
+        for title, value, tone in (
+            ("진행 작업", "3", "green"),
+            ("주의 필요", "1", "amber"),
+            ("완료 작업", "1", "blue"),
+        ):
+            summary_row.addWidget(
+                self._build_summary_card(title, value, tone),
+                1,
+            )
+        root.addLayout(summary_row)
+
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        body.addWidget(self._build_task_list_card(), 5)
+        body.addWidget(self._build_detail_card(), 4)
+        root.addLayout(body, 1)
+
+    def _build_summary_card(self, title: str, value: str, tone: str) -> QFrame:
+        card = QFrame()
+        card.setObjectName("card")
+        card.setProperty("presentation_monitor_summary", tone)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(4)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("mutedText")
+        value_label = QLabel(value)
+        value_label.setObjectName("presentationMonitorSummaryValue")
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+        return card
+
+    def _build_task_list_card(self) -> QFrame:
+        card = QFrame()
+        card.setObjectName("card")
+        card.setProperty("presentation_monitor_list", True)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        title_row = QHBoxLayout()
+        title = QLabel("작업 목록")
+        title.setObjectName("sectionTitle")
+        hint = QLabel("운반 · 순찰 · 안내")
+        hint.setObjectName("mutedText")
+        title_row.addWidget(title)
+        title_row.addStretch(1)
+        title_row.addWidget(hint)
+        layout.addLayout(title_row)
+
+        self.task_table = QTableWidget(len(self.snapshot.rows), 6)
+        self.task_table.setObjectName("presentationTaskTable")
+        self.task_table.setHorizontalHeaderLabels(
+            ["상태", "작업", "유형", "담당 ROPI", "현재 단계", "업데이트"]
+        )
+        self.task_table.verticalHeader().setVisible(False)
+        self.task_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.task_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.task_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.task_table.setAlternatingRowColors(True)
+        self.task_table.setShowGrid(False)
+        self.task_table.horizontalHeader().setStretchLastSection(True)
+
+        for row_index, row in enumerate(self.snapshot.rows):
+            values = (
+                row.status,
+                row.title,
+                row.task_type,
+                row.robot_display_id,
+                row.phase,
+                row.updated_at,
+            )
+            for column_index, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                item.setTextAlignment(
+                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                )
+                if column_index in {0, 2, 3, 5}:
+                    item.setTextAlignment(
+                        int(
+                            Qt.AlignmentFlag.AlignCenter
+                            | Qt.AlignmentFlag.AlignVCenter
+                        )
+                    )
+                self.task_table.setItem(row_index, column_index, item)
+            self.task_table.setRowHeight(row_index, 54)
+
+        self.task_table.selectRow(0)
+        self.task_table.setColumnWidth(0, 96)
+        self.task_table.setColumnWidth(1, 170)
+        self.task_table.setColumnWidth(2, 72)
+        self.task_table.setColumnWidth(3, 90)
+        self.task_table.setColumnWidth(4, 128)
+        self.task_table.setMinimumHeight(300)
+        layout.addWidget(self.task_table, 1)
+
+        caption = QLabel(self.snapshot.technical_caption)
+        caption.setObjectName("presentationMonitorTechCaption")
+        caption.setWordWrap(True)
+        layout.addWidget(caption)
+        return card
+
+    def _build_detail_card(self) -> QFrame:
+        card = QFrame()
+        card.setObjectName("card")
+        card.setProperty("presentation_monitor_detail", True)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(16)
+
+        title_row = QHBoxLayout()
+        title_box = QVBoxLayout()
+        title_box.setSpacing(6)
+        eyebrow = QLabel("선택 작업")
+        eyebrow.setObjectName("mutedText")
+        selected_title = QLabel(self.snapshot.selected_title)
+        selected_title.setObjectName("presentationMonitorHeroTitle")
+        title_box.addWidget(eyebrow)
+        title_box.addWidget(selected_title)
+        title_row.addLayout(title_box, 1)
+        title_row.addWidget(StatusChip("진행 중", "green"), 0, Qt.AlignmentFlag.AlignTop)
+        layout.addLayout(title_row)
+
+        detail_grid = QGridLayout()
+        detail_grid.setContentsMargins(0, 0, 0, 0)
+        detail_grid.setHorizontalSpacing(10)
+        detail_grid.setVerticalSpacing(10)
+        detail_items = (
+            ("작업 유형", self.snapshot.selected_task_type),
+            ("담당 로봇", self.snapshot.selected_robot),
+            ("목적지", self.snapshot.selected_destination),
+            ("현재 단계", self.snapshot.selected_phase),
+            ("최근 피드백", self.snapshot.latest_feedback),
+        )
+        for index, (key, value) in enumerate(detail_items):
+            detail_grid.addWidget(
+                self._build_detail_box(key, value),
+                index // 2,
+                index % 2,
+            )
+        layout.addLayout(detail_grid)
+
+        timeline_title = QLabel("운반 진행 단계")
+        timeline_title.setObjectName("sectionTitle")
+        layout.addWidget(timeline_title)
+        layout.addLayout(self._build_lifecycle_timeline())
+
+        callout_row = QHBoxLayout()
+        callout_row.setSpacing(10)
+        for title, detail in self.snapshot.callouts:
+            callout_row.addWidget(self._build_callout_box(title, detail), 1)
+        layout.addLayout(callout_row)
+        layout.addStretch(1)
+        return card
+
+    def _build_detail_box(self, key: str, value: str) -> QFrame:
+        box = QFrame()
+        box.setObjectName("infoBox")
+        box.setProperty("presentation_detail_box", True)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(5)
+        key_label = QLabel(key)
+        key_label.setObjectName("mutedText")
+        value_label = QLabel(value)
+        value_label.setObjectName("presentationMonitorDetailValue")
+        value_label.setWordWrap(True)
+        layout.addWidget(key_label)
+        layout.addWidget(value_label)
+        return box
+
+    def _build_lifecycle_timeline(self) -> QHBoxLayout:
+        timeline = QHBoxLayout()
+        timeline.setSpacing(8)
+        for index, step in enumerate(self.snapshot.lifecycle_steps):
+            step_box = QFrame()
+            step_box.setObjectName("presentationMonitorStep")
+            step_box.setProperty(
+                "current",
+                index == self.snapshot.current_step_index,
+            )
+            step_layout = QVBoxLayout(step_box)
+            step_layout.setContentsMargins(10, 10, 10, 10)
+            step_layout.setSpacing(4)
+
+            marker = QLabel("●")
+            marker.setObjectName("presentationMonitorStepMarker")
+            marker.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label = QLabel(step)
+            label.setObjectName("presentationMonitorStepLabel")
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setWordWrap(True)
+            current = QLabel("현재" if index == self.snapshot.current_step_index else " ")
+            current.setObjectName("presentationMonitorStepCurrent")
+            current.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            step_layout.addWidget(marker)
+            step_layout.addWidget(label)
+            step_layout.addWidget(current)
+            timeline.addWidget(step_box, 1)
+        return timeline
+
+    def _build_callout_box(self, title: str, detail: str) -> QFrame:
+        box = QFrame()
+        box.setObjectName("infoBox")
+        box.setProperty("presentation_callout", True)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(6)
+        title_label = QLabel(title)
+        title_label.setObjectName("presentationMonitorCalloutTitle")
+        detail_label = QLabel(detail)
+        detail_label.setObjectName("presentationMonitorCalloutDetail")
+        detail_label.setWordWrap(True)
+        layout.addWidget(title_label)
+        layout.addWidget(detail_label)
+        return box
+
+    def _apply_slide_style(self) -> None:
+        self.setStyleSheet(
+            """
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorSummaryValue {
+                color: #0F172A;
+                font-size: 30px;
+                font-weight: 900;
+            }
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorHeroTitle {
+                color: #0F172A;
+                font-size: 28px;
+                font-weight: 900;
+            }
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorDetailValue {
+                color: #111827;
+                font-size: 17px;
+                font-weight: 800;
+            }
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorTechCaption {
+                color: #475569;
+                font-size: 15px;
+                font-weight: 700;
+            }
+            QWidget#presentationTaskMonitorPage QTableWidget#presentationTaskTable {
+                font-size: 15px;
+                font-weight: 700;
+                selection-background-color: #DBEAFE;
+                selection-color: #0F172A;
+            }
+            QWidget#presentationTaskMonitorPage QHeaderView::section {
+                font-size: 14px;
+                font-weight: 800;
+                padding: 8px;
+            }
+            QWidget#presentationTaskMonitorPage QFrame#presentationMonitorStep {
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+                background: #F8FAFC;
+            }
+            QWidget#presentationTaskMonitorPage QFrame#presentationMonitorStep[current="true"] {
+                border: 2px solid #16A34A;
+                background: #ECFDF5;
+            }
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorStepMarker {
+                color: #94A3B8;
+                font-size: 18px;
+                font-weight: 900;
+            }
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorStepLabel {
+                color: #0F172A;
+                font-size: 14px;
+                font-weight: 800;
+            }
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorStepCurrent {
+                color: #16A34A;
+                font-size: 13px;
+                font-weight: 900;
+            }
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorCalloutTitle {
+                color: #0F172A;
+                font-size: 16px;
+                font-weight: 900;
+            }
+            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorCalloutDetail {
+                color: #334155;
+                font-size: 14px;
+                font-weight: 700;
+            }
+            """
+        )
 
 
 class PresentationAlertsLogPage(AlertLogPage):

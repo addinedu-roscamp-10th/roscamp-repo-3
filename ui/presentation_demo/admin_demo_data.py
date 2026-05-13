@@ -159,6 +159,36 @@ class DemoSnapshot:
     alerts: tuple[DemoAlertLog, ...]
 
 
+@dataclass(frozen=True)
+class DemoTaskMonitorRow:
+    task_id: str
+    title: str
+    task_type: str
+    status: str
+    robot_display_id: str
+    phase: str
+    destination: str
+    updated_at: str
+    feedback: str
+    tone: str
+
+
+@dataclass(frozen=True)
+class DemoTaskMonitorSlideSnapshot:
+    selected_task_id: str
+    rows: tuple[DemoTaskMonitorRow, ...]
+    selected_title: str
+    selected_task_type: str
+    selected_robot: str
+    selected_destination: str
+    selected_phase: str
+    latest_feedback: str
+    lifecycle_steps: tuple[str, ...]
+    current_step_index: int
+    callouts: tuple[tuple[str, str], ...]
+    technical_caption: str
+
+
 def display_task_type(task_type: str) -> str:
     return TASK_TYPE_LABELS.get(task_type, task_type)
 
@@ -173,6 +203,87 @@ def display_phase(phase: str) -> str:
 
 def display_severity(severity: str) -> str:
     return SEVERITY_LABELS.get(severity, severity)
+
+
+def build_task_monitor_slide_snapshot() -> DemoTaskMonitorSlideSnapshot:
+    rows = (
+        DemoTaskMonitorRow(
+            "#1024",
+            "의료키트 운반",
+            "운반",
+            "진행 중",
+            "ROPI 2",
+            "목적지 도착",
+            "303호",
+            "14:28",
+            "303호 앞 도착, 전달 대기 중",
+            "green",
+        ),
+        DemoTaskMonitorRow(
+            "#1025",
+            "야간 순찰",
+            "순찰",
+            "주의 필요",
+            "ROPI 3",
+            "낙상 의심",
+            "복도3",
+            "14:32",
+            "복도3 낙상 의심 확인 필요",
+            "amber",
+        ),
+        DemoTaskMonitorRow(
+            "#1026",
+            "방문객 안내",
+            "안내",
+            "진행 중",
+            "ROPI 1",
+            "안내 주행 중",
+            "303호",
+            "14:21",
+            "방문객과 동행 중",
+            "blue",
+        ),
+        DemoTaskMonitorRow(
+            "#1023",
+            "기저귀 운반",
+            "운반",
+            "완료",
+            "ROPI 2",
+            "완료",
+            "305호",
+            "13:58",
+            "전달 완료",
+            "gray",
+        ),
+    )
+    return DemoTaskMonitorSlideSnapshot(
+        selected_task_id="#1024",
+        rows=rows,
+        selected_title="의료키트 운반 #1024",
+        selected_task_type="운반",
+        selected_robot="ROPI 2",
+        selected_destination="303호",
+        selected_phase="목적지 도착 / 전달 대기",
+        latest_feedback="303호 앞 도착, 전달 대기 중",
+        lifecycle_steps=(
+            "요청 접수",
+            "픽업 이동",
+            "적재 완료",
+            "목적지 이동",
+            "전달 대기",
+            "완료",
+        ),
+        current_step_index=4,
+        callouts=(
+            ("작업 목록", "운반/순찰/안내를 같은 task 단위로 추적"),
+            ("현재 단계", "단계와 최근 피드백으로 진행 위치 확인"),
+            ("최근 피드백", "로봇 주행 결과가 UI에 반영됨"),
+        ),
+        technical_caption=(
+            "snapshot 이후 TASK_UPDATED / ACTION_FEEDBACK_UPDATED를 "
+            "병합해 작업 상태를 갱신"
+        ),
+    )
 
 
 def build_admin_demo_snapshot() -> DemoSnapshot:
@@ -523,4 +634,3 @@ def visible_snapshot_texts(snapshot: DemoSnapshot) -> list[str]:
         for key, value in alert.detail_rows:
             texts.extend((key, value))
     return texts
-

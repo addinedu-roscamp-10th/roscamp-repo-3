@@ -112,7 +112,7 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
         assert window.admin_shell.has_page("alerts")
         assert type(window.request_page) is TaskRequestPage
         assert isinstance(window.monitor_page, PresentationTaskMonitorPage)
-        assert isinstance(window.monitor_page, TaskMonitorPage)
+        assert not isinstance(window.monitor_page, TaskMonitorPage)
         assert isinstance(window.alerts_page, PresentationAlertsLogPage)
         assert isinstance(window.alerts_page, AlertLogPage)
         assert not hasattr(window.request_page, "submit_demo_request")
@@ -234,61 +234,53 @@ def test_robot_display_adapter_maps_runtime_robot_names_recursively():
     assert payload["assigned_robot_id"] == "pinky2"
 
 
-def test_demo_task_monitor_uses_db_page_with_ropi_display_mapping():
+def test_demo_task_monitor_uses_slide_capture_fixture_without_runtime():
     _app()
 
     from ui.presentation_demo.admin_demo_app import PresentationTaskMonitorPage
+    from ui.utils.pages.caregiver.task_monitor_page import TaskMonitorPage
 
-    page = PresentationTaskMonitorPage(autostart_stream=False)
+    page = PresentationTaskMonitorPage()
 
     try:
-        page.apply_snapshot(
-            {
-                "tasks": [
-                    {
-                        "task_id": 1034,
-                        "task_type": "DELIVERY",
-                        "task_status": "RUNNING",
-                        "phase": "DELIVERY_DESTINATION",
-                        "assigned_robot_id": "pinky2",
-                        "latest_robot": {"robot_id": "pinky2"},
-                        "result_code": "REJECTED",
-                        "latest_reason_code": "PATROL_RUNTIME_NOT_READY",
-                        "result_message": "WORKFLOW_RESULT_RECORDED",
-                        "feedback_summary": (
-                            "WAITING_FMS_RESERVATION / WAIT_GUIDE_START_CONFIRM"
-                        ),
-                    }
-                ]
-            }
-        )
+        assert not isinstance(page, TaskMonitorPage)
+        assert not hasattr(page, "consumer_id")
+        assert page.selected_task_id == "#1024"
+        assert page.task_table.rowCount() == 4
+        assert page.task_table.item(0, 1).text() == "의료키트 운반"
+        assert page.task_table.item(1, 2).text() == "순찰"
+        assert page.task_table.item(2, 2).text() == "안내"
+        assert page.task_table.item(3, 0).text() == "완료"
 
         texts = _display_texts(page)
         text_blob = " ".join(texts)
 
-        assert "ROPI 2" in texts
-        assert "운반" in texts
+        assert "의료키트 운반 #1024" in texts
+        assert "목적지 도착 / 전달 대기" in texts
+        assert "303호 앞 도착, 전달 대기 중" in texts
+        assert {"작업 목록", "현재 단계", "최근 피드백"}.issubset(set(texts))
+        assert {"운반", "순찰", "안내"}.issubset(set(texts))
         assert "진행 중" in texts
-        assert "목적지 이동" in texts
-        assert "거절" in texts
-        assert "순찰 실행 준비 안 됨" in texts
-        assert "업무 흐름 결과 기록됨" in text_blob
-        assert "FMS 예약 대기" in text_blob
-        assert "안내 시작 확인 대기" in text_blob
+        assert "주의 필요" in texts
+        assert "완료" in texts
+        assert "ROPI 1" in texts
+        assert "ROPI 2" in texts
+        assert "ROPI 3" in texts
+        assert "요청 접수" in text_blob
+        assert "픽업 이동" in text_blob
+        assert "적재 완료" in text_blob
+        assert "목적지 이동" in text_blob
+        assert "전달 대기" in text_blob
+        assert (
+            "snapshot 이후 TASK_UPDATED / ACTION_FEEDBACK_UPDATED를 "
+            "병합해 작업 상태를 갱신"
+        ) in text_blob
         assert "pinky2" not in text_blob.lower()
+        assert "jetcobot" not in text_blob.lower()
+        assert "arm1" not in text_blob.lower()
         assert "DELIVERY" not in text_blob
-        assert "RUNNING" not in text_blob
         assert "DELIVERY_DESTINATION" not in text_blob
-        assert "REJECTED" not in text_blob
-        assert "PATROL_RUNTIME_NOT_READY" not in text_blob
-        assert "WORKFLOW_RESULT_RECORDED" not in text_blob
-        assert "WAITING_FMS_RESERVATION" not in text_blob
-        assert "WAIT_GUIDE_START_CONFIRM" not in text_blob
-        assert "START" not in text_blob
-        assert "CONFIRM" not in text_blob
-        assert page.task_table.columnWidth(4) <= 96
     finally:
-        page.shutdown()
         page.close()
 
 
