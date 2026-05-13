@@ -49,13 +49,10 @@ class TaskRequestPage(QWidget):
 
         self.delivery_btn = QPushButton("물품 운반")
         self.patrol_btn = QPushButton("순찰")
-        self.follow_btn = QPushButton("추종")
-        self.follow_btn.setEnabled(False)
 
         for btn in [
             self.delivery_btn,
             self.patrol_btn,
-            self.follow_btn,
         ]:
             btn.setObjectName("scenarioTabButton")
             btn.setCheckable(True)

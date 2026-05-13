@@ -44,7 +44,7 @@ def test_task_request_page_uses_logger_instead_of_direct_print():
     assert "print(" not in source
 
 
-def test_task_request_page_exposes_delivery_patrol_and_disabled_follow_tabs(monkeypatch):
+def test_task_request_page_exposes_only_delivery_and_patrol_tabs(monkeypatch):
     _app()
 
     from ui.utils.pages.caregiver.task_request_page import (
@@ -65,9 +65,9 @@ def test_task_request_page_exposes_delivery_patrol_and_disabled_follow_tabs(monk
         assert tabs == [
             "물품 운반",
             "순찰",
-            "추종",
         ]
         assert all("준비 중" not in text for text in tabs)
+        assert "추종" not in tabs
 
         assert page.delivery_form.submit_btn.isEnabled() is True
         page.patrol_btn.click()
@@ -77,9 +77,8 @@ def test_task_request_page_exposes_delivery_patrol_and_disabled_follow_tabs(monk
 
         assert not hasattr(page, "guide_btn")
         assert not hasattr(page, "guide_form")
-        assert page.follow_btn.isEnabled() is False
+        assert not hasattr(page, "follow_btn")
         assert not hasattr(page, "follow_form")
-        page.follow_btn.click()
         assert page.current_form is page.patrol_form
     finally:
         page.close()
