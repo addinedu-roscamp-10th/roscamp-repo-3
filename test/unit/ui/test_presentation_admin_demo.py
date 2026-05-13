@@ -115,6 +115,12 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
         assert not isinstance(window.monitor_page, TaskMonitorPage)
         assert isinstance(window.alerts_page, PresentationAlertsLogPage)
         assert isinstance(window.alerts_page, AlertLogPage)
+        assert window.alerts_page.table.rowCount() == 5
+        assert window.alerts_page.table.item(0, 0).text() == "EV-20260513-014"
+        assert window.alerts_page.table.item(0, 5).text() == "ROPI 3"
+        assert window.alerts_page.table.item(0, 6).text() == "낙상 의심 감지"
+        assert window.alerts_page.related_task_button.isEnabled()
+        assert window.alerts_page.related_robot_button.isEnabled()
         assert not hasattr(window.request_page, "submit_demo_request")
         assert "추종" not in texts
         assert "좌표/구역 설정" not in texts
@@ -520,6 +526,78 @@ def test_demo_alert_logs_uses_db_page_with_ropi_display_mapping():
         assert "WAIT" not in text_blob
         assert "START" not in text_blob
         assert "CONFIRM" not in text_blob
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_demo_alert_logs_capture_bundle_renders_operational_page_without_runtime():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import PresentationAlertsLogPage
+
+    page = PresentationAlertsLogPage(autoload=False)
+
+    try:
+        texts = _display_texts(page)
+        text_blob = " ".join(texts)
+        normalized_text = text_blob.replace("\n", " ")
+        lowered = normalized_text.lower()
+
+        assert page.table.rowCount() == 5
+        assert page.table.item(0, 0).text() == "EV-20260513-014"
+        assert page.table.item(0, 2).text() == "주의"
+        assert page.table.item(0, 4).text() == "#1033"
+        assert page.table.item(0, 5).text() == "ROPI 3"
+        assert page.table.item(0, 6).text() == "낙상 의심 감지"
+        assert "복도3에서 낙상 의심 이벤트가 감지되었습니다." in text_blob
+
+        assert {"전체 이벤트", "주의", "오류", "긴급"}.issubset(set(texts))
+        assert {"12건", "2건", "1건", "0건"}.issubset(set(texts))
+        assert {
+            "낙상 의심 감지",
+            "운반 목적지 도착",
+            "안내 주행 시작",
+            "작업 실행 준비 실패",
+            "작업 완료",
+        }.issubset(set(texts))
+        assert "상세 내용" in normalized_text
+        assert "확인 필요 사유" in texts
+        assert "감지 신뢰도 0.91" in text_blob
+        assert "감지 위치 복도3" in text_blob
+        assert "관련 작업에서 낙상 증거 사진 확인 가능" in text_blob
+        assert page.related_task_button.isEnabled()
+        assert page.related_task_button.property("task_id") == "#1033"
+        assert page.related_robot_button.isEnabled()
+        assert page.related_robot_button.property("robot_id") == "ROPI 3"
+
+        assert "작업 모니터에서 보기" in texts
+        assert "로봇 상태에서 보기" in texts
+        assert "낙상 사진 보기" not in text_blob
+        assert "순찰 재개" not in text_blob
+        assert "조치 완료" not in text_blob
+        assert all(
+            token not in lowered
+            for token in (
+                "demo",
+                "presentation",
+                "slide",
+                "snapshot",
+                "fixture",
+                "capture",
+                "ppt",
+                "callout",
+                "pinky",
+                "jetcobot",
+                "arm1",
+                "arm2",
+            )
+        )
+        assert "payload" not in lowered
+        assert "reason_code" not in lowered
+        assert "FALL_ALERT_CREATED" not in text_blob
+        assert "WARNING" not in text_blob
+        assert "TASK_FAILED" not in text_blob
     finally:
         page.shutdown()
         page.close()

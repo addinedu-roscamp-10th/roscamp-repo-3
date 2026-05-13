@@ -350,6 +350,89 @@ def build_task_monitor_slide_snapshot() -> DemoTaskMonitorSlideSnapshot:
     )
 
 
+def build_alert_log_capture_bundle() -> dict:
+    return {
+        "summary": {
+            "total_event_count": 12,
+            "warning_count": 2,
+            "error_count": 1,
+            "critical_count": 0,
+        },
+        "events": [
+            {
+                "event_id": "EV-20260513-014",
+                "occurred_at": "2026-05-13 14:32:18",
+                "severity": "WARNING",
+                "source_component": "AI 낙상 감지",
+                "task_id": "#1033",
+                "robot_id": "pinky3",
+                "event_type": "FALL_ALERT_CREATED",
+                "result_code": "확인 필요",
+                "reason_code": "낙상 의심",
+                "message": "복도3에서 낙상 의심 이벤트가 감지되었습니다.",
+                "payload": "감지 신뢰도 0.91\n감지 위치 복도3\n관련 작업에서 낙상 증거 사진 확인 가능",
+                "location": "복도3",
+            },
+            {
+                "event_id": "EV-20260513-013",
+                "occurred_at": "2026-05-13 14:28:04",
+                "severity": "INFO",
+                "source_component": "관제 서버",
+                "task_id": "#1032",
+                "robot_id": "pinky2",
+                "event_type": "운반 목적지 도착",
+                "result_code": "정상",
+                "reason_code": "",
+                "message": "ROPI 2가 303호에 도착해 의료키트 전달을 대기 중입니다.",
+                "payload": "목적지 303호\n전달 대기 상태로 전환",
+                "location": "303호",
+            },
+            {
+                "event_id": "EV-20260513-012",
+                "occurred_at": "2026-05-13 14:21:11",
+                "severity": "INFO",
+                "source_component": "관제 서버",
+                "task_id": "#1031",
+                "robot_id": "pinky1",
+                "event_type": "안내 주행 시작",
+                "result_code": "정상",
+                "reason_code": "",
+                "message": "방문객 안내가 303호 목적지로 진행 중입니다.",
+                "payload": "목적지 303호\n방문객 동행 주행 시작",
+                "location": "복도1",
+            },
+            {
+                "event_id": "EV-20260513-011",
+                "occurred_at": "2026-05-13 14:16:42",
+                "severity": "ERROR",
+                "source_component": "관제 서버",
+                "task_id": "#1030",
+                "robot_id": "pinky3",
+                "event_type": "작업 실행 준비 실패",
+                "result_code": "실패",
+                "reason_code": "순찰 실행 준비 안 됨",
+                "message": "순찰 실행 준비 상태를 확인해야 합니다.",
+                "payload": "순찰 경로 실행 준비 상태 확인 필요",
+                "location": "복도3",
+            },
+            {
+                "event_id": "EV-20260513-010",
+                "occurred_at": "2026-05-13 13:58:36",
+                "severity": "INFO",
+                "source_component": "관제 서버",
+                "task_id": "#1029",
+                "robot_id": "pinky2",
+                "event_type": "TASK_COMPLETED",
+                "result_code": "정상",
+                "reason_code": "",
+                "message": "기저귀 운반 작업이 완료되었습니다.",
+                "payload": "305호 전달 완료\n복귀 준비 완료",
+                "location": "305호",
+            },
+        ],
+    }
+
+
 def build_admin_demo_snapshot() -> DemoSnapshot:
     tasks = (
         DemoTask(

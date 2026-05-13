@@ -36,6 +36,7 @@ from ui.presentation_demo.admin_demo_data import (
     DemoMapMarker,
     DemoSnapshot,
     DemoTask,
+    build_alert_log_capture_bundle,
     build_admin_demo_snapshot,
     build_task_monitor_slide_snapshot,
     display_status,
@@ -973,11 +974,17 @@ class PresentationTaskMonitorPage(QWidget):
 
 
 class PresentationAlertsLogPage(AlertLogPage):
-    def __init__(self, *, autoload: bool = True):
-        super().__init__(autoload=autoload)
+    def __init__(
+        self,
+        *,
+        autoload: bool = True,
+        use_capture_bundle: bool = True,
+    ):
+        super().__init__(autoload=autoload and not use_capture_bundle)
+        self.use_capture_bundle = use_capture_bundle
         self.robot_id_input.setPlaceholderText("예: ROPI 2")
         self.source_input.setPlaceholderText("예: 관제 서버")
-        self.event_type_input.setPlaceholderText("예: 작업 실패")
+        self.event_type_input.setPlaceholderText("예: 낙상 의심 감지")
         self.payload_label.setText("상세\n내용")
         self.table.setHorizontalHeaderLabels(
             [
@@ -999,6 +1006,8 @@ class PresentationAlertsLogPage(AlertLogPage):
                     translate_robot_display_text(str(value)),
                 )
         translate_widget_texts(self)
+        if self.use_capture_bundle:
+            self.apply_alert_log_bundle(build_alert_log_capture_bundle())
 
     def _collect_filters(self):
         filters = super()._collect_filters()
@@ -1007,7 +1016,56 @@ class PresentationAlertsLogPage(AlertLogPage):
 
     def apply_alert_log_bundle(self, bundle):
         super().apply_alert_log_bundle(translate_robot_display_payload(bundle))
+        if self.events:
+            self.table.selectRow(0)
         translate_widget_texts(self)
+
+    def _render_detail(self, event):
+        payload = event.get("payload") if isinstance(event, dict) else None
+        location = event.get("location") or self._payload_value(payload, "위치")
+        reason_label = (
+            "확인 필요 사유"
+            if event.get("result_code") == "확인 필요"
+            else "처리 사유"
+        )
+        detail_rows = [
+            ("이벤트 번호", self._event_value(event, "event_id")),
+            ("발생 시각", self._event_value(event, "occurred_at")),
+            ("심각도", self._event_value(event, "severity")),
+            ("출처", self._event_value(event, "source_component")),
+            ("이벤트", self._event_value(event, "event_type")),
+            ("작업 번호", self._event_value(event, "task_id")),
+            ("담당 ROPI", self._event_value(event, "robot_id")),
+            ("위치", self._display_value(location)),
+            ("처리 상태", self._event_value(event, "result_code")),
+            (reason_label, self._event_value(event, "reason_code")),
+            ("메시지", self._event_value(event, "message")),
+        ]
+        self.detail_list.set_rows(detail_rows)
+        self._render_payload(payload)
+        self.related_list.set_rows(
+            [
+                ("작업 번호", self._event_value(event, "task_id")),
+                ("로봇", self._event_value(event, "robot_id")),
+            ]
+        )
+        self._sync_related_actions(event)
+
+    @staticmethod
+    def _display_value(value) -> str:
+        if value is None or value == "":
+            return "-"
+        return str(value)
+
+    def _event_value(self, event, key: str) -> str:
+        if not isinstance(event, dict):
+            return "-"
+        return self._display_value(event.get(key))
+
+    def _payload_value(self, payload, key: str):
+        if not isinstance(payload, dict):
+            return None
+        return payload.get(key) or payload.get(translate_robot_display_text(key))
 
 
 def translate_widget_texts(widget: QWidget) -> None:
