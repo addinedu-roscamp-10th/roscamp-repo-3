@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import (
     QApplication,
+    QComboBox,
     QLabel,
     QPushButton,
     QFrame,
@@ -84,10 +85,12 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         map_panel = page.findChild(QFrame, "homeOperationMapPanel")
         flow_panel = page.findChild(QFrame, "homeTaskFlowPanel")
         map_canvas = page.findChild(QFrame, "homeOperationMapCanvas")
+        map_selector = page.findChild(QComboBox, "homeMapSelector")
         assert map_flow_row is not None
         assert map_panel is not None
         assert flow_panel is not None
         assert map_canvas is not None
+        assert map_selector is not None
         assert map_panel.parentWidget() is map_flow_row
         assert flow_panel.parentWidget() is map_flow_row
         map_flow_layout = map_flow_row.layout()
@@ -120,7 +123,10 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
 def test_home_dashboard_map_canvas_uses_loaded_map_ratio_without_dark_letterbox():
     _app()
 
-    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+    from ui.utils.pages.caregiver.home_dashboard_page import (
+        HOME_MAP_CANVAS_MAX_HEIGHT,
+        CaregiverHomePage,
+    )
 
     page = CaregiverHomePage(autoload=False)
 
@@ -138,7 +144,7 @@ def test_home_dashboard_map_canvas_uses_loaded_map_ratio_without_dark_letterbox(
             robots=[],
         )
 
-        expected_height = round(528 * 59 / 105)
+        expected_height = min(HOME_MAP_CANVAS_MAX_HEIGHT, round(528 * 59 / 105))
         assert page.home_map_canvas.background_color.name().upper() == "#FFFFFF"
         assert abs(page.home_map_canvas.height() - expected_height) <= 1
     finally:
@@ -172,10 +178,50 @@ def test_home_dashboard_map_canvas_scales_down_inside_equal_height_panel():
         map_panel = page.findChild(QFrame, "homeOperationMapPanel")
         flow_panel = page.findChild(QFrame, "homeTaskFlowPanel")
         map_canvas = page.findChild(QFrame, "homeOperationMapCanvas")
+        status_label = page.home_map_status_label
         assert map_panel.width() == flow_panel.width()
         assert map_panel.height() == flow_panel.height()
         assert map_canvas.y() + map_canvas.height() <= map_panel.height()
+        assert status_label.y() >= map_canvas.y() + map_canvas.height() + 8
+        assert status_label.y() + status_label.height() <= map_panel.height()
         assert map_canvas.width() > map_canvas.height()
+    finally:
+        page.close()
+
+
+def test_home_dashboard_map_selector_uses_map_profiles_and_reload_selection():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    reloads = []
+    page.load_dashboard_data = lambda: reloads.append(page.home_selected_map_id)
+
+    try:
+        page.apply_home_map_data(
+            {
+                "selected_map_id": "map_0504",
+                "map_profiles": [
+                    {"map_id": "map_0504", "map_name": "순찰 맵"},
+                    {"map_id": "map_test12_0506", "map_name": "운반 맵"},
+                ],
+                "map_assets": _map_assets("map_0504"),
+            },
+            robots=[],
+        )
+        app.processEvents()
+
+        selector = page.findChild(QComboBox, "homeMapSelector")
+        assert selector.count() == 2
+        assert selector.currentData() == "map_0504"
+        assert selector.itemData(1) == "map_test12_0506"
+        assert "운반 맵" in selector.itemText(1)
+
+        selector.setCurrentIndex(1)
+
+        assert page.home_selected_map_id == "map_test12_0506"
+        assert reloads == ["map_test12_0506"]
     finally:
         page.close()
 
@@ -846,19 +892,18 @@ def test_home_dashboard_normalizes_task_flow_into_compact_one_column_list():
             if label.objectName() == "homeTaskTitle"
         ]
         assert page.findChildren(FlowColumn) == []
-        assert page.flow_count_label.text() == "5건"
+        assert page.flow_count_label.text() == "4건"
         assert task_titles == [
             "작업 #104 · 순찰",
             "작업 #103 · 운반",
             "작업 #102 · 순찰",
             "작업 #101 · 운반",
-            "작업 #105 · 운반",
         ]
     finally:
         page.close()
 
 
-def test_home_dashboard_renders_rejected_guide_without_stale_ready_phase():
+def test_home_dashboard_omits_terminal_rejected_guide_from_compact_flow():
     _app()
 
     from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
@@ -884,11 +929,13 @@ def test_home_dashboard_renders_rejected_guide_without_stale_ready_phase():
         )
 
         labels = _label_texts(page)
-        assert "작업 #709 · 안내" in labels
-        assert "실패" in labels
+        assert page.flow_count_label.text() == "0건"
+        assert "표시할 작업이 없습니다." in labels
+        assert "작업 #709 · 안내" not in labels
+        assert "실패" not in labels
         assert "안내 시작 준비" not in labels
         assert "READY_TO_START_GUIDANCE" not in labels
-        assert "안내 상태 불일치" in labels
+        assert "안내 상태 불일치" not in labels
     finally:
         page.close()
 

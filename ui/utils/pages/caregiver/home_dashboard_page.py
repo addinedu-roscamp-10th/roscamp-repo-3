@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from PyQt6.QtCore import QObject, QPointF, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPen
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -64,7 +65,7 @@ FLOW_COLUMNS = (
     ("DONE", "완료/실패", set()),
 )
 
-HOME_FLOW_RENDER_ORDER = ("CANCELING", "IN_PROGRESS", "ASSIGNED", "WAITING", "DONE")
+HOME_FLOW_RENDER_ORDER = ("CANCELING", "IN_PROGRESS", "ASSIGNED", "WAITING")
 
 TASK_TYPE_LABELS = {
     "DELIVERY": "운반",
@@ -136,9 +137,9 @@ ROS_ERROR_MARKERS = (
 
 HOME_SYSTEM_STATUS_POLL_INTERVAL_MS = 2000
 HOME_MAP_FLOW_PANEL_MIN_WIDTH = 420
-HOME_MAP_FLOW_PANEL_HEIGHT = 396
-HOME_MAP_CANVAS_MAX_HEIGHT = 320
-HOME_FLOW_SCROLL_MAX_HEIGHT = 320
+HOME_MAP_FLOW_PANEL_HEIGHT = 420
+HOME_MAP_CANVAS_MAX_HEIGHT = 300
+HOME_FLOW_SCROLL_MAX_HEIGHT = 344
 
 
 def _is_ok_response(response):
@@ -865,6 +866,8 @@ class CaregiverHomePage(QWidget):
         self._timeline_event_keys = set()
         self.home_map_profiles = []
         self.home_selected_map_id = None
+        self.home_map_selector = None
+        self._syncing_home_map_selector = False
         self._home_map_asset_cache = {}
         self._has_summary_snapshot = False
         self._canceling_task_id = None
@@ -1006,15 +1009,30 @@ class CaregiverHomePage(QWidget):
         mp.setContentsMargins(20, 20, 20, 20)
         mp.setSpacing(12)
 
+        map_header = QHBoxLayout()
+        map_header.setSpacing(12)
         map_title = QLabel("운영 맵")
         map_title.setObjectName("sectionTitle")
+        self.home_map_selector = QComboBox()
+        self.home_map_selector.setObjectName("homeMapSelector")
+        self.home_map_selector.setMinimumWidth(240)
+        self.home_map_selector.setMinimumContentsLength(24)
+        self.home_map_selector.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.home_map_selector.currentIndexChanged.connect(
+            self._handle_home_map_selection_changed
+        )
+        map_header.addWidget(map_title)
+        map_header.addStretch()
+        map_header.addWidget(self.home_map_selector)
 
         self.home_map_canvas = HomeOperationMapCanvas()
         self.home_map_status_label = QLabel("맵을 불러오지 않았습니다.")
         self.home_map_status_label.setObjectName("mutedText")
         self.home_map_status_label.setWordWrap(True)
 
-        mp.addWidget(map_title)
+        mp.addLayout(map_header)
         mp.addWidget(self.home_map_canvas, 1)
         mp.addWidget(self.home_map_status_label)
 
@@ -1618,6 +1636,8 @@ class CaregiverHomePage(QWidget):
             )
         )
         self.home_selected_map_id = selected_map_id or None
+        self._sync_home_map_selector(self.home_selected_map_id)
+        selected_map_id = self.home_selected_map_id or selected_map_id
         self._remember_home_map_assets(map_data)
 
         assets = map_data.get("map_assets")
@@ -1656,6 +1676,39 @@ class CaregiverHomePage(QWidget):
             )
         else:
             self.home_map_status_label.setText("선택 가능한 맵이 없습니다.")
+
+    def _sync_home_map_selector(self, selected_map_id):
+        if self.home_map_selector is None:
+            return
+        self._syncing_home_map_selector = True
+        try:
+            self.home_map_selector.clear()
+            for profile in self.home_map_profiles:
+                map_id = str(profile.get("map_id") or "").strip()
+                if not map_id:
+                    continue
+                map_name = str(profile.get("map_name") or "").strip()
+                label = f"{map_name} ({map_id})" if map_name else map_id
+                self.home_map_selector.addItem(label, map_id)
+            index = self.home_map_selector.findData(selected_map_id)
+            self.home_map_selector.setCurrentIndex(index if index >= 0 else 0)
+            if self.home_map_selector.currentIndex() >= 0:
+                self.home_selected_map_id = (
+                    str(self.home_map_selector.currentData() or "").strip() or None
+                )
+        finally:
+            self._syncing_home_map_selector = False
+
+    def _handle_home_map_selection_changed(self, index):
+        if self._syncing_home_map_selector or self.home_map_selector is None:
+            return
+        selected_map_id = self.home_map_selector.itemData(index)
+        selected_map_id = str(selected_map_id or "").strip() or None
+        if not selected_map_id or selected_map_id == self.home_selected_map_id:
+            return
+        self.home_selected_map_id = selected_map_id
+        self.home_map_status_label.setText(f"선택 맵 {selected_map_id} 로드 중입니다.")
+        self.load_dashboard_data()
 
     def _remember_home_map_assets(self, map_data):
         assets = map_data.get("map_assets") if isinstance(map_data, dict) else None
