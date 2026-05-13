@@ -125,8 +125,8 @@ def test_patrol_overlay_keeps_existing_path_based_loading_contract():
                 },
                 "patrol_path": {
                     "poses": [
-                        {"x": 0.2, "y": 0.2},
-                        {"x": 1.0, "y": 0.5},
+                        {"x": 0.2, "y": -0.5},
+                        {"x": 1.0, "y": 0.0},
                     ],
                 },
             }
@@ -134,6 +134,6 @@ def test_patrol_overlay_keeps_existing_path_based_loading_contract():
 
         assert overlay.map_loaded is True
         assert overlay.map_image_size == (100, 50)
-        assert overlay.route_pixel_points == [(10, 40), (50, 25)]
+        assert overlay.route_pixel_points == [(20, 40), (60, 15)]
     finally:
         overlay.close()
