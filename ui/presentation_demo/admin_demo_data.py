@@ -174,6 +174,14 @@ class DemoTaskMonitorRow:
 
 
 @dataclass(frozen=True)
+class DemoTaskMonitorRowProgress:
+    status: str
+    phase: str
+    updated_at: str
+    feedback: str
+
+
+@dataclass(frozen=True)
 class DemoTaskMonitorSlideSnapshot:
     selected_task_id: str
     rows: tuple[DemoTaskMonitorRow, ...]
@@ -184,7 +192,7 @@ class DemoTaskMonitorSlideSnapshot:
     selected_phase: str
     latest_feedback: str
     lifecycle_steps: tuple[str, ...]
-    lifecycle_feedbacks: tuple[str, ...]
+    row_progress: tuple[tuple[DemoTaskMonitorRowProgress, ...], ...]
     current_step_index: int
     callouts: tuple[tuple[str, str], ...]
 
@@ -256,6 +264,71 @@ def build_task_monitor_slide_snapshot() -> DemoTaskMonitorSlideSnapshot:
             "gray",
         ),
     )
+    progress = DemoTaskMonitorRowProgress
+    row_progress = (
+        (
+            DemoTaskMonitorRowProgress(
+                "진행 중",
+                "요청 접수",
+                "14:24",
+                "요청이 접수되어 ROPI 2에 배정됨",
+            ),
+            DemoTaskMonitorRowProgress(
+                "진행 중",
+                "픽업 이동",
+                "14:25",
+                "ROPI 2가 물품 보관 위치로 이동 중",
+            ),
+            DemoTaskMonitorRowProgress(
+                "진행 중",
+                "적재 완료",
+                "14:26",
+                "의료키트 적재 완료",
+            ),
+            DemoTaskMonitorRowProgress(
+                "진행 중",
+                "목적지 이동",
+                "14:27",
+                "303호로 이동 중",
+            ),
+            DemoTaskMonitorRowProgress(
+                "진행 중",
+                "전달 대기",
+                "14:28",
+                "303호 앞 도착, 전달 대기 중",
+            ),
+            DemoTaskMonitorRowProgress(
+                "완료",
+                "완료",
+                "14:29",
+                "의료키트 전달 완료",
+            ),
+        ),
+        (
+            progress("진행 중", "순찰 시작", "14:24", "순찰 구역 진입"),
+            progress("진행 중", "복도1 확인", "14:25", "복도1 확인 중"),
+            progress("진행 중", "복도2 이동", "14:26", "복도2 이동 중"),
+            progress("진행 중", "복도3 확인", "14:27", "복도3 확인 중"),
+            progress("주의 필요", "낙상 의심", "14:28", "낙상 의심 감지"),
+            progress("주의 필요", "상황 확인", "14:29", "현장 확인 대기"),
+        ),
+        (
+            progress("진행 중", "방문 접수", "14:24", "방문객 목적지 확인"),
+            progress("진행 중", "대상 확인", "14:25", "안내 대상 확인"),
+            progress("진행 중", "안내 시작", "14:26", "안내 주행 시작"),
+            progress("진행 중", "복도 이동", "14:27", "303호 방향 이동"),
+            progress("진행 중", "안내 주행 중", "14:28", "방문객과 동행 중"),
+            progress("완료", "도착 안내", "14:29", "303호 도착 안내"),
+        ),
+        (
+            progress("진행 중", "요청 접수", "13:53", "기저귀 운반 요청 접수"),
+            progress("진행 중", "픽업 이동", "13:54", "물품 보관 위치 이동"),
+            progress("진행 중", "적재 완료", "13:55", "기저귀 적재 완료"),
+            progress("진행 중", "목적지 이동", "13:56", "305호 방향 이동"),
+            progress("진행 중", "전달 완료", "13:57", "305호 전달 완료"),
+            progress("완료", "완료", "13:58", "작업 완료"),
+        ),
+    )
     return DemoTaskMonitorSlideSnapshot(
         selected_task_id="#1024",
         rows=rows,
@@ -273,14 +346,7 @@ def build_task_monitor_slide_snapshot() -> DemoTaskMonitorSlideSnapshot:
             "전달 대기",
             "완료",
         ),
-        lifecycle_feedbacks=(
-            "요청이 접수되어 ROPI 2에 배정됨",
-            "ROPI 2가 물품 보관 위치로 이동 중",
-            "의료키트 적재 완료",
-            "303호로 이동 중",
-            "303호 앞 도착, 전달 대기 중",
-            "의료키트 전달 완료",
-        ),
+        row_progress=row_progress,
         current_step_index=4,
         callouts=(
             ("작업 목록", "운반/순찰/안내를 같은 task 단위로 추적"),

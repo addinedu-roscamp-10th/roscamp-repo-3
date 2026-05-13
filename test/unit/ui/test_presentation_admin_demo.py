@@ -302,18 +302,60 @@ def test_demo_task_monitor_replays_delivery_lifecycle_when_task_clicked():
         assert page.current_step_index == 0
         assert page.step_current_labels[0].text() == "현재"
         assert page.task_table.item(0, 4).text() == "요청 접수"
+        assert page.task_table.item(0, 5).text() == "14:24"
 
-        for expected_index, expected_step in enumerate(
-            ("픽업 이동", "적재 완료", "목적지 이동", "전달 대기", "완료"),
+        for expected_index, (expected_step, expected_time) in enumerate(
+            (
+                ("픽업 이동", "14:25"),
+                ("적재 완료", "14:26"),
+                ("목적지 이동", "14:27"),
+                ("전달 대기", "14:28"),
+                ("완료", "14:29"),
+            ),
             start=1,
         ):
             page._advance_delivery_progress_animation()
             assert page.current_step_index == expected_index
             assert page.step_current_labels[expected_index].text() == "현재"
             assert page.task_table.item(0, 4).text() == expected_step
+            assert page.task_table.item(0, 5).text() == expected_time
 
         assert not page.progress_timer.isActive()
         assert page.task_table.item(0, 0).text() == "완료"
+    finally:
+        page.close()
+
+
+def test_demo_task_monitor_updates_all_rows_during_lifecycle_replay():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import PresentationTaskMonitorPage
+
+    page = PresentationTaskMonitorPage()
+
+    def row_state(row_index: int) -> tuple[str, str]:
+        return (
+            page.task_table.item(row_index, 4).text(),
+            page.task_table.item(row_index, 5).text(),
+        )
+
+    try:
+        histories = {row_index: [] for row_index in range(page.task_table.rowCount())}
+
+        page.task_table.cellClicked.emit(0, 1)
+        for row_index in histories:
+            histories[row_index].append(row_state(row_index))
+
+        while page.progress_timer.isActive():
+            page._advance_delivery_progress_animation()
+            for row_index in histories:
+                histories[row_index].append(row_state(row_index))
+
+        for row_index, states in histories.items():
+            phases = [phase for phase, _time in states]
+            update_times = [update_time for _phase, update_time in states]
+            assert len(set(phases)) >= 3, (row_index, phases)
+            assert len(set(update_times)) >= 3, (row_index, update_times)
     finally:
         page.close()
 
