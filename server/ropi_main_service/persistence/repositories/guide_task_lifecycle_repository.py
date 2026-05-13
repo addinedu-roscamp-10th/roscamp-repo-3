@@ -211,6 +211,7 @@ class GuideTaskLifecycleRepository:
             severity = "INFO"
             writes_lifecycle = True
         elif self._is_terminal_command_failure(
+            command_type=command_type,
             reason_code=rejected_reason_code,
         ):
             result_code = "FAILED"
@@ -326,7 +327,9 @@ class GuideTaskLifecycleRepository:
         return reason_code or "GUIDE_COMMAND_REJECTED"
 
     @staticmethod
-    def _is_terminal_command_failure(*, reason_code):
+    def _is_terminal_command_failure(*, command_type, reason_code):
+        if command_type == "WAIT_TARGET_TRACKING":
+            return True
         return (
             str(reason_code or "").strip().upper()
             in TERMINAL_GUIDE_COMMAND_FAILURE_REASON_CODES

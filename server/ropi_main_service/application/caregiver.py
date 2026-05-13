@@ -19,6 +19,7 @@ class CaregiverService:
         "ASSIGNED",
         "RUNNING",
     }
+    GUIDE_REJECTED_RESULT_CODES = {"FAILED", "REJECTED"}
     DELIVERY_STATION_LABELS = {
         "PICKUP": "픽업 로봇팔",
         "DESTINATION": "목적지 로봇팔",
@@ -415,16 +416,23 @@ class CaregiverService:
     @staticmethod
     def _format_flow_task(row):
         task_id = row.get("task_id")
-        task_status = str(
+        source_task_status = str(
             row.get("task_status") or row.get("event_type") or "UNKNOWN"
         ).upper()
+        result_code = str(row.get("result_code") or "").upper()
+        task_type = str(row.get("task_type") or "UNKNOWN").upper()
+        task_status = CaregiverService._effective_flow_task_status(
+            task_type=task_type,
+            task_status=source_task_status,
+            result_code=result_code,
+        )
         robot_id = row.get("robot_id") or "-"
         description = row.get("description") or "-"
 
-        return {
+        task = {
             "event_id": row.get("event_id"),
             "task_id": task_id,
-            "task_type": row.get("task_type") or "UNKNOWN",
+            "task_type": task_type,
             "task_status": task_status,
             "phase": row.get("phase"),
             "robot_id": robot_id,
@@ -432,6 +440,21 @@ class CaregiverService:
             "display_text": f"#{task_id or row.get('event_id') or '-'} {description} / {robot_id}",
             "cancellable": task_status in CaregiverService.CANCELLABLE_TASK_STATUSES,
         }
+        if task_status != source_task_status:
+            task["source_task_status"] = source_task_status
+        if result_code:
+            task["result_code"] = result_code
+        if row.get("latest_reason_code"):
+            task["latest_reason_code"] = row.get("latest_reason_code")
+        return task
+
+    @classmethod
+    def _effective_flow_task_status(cls, *, task_type, task_status, result_code):
+        if task_status == "FAILED" or result_code == "FAILED":
+            return "FAILED"
+        if task_type == "GUIDE" and result_code in cls.GUIDE_REJECTED_RESULT_CODES:
+            return "FAILED"
+        return task_status
 
 
 __all__ = ["CaregiverService"]

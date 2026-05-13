@@ -65,6 +65,28 @@ def test_get_guide_driving_context_returns_destination_pose_stamped():
     assert response["goal_pose"]["pose"]["position"]["x"] == 1.5
 
 
+def test_get_guide_driving_context_allows_ready_to_start_guidance_phase():
+    row = {
+        "task_id": 3001,
+        "task_type": "GUIDE",
+        "task_status": "RUNNING",
+        "phase": "READY_TO_START_GUIDANCE",
+        "assigned_robot_id": "pinky1",
+        "destination_goal_pose_id": "delivery_room_301",
+        "pose_x": 1.5,
+        "pose_y": 2.5,
+        "pose_yaw": 0.25,
+        "frame_id": "map",
+    }
+    repository = GuideTaskNavigationRepository(fetch_one_func=lambda query, params: row)
+
+    response = repository.get_guide_driving_context(task_id=3001)
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["phase"] == "READY_TO_START_GUIDANCE"
+    assert response["goal_pose"]["pose"]["position"]["x"] == 1.5
+
+
 def test_get_guide_driving_context_rejects_unknown_task():
     repository = GuideTaskNavigationRepository(fetch_one_func=lambda query, params: None)
 

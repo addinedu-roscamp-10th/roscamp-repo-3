@@ -421,6 +421,30 @@ def test_caregiver_service_flow_board_uses_dashboard_status_buckets():
     assert [task["task_id"] for task in flow["DONE"]] == [6]
 
 
+def test_caregiver_service_flow_board_treats_rejected_guide_as_failed_done_item():
+    rows = [
+        {
+            "event_id": 7090,
+            "task_id": 709,
+            "task_type": "GUIDE",
+            "task_status": "RUNNING",
+            "phase": "READY_TO_START_GUIDANCE",
+            "result_code": "REJECTED",
+            "latest_reason_code": "GUIDE_STATE_MISMATCH",
+            "robot_id": "pinky1",
+            "description": "안내 주행을 시작할 수 없는 상태입니다.",
+        }
+    ]
+
+    flow = CaregiverService._format_flow_board_data(rows)
+
+    assert flow["IN_PROGRESS"] == []
+    assert flow["DONE"][0]["task_id"] == 709
+    assert flow["DONE"][0]["task_status"] == "FAILED"
+    assert flow["DONE"][0]["result_code"] == "REJECTED"
+    assert flow["DONE"][0]["latest_reason_code"] == "GUIDE_STATE_MISMATCH"
+
+
 def test_caregiver_service_alert_log_bundle_formats_operator_events():
     rows = [
         {

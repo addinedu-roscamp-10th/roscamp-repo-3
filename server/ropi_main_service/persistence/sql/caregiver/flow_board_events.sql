@@ -4,6 +4,8 @@ SELECT
     t.task_type,
     t.task_status,
     t.phase,
+    t.result_code,
+    t.latest_reason_code,
     COALESCE(tel.message, tel.event_name, t.result_message, t.task_type) AS description,
     COALESCE(tel.occurred_at, t.updated_at, t.created_at) AS event_datetime,
     COALESCE(tel.robot_id, t.assigned_robot_id) AS robot_id

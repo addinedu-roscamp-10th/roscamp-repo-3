@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -85,6 +86,7 @@ TASK_STATUS_LABELS = {
     "COMPLETED": "완료",
     "FAILED": "실패",
     "CANCELLED": "취소됨",
+    "REJECTED": "거절",
 }
 
 TASK_PHASE_LABELS = {
@@ -96,6 +98,14 @@ TASK_PHASE_LABELS = {
     "MOVE_TO_DESTINATION": "목적지 이동",
     "DELIVERY_DESTINATION": "목적지 도착",
     "RUNNING": "진행 중",
+    "WAIT_GUIDE_START_CONFIRM": "안내 시작 확인 대기",
+    "WAIT_TARGET_TRACKING": "안내 대상 확인",
+    "READY_TO_START_GUIDANCE": "안내 시작 준비",
+    "GUIDANCE_RUNNING": "안내 주행 중",
+    "WAIT_REIDENTIFY": "안내 대상 재확인",
+    "GUIDANCE_FINISHED": "안내 완료",
+    "GUIDANCE_CANCELLED": "안내 취소",
+    "GUIDANCE_FAILED": "안내 실패",
     "WAIT_FALL_RESPONSE": "낙상 대응 대기",
     "COMPLETED": "완료",
     "FAILED": "실패",
@@ -109,6 +119,12 @@ REASON_LABELS = {
     "CLIENT_ERROR": "클라이언트 오류",
     "ACTION_REJECTED": "명령 거절",
     "ROS_ACTION_FAILED": "ROS 명령 실패",
+    "GUIDE_STATE_MISMATCH": "안내 상태 불일치",
+    "GUIDE_COMMAND_REJECTED": "안내 명령 거절",
+    "GUIDE_COMMAND_TRANSPORT_ERROR": "안내 명령 통신 실패",
+    "GUIDE_RUNTIME_NOT_READY": "안내 런타임 미준비",
+    "GUIDE_DESTINATION_NOT_CONFIGURED": "안내 목적지 미설정",
+    "GUIDE_DESTINATION_POSE_INVALID": "안내 목적지 좌표 오류",
 }
 
 ROS_ERROR_MARKERS = (
@@ -181,6 +197,17 @@ def _status_of(task: dict) -> str:
     return _display(task.get("task_status"), "UNKNOWN").upper()
 
 
+def _effective_task_status(task: dict) -> str:
+    status = _status_of(task)
+    task_type = str(task.get("task_type") or task.get("scenario") or "").upper()
+    result_code = str(task.get("result_code") or "").upper()
+    if status == "FAILED" or result_code == "FAILED":
+        return "FAILED"
+    if task_type == "GUIDE" and result_code == "REJECTED":
+        return "FAILED"
+    return status
+
+
 def _task_id_value(task: dict):
     task_id = task.get("task_id")
     if isinstance(task_id, int):
@@ -207,10 +234,14 @@ def _label_from(mapping, value, default="-"):
 
 
 def _task_status_label(value):
+    if isinstance(value, dict):
+        value = _effective_task_status(value)
     return _label_from(TASK_STATUS_LABELS, value)
 
 
 def _task_status_chip_type(value):
+    if isinstance(value, dict):
+        value = _effective_task_status(value)
     status = str(value or "").upper()
     if status in {"FAILED", "CANCELLED"}:
         return "red"
@@ -429,8 +460,47 @@ class HomeOperationMapCanvas(MapCanvasWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("homeOperationMapCanvas")
+        self.background_color = QColor("#FFFFFF")
+        self.setMinimumHeight(260)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         self.visible_robot_ids = []
         self.robot_markers = []
+        self._syncing_canvas_height = False
+
+    def load_map_from_assets(self, *, yaml_text, pgm_bytes, cache_key=None):
+        super().load_map_from_assets(
+            yaml_text=yaml_text,
+            pgm_bytes=pgm_bytes,
+            cache_key=cache_key,
+        )
+        self._sync_canvas_height_to_map_ratio()
+
+    def clear_map(self, status_text="맵 미수신"):
+        super().clear_map(status_text)
+        self.setMinimumHeight(260)
+        self.setMaximumHeight(16777215)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_canvas_height_to_map_ratio()
+
+    def _sync_canvas_height_to_map_ratio(self):
+        if self._syncing_canvas_height or not self.map_loaded or not self.map_image_size:
+            return
+        image_width, image_height = self.map_image_size
+        if image_width <= 0 or image_height <= 0 or self.width() <= 0:
+            return
+        target_height = max(220, int(round(self.width() * image_height / image_width)))
+        if abs(self.height() - target_height) <= 1:
+            return
+        self._syncing_canvas_height = True
+        try:
+            self.setFixedHeight(target_height)
+        finally:
+            self._syncing_canvas_height = False
 
     def show_robots(self, robots, *, selected_map_id):
         self.visible_robot_ids = []
@@ -649,8 +719,8 @@ class FlowColumn(QFrame):
         title_label = QLabel(self._format_task_title(task))
         title_label.setObjectName("homeTaskTitle")
         status_chip = StatusChip(
-            _task_status_label(task.get("task_status")),
-            _task_status_chip_type(task.get("task_status")),
+            _task_status_label(task),
+            _task_status_chip_type(task),
         )
         header.addWidget(title_label)
         header.addStretch()
@@ -688,7 +758,7 @@ class FlowColumn(QFrame):
         if task_id is None:
             return None
 
-        status = _status_of(task)
+        status = _effective_task_status(task)
         cancellable = task.get("cancellable")
         if cancellable is None:
             cancellable = status in CANCELABLE_TASK_STATUSES
@@ -731,7 +801,10 @@ class FlowColumn(QFrame):
             task.get("assigned_robot_id") or task.get("robot_id"),
             "미배정",
         )
-        phase = _label_from(TASK_PHASE_LABELS, task.get("phase"))
+        status = _effective_task_status(task)
+        phase = ""
+        if status not in {"FAILED", "CANCELLED"}:
+            phase = _label_from(TASK_PHASE_LABELS, task.get("phase"))
         destination = _display(task.get("destination_label"), "")
         feedback_summary = _display(task.get("feedback_summary"), "")
         reason_code = _reason_label(
@@ -740,7 +813,7 @@ class FlowColumn(QFrame):
         description, detail = _summary_and_detail(task.get("description"))
 
         rows = [("로봇", robot_id, "value")]
-        if phase != "-":
+        if phase and phase != "-":
             rows.append(("단계", phase, "value"))
         if destination:
             rows.append(("목적지", destination, "value"))
@@ -920,8 +993,8 @@ class CaregiverHomePage(QWidget):
 
         map_panel = QFrame()
         map_panel.setObjectName("homeOperationMapPanel")
-        map_panel.setMinimumWidth(360)
-        map_panel.setMaximumWidth(560)
+        map_panel.setMinimumWidth(520)
+        map_panel.setMaximumWidth(760)
         mp = QVBoxLayout(map_panel)
         mp.setContentsMargins(20, 20, 20, 20)
         mp.setSpacing(12)
@@ -930,7 +1003,6 @@ class CaregiverHomePage(QWidget):
         map_title.setObjectName("sectionTitle")
 
         self.home_map_canvas = HomeOperationMapCanvas()
-        self.home_map_canvas.setMinimumHeight(280)
         self.home_map_status_label = QLabel("맵을 불러오지 않았습니다.")
         self.home_map_status_label.setObjectName("mutedText")
         self.home_map_status_label.setWordWrap(True)
@@ -941,6 +1013,8 @@ class CaregiverHomePage(QWidget):
 
         flow_wrap = QFrame()
         flow_wrap.setObjectName("homeTaskFlowPanel")
+        flow_wrap.setMinimumWidth(340)
+        flow_wrap.setMaximumWidth(420)
         fw = QVBoxLayout(flow_wrap)
         fw.setContentsMargins(20, 20, 20, 20)
         fw.setSpacing(14)
@@ -972,8 +1046,8 @@ class CaregiverHomePage(QWidget):
         fw.addLayout(flow_header)
         fw.addWidget(self.flow_scroll)
 
-        map_flow_layout.addWidget(map_panel, 0, Qt.AlignmentFlag.AlignTop)
-        map_flow_layout.addWidget(flow_wrap, 1, Qt.AlignmentFlag.AlignTop)
+        map_flow_layout.addWidget(map_panel, 1, Qt.AlignmentFlag.AlignTop)
+        map_flow_layout.addWidget(flow_wrap, 0, Qt.AlignmentFlag.AlignTop)
 
         timeline_wrap = QFrame()
         timeline_wrap.setObjectName("card")
@@ -1626,8 +1700,8 @@ class CaregiverHomePage(QWidget):
         title_label.setObjectName("homeTaskTitle")
         title_label.setWordWrap(True)
         status_chip = StatusChip(
-            _task_status_label(task.get("task_status")),
-            _task_status_chip_type(task.get("task_status")),
+            _task_status_label(task),
+            _task_status_chip_type(task),
         )
         header.addWidget(title_label, 1)
         header.addWidget(status_chip, 0, Qt.AlignmentFlag.AlignTop)
@@ -1662,7 +1736,7 @@ class CaregiverHomePage(QWidget):
         if task_id is None:
             return None
 
-        status = _status_of(task)
+        status = _effective_task_status(task)
         cancellable = task.get("cancellable")
         if cancellable is None:
             cancellable = status in CANCELABLE_TASK_STATUSES
@@ -1845,7 +1919,7 @@ class CaregiverHomePage(QWidget):
 
     @staticmethod
     def _flow_column_key_for(task):
-        status = _status_of(task)
+        status = _effective_task_status(task)
         for column_key, _title, statuses in FLOW_COLUMNS:
             if status in statuses:
                 return column_key

@@ -32,11 +32,12 @@ def _label_texts(widget) -> list[str]:
     return [label.text() for label in widget.findChildren(QLabel)]
 
 
-def _map_assets(map_id="map_0504"):
+def _map_assets(map_id="map_0504", *, width=4, height=4):
     return {
         "map_id": map_id,
         "yaml_text": "image: map.pgm\nresolution: 1.0\norigin: [0.0, 0.0, 0.0]\n",
-        "pgm_bytes": b"P5\n4 4\n255\n" + (b"\x00" * 16),
+        "pgm_bytes": f"P5\n{width} {height}\n255\n".encode("ascii")
+        + (b"\x00" * (width * height)),
         "yaml_sha256": f"{map_id}-yaml",
         "pgm_sha256": f"{map_id}-pgm",
     }
@@ -86,6 +87,8 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         assert map_canvas is not None
         assert map_panel.parentWidget() is map_flow_row
         assert flow_panel.parentWidget() is map_flow_row
+        assert map_panel.minimumWidth() >= 520
+        assert flow_panel.maximumWidth() <= 440
         assert "운영 맵" in labels
 
         flow_scroll = page.findChild(QScrollArea, "flowBoardScroll")
@@ -94,6 +97,34 @@ def test_home_dashboard_page_matches_phase1_layout_contract():
         assert flow_scroll.widgetResizable() is True
         assert flow_scroll.maximumHeight() <= 460
         assert isinstance(flow_scroll.widget().layout(), QVBoxLayout)
+    finally:
+        page.close()
+
+
+def test_home_dashboard_map_canvas_uses_loaded_map_ratio_without_dark_letterbox():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+
+    try:
+        page.home_map_canvas.resize(528, 280)
+        page.apply_home_map_data(
+            {
+                "selected_map_id": "map_test12_0506",
+                "map_assets": _map_assets(
+                    "map_test12_0506",
+                    width=105,
+                    height=59,
+                ),
+            },
+            robots=[],
+        )
+
+        expected_height = round(528 * 59 / 105)
+        assert page.home_map_canvas.background_color.name().upper() == "#FFFFFF"
+        assert abs(page.home_map_canvas.height() - expected_height) <= 1
     finally:
         page.close()
 
@@ -772,6 +803,41 @@ def test_home_dashboard_normalizes_task_flow_into_compact_one_column_list():
             "작업 #101 · 운반",
             "작업 #105 · 운반",
         ]
+    finally:
+        page.close()
+
+
+def test_home_dashboard_renders_rejected_guide_without_stale_ready_phase():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+
+    try:
+        page.apply_flow_board_data(
+            {
+                "IN_PROGRESS": [
+                    {
+                        "task_id": 709,
+                        "task_type": "GUIDE",
+                        "task_status": "RUNNING",
+                        "phase": "READY_TO_START_GUIDANCE",
+                        "assigned_robot_id": "pinky1",
+                        "result_code": "REJECTED",
+                        "latest_reason_code": "GUIDE_STATE_MISMATCH",
+                        "description": "안내 주행을 시작할 수 없는 상태입니다.",
+                    }
+                ]
+            }
+        )
+
+        labels = _label_texts(page)
+        assert "작업 #709 · 안내" in labels
+        assert "실패" in labels
+        assert "안내 시작 준비" not in labels
+        assert "READY_TO_START_GUIDANCE" not in labels
+        assert "안내 상태 불일치" in labels
     finally:
         page.close()
 

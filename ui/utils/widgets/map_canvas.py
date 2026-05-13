@@ -112,6 +112,7 @@ class MapCanvasWidget(QFrame):
         super().__init__(parent)
         self.setObjectName("mapCanvasWidget")
         self.setMinimumHeight(160)
+        self.background_color = QColor("#0F172A")
         self.map_loaded = False
         self.map_image_size = None
         self.status_text = "맵 미수신"
@@ -279,7 +280,7 @@ class MapCanvasWidget(QFrame):
         painter = QPainter(self)
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            painter.fillRect(self.rect(), QColor("#0F172A"))
+            painter.fillRect(self.rect(), self.background_color)
 
             if not self.map_loaded or self._map_image.isNull():
                 painter.setPen(QColor("#94A3B8"))

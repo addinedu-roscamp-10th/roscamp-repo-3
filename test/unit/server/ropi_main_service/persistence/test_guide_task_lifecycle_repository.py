@@ -123,7 +123,7 @@ def test_record_wait_target_tracking_acceptance_updates_task_detail_history_and_
     assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[4][0]
 
 
-def test_record_command_rejection_keeps_current_phase_and_writes_event_only():
+def test_record_initial_tracking_rejection_closes_task_as_failed():
     connection = FakeConnection()
     repository = GuideTaskLifecycleRepository(connection_factory=lambda: connection)
 
@@ -138,12 +138,21 @@ def test_record_command_rejection_keeps_current_phase_and_writes_event_only():
         },
     )
 
-    assert response["result_code"] == "REJECTED"
-    assert response["task_status"] == "WAITING_DISPATCH"
-    assert response["phase"] == "WAIT_GUIDE_START_CONFIRM"
+    assert response["result_code"] == "FAILED"
+    assert response["task_status"] == "FAILED"
+    assert response["phase"] == "GUIDANCE_FAILED"
+    assert response["guide_phase"] == "GUIDANCE_FAILED"
     assert "UPDATE task" in connection.cursor_instance.calls[1][0]
-    assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[2][0]
-    assert len(connection.cursor_instance.calls) == 3
+    assert connection.cursor_instance.calls[1][1][:5] == (
+        "FAILED",
+        "GUIDANCE_FAILED",
+        "GUIDE_STATE_MISMATCH",
+        "FAILED",
+        "invalid order",
+    )
+    assert "UPDATE guide_task_detail" in connection.cursor_instance.calls[2][0]
+    assert "INSERT INTO task_state_history" in connection.cursor_instance.calls[3][0]
+    assert "INSERT INTO task_event_log" in connection.cursor_instance.calls[4][0]
 
 
 def test_record_hard_start_guidance_rejection_closes_task_as_failed():

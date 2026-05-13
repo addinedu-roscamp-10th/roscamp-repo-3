@@ -6,6 +6,7 @@ from server.ropi_main_service.persistence.sql_loader import load_sql
 
 GUIDE_DRIVING_ALLOWED_PHASES = {
     "WAIT_TARGET_TRACKING",
+    "READY_TO_START_GUIDANCE",
     "WAIT_REIDENTIFY",
     "GUIDANCE_RUNNING",
 }
