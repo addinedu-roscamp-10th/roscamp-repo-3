@@ -202,7 +202,6 @@ class DemoTaskMonitorSlideSnapshot:
     selected_row_progress: tuple[DemoTaskMonitorRowProgress, ...]
     sparse_row_updates: tuple[DemoTaskMonitorRowUpdate, ...]
     current_step_index: int
-    callouts: tuple[tuple[str, str], ...]
 
 
 def display_task_type(task_type: str) -> str:
@@ -348,11 +347,6 @@ def build_task_monitor_slide_snapshot() -> DemoTaskMonitorSlideSnapshot:
         selected_row_progress=selected_row_progress,
         sparse_row_updates=sparse_row_updates,
         current_step_index=4,
-        callouts=(
-            ("작업 목록", "운반/순찰/안내를 같은 task 단위로 추적"),
-            ("현재 단계", "단계와 최근 피드백으로 진행 위치 확인"),
-            ("최근 피드백", "로봇 주행 결과가 UI에 반영됨"),
-        ),
     )
 
 

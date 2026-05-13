@@ -787,11 +787,6 @@ class PresentationTaskMonitorPage(QWidget):
         layout.addWidget(timeline_title)
         layout.addLayout(self._build_lifecycle_timeline())
 
-        callout_row = QHBoxLayout()
-        callout_row.setSpacing(10)
-        for title, detail in self.snapshot.callouts:
-            callout_row.addWidget(self._build_callout_box(title, detail), 1)
-        layout.addLayout(callout_row)
         layout.addStretch(1)
         return card
 
@@ -916,22 +911,6 @@ class PresentationTaskMonitorPage(QWidget):
         if item is not None:
             item.setText(text)
 
-    def _build_callout_box(self, title: str, detail: str) -> QFrame:
-        box = QFrame()
-        box.setObjectName("infoBox")
-        box.setProperty("presentation_callout", True)
-        layout = QVBoxLayout(box)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(6)
-        title_label = QLabel(title)
-        title_label.setObjectName("presentationMonitorCalloutTitle")
-        detail_label = QLabel(detail)
-        detail_label.setObjectName("presentationMonitorCalloutDetail")
-        detail_label.setWordWrap(True)
-        layout.addWidget(title_label)
-        layout.addWidget(detail_label)
-        return box
-
     def _apply_slide_style(self) -> None:
         self.setStyleSheet(
             """
@@ -988,16 +967,6 @@ class PresentationTaskMonitorPage(QWidget):
                 color: #16A34A;
                 font-size: 13px;
                 font-weight: 900;
-            }
-            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorCalloutTitle {
-                color: #0F172A;
-                font-size: 16px;
-                font-weight: 900;
-            }
-            QWidget#presentationTaskMonitorPage QLabel#presentationMonitorCalloutDetail {
-                color: #334155;
-                font-size: 14px;
-                font-weight: 700;
             }
             """
         )

@@ -271,6 +271,13 @@ def test_demo_task_monitor_uses_slide_capture_fixture_without_runtime():
         assert "적재 완료" in text_blob
         assert "목적지 이동" in text_blob
         assert "전달 대기" in text_blob
+        assert not any(
+            frame.property("presentation_callout") is True
+            for frame in page.findChildren(QFrame)
+        )
+        assert "운반/순찰/안내를 같은 task 단위로 추적" not in text_blob
+        assert "단계와 최근 피드백으로 진행 위치 확인" not in text_blob
+        assert "로봇 주행 결과가 UI에 반영됨" not in text_blob
         assert "snapshot 이후" not in text_blob
         assert "TASK_UPDATED" not in text_blob
         assert "ACTION_FEEDBACK_UPDATED" not in text_blob
