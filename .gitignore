@@ -216,8 +216,6 @@ log/
 system_design/
 !system_design/
 system_design/*
-!system_design/gui_design.md
-!system_design/gui_design_ko.md
 .codex/
 .serena
 A_Ros2_project/
