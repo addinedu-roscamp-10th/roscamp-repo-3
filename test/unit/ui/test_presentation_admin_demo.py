@@ -132,9 +132,20 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
             frame.property("presentation_home_map") is True
             for frame in window.findChildren(QFrame)
         )
+        assert not window.findChildren(QFrame, "homeMapFlowRow")
+        assert not window.findChildren(QFrame, "homeOperationMapPanel")
+        assert "맵을 불러오지 않았습니다." not in texts
         assert any(
             frame.property("presentation_compact_flow") is True
             for frame in window.findChildren(QFrame)
+        )
+        assert (
+            window.home_page.presentation_map_card.minimumHeight()
+            == window.home_page.compact_flow_card.minimumHeight()
+        )
+        assert (
+            window.home_page.presentation_map_card.maximumHeight()
+            == window.home_page.compact_flow_card.maximumHeight()
         )
         assert window.home_page.flow_scroll.parentWidget().isHidden()
         assert window.map_widget.marker_count == 3

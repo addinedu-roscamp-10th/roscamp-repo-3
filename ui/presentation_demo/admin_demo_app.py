@@ -59,6 +59,7 @@ DEMO_MAP_YAML = (
 )
 DEMO_MAP_PGM = DEMO_MAP_YAML.with_suffix(".pgm")
 DEMO_MAP_CANVAS_SIZE = (528, 300)
+DEMO_MAP_FLOW_CARD_HEIGHT = DEMO_MAP_CANVAS_SIZE[1] + 72
 
 
 def clear_layout(layout) -> None:
@@ -262,6 +263,7 @@ class PresentationCompactTaskFlowCard(QFrame):
         self.setObjectName("card")
         self.setProperty("presentation_compact_flow", True)
         self.setMinimumWidth(360)
+        self.setFixedHeight(DEMO_MAP_FLOW_CARD_HEIGHT)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
@@ -351,9 +353,21 @@ class PresentationHomePage(CaregiverHomePage):
         self.snapshot = store.snapshot
         self.map_widget = None
         self.compact_flow_card = None
+        self.presentation_map_card = None
+        self._detached_production_home_widgets = []
         super().__init__(autoload=False, auto_system_status_poll=False)
+        self._detach_production_map_flow_row()
         self._insert_map_flow_row()
         self.refresh_from_store(store.snapshot)
+
+    def _detach_production_map_flow_row(self) -> None:
+        page_layout = self.layout()
+        for frame in self.findChildren(QFrame, "homeMapFlowRow"):
+            if page_layout is not None:
+                page_layout.removeWidget(frame)
+            frame.hide()
+            frame.setParent(None)
+            self._detached_production_home_widgets.append(frame)
 
     def _insert_map_flow_row(self) -> None:
         row = QFrame()
@@ -366,6 +380,8 @@ class PresentationHomePage(CaregiverHomePage):
         map_card.setObjectName("card")
         map_card.setProperty("presentation_home_map", True)
         map_card.setMaximumWidth(DEMO_MAP_CANVAS_SIZE[0] + 40)
+        map_card.setFixedHeight(DEMO_MAP_FLOW_CARD_HEIGHT)
+        self.presentation_map_card = map_card
         root = QVBoxLayout(map_card)
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
@@ -689,11 +705,23 @@ class PresentationAdminDemoWindow(QMainWindow):
         follow_btn.setHidden(True)
 
     def closeEvent(self, event):
+        self._shutdown_request_page_background_work()
         for page in (self.request_page, self.monitor_page, self.alerts_page):
             shutdown = getattr(page, "shutdown", None)
             if callable(shutdown):
                 shutdown()
         super().closeEvent(event)
+
+    def _shutdown_request_page_background_work(self) -> None:
+        for form in getattr(self.request_page, "forms", []):
+            if hasattr(form, "LOAD_STATE_LOADED"):
+                form._items_load_state = form.LOAD_STATE_LOADED
+            stop_workers = getattr(form, "_stop_worker_threads", None)
+            if callable(stop_workers):
+                stop_workers()
+            stop_submit = getattr(form, "_stop_submit_thread", None)
+            if callable(stop_submit):
+                stop_submit()
 
 
 def create_demo_window(*, autostart_runtime: bool = True) -> PresentationAdminDemoWindow:
