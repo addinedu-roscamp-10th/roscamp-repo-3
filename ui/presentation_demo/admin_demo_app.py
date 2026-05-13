@@ -997,7 +997,7 @@ class PresentationAlertsLogPage(AlertLogPage):
         self.capture_bundle = build_alert_log_capture_bundle()
         self.robot_id_input.setPlaceholderText("예: ROPI 2")
         self.source_input.setPlaceholderText("예: 관제 서버")
-        self.event_type_input.setPlaceholderText("예: 낙상 의심 감지")
+        self.event_type_input.setPlaceholderText("예: 낙상 감지")
         self.detail_list.setObjectName("presentationAlertDetailList")
         self.payload_label.setText("상세\n내용")
         self.table.setHorizontalHeaderLabels(
@@ -1082,10 +1082,11 @@ class PresentationAlertsLogPage(AlertLogPage):
             ("처리 상태", self._event_value(event, "result_code")),
             (reason_label, self._event_value(event, "reason_code")),
             ("메시지", self._event_value(event, "message")),
+            ("상세 내용", self._payload_detail_text(payload)),
         ]
         self.detail_list.set_rows(detail_rows)
         self._style_detail_key_rows()
-        self._render_payload(payload)
+        self._render_payload(None)
         self.related_list.set_rows(
             [
                 ("작업 번호", self._event_value(event, "task_id")),
@@ -1271,6 +1272,9 @@ class PresentationAlertsLogPage(AlertLogPage):
         if not isinstance(payload, dict):
             return None
         return payload.get(key) or payload.get(translate_robot_display_text(key))
+
+    def _payload_detail_text(self, payload) -> str:
+        return self._format_payload_text(payload) or "-"
 
 
 def translate_widget_texts(widget: QWidget) -> None:

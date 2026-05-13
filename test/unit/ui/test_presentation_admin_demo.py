@@ -118,7 +118,7 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
         assert window.alerts_page.table.rowCount() == 12
         assert window.alerts_page.table.item(0, 0).text() == "EV-20260513-014"
         assert window.alerts_page.table.item(0, 5).text() == "ROPI 3"
-        assert window.alerts_page.table.item(0, 6).text() == "낙상 의심 감지"
+        assert window.alerts_page.table.item(0, 6).text() == "낙상 감지"
         assert window.alerts_page.related_task_button.isEnabled()
         assert window.alerts_page.related_robot_button.isEnabled()
         assert not hasattr(window.request_page, "submit_demo_request")
@@ -546,16 +546,19 @@ def test_demo_alert_logs_capture_bundle_renders_operational_page_without_runtime
 
         assert page.table.rowCount() == 12
         assert page.table.item(0, 0).text() == "EV-20260513-014"
-        assert page.table.item(0, 2).text() == "주의"
+        assert page.table.item(0, 2).text() == "긴급"
         assert page.table.item(0, 4).text() == "#1033"
         assert page.table.item(0, 5).text() == "ROPI 3"
-        assert page.table.item(0, 6).text() == "낙상 의심 감지"
-        assert "복도3에서 낙상 의심 이벤트가 감지되었습니다." in text_blob
+        assert page.table.item(0, 6).text() == "낙상 감지"
+        assert "복도3에서 낙상이 감지되었습니다." in text_blob
 
         assert {"전체 이벤트", "주의", "오류", "긴급"}.issubset(set(texts))
-        assert {"12건", "2건", "1건", "0건"}.issubset(set(texts))
+        assert page.summary_cards["total_event_count"].value_label.text() == "12건"
+        assert page.summary_cards["warning_count"].value_label.text() == "1건"
+        assert page.summary_cards["error_count"].value_label.text() == "1건"
+        assert page.summary_cards["critical_count"].value_label.text() == "1건"
         assert {
-            "낙상 의심 감지",
+            "낙상 감지",
             "운반 목적지 도착",
             "안내 주행 시작",
             "작업 실행 준비 실패",
@@ -625,12 +628,17 @@ def test_demo_alert_logs_filters_hardcoded_events_without_service_calls(monkeypa
         assert page.summary_cards["total_event_count"].value_label.text() == "12건"
 
         page.severity_combo.setCurrentIndex(page.severity_combo.findData("WARNING"))
-        assert page.table.rowCount() == 2
-        assert page.summary_cards["total_event_count"].value_label.text() == "2건"
+        assert page.table.rowCount() == 1
+        assert page.summary_cards["total_event_count"].value_label.text() == "1건"
         assert {
             page.table.item(row, 2).text()
             for row in range(page.table.rowCount())
         } == {"주의"}
+
+        page.severity_combo.setCurrentIndex(page.severity_combo.findData("CRITICAL"))
+        assert page.table.rowCount() == 1
+        assert page.table.item(0, 2).text() == "긴급"
+        assert page.table.item(0, 6).text() == "낙상 감지"
 
         page.severity_combo.setCurrentIndex(page.severity_combo.findData(None))
         page.period_combo.setCurrentIndex(page.period_combo.findData("LAST_1_HOUR"))
@@ -671,6 +679,10 @@ def test_demo_alert_logs_uses_compact_table_and_green_detail_keys():
 
         detail_keys = page.detail_list.findChildren(QLabel, "presentationAlertDetailKey")
         assert detail_keys
+        assert "상세 내용" in {key.text() for key in detail_keys}
+        assert page.payload_row.isHidden()
+        assert page.payload_label.isHidden()
+        assert page.payload_text.isHidden()
         assert all(
             key.alignment()
             == (Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)

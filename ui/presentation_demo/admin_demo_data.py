@@ -354,22 +354,22 @@ def build_alert_log_capture_bundle() -> dict:
     return {
         "summary": {
             "total_event_count": 12,
-            "warning_count": 2,
+            "warning_count": 1,
             "error_count": 1,
-            "critical_count": 0,
+            "critical_count": 1,
         },
         "events": [
             {
                 "event_id": "EV-20260513-014",
                 "occurred_at": "2026-05-13 14:32:18",
-                "severity": "WARNING",
+                "severity": "CRITICAL",
                 "source_component": "AI 낙상 감지",
                 "task_id": "#1033",
                 "robot_id": "pinky3",
                 "event_type": "FALL_ALERT_CREATED",
                 "result_code": "확인 필요",
-                "reason_code": "낙상 의심",
-                "message": "복도3에서 낙상 의심 이벤트가 감지되었습니다.",
+                "reason_code": "낙상 감지",
+                "message": "복도3에서 낙상이 감지되었습니다.",
                 "payload": "감지 신뢰도 0.91\n감지 위치 복도3\n관련 작업에서 낙상 증거 사진 확인 가능",
                 "location": "복도3",
             },
