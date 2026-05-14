@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import math
 import sys
 from datetime import datetime, timedelta
@@ -13,6 +14,7 @@ from PyQt6.QtGui import (
     QPainter,
     QPen,
     QPolygonF,
+    QPixmap,
     QShortcut,
 )
 from PyQt6.QtWidgets import (
@@ -51,7 +53,11 @@ from ui.presentation_demo.robot_display import (
 from ui.utils.core.styles import load_stylesheet
 from ui.utils.pages.caregiver.alert_log_page import AlertLogPage
 from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
-from ui.utils.pages.caregiver.task_monitor_page import FallEvidenceImageDialog
+from ui.utils.pages.caregiver.task_monitor_detail_panels import PatrolRuntimePanel
+from ui.utils.pages.caregiver.task_monitor_page import (
+    FallEvidenceImageDialog,
+    PatrolResumeDialog,
+)
 from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
 from ui.utils.widgets.admin_common import StatusChip, battery_text
 from ui.utils.widgets.admin_shell import AdminShell, PageHeader
@@ -71,6 +77,10 @@ DEMO_MAP_YAML = (
 DEMO_MAP_PGM = DEMO_MAP_YAML.with_suffix(".pgm")
 DEMO_MAP_CANVAS_SIZE = (600, 337)
 DEMO_MAP_FLOW_CARD_HEIGHT = DEMO_MAP_CANVAS_SIZE[1] + 72
+DEMO_PATROL_TASK_ID = "#1025"
+DEMO_PATROL_FALL_ALERT_DELAY_MS = 1000
+DEMO_FALL_EVIDENCE_ID = "EVD-1025-14"
+DEMO_FALL_EVIDENCE_IMAGE = PROJECT_ROOT / "reference" / "presentation" / "낙상증거사진.png"
 
 
 def clear_layout(layout) -> None:
@@ -609,9 +619,16 @@ class PresentationTaskMonitorPage(QWidget):
         self.step_current_labels: list[QLabel] = []
         self.current_phase_value_label = None
         self.latest_feedback_value_label = None
+        self.detail_value_labels: dict[str, QLabel] = {}
+        self._fall_evidence_dialog = None
+        self._resume_dialog = None
         self.progress_timer = QTimer(self)
         self.progress_timer.setInterval(1000)
         self.progress_timer.timeout.connect(self._advance_delivery_progress_animation)
+        self.patrol_alert_timer = QTimer(self)
+        self.patrol_alert_timer.setInterval(DEMO_PATROL_FALL_ALERT_DELAY_MS)
+        self.patrol_alert_timer.setSingleShot(True)
+        self.patrol_alert_timer.timeout.connect(self._show_patrol_fall_alert)
         self.setObjectName("presentationTaskMonitorPage")
         self._build_ui()
         self._apply_lifecycle_step_state(update_task_text=False)
@@ -761,11 +778,34 @@ class PresentationTaskMonitorPage(QWidget):
         eyebrow.setObjectName("mutedText")
         selected_title = QLabel(self.snapshot.selected_title)
         selected_title.setObjectName("presentationMonitorHeroTitle")
+        self.selected_title_label = selected_title
         title_box.addWidget(eyebrow)
         title_box.addWidget(selected_title)
         title_row.addLayout(title_box, 1)
-        title_row.addWidget(StatusChip("진행 중", "green"), 0, Qt.AlignmentFlag.AlignTop)
+        self.selected_status_chip = StatusChip("진행 중", "green")
+        title_row.addWidget(
+            self.selected_status_chip,
+            0,
+            Qt.AlignmentFlag.AlignTop,
+        )
         layout.addLayout(title_row)
+
+        self.patrol_runtime_section = PatrolRuntimePanel()
+        translate_widget_texts(self.patrol_runtime_section)
+        self.patrol_runtime_section.progress_panel.hide()
+        self.patrol_runtime_section.patrol_map_placeholder.hide()
+        self.patrol_runtime_section.setHidden(True)
+        self.fall_alert_task_label = self.patrol_runtime_section.fall_alert_task_label
+        self.evidence_image_id_label = self.patrol_runtime_section.evidence_image_id_label
+        self.fall_frame_id_label = self.patrol_runtime_section.fall_frame_id_label
+        self.fall_streak_label = self.patrol_runtime_section.fall_streak_label
+        self.evidence_image_btn = self.patrol_runtime_section.evidence_image_btn
+        self.resume_patrol_btn = self.patrol_runtime_section.resume_patrol_btn
+        self.evidence_status_label = self.patrol_runtime_section.evidence_status_label
+        self.resume_status_label = self.patrol_runtime_section.resume_status_label
+        self.evidence_image_btn.clicked.connect(self.open_fall_evidence_dialog)
+        self.resume_patrol_btn.clicked.connect(self.open_patrol_resume_dialog)
+        layout.addWidget(self.patrol_runtime_section)
 
         detail_grid = QGridLayout()
         detail_grid.setContentsMargins(0, 0, 0, 0)
@@ -790,7 +830,6 @@ class PresentationTaskMonitorPage(QWidget):
         timeline_title.setObjectName("sectionTitle")
         layout.addWidget(timeline_title)
         layout.addLayout(self._build_lifecycle_timeline())
-
         layout.addStretch(1)
         return card
 
@@ -806,6 +845,7 @@ class PresentationTaskMonitorPage(QWidget):
         value_label = QLabel(value)
         value_label.setObjectName("presentationMonitorDetailValue")
         value_label.setWordWrap(True)
+        self.detail_value_labels[key] = value_label
         if key == "현재 단계":
             self.current_phase_value_label = value_label
         elif key == "최근 피드백":
@@ -851,9 +891,134 @@ class PresentationTaskMonitorPage(QWidget):
         if row < 0 or row >= len(self.snapshot.rows):
             return
         selected_row = self.snapshot.rows[row]
-        self.selected_task_id = selected_row.task_id
+        self._select_presentation_row(selected_row)
         if selected_row.task_id == self.snapshot.selected_task_id:
+            self._hide_patrol_fall_alert()
             self.start_delivery_progress_animation()
+        elif selected_row.task_id == DEMO_PATROL_TASK_ID:
+            self.progress_timer.stop()
+            self._hide_patrol_fall_alert(stop_timer=False)
+            self.patrol_alert_timer.start()
+        else:
+            self.progress_timer.stop()
+            self._hide_patrol_fall_alert()
+
+    def _select_presentation_row(self, row) -> None:
+        self.selected_task_id = row.task_id
+        self.selected_title_label.setText(f"{row.title} {row.task_id}")
+        self.selected_status_chip.setText(row.status)
+        self.selected_status_chip.setObjectName(
+            {
+                "green": "chipGreen",
+                "blue": "chipBlue",
+                "yellow": "chipYellow",
+                "red": "chipRed",
+            }.get(chip_type_for_tone(row.tone), "chipBlue")
+        )
+        style = self.selected_status_chip.style()
+        style.unpolish(self.selected_status_chip)
+        style.polish(self.selected_status_chip)
+        values = {
+            "작업 유형": row.task_type,
+            "담당 로봇": row.robot_display_id,
+            "목적지": row.destination,
+            "현재 단계": (
+                self.snapshot.selected_phase
+                if row.task_id == self.snapshot.selected_task_id
+                else row.phase
+            ),
+            "최근 피드백": row.feedback,
+        }
+        for key, value in values.items():
+            label = self.detail_value_labels.get(key)
+            if label is not None:
+                label.setText(value)
+
+    def _demo_patrol_task(self) -> dict:
+        return {
+            "task_id": DEMO_PATROL_TASK_ID,
+            "task_type": "PATROL",
+            "task_status": "RUNNING",
+            "phase": "WAIT_FALL_RESPONSE",
+            "assigned_robot_id": "ROPI 3",
+            "feedback_summary": "복도3 낙상 감지, 현장 확인 필요",
+            "patrol_area_name": "야간 순찰",
+            "fall_alert": {
+                "alert_id": "ALERT-PATROL-1025",
+                "evidence_image_id": DEMO_FALL_EVIDENCE_ID,
+                "evidence_image_available": True,
+                "frame_id": "ROPI 3 전면 카메라",
+                "result_seq": 14,
+                "fall_streak_ms": 1800,
+                "zone_name": "복도3",
+                "alert_pose": {"x": 1.18, "y": -0.42, "yaw": 0.0},
+            },
+        }
+
+    def _show_patrol_fall_alert(self) -> None:
+        if self.selected_task_id != DEMO_PATROL_TASK_ID:
+            return
+        self.patrol_runtime_section.render(
+            self._demo_patrol_task(),
+            can_resume=True,
+            evidence_available=True,
+        )
+        self.patrol_runtime_section.progress_panel.hide()
+        self.patrol_runtime_section.patrol_map_placeholder.hide()
+        self.patrol_runtime_section.focus_fall_alert(evidence_available=True)
+
+    def _hide_patrol_fall_alert(self, *, stop_timer: bool = True) -> None:
+        if stop_timer:
+            self.patrol_alert_timer.stop()
+        self.patrol_runtime_section.render(
+            {},
+            can_resume=False,
+            evidence_available=False,
+        )
+
+    def _demo_fall_evidence_response(self) -> dict:
+        image_data = ""
+        width = 0
+        height = 0
+        if DEMO_FALL_EVIDENCE_IMAGE.exists():
+            image_data = base64.b64encode(DEMO_FALL_EVIDENCE_IMAGE.read_bytes()).decode(
+                "ascii"
+            )
+            pixmap = QPixmap(str(DEMO_FALL_EVIDENCE_IMAGE))
+            if not pixmap.isNull():
+                width = pixmap.width()
+                height = pixmap.height()
+        return {
+            "result_code": "OK",
+            "evidence_image_id": DEMO_FALL_EVIDENCE_ID,
+            "frame_id": "ROPI 3 전면 카메라",
+            "image_width_px": width,
+            "image_height_px": height,
+            "image_data": image_data,
+            "detections": [{"class_name": "fall", "confidence": 0.91}],
+        }
+
+    def open_fall_evidence_dialog(self) -> None:
+        self.evidence_status_label.setHidden(True)
+        self._fall_evidence_dialog = self._create_fall_evidence_dialog(
+            self._demo_fall_evidence_response()
+        )
+        self._fall_evidence_dialog.open()
+
+    def open_patrol_resume_dialog(self) -> None:
+        dialog = PatrolResumeDialog(task_id=DEMO_PATROL_TASK_ID, parent=self)
+        dialog.member_id_input.setText("303")
+        dialog.action_memo_input.setPlainText("현장 확인 및 안전 조치 완료")
+        dialog._sync_submit_button()
+        self._resume_dialog = dialog
+        dialog.accepted.connect(self._handle_demo_patrol_resume_accepted)
+        dialog.open()
+
+    def _handle_demo_patrol_resume_accepted(self) -> None:
+        self.resume_status_label.setText("순찰 재개 요청 완료")
+        self.resume_status_label.setHidden(False)
+        self.resume_patrol_btn.setText("순찰 재개 요청 완료")
+        self.resume_patrol_btn.setEnabled(False)
 
     def start_delivery_progress_animation(self) -> None:
         self.progress_timer.stop()

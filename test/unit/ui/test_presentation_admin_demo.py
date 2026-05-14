@@ -5,6 +5,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
     QApplication,
     QLabel,
@@ -326,6 +327,101 @@ def test_demo_task_monitor_uses_slide_capture_fixture_without_runtime():
         assert "DELIVERY" not in text_blob
         assert "DELIVERY_DESTINATION" not in text_blob
     finally:
+        page.close()
+
+
+def test_demo_task_monitor_shows_patrol_fall_banner_after_night_patrol_click():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import (
+        DEMO_FALL_EVIDENCE_ID,
+        DEMO_PATROL_FALL_ALERT_DELAY_MS,
+        DEMO_PATROL_TASK_ID,
+        PresentationTaskMonitorPage,
+    )
+
+    page = PresentationTaskMonitorPage()
+
+    try:
+        assert page.patrol_alert_timer.interval() == DEMO_PATROL_FALL_ALERT_DELAY_MS
+        assert page.patrol_alert_timer.isSingleShot()
+        assert page.patrol_runtime_section.isHidden()
+        assert page.patrol_runtime_section.alert_panel.objectName() == "fallAlertPanel"
+        assert page.resume_patrol_btn.objectName() == "patrolResumeButton"
+        assert page.evidence_image_btn.objectName() == "secondaryButton"
+
+        page._handle_task_row_clicked(1, 0)
+        QApplication.processEvents()
+
+        assert page.selected_task_id == DEMO_PATROL_TASK_ID
+        assert page.patrol_runtime_section.isHidden()
+        assert not page.evidence_image_btn.isEnabled()
+        assert not page.resume_patrol_btn.isEnabled()
+
+        QTest.qWait(DEMO_PATROL_FALL_ALERT_DELAY_MS + 80)
+        QApplication.processEvents()
+
+        assert not page.patrol_runtime_section.isHidden()
+        assert not page.patrol_runtime_section.alert_panel.isHidden()
+        assert page.fall_alert_task_label.text() == DEMO_PATROL_TASK_ID
+        assert page.evidence_image_id_label.text() == DEMO_FALL_EVIDENCE_ID
+        assert page.fall_frame_id_label.text() == "ROPI 3 전면 카메라"
+        assert page.evidence_image_btn.isEnabled()
+        assert page.resume_patrol_btn.isEnabled()
+        text_blob = " ".join(_display_texts(page))
+        assert "낙상 감지" in text_blob
+        assert "복도3" in text_blob
+        assert "증거사진 조회" in text_blob
+        assert "현장 조치 후 순찰 재개" in text_blob
+    finally:
+        page.close()
+
+
+def test_demo_task_monitor_uses_local_fall_image_and_closes_resume_modal():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import (
+        DEMO_FALL_EVIDENCE_ID,
+        DEMO_FALL_EVIDENCE_IMAGE,
+        PresentationTaskMonitorPage,
+    )
+
+    page = PresentationTaskMonitorPage()
+
+    try:
+        assert DEMO_FALL_EVIDENCE_IMAGE.exists()
+        page._handle_task_row_clicked(1, 0)
+        page._show_patrol_fall_alert()
+
+        page.open_fall_evidence_dialog()
+        QApplication.processEvents()
+
+        evidence_dialog = page._fall_evidence_dialog
+        assert evidence_dialog is not None
+        assert evidence_dialog.evidence_image_id_label.text() == DEMO_FALL_EVIDENCE_ID
+        pixmap = evidence_dialog.image_label.pixmap()
+        assert pixmap is not None
+        assert not pixmap.isNull()
+        assert "낙상 0.91" in " ".join(_display_texts(evidence_dialog))
+
+        page.open_patrol_resume_dialog()
+        QApplication.processEvents()
+
+        resume_dialog = page._resume_dialog
+        assert resume_dialog is not None
+        assert resume_dialog.isVisible()
+        assert resume_dialog.submit_btn.isEnabled()
+
+        resume_dialog.submit_btn.click()
+        QApplication.processEvents()
+
+        assert not resume_dialog.isVisible()
+        assert "순찰 재개 요청 완료" in page.resume_status_label.text()
+    finally:
+        if page._fall_evidence_dialog is not None:
+            page._fall_evidence_dialog.close()
+        if page._resume_dialog is not None:
+            page._resume_dialog.close()
         page.close()
 
 
