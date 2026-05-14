@@ -349,6 +349,7 @@ def test_demo_task_monitor_shows_patrol_fall_banner_after_night_patrol_click():
         assert page.patrol_runtime_section.alert_panel.objectName() == "fallAlertPanel"
         assert page.resume_patrol_btn.objectName() == "patrolResumeButton"
         assert page.evidence_image_btn.objectName() == "secondaryButton"
+        assert not page.delivery_timeline_title.isHidden()
 
         page._handle_task_row_clicked(1, 0)
         QApplication.processEvents()
@@ -357,6 +358,8 @@ def test_demo_task_monitor_shows_patrol_fall_banner_after_night_patrol_click():
         assert page.patrol_runtime_section.isHidden()
         assert not page.evidence_image_btn.isEnabled()
         assert not page.resume_patrol_btn.isEnabled()
+        assert page.delivery_timeline_title.isHidden()
+        assert page.delivery_timeline_container.isHidden()
 
         QTest.qWait(DEMO_PATROL_FALL_ALERT_DELAY_MS + 80)
         QApplication.processEvents()
@@ -375,6 +378,70 @@ def test_demo_task_monitor_shows_patrol_fall_banner_after_night_patrol_click():
         assert "현장 조치 후 순찰 재개" in text_blob
     finally:
         page.close()
+
+
+def test_demo_global_fall_banner_persists_across_pages_and_opens_actions():
+    _app()
+
+    from ui.presentation_demo.admin_demo_app import (
+        DEMO_FALL_EVIDENCE_ID,
+        DEMO_PATROL_FALL_ALERT_DELAY_MS,
+        DEMO_PATROL_TASK_ID,
+        create_demo_window,
+    )
+
+    window = create_demo_window(autostart_runtime=False)
+
+    try:
+        assert window.global_fall_alert_banner.objectName() == "globalFallAlertBanner"
+        assert window.global_fall_alert_banner.isHidden()
+        assert window.global_fall_alert_task_button.objectName() == "dangerButton"
+        assert (
+            window.global_fall_alert_evidence_button.objectName()
+            == "secondaryDangerButton"
+        )
+
+        window.monitor_page._handle_task_row_clicked(1, 0)
+        window.admin_shell.set_page("alerts")
+        QApplication.processEvents()
+
+        QTest.qWait(DEMO_PATROL_FALL_ALERT_DELAY_MS + 80)
+        QApplication.processEvents()
+
+        assert not window.global_fall_alert_banner.isHidden()
+        assert window.global_fall_alert_title_label.text() == "낙상 감지"
+        assert DEMO_PATROL_TASK_ID in window.global_fall_alert_summary_label.text()
+        assert "ROPI 3" in window.global_fall_alert_summary_label.text()
+        assert "복도3" in window.global_fall_alert_summary_label.text()
+        assert DEMO_FALL_EVIDENCE_ID in window.global_fall_alert_detail_label.text()
+        assert not window.global_fall_alert_evidence_button.isHidden()
+        assert window.global_fall_alert_evidence_button.isEnabled()
+
+        for page_key in ("home", "task_request", "alerts"):
+            window.admin_shell.set_page(page_key)
+            QApplication.processEvents()
+            assert not window.global_fall_alert_banner.isHidden()
+
+        window.global_fall_alert_task_button.click()
+        QApplication.processEvents()
+
+        assert window.global_fall_alert_banner.isHidden()
+        assert window.monitor_page.selected_task_id == DEMO_PATROL_TASK_ID
+        assert not window.monitor_page.patrol_runtime_section.isHidden()
+
+        window.monitor_page._handle_task_row_clicked(1, 0)
+        QTest.qWait(DEMO_PATROL_FALL_ALERT_DELAY_MS + 80)
+        QApplication.processEvents()
+        window.global_fall_alert_evidence_button.click()
+        QApplication.processEvents()
+
+        evidence_dialog = window.monitor_page._fall_evidence_dialog
+        assert evidence_dialog is not None
+        assert not evidence_dialog.image_label.pixmap().isNull()
+    finally:
+        if window.monitor_page._fall_evidence_dialog is not None:
+            window.monitor_page._fall_evidence_dialog.close()
+        window.close()
 
 
 def test_demo_task_monitor_uses_local_fall_image_and_closes_resume_modal():

@@ -610,8 +610,9 @@ class PresentationFallEvidenceImageDialog(FallEvidenceImageDialog):
 
 
 class PresentationTaskMonitorPage(QWidget):
-    def __init__(self, *, autostart_stream: bool = False):
+    def __init__(self, *, autostart_stream: bool = False, fall_alert_handler=None):
         super().__init__()
+        self.fall_alert_handler = fall_alert_handler
         self.snapshot = build_task_monitor_slide_snapshot()
         self.selected_task_id = self.snapshot.selected_task_id
         self.current_step_index = self.snapshot.current_step_index
@@ -641,6 +642,11 @@ class PresentationTaskMonitorPage(QWidget):
 
     def shutdown(self) -> None:
         self.progress_timer.stop()
+        self.patrol_alert_timer.stop()
+        if self._fall_evidence_dialog is not None:
+            self._fall_evidence_dialog.close()
+        if self._resume_dialog is not None:
+            self._resume_dialog.close()
         return
 
     def _build_ui(self) -> None:
@@ -826,10 +832,15 @@ class PresentationTaskMonitorPage(QWidget):
             )
         layout.addLayout(detail_grid)
 
-        timeline_title = QLabel("운반 진행 단계")
-        timeline_title.setObjectName("sectionTitle")
-        layout.addWidget(timeline_title)
-        layout.addLayout(self._build_lifecycle_timeline())
+        self.delivery_timeline_title = QLabel("운반 진행 단계")
+        self.delivery_timeline_title.setObjectName("sectionTitle")
+        self.delivery_timeline_container = QWidget()
+        self.delivery_timeline_container.setObjectName("presentationDeliveryTimeline")
+        delivery_timeline_layout = self._build_lifecycle_timeline()
+        delivery_timeline_layout.setContentsMargins(0, 0, 0, 0)
+        self.delivery_timeline_container.setLayout(delivery_timeline_layout)
+        layout.addWidget(self.delivery_timeline_title)
+        layout.addWidget(self.delivery_timeline_container)
         layout.addStretch(1)
         return card
 
@@ -903,8 +914,20 @@ class PresentationTaskMonitorPage(QWidget):
             self.progress_timer.stop()
             self._hide_patrol_fall_alert()
 
+    def show_patrol_fall_alert_task(self) -> None:
+        for row_index, row in enumerate(self.snapshot.rows):
+            if row.task_id != DEMO_PATROL_TASK_ID:
+                continue
+            self.task_table.selectRow(row_index)
+            self._select_presentation_row(row)
+            self.progress_timer.stop()
+            self.patrol_alert_timer.stop()
+            self._show_patrol_fall_alert()
+            return
+
     def _select_presentation_row(self, row) -> None:
         self.selected_task_id = row.task_id
+        self._set_delivery_timeline_visible(row.task_id == self.snapshot.selected_task_id)
         self.selected_title_label.setText(f"{row.title} {row.task_id}")
         self.selected_status_chip.setText(row.status)
         self.selected_status_chip.setObjectName(
@@ -933,6 +956,10 @@ class PresentationTaskMonitorPage(QWidget):
             label = self.detail_value_labels.get(key)
             if label is not None:
                 label.setText(value)
+
+    def _set_delivery_timeline_visible(self, visible: bool) -> None:
+        self.delivery_timeline_title.setHidden(not visible)
+        self.delivery_timeline_container.setHidden(not visible)
 
     def _demo_patrol_task(self) -> dict:
         return {
@@ -966,6 +993,23 @@ class PresentationTaskMonitorPage(QWidget):
         self.patrol_runtime_section.progress_panel.hide()
         self.patrol_runtime_section.patrol_map_placeholder.hide()
         self.patrol_runtime_section.focus_fall_alert(evidence_available=True)
+        self._emit_demo_global_fall_alert()
+
+    def _demo_global_fall_alert(self) -> dict:
+        alert = dict(self._demo_patrol_task()["fall_alert"])
+        alert.update(
+            {
+                "task_id": DEMO_PATROL_TASK_ID,
+                "robot_id": "ROPI 3",
+                "zone_name": "복도3",
+                "occurred_at": "14:32",
+            }
+        )
+        return alert
+
+    def _emit_demo_global_fall_alert(self) -> None:
+        if callable(self.fall_alert_handler):
+            self.fall_alert_handler(self._demo_global_fall_alert())
 
     def _hide_patrol_fall_alert(self, *, stop_timer: bool = True) -> None:
         if stop_timer:
@@ -1483,13 +1527,14 @@ class PresentationAdminDemoWindow(QMainWindow):
         self.store = store or DemoAdminStore(build_admin_demo_snapshot())
         self.setWindowTitle("ROPI 관제 콘솔")
         self.setMinimumSize(1280, 800)
+        self._current_global_fall_alert = None
         self.fullscreen_shortcut = QShortcut(QKeySequence("F11"), self)
         self.fullscreen_shortcut.activated.connect(self.toggle_fullscreen)
 
         central = QWidget()
         central.setObjectName("appRoot")
         self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
+        layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -1503,7 +1548,8 @@ class PresentationAdminDemoWindow(QMainWindow):
         self.request_page = TaskRequestPage()
         self._hide_task_request_follow_tab()
         self.monitor_page = PresentationTaskMonitorPage(
-            autostart_stream=autostart_runtime
+            autostart_stream=autostart_runtime,
+            fall_alert_handler=self._show_global_fall_alert,
         )
         self.alerts_page = PresentationAlertsLogPage(autoload=autostart_runtime)
         self.map_widget = self.home_page.map_widget
@@ -1515,10 +1561,102 @@ class PresentationAdminDemoWindow(QMainWindow):
         self.admin_shell.set_page("home")
         self.admin_shell.nav_requested.connect(self.admin_shell.set_page)
         self.store.subscribe(self._refresh_pages)
+        self._build_global_fall_alert_banner(layout)
         layout.addWidget(self.admin_shell)
 
     def _refresh_pages(self, snapshot: DemoSnapshot) -> None:
         self.home_page.refresh_from_store(snapshot)
+
+    def _build_global_fall_alert_banner(self, parent_layout) -> None:
+        self.global_fall_alert_banner = QFrame()
+        self.global_fall_alert_banner.setObjectName("globalFallAlertBanner")
+        self.global_fall_alert_banner.setHidden(True)
+
+        banner_layout = QHBoxLayout(self.global_fall_alert_banner)
+        banner_layout.setContentsMargins(18, 12, 18, 12)
+        banner_layout.setSpacing(16)
+
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(4)
+        self.global_fall_alert_title_label = QLabel("낙상 감지")
+        self.global_fall_alert_title_label.setObjectName("globalFallAlertTitle")
+        self.global_fall_alert_summary_label = QLabel()
+        self.global_fall_alert_summary_label.setObjectName("globalFallAlertSummary")
+        self.global_fall_alert_summary_label.setWordWrap(True)
+        self.global_fall_alert_detail_label = QLabel()
+        self.global_fall_alert_detail_label.setObjectName("globalFallAlertDetail")
+        self.global_fall_alert_detail_label.setWordWrap(True)
+        text_layout.addWidget(self.global_fall_alert_title_label)
+        text_layout.addWidget(self.global_fall_alert_summary_label)
+        text_layout.addWidget(self.global_fall_alert_detail_label)
+        banner_layout.addLayout(text_layout, 1)
+
+        self.global_fall_alert_task_button = QPushButton("작업 보기")
+        self.global_fall_alert_task_button.setObjectName("dangerButton")
+        self.global_fall_alert_task_button.clicked.connect(
+            self._open_global_fall_alert_task
+        )
+        banner_layout.addWidget(self.global_fall_alert_task_button)
+
+        self.global_fall_alert_evidence_button = QPushButton("낙상 사진")
+        self.global_fall_alert_evidence_button.setObjectName("secondaryDangerButton")
+        self.global_fall_alert_evidence_button.clicked.connect(
+            self._open_global_fall_alert_evidence
+        )
+        banner_layout.addWidget(self.global_fall_alert_evidence_button)
+
+        self.global_fall_alert_ack_button = QPushButton("확인")
+        self.global_fall_alert_ack_button.setObjectName("secondaryButton")
+        self.global_fall_alert_ack_button.clicked.connect(self._hide_global_fall_alert)
+        banner_layout.addWidget(self.global_fall_alert_ack_button)
+
+        parent_layout.addWidget(self.global_fall_alert_banner)
+
+    def _show_global_fall_alert(self, alert) -> None:
+        alert = alert if isinstance(alert, dict) else {}
+        self._current_global_fall_alert = alert
+        summary_parts = [
+            value
+            for value in (
+                alert.get("task_id"),
+                alert.get("robot_id"),
+                alert.get("zone_name"),
+            )
+            if value
+        ]
+        detail_parts = []
+        if alert.get("occurred_at"):
+            detail_parts.append(f"감지 시각 {alert['occurred_at']}")
+        if alert.get("result_seq"):
+            detail_parts.append(f"결과 #{alert['result_seq']}")
+        if alert.get("evidence_image_id"):
+            detail_parts.append(f"증거사진 {alert['evidence_image_id']}")
+
+        self.global_fall_alert_title_label.setText("낙상 감지")
+        self.global_fall_alert_summary_label.setText(
+            " · ".join(str(value) for value in summary_parts)
+            or "순찰 중 낙상 이벤트가 수신되었습니다."
+        )
+        self.global_fall_alert_detail_label.setText(
+            " · ".join(detail_parts) or "작업 모니터에서 순찰 상태를 확인하세요."
+        )
+        evidence_available = bool(alert.get("evidence_image_available"))
+        self.global_fall_alert_evidence_button.setVisible(evidence_available)
+        self.global_fall_alert_evidence_button.setEnabled(evidence_available)
+        self.global_fall_alert_banner.setHidden(False)
+
+    def _open_global_fall_alert_task(self) -> None:
+        self.admin_shell.set_page("task_monitor")
+        self.monitor_page.show_patrol_fall_alert_task()
+        self._hide_global_fall_alert()
+
+    def _open_global_fall_alert_evidence(self) -> None:
+        self._open_global_fall_alert_task()
+        self.monitor_page.open_fall_evidence_dialog()
+
+    def _hide_global_fall_alert(self) -> None:
+        self.global_fall_alert_banner.setHidden(True)
+        self._current_global_fall_alert = None
 
     def _hide_task_request_follow_tab(self) -> None:
         follow_btn = getattr(self.request_page, "follow_btn", None)
