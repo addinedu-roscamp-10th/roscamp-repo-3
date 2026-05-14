@@ -99,6 +99,9 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
         texts = _display_texts(window)
         text_blob = " ".join(texts)
         lowered = text_blob.lower()
+        home_texts = _display_texts(window.home_page)
+        monitor_text_blob = " ".join(_display_texts(window.monitor_page))
+        monitor_lowered = monitor_text_blob.lower()
 
         assert window.NAV_ITEMS == [
             ("home", "홈"),
@@ -134,6 +137,24 @@ def test_admin_demo_window_has_home_presentation_and_production_pages():
         assert "현재 ROPI 위치와 진행 중인 업무를 맵 위에 표시합니다." not in texts
         assert "B동 복도" not in texts
         assert "303호 앞" not in texts
+        assert "새로고침" not in home_texts
+        assert not hasattr(window.monitor_page, "time_card")
+        assert all(
+            token not in monitor_text_blob
+            for token in (
+                "발표 화면",
+                "데모 데이터",
+                "발표용 작업 스냅샷",
+                "스냅샷",
+                "관제 서버 확인",
+                "하트비트",
+                "연동 현황",
+            )
+        )
+        assert all(
+            token not in monitor_lowered
+            for token in ("demo", "presentation", "slide", "snapshot", "capture")
+        )
         assert {"복도1", "303호", "복도3"}.issubset(set(texts))
         assert any(
             frame.property("presentation_home_map") is True
@@ -284,7 +305,19 @@ def test_demo_task_monitor_uses_slide_capture_fixture_without_runtime():
         assert "운반/순찰/안내를 같은 task 단위로 추적" not in text_blob
         assert "단계와 최근 피드백으로 진행 위치 확인" not in text_blob
         assert "로봇 주행 결과가 UI에 반영됨" not in text_blob
+        assert not hasattr(page, "time_card")
+        assert "발표 화면" not in text_blob
+        assert "데모 데이터" not in text_blob
+        assert "발표용 작업 스냅샷" not in text_blob
+        assert "스냅샷" not in text_blob
+        assert "관제 서버 확인" not in text_blob
+        assert "하트비트" not in text_blob
+        assert "연동 현황" not in text_blob
         assert "snapshot 이후" not in text_blob
+        assert "slide" not in text_blob.lower()
+        assert "demo" not in text_blob.lower()
+        assert "presentation" not in text_blob.lower()
+        assert "capture" not in text_blob.lower()
         assert "TASK_UPDATED" not in text_blob
         assert "ACTION_FEEDBACK_UPDATED" not in text_blob
         assert "pinky2" not in text_blob.lower()

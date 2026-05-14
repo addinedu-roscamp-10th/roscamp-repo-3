@@ -54,7 +54,7 @@ from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
 from ui.utils.pages.caregiver.task_monitor_page import FallEvidenceImageDialog
 from ui.utils.pages.caregiver.task_request_page import TaskRequestPage
 from ui.utils.widgets.admin_common import StatusChip, battery_text
-from ui.utils.widgets.admin_shell import AdminShell, PageHeader, PageTimeCard
+from ui.utils.widgets.admin_shell import AdminShell, PageHeader
 from ui.utils.widgets.map_canvas import MapCanvasWidget
 
 
@@ -374,10 +374,18 @@ class PresentationHomePage(CaregiverHomePage):
         self.presentation_map_flow_row = None
         self._detached_production_home_widgets = []
         super().__init__(autoload=False, auto_system_status_poll=False)
+        self._hide_manual_refresh_action()
         self._detach_production_map_flow_row()
         self._insert_map_flow_row()
         self._apply_presentation_home_text_scale()
         self.refresh_from_store(store.snapshot)
+
+    def _hide_manual_refresh_action(self) -> None:
+        if self.refresh_button is not None:
+            self.refresh_button.setText("")
+            self.refresh_button.hide()
+        if self.time_card.action_row is not None:
+            self.time_card.action_row.hide()
 
     def _detach_production_map_flow_row(self) -> None:
         page_layout = self.layout()
@@ -628,16 +636,9 @@ class PresentationTaskMonitorPage(QWidget):
         self.header = PageHeader(
             "작업 모니터",
             "선택 작업의 진행 단계와 최근 피드백을 한눈에 확인합니다.",
-            statuses={
-                "발표 화면": "online",
-                "데모 데이터": "online",
-            },
-            show_status=True,
+            show_status=False,
         )
-        self.time_card = PageTimeCard(status_text="발표용 작업 스냅샷")
-        self.time_card.mark_updated("slide")
         header_row.addWidget(self.header, 1)
-        header_row.addWidget(self.time_card, 0, Qt.AlignmentFlag.AlignTop)
         root.addLayout(header_row)
 
         summary_row = QHBoxLayout()
