@@ -28,6 +28,7 @@ device/
     src/ropi_interface/       # 관제 서버와 모든 로봇이 공유하는 ROS action 정의
   ropi_mobile/
     src/ropi_nav_config/     # ~/pinky_pro의 pinky_navigation을 감싸는 우리 설정 패키지
+    src/ropi_fms_bringup/    # FMS 교통정리 실험용 namespaced Pinky bringup
     src/ropi_delivery/       # pinky2 운반 시나리오
     src/ropi_guide/          # pinky1 안내 시나리오
     src/ropi_patrol/         # pinky3 순찰/낙상 감지 시나리오
@@ -44,7 +45,7 @@ source /opt/ros/jazzy/setup.bash
 source ~/pinky_pro/install/setup.bash
 
 cd ~/roscamp-repo-3/device
-colcon build --symlink-install --packages-up-to ropi_nav_config ropi_guide ropi_delivery ropi_patrol
+colcon build --symlink-install --packages-up-to ropi_nav_config ropi_fms_bringup ropi_guide ropi_delivery ropi_patrol
 source install/setup.bash
 ```
 
@@ -54,6 +55,15 @@ Pinky navigation은 `ropi_nav_config`로 실행한다. 이 launch가 `~/pinky_pr
 
 ```bash
 ros2 launch ropi_nav_config pinky_nav.launch.py
+```
+
+FMS 교통정리 실험은 두 대의 Pinky를 같은 ROS domain에서 동시에 띄우므로 `ropi_fms_bringup`을 사용한다. 이 launch는 `map_0504`를 기본 맵으로 쓰고, `robot_id`를 ROS namespace로 적용해서 Nav2 action/topic을 `/pinky1/...`, `/pinky3/...`처럼 분리한다.
+
+```bash
+export ROS_DOMAIN_ID=99
+
+ros2 launch ropi_fms_bringup pinky_fms.launch.py robot_id:=pinky1
+ros2 launch ropi_fms_bringup pinky_fms.launch.py robot_id:=pinky3
 ```
 
 시나리오 노드는 각 패키지 launch로 실행한다.
