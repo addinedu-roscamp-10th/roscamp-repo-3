@@ -3,22 +3,20 @@ from launch.actions import (
     DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
-    RegisterEventHandler,
 )
-from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
-from launch_xml.launch_description_sources import XMLLaunchDescriptionSource
 from launch_ros.actions import Node, PushROSNamespace, SetRemap
-from launch_ros.parameter_descriptions import ParameterFile
 from launch_ros.substitutions import FindPackageShare
+from launch_xml.launch_description_sources import XMLLaunchDescriptionSource
 from nav2_common.launch import RewrittenYaml
 
 
 def generate_launch_description():
     robot_id = LaunchConfiguration("robot_id")
     map_file = LaunchConfiguration("map")
-    params_file = LaunchConfiguration("params_file")
+    nav2_params_file = LaunchConfiguration("nav2_params_file")
+    lidar_serial_port = LaunchConfiguration("lidar_serial_port")
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
     use_composition = LaunchConfiguration("use_composition")
@@ -33,14 +31,29 @@ def generate_launch_description():
     robot_description_xacro = PathJoinSubstitution(
         [FindPackageShare("pinky_description"), "urdf", "robot.urdf.xacro"]
     )
-    robot_controllers = PathJoinSubstitution(
-        [FindPackageShare("ropi_fms_bringup"), "config", "pinky_controllers_fms.yaml"]
+    pinky_bringup_params = PathJoinSubstitution(
+        [FindPackageShare("pinky_bringup"), "config", "pinky_params.yaml"]
     )
     sllidar_launch = PathJoinSubstitution(
         [FindPackageShare("sllidar_ros2"), "launch", "sllidar_c1_launch.py"]
     )
+    pinky_localization_launch = PathJoinSubstitution(
+        [FindPackageShare("pinky_navigation"), "launch", "localization_launch.xml"]
+    )
     pinky_navigation_launch = PathJoinSubstitution(
-        [FindPackageShare("pinky_navigation"), "launch", "bringup_launch.xml"]
+        [FindPackageShare("pinky_navigation"), "launch", "navigation_launch.xml"]
+    )
+    namespaced_localization_params = RewrittenYaml(
+        source_file=nav2_params_file,
+        param_rewrites={},
+        root_key=robot_id,
+        convert_types=True,
+    )
+    namespaced_navigation_params = RewrittenYaml(
+        source_file=nav2_params_file,
+        param_rewrites={},
+        root_key=robot_id,
+        convert_types=True,
     )
 
     robot_description = Command(
@@ -91,66 +104,23 @@ def generate_launch_description():
         ],
     )
 
-    controller_manager = Node(
-        package="controller_manager",
-        executable="ros2_control_node",
+    pinky_drive = Node(
+        package="pinky_bringup",
+        executable="bringup",
         namespace=robot_id,
-        output="both",
-        parameters=[
-            ParameterFile(
-                RewrittenYaml(
-                    source_file=robot_controllers,
-                    param_rewrites={},
-                    root_key=robot_id,
-                ),
-                allow_substs=True,
-            ),
-        ],
+        output="screen",
+        parameters=[pinky_bringup_params],
         remappings=[
-            ("~/robot_description", "robot_description"),
-            ("base_controller/cmd_vel", "cmd_vel"),
-            ("base_controller/odom", "odom"),
             ("/tf", "tf"),
             ("/tf_static", "tf_static"),
         ],
     )
 
-    load_base_controller = Node(
-        package="controller_manager",
-        executable="spawner",
+    battery_publisher = Node(
+        package="pinky_bringup",
+        executable="battery_publisher",
         namespace=robot_id,
         output="screen",
-        arguments=["base_controller", "--controller-manager", "controller_manager"],
-    )
-    load_gpio_controller = Node(
-        package="controller_manager",
-        executable="spawner",
-        namespace=robot_id,
-        output="screen",
-        arguments=["gpio_controller", "--controller-manager", "controller_manager"],
-    )
-    load_joint_state_broadcaster = Node(
-        package="controller_manager",
-        executable="spawner",
-        namespace=robot_id,
-        output="screen",
-        arguments=[
-            "joint_state_broadcaster",
-            "--controller-manager",
-            "controller_manager",
-        ],
-    )
-    delay_gpio_after_base_controller_spawner = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=load_base_controller,
-            on_exit=[load_gpio_controller],
-        )
-    )
-    delay_joint_state_broadcaster_after_gpio_controller_spawner = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=load_gpio_controller,
-            on_exit=[load_joint_state_broadcaster],
-        )
     )
 
     rplidar_bringup = GroupAction(
@@ -162,7 +132,7 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(sllidar_launch),
                 launch_arguments={
-                    "serial_port": "/dev/ttyAMA0",
+                    "serial_port": lidar_serial_port,
                     "frame_id": "rplidar_link",
                     "inverted": "false",
                     "angle_compensate": "true",
@@ -172,35 +142,55 @@ def generate_launch_description():
         ]
     )
 
-    nav2_bringup = IncludeLaunchDescription(
-        XMLLaunchDescriptionSource(pinky_navigation_launch),
-        launch_arguments={
-            "namespace": robot_id,
-            "params_file": params_file,
-            "map": map_file,
-            "use_sim_time": use_sim_time,
-            "autostart": autostart,
-            "use_composition": use_composition,
-            "container_name": "nav2_container",
-            "log_level": log_level,
-        }.items(),
+    nav2_bringup = GroupAction(
+        [
+            PushROSNamespace(robot_id),
+            IncludeLaunchDescription(
+                XMLLaunchDescriptionSource(pinky_localization_launch),
+                launch_arguments={
+                    "namespace": "",
+                    "params_file": namespaced_localization_params,
+                    "map": map_file,
+                    "use_sim_time": use_sim_time,
+                    "autostart": autostart,
+                    "use_composition": use_composition,
+                    "use_respawn": "False",
+                    "container_name": "nav2_container",
+                    "log_level": log_level,
+                    "lifecycle_nodes": "['map_server', 'amcl']",
+                }.items(),
+            ),
+            IncludeLaunchDescription(
+                XMLLaunchDescriptionSource(pinky_navigation_launch),
+                launch_arguments={
+                    "namespace": "",
+                    "params_file": namespaced_navigation_params,
+                    "use_sim_time": use_sim_time,
+                    "autostart": autostart,
+                    "use_composition": use_composition,
+                    "use_respawn": "False",
+                    "container_name": "nav2_container",
+                    "log_level": log_level,
+                    "lifecycle_nodes": "['controller_server', 'smoother_server', 'planner_server', 'behavior_server', 'bt_navigator', 'waypoint_follower', 'velocity_smoother']",
+                }.items(),
+            ),
+        ]
     )
 
     return LaunchDescription(
         [
             DeclareLaunchArgument("robot_id", default_value="pinky1"),
             DeclareLaunchArgument("map", default_value=default_map_file),
-            DeclareLaunchArgument("params_file", default_value=default_params_file),
+            DeclareLaunchArgument("nav2_params_file", default_value=default_params_file),
+            DeclareLaunchArgument("lidar_serial_port", default_value="/dev/ttyS0"),
             DeclareLaunchArgument("use_sim_time", default_value="False"),
             DeclareLaunchArgument("autostart", default_value="True"),
             DeclareLaunchArgument("use_composition", default_value="False"),
             DeclareLaunchArgument("log_level", default_value="info"),
             robot_state_publisher,
             joint_state_publisher,
-            controller_manager,
-            load_base_controller,
-            delay_gpio_after_base_controller_spawner,
-            delay_joint_state_broadcaster_after_gpio_controller_spawner,
+            pinky_drive,
+            battery_publisher,
             rplidar_bringup,
             nav2_bringup,
         ]

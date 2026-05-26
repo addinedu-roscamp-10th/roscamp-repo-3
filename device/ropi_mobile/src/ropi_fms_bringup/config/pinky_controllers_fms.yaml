@@ -1,3 +1,5 @@
+# Compatibility-only ros2_control params.
+# Current physical FMS launch uses the legacy pinky_bringup driver instead.
 /**:
   controller_manager:
     ros__parameters:
