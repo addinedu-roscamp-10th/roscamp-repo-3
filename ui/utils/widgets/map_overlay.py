@@ -318,6 +318,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         route_pixel_points,
         route_labels=None,
         selected_route_index=None,
+        fms_waypoint_pixel_points=None,
+        fms_waypoint_labels=None,
+        fms_waypoint_yaws=None,
     ):
         self.fms_route_pixel_points = list(route_pixel_points or [])
         self.fms_route_labels = self._normalized_labels(
@@ -325,9 +328,15 @@ class OperationalMapOverlay(MapCanvasWidget):
             len(self.fms_route_pixel_points),
         )
         self.selected_fms_route_index = selected_route_index
-        self.fms_waypoint_pixel_points = []
-        self.fms_waypoint_labels = []
-        self.fms_waypoint_heading_yaws = []
+        self.fms_waypoint_pixel_points = list(fms_waypoint_pixel_points or [])
+        self.fms_waypoint_labels = self._normalized_labels(
+            fms_waypoint_labels,
+            len(self.fms_waypoint_pixel_points),
+        )
+        self.fms_waypoint_heading_yaws = self._normalized_yaws(
+            fms_waypoint_yaws,
+            len(self.fms_waypoint_pixel_points),
+        )
         self.selected_fms_waypoint_pixel_point = None
         self.selected_fms_waypoint_heading_yaw = None
         self.fms_edge_pixel_pairs = []

@@ -2153,24 +2153,12 @@ class CoordinateZoneSettingsPage(QWidget):
             next_index += 1
             route_id = f"route_{next_index:02d}"
 
-        sequence = [
-            {
-                "sequence_no": index + 1,
-                "waypoint_id": row.get("waypoint_id"),
-                "yaw_policy": "AUTO_NEXT",
-                "fixed_pose_yaw": None,
-                "stop_required": True,
-                "dwell_sec": None,
-            }
-            for index, row in enumerate(self.fms_waypoint_rows[:2])
-            if isinstance(row, dict) and row.get("waypoint_id")
-        ]
         route = {
             "route_id": route_id,
             "route_name": "새 route",
             "route_scope": "COMMON",
             "revision": None,
-            "waypoint_sequence": sequence,
+            "waypoint_sequence": [],
             "is_enabled": True,
         }
 
@@ -2200,6 +2188,8 @@ class CoordinateZoneSettingsPage(QWidget):
             self.handle_map_click_for_patrol_area(world_pose)
         elif self.selected_edit_type == "fms_waypoint":
             self.handle_map_click_for_fms_waypoint(world_pose)
+        elif self.selected_edit_type == "fms_route":
+            self.handle_map_click_for_fms_route(world_pose)
 
     def handle_map_drag(self, world_pose):
         if self.selected_edit_type == "operation_zone":
@@ -2333,6 +2323,80 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_waypoint_y_spin.setValue(point["y"])
         self._mark_fms_waypoint_dirty()
         self._sync_fms_waypoint_overlay()
+
+    def handle_map_click_for_fms_route(self, world_pose):
+        if self.selected_edit_type != "fms_route" or not self.selected_fms_route:
+            return
+        point = coerce_point2d(world_pose)
+        if point is None:
+            return
+
+        waypoint_index = self._nearest_fms_waypoint_index(point)
+        if waypoint_index is None:
+            self.validation_message_label.setText(
+                "FMS route에 추가할 waypoint marker를 클릭하세요."
+            )
+            return
+
+        waypoint = self.fms_waypoint_rows[waypoint_index]
+        waypoint_id = waypoint.get("waypoint_id")
+        if not waypoint_id:
+            return
+
+        existing_route_index = self._first_fms_route_waypoint_index(waypoint_id)
+        if existing_route_index is not None:
+            self.select_fms_route_waypoint(existing_route_index)
+            self.validation_message_label.setText(
+                "이미 route에 있는 FMS waypoint를 선택했습니다."
+            )
+            return
+
+        self.fms_route_waypoint_rows.append(
+            {
+                "sequence_no": len(self.fms_route_waypoint_rows) + 1,
+                "waypoint_id": waypoint_id,
+                "yaw_policy": "AUTO_NEXT",
+                "fixed_pose_yaw": None,
+                "stop_required": True,
+                "dwell_sec": None,
+            }
+        )
+        self.selected_fms_route_waypoint_index = len(self.fms_route_waypoint_rows) - 1
+        self._renumber_fms_route_waypoints()
+        self._populate_fms_route_waypoint_table()
+        self._set_fms_route_waypoint_form(self.selected_fms_route_waypoint_index)
+        self._mark_fms_route_dirty()
+        self._sync_fms_route_overlay()
+        self.validation_message_label.setText("FMS route waypoint를 추가했습니다.")
+
+    def _nearest_fms_waypoint_index(self, world_pose):
+        waypoint_poses = []
+        source_indices = []
+        for index, row in enumerate(self.fms_waypoint_rows):
+            if not isinstance(row, dict) or not row.get("waypoint_id"):
+                continue
+            waypoint_poses.append(
+                {
+                    "x": row.get("pose_x"),
+                    "y": row.get("pose_y"),
+                }
+            )
+            source_indices.append(index)
+
+        nearest = nearest_pose_index(
+            waypoint_poses,
+            world_pose,
+            threshold_world=0.12,
+        )
+        if nearest is None:
+            return None
+        return source_indices[nearest]
+
+    def _first_fms_route_waypoint_index(self, waypoint_id):
+        for index, row in enumerate(self.fms_route_waypoint_rows):
+            if isinstance(row, dict) and row.get("waypoint_id") == waypoint_id:
+                return index
+        return None
 
     def deactivate_selected_row(self):
         if self.selected_edit_type == "operation_zone":
@@ -3479,6 +3543,21 @@ class CoordinateZoneSettingsPage(QWidget):
             for row in self.fms_waypoint_rows
             if isinstance(row, dict) and row.get("waypoint_id")
         }
+        waypoint_pixel_points = []
+        waypoint_labels = []
+        waypoint_yaws = []
+        for row in self.fms_waypoint_rows:
+            if not isinstance(row, dict):
+                continue
+            pixel = self.map_canvas.world_to_pixel(
+                {"x": row.get("pose_x"), "y": row.get("pose_y")}
+            )
+            if pixel is None:
+                continue
+            waypoint_pixel_points.append(pixel)
+            waypoint_labels.append(_display(row.get("display_name")))
+            waypoint_yaws.append(_float_or_default(row.get("pose_yaw")))
+
         route_pixel_points = []
         route_labels = []
         for waypoint in self.fms_route_waypoint_rows:
@@ -3497,6 +3576,9 @@ class CoordinateZoneSettingsPage(QWidget):
             route_pixel_points=route_pixel_points,
             route_labels=route_labels,
             selected_route_index=self.selected_fms_route_waypoint_index,
+            fms_waypoint_pixel_points=waypoint_pixel_points,
+            fms_waypoint_labels=waypoint_labels,
+            fms_waypoint_yaws=waypoint_yaws,
         )
 
     @staticmethod

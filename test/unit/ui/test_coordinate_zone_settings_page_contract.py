@@ -3285,6 +3285,96 @@ def test_coordinate_zone_settings_page_shows_route_auto_edge_status_and_merges_s
         page.close()
 
 
+def test_coordinate_zone_settings_page_fms_route_uses_map_waypoint_clicks():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    bundle = _sample_bundle()
+    bundle["fms_waypoints"].append(
+        {
+            "waypoint_id": "corridor_03",
+            "map_id": "map_test",
+            "display_name": "복도3",
+            "waypoint_type": "CORRIDOR",
+            "pose_x": 1.2,
+            "pose_y": 0.8,
+            "pose_yaw": 0.0,
+            "frame_id": "map",
+            "snap_group": "main_corridor",
+            "is_enabled": True,
+            "updated_at": "2026-05-04T10:03:00Z",
+        }
+    )
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": bundle,
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_route(0)
+
+        assert len(page.map_canvas.fms_waypoint_pixel_points) == 3
+        assert len(page.map_canvas.fms_route_pixel_points) == 2
+
+        page.handle_map_click({"x": 1.2, "y": 0.8, "yaw": 0.0})
+
+        route_waypoint_table = page.findChild(QTableWidget, "fmsRouteWaypointTable")
+        assert route_waypoint_table.rowCount() == 3
+        assert route_waypoint_table.item(2, 1).text() == "corridor_03"
+        assert route_waypoint_table.item(2, 2).text() == "자동 생성 예정"
+        assert page.selected_fms_route_waypoint_index == 2
+        assert page.fms_route_dirty is True
+        assert page.save_button.isEnabled() is True
+        assert len(page.map_canvas.fms_waypoint_pixel_points) == 3
+        assert len(page.map_canvas.fms_route_pixel_points) == 3
+        assert page.validation_message_label.text() == (
+            "FMS route waypoint를 추가했습니다."
+        )
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_fms_route_create_starts_empty_and_uses_map_clicks():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page.start_fms_route_create()
+
+        route_waypoint_table = page.findChild(QTableWidget, "fmsRouteWaypointTable")
+        assert route_waypoint_table.rowCount() == 0
+        assert len(page.map_canvas.fms_waypoint_pixel_points) == 2
+
+        page.handle_map_click({"x": 0.2, "y": 0.4, "yaw": 0.0})
+        page.handle_map_click({"x": 0.7, "y": 0.8, "yaw": 0.0})
+
+        assert route_waypoint_table.rowCount() == 2
+        assert route_waypoint_table.item(0, 1).text() == "corridor_01"
+        assert route_waypoint_table.item(1, 1).text() == "corridor_02"
+        assert route_waypoint_table.item(1, 2).text() == "edge_corridor_01_02"
+        assert page.selected_fms_route_waypoint_index == 1
+        assert len(page.map_canvas.fms_route_pixel_points) == 2
+    finally:
+        page.close()
+
+
 def test_fms_route_save_worker_sends_if_fms_004_payload():
     from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
         FmsRouteSaveWorker,
