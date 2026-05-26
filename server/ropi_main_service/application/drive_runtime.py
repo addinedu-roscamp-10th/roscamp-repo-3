@@ -26,6 +26,7 @@ from server.ropi_main_service.persistence.repositories.task_request_repository i
 
 DEFAULT_DRIVE_NAVIGATION_TIMEOUT_SEC = 120
 DEFAULT_FMS_RESERVATION_LEASE_SEC = 30
+DEFAULT_FMS_RESERVATION_RETRY_INTERVAL_SEC = 1.0
 WAITING_FMS_RESERVATION_PHASE = "WAITING_FMS_RESERVATION"
 
 _DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
@@ -211,10 +212,18 @@ def build_drive_request_service(
     fms_runtime_service=None,
     drive_orchestrator=None,
     task_update_publisher=None,
+    fms_reservation_retry_interval_sec=DEFAULT_FMS_RESERVATION_RETRY_INTERVAL_SEC,
+    fms_reservation_retry_max_attempts=None,
 ) -> TaskRequestService:
     get_drive_runtime_config()
     task_request_repository = task_request_repository or _new_task_request_repository()
     drive_workflow_starter = None
+    retry_interval_sec = _normalize_retry_interval_sec(
+        fms_reservation_retry_interval_sec
+    )
+    retry_max_attempts = _normalize_retry_max_attempts(
+        fms_reservation_retry_max_attempts
+    )
 
     if loop is not None:
         workflow_task_manager = (
@@ -236,26 +245,41 @@ def build_drive_request_service(
                     reason_code="DRIVE_TASK_NOT_FOUND",
                 )
 
-            reservation_response = await _request_fms_reservation(
-                fms_runtime_service=fms_runtime_service,
-                snapshot=snapshot,
-            )
-            reservation_result = str(
-                reservation_response.get("result_code") or ""
-            ).upper()
-            if reservation_result == "WAITING":
-                waiting_response = await drive_execution_repository.async_record_drive_reservation_waiting(
-                    task_id=task_id,
-                    reservation_response=reservation_response,
+            waiting_recorded = False
+            reservation_attempt = 0
+            while True:
+                reservation_attempt += 1
+                reservation_response = await _request_fms_reservation(
+                    fms_runtime_service=fms_runtime_service,
+                    snapshot=snapshot,
                 )
-                await _publish_workflow_task_update(
-                    waiting_response,
-                    source="DRIVE_FMS_RESERVATION_WAITING",
-                )
-                return {
-                    **reservation_response,
-                    "terminal": False,
-                }
+                reservation_result = str(
+                    reservation_response.get("result_code") or ""
+                ).upper()
+                if reservation_result != "WAITING":
+                    break
+
+                if not waiting_recorded:
+                    waiting_response = await drive_execution_repository.async_record_drive_reservation_waiting(
+                        task_id=task_id,
+                        reservation_response=reservation_response,
+                    )
+                    await _publish_workflow_task_update(
+                        waiting_response,
+                        source="DRIVE_FMS_RESERVATION_WAITING",
+                    )
+                    waiting_recorded = True
+
+                if (
+                    retry_max_attempts is not None
+                    and reservation_attempt >= retry_max_attempts
+                ):
+                    return {
+                        **reservation_response,
+                        "terminal": False,
+                    }
+
+                await asyncio.sleep(retry_interval_sec)
 
             if reservation_result != "HELD":
                 return _failed(
@@ -468,6 +492,22 @@ def _is_success(response):
         "SUCCESS",
         "SUCCEEDED",
     }
+
+
+def _normalize_retry_interval_sec(value):
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return DEFAULT_FMS_RESERVATION_RETRY_INTERVAL_SEC
+
+
+def _normalize_retry_max_attempts(value):
+    if value is None:
+        return None
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _new_task_request_repository():

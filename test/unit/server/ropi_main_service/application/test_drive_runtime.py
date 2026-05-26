@@ -88,23 +88,32 @@ class FakeDriveExecutionRepository:
 class FakeFmsRuntime:
     def __init__(self, *, events, result_code="HELD"):
         self.events = events
-        self.result_code = result_code
+        self.result_codes = (
+            list(result_code)
+            if isinstance(result_code, list)
+            else [result_code]
+        )
         self.requested = []
         self.released = []
 
     def request_reservation(self, **kwargs):
         self.events.append("reserve")
         self.requested.append(kwargs)
+        result_code = (
+            self.result_codes.pop(0)
+            if len(self.result_codes) > 1
+            else self.result_codes[0]
+        )
         reason_code = None
-        if self.result_code == "WAITING":
+        if result_code == "WAITING":
             reason_code = "FMS_RESOURCE_ALREADY_HELD"
         return {
-            "result_code": self.result_code,
-            "reservation_status": self.result_code,
+            "result_code": result_code,
+            "reservation_status": result_code,
             "reason_code": reason_code,
             "next_task_phase": (
                 "WAITING_FMS_RESERVATION"
-                if self.result_code == "WAITING"
+                if result_code == "WAITING"
                 else None
             ),
             "reservations": [],
@@ -269,6 +278,7 @@ def test_drive_runtime_records_waiting_without_navigation_when_reservation_confl
             drive_execution_repository=execution_repository,
             fms_runtime_service=fms_runtime,
             drive_orchestrator=drive_orchestrator,
+            fms_reservation_retry_max_attempts=1,
         )
 
         await service.async_create_drive_task(**_drive_payload())
@@ -281,6 +291,47 @@ def test_drive_runtime_records_waiting_without_navigation_when_reservation_confl
             "reason_code"
         ] == "FMS_RESOURCE_ALREADY_HELD"
         assert execution_repository.results == []
+
+    asyncio.run(_run())
+
+
+def test_drive_runtime_retries_waiting_reservation_and_dispatches_when_held():
+    async def _run():
+        events = []
+        manager = FakeWorkflowTaskManager()
+        execution_repository = FakeDriveExecutionRepository(
+            events=events,
+            snapshot=_snapshot(),
+        )
+        fms_runtime = FakeFmsRuntime(events=events, result_code=["WAITING", "HELD"])
+        drive_orchestrator = FakeDriveOrchestrator(events=events)
+        service = build_drive_request_service(
+            loop=asyncio.get_running_loop(),
+            workflow_task_manager=manager,
+            task_request_repository=FakeTaskRequestRepository(),
+            drive_execution_repository=execution_repository,
+            fms_runtime_service=fms_runtime,
+            drive_orchestrator=drive_orchestrator,
+            fms_reservation_retry_interval_sec=0,
+        )
+
+        await service.async_create_drive_task(**_drive_payload())
+        await asyncio.gather(*manager.tasks)
+
+        assert events == [
+            "snapshot",
+            "reserve",
+            "waiting",
+            "reserve",
+            "started",
+            "navigate",
+            "release",
+            "result",
+        ]
+        assert len(fms_runtime.requested) == 2
+        assert len(execution_repository.waiting_records) == 1
+        assert drive_orchestrator.calls[0]["robot_id"] == "pinky1"
+        assert execution_repository.results[0]["workflow_response"]["result_code"] == "SUCCESS"
 
     asyncio.run(_run())
 
