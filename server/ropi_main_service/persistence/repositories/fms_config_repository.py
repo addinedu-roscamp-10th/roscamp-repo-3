@@ -200,6 +200,7 @@ class FmsConfigRepository:
         route_scope,
         waypoint_sequence,
         is_enabled,
+        auto_edges=None,
     ):
         conn = get_connection()
         try:
@@ -214,6 +215,7 @@ class FmsConfigRepository:
                     route_scope=route_scope,
                     waypoint_sequence=waypoint_sequence,
                     is_enabled=is_enabled,
+                    auto_edges=auto_edges,
                 )
             conn.commit()
             return result
@@ -347,6 +349,65 @@ class FmsConfigRepository:
                 "edge": await cur.fetchone(),
             }
 
+    async def _async_upsert_edge_with_cursor(
+        self,
+        cur,
+        *,
+        map_id,
+        edge_id,
+        expected_updated_at,
+        from_waypoint_id,
+        to_waypoint_id,
+        is_bidirectional,
+        traversal_cost,
+        priority,
+        is_enabled,
+    ):
+        await cur.execute(LOCK_EDGE_SQL, (str(edge_id),))
+        row = await cur.fetchone()
+        status = self._locked_edge_row_status(
+            row,
+            map_id=map_id,
+            expected_updated_at=expected_updated_at,
+        )
+        if status:
+            return status
+
+        if row:
+            await cur.execute(
+                UPDATE_EDGE_SQL,
+                self._build_update_edge_params(
+                    map_id=map_id,
+                    edge_id=edge_id,
+                    from_waypoint_id=from_waypoint_id,
+                    to_waypoint_id=to_waypoint_id,
+                    is_bidirectional=is_bidirectional,
+                    traversal_cost=traversal_cost,
+                    priority=priority,
+                    is_enabled=is_enabled,
+                ),
+            )
+        else:
+            await cur.execute(
+                INSERT_EDGE_SQL,
+                self._build_insert_edge_params(
+                    map_id=map_id,
+                    edge_id=edge_id,
+                    from_waypoint_id=from_waypoint_id,
+                    to_waypoint_id=to_waypoint_id,
+                    is_bidirectional=is_bidirectional,
+                    traversal_cost=traversal_cost,
+                    priority=priority,
+                    is_enabled=is_enabled,
+                ),
+            )
+
+        await cur.execute(FIND_EDGE_SQL, (str(edge_id),))
+        return {
+            "status": "UPSERTED",
+            "edge": await cur.fetchone(),
+        }
+
     async def async_upsert_route(
         self,
         *,
@@ -357,6 +418,7 @@ class FmsConfigRepository:
         route_scope,
         waypoint_sequence,
         is_enabled,
+        auto_edges=None,
     ):
         async with async_transaction() as cur:
             await cur.execute(LOCK_ROUTE_SQL, (str(route_id),))
@@ -369,6 +431,21 @@ class FmsConfigRepository:
             )
             if status:
                 return status
+
+            auto_created_edges = []
+            for edge in auto_edges or []:
+                auto_edge_result = await self._async_upsert_edge_with_cursor(
+                    cur,
+                    map_id=map_id,
+                    expected_updated_at=None,
+                    **edge,
+                )
+                if auto_edge_result.get("status") != "UPSERTED":
+                    return {
+                        "status": "AUTO_EDGE_FAILED",
+                        "edge_result": auto_edge_result,
+                    }
+                auto_created_edges.append(auto_edge_result.get("edge"))
 
             if row:
                 await cur.execute(
@@ -409,6 +486,7 @@ class FmsConfigRepository:
                     cur,
                     route_id=route_id,
                 ),
+                "auto_created_edges": auto_created_edges,
             }
 
     @classmethod
@@ -549,6 +627,7 @@ class FmsConfigRepository:
         route_scope,
         waypoint_sequence,
         is_enabled,
+        auto_edges=None,
     ):
         cur.execute(LOCK_ROUTE_SQL, (str(route_id),))
         row = cur.fetchone()
@@ -560,6 +639,21 @@ class FmsConfigRepository:
         )
         if status:
             return status
+
+        auto_created_edges = []
+        for edge in auto_edges or []:
+            auto_edge_result = cls._upsert_edge_with_cursor(
+                cur,
+                map_id=map_id,
+                expected_updated_at=None,
+                **edge,
+            )
+            if auto_edge_result.get("status") != "UPSERTED":
+                return {
+                    "status": "AUTO_EDGE_FAILED",
+                    "edge_result": auto_edge_result,
+                }
+            auto_created_edges.append(auto_edge_result.get("edge"))
 
         if row:
             cur.execute(
@@ -597,6 +691,7 @@ class FmsConfigRepository:
         return {
             "status": "UPSERTED",
             "route": cls._fetch_route_with_sequence(cur, route_id=route_id),
+            "auto_created_edges": auto_created_edges,
         }
 
     @classmethod

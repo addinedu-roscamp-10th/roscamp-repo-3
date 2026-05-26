@@ -3163,7 +3163,9 @@ def test_coordinate_zone_settings_page_selects_fms_route_into_edit_form():
         route_waypoint_table = page.findChild(QTableWidget, "fmsRouteWaypointTable")
         assert route_waypoint_table.rowCount() == 2
         assert route_waypoint_table.item(0, 1).text() == "corridor_01"
-        assert route_waypoint_table.item(1, 3).text() == "FIXED"
+        assert route_waypoint_table.item(0, 2).text() == "-"
+        assert route_waypoint_table.item(1, 2).text() == "edge_corridor_01_02"
+        assert route_waypoint_table.item(1, 4).text() == "FIXED"
         assert len(page.map_canvas.fms_route_pixel_points) == 2
         assert page.map_canvas.fms_route_labels == ["복도1", "복도2"]
         assert page.save_button.isEnabled() is False
@@ -3219,6 +3221,66 @@ def test_coordinate_zone_settings_page_fms_route_dirty_and_save_success():
         assert page.fms_route_dirty is False
         assert page.save_button.isEnabled() is False
         assert page.validation_message_label.text() == "FMS route를 저장했습니다."
+    finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_shows_route_auto_edge_status_and_merges_save_response():
+    _app()
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    bundle = _sample_bundle()
+    bundle["fms_edges"] = []
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": bundle,
+                **_sample_map_assets(),
+            }
+        )
+        page.select_fms_route(0)
+
+        route_waypoint_table = page.findChild(QTableWidget, "fmsRouteWaypointTable")
+        assert route_waypoint_table.item(1, 2).text() == "자동 생성 예정"
+
+        auto_edge = {
+            "edge_id": "edge_corridor_01_corridor_02",
+            "map_id": "map_test",
+            "from_waypoint_id": "corridor_01",
+            "to_waypoint_id": "corridor_02",
+            "is_bidirectional": True,
+            "traversal_cost": 1.0,
+            "priority": 0,
+            "is_enabled": True,
+            "updated_at": "2026-05-04T10:41:00Z",
+        }
+        page._handle_fms_route_save_finished(
+            True,
+            {
+                "result_code": "OK",
+                "route": {
+                    **bundle["fms_routes"][0],
+                    "revision": 2,
+                    "updated_at": "2026-05-04T10:40:00Z",
+                },
+                "auto_created_edges": [auto_edge],
+            },
+        )
+
+        edge_table = page.findChild(QTableWidget, "fmsEdgeTable")
+        assert edge_table.rowCount() == 1
+        assert edge_table.item(0, 0).text() == "edge_corridor_01_corridor_02"
+        assert page.fms_route_waypoint_table.item(1, 2).text() == (
+            "edge_corridor_01_corridor_02"
+        )
+        assert page.validation_message_label.text() == (
+            "FMS route를 저장했습니다. 자동 edge 1개를 추가했습니다."
+        )
     finally:
         page.close()
 

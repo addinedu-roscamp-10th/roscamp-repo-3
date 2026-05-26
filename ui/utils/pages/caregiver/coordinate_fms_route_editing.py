@@ -37,9 +37,14 @@ def fms_route_from_save_response(response):
     return dict(route) if isinstance(route, dict) else None
 
 
-def fms_route_waypoint_table_rows(sequence, waypoint_label_by_id=None):
+def fms_route_waypoint_table_rows(
+    sequence,
+    waypoint_label_by_id=None,
+    edges=None,
+):
     labels = waypoint_label_by_id if isinstance(waypoint_label_by_id, dict) else {}
     rows = []
+    previous_waypoint_id = None
     for index, waypoint in enumerate(sequence or [], start=1):
         if not isinstance(waypoint, dict):
             continue
@@ -51,6 +56,11 @@ def fms_route_waypoint_table_rows(sequence, waypoint_label_by_id=None):
             {
                 "sequence_no": str(index),
                 "waypoint_id": display,
+                "edge_status": _edge_status_label(
+                    edges,
+                    from_waypoint_id=previous_waypoint_id,
+                    to_waypoint_id=waypoint_id,
+                ),
                 "stop_required": "정차"
                 if bool(waypoint.get("stop_required", True))
                 else "통과",
@@ -58,6 +68,7 @@ def fms_route_waypoint_table_rows(sequence, waypoint_label_by_id=None):
                 "dwell_sec": _display_optional_float(waypoint.get("dwell_sec")),
             }
         )
+        previous_waypoint_id = waypoint_id
     return rows
 
 
@@ -103,6 +114,34 @@ def _display_optional_float(value):
         return f"{float(value):.2f}"
     except (TypeError, ValueError):
         return "-"
+
+
+def _edge_status_label(edges, *, from_waypoint_id, to_waypoint_id):
+    if not from_waypoint_id or not to_waypoint_id:
+        return "-"
+
+    disabled_match = None
+    for edge in edges or []:
+        if not isinstance(edge, dict):
+            continue
+        edge_from = str(edge.get("from_waypoint_id") or "").strip()
+        edge_to = str(edge.get("to_waypoint_id") or "").strip()
+        if edge_from == from_waypoint_id and edge_to == to_waypoint_id:
+            if bool(edge.get("is_enabled")):
+                return str(edge.get("edge_id") or "").strip()
+            disabled_match = edge
+        if (
+            bool(edge.get("is_bidirectional"))
+            and edge_from == to_waypoint_id
+            and edge_to == from_waypoint_id
+        ):
+            if bool(edge.get("is_enabled")):
+                return str(edge.get("edge_id") or "").strip()
+            disabled_match = edge
+
+    if disabled_match is not None:
+        return "비활성 edge"
+    return "자동 생성 예정"
 
 
 __all__ = [

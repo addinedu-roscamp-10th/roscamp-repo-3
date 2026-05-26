@@ -318,17 +318,23 @@ class FmsConfigService:
         if error:
             return error
 
+        auto_edges = []
         if normalized["is_enabled"]:
-            _edges, error = self._get_route_edges(
+            edges, error = self._get_route_edges(
                 map_id=active_map["map_id"],
                 waypoint_sequence=normalized["waypoint_sequence"],
             )
             if error:
                 return error
+            auto_edges = self._route_auto_edges_to_create(
+                edges,
+                normalized["waypoint_sequence"],
+            )
 
         try:
             result = self.repository.upsert_route(
                 map_id=active_map["map_id"],
+                auto_edges=auto_edges,
                 **normalized,
             )
         except Exception:
@@ -484,19 +490,25 @@ class FmsConfigService:
         if error:
             return error
 
+        auto_edges = []
         if normalized["is_enabled"]:
-            _edges, error = await self._async_get_route_edges(
+            edges, error = await self._async_get_route_edges(
                 map_id=active_map["map_id"],
                 waypoint_sequence=normalized["waypoint_sequence"],
             )
             if error:
                 return error
+            auto_edges = self._route_auto_edges_to_create(
+                edges,
+                normalized["waypoint_sequence"],
+            )
 
         try:
             result = await self._call_async_or_thread(
                 "async_upsert_route",
                 "upsert_route",
                 map_id=active_map["map_id"],
+                auto_edges=auto_edges,
                 **normalized,
             )
         except Exception:
@@ -698,7 +710,7 @@ class FmsConfigService:
                     result_message="FMS edge 조회에 실패했습니다.",
                 )
             )
-        return edges, self._route_edge_error(edges, waypoint_sequence)
+        return edges, None
 
     async def _async_get_route_edges(self, *, map_id, waypoint_sequence):
         try:
@@ -716,7 +728,7 @@ class FmsConfigService:
                     result_message="FMS edge 조회에 실패했습니다.",
                 )
             )
-        return edges, self._route_edge_error(edges, waypoint_sequence)
+        return edges, None
 
     def _route_waypoint_error(self, waypoints, waypoint_sequence):
         waypoint_ids = {str(row.get("waypoint_id")) for row in waypoints or []}
@@ -733,23 +745,54 @@ class FmsConfigService:
             )
         )
 
-    def _route_edge_error(self, edges, waypoint_sequence):
+    def _route_auto_edges_to_create(self, edges, waypoint_sequence):
+        used_edge_ids = {
+            str(edge.get("edge_id"))
+            for edge in edges or []
+            if edge.get("edge_id") is not None
+        }
+        visible_edges = [dict(edge) for edge in edges or [] if isinstance(edge, dict)]
+        auto_edges = []
         for index in range(len(waypoint_sequence or []) - 1):
             from_waypoint_id = waypoint_sequence[index].get("waypoint_id")
             to_waypoint_id = waypoint_sequence[index + 1].get("waypoint_id")
-            if not self._has_enabled_edge(
-                edges,
+            if self._has_enabled_edge(
+                visible_edges,
                 from_waypoint_id=from_waypoint_id,
                 to_waypoint_id=to_waypoint_id,
             ):
-                return self._with_generated_at(
-                    fms_route_error(
-                        result_code="INVALID_REQUEST",
-                        reason_code="ROUTE_EDGE_NOT_CONNECTED",
-                        result_message="FMS route waypoint 사이의 enabled edge가 없습니다.",
-                    )
-                )
-        return None
+                continue
+
+            auto_edge = {
+                "edge_id": self._generated_route_edge_id(
+                    from_waypoint_id,
+                    to_waypoint_id,
+                    used_edge_ids,
+                ),
+                "from_waypoint_id": from_waypoint_id,
+                "to_waypoint_id": to_waypoint_id,
+                "is_bidirectional": True,
+                "traversal_cost": 1.0,
+                "priority": 0,
+                "is_enabled": True,
+            }
+            auto_edges.append(auto_edge)
+            visible_edges.append(auto_edge)
+
+        return auto_edges
+
+    @staticmethod
+    def _generated_route_edge_id(from_waypoint_id, to_waypoint_id, used_edge_ids):
+        base = f"edge_{from_waypoint_id}_{to_waypoint_id}"[:100]
+        candidate = base
+        suffix = 1
+        while candidate in used_edge_ids:
+            suffix_text = f"_{suffix}"
+            prefix_limit = 100 - len(suffix_text)
+            candidate = f"{base[:prefix_limit]}{suffix_text}"
+            suffix += 1
+        used_edge_ids.add(candidate)
+        return candidate
 
     @staticmethod
     def _has_enabled_edge(edges, *, from_waypoint_id, to_waypoint_id):
@@ -941,6 +984,10 @@ class FmsConfigService:
                 "reason_code": None,
                 "generated_at": generated_at(self._clock),
                 "route": format_fms_route(route),
+                "auto_created_edges": [
+                    format_fms_edge(edge)
+                    for edge in (result or {}).get("auto_created_edges") or []
+                ],
             }
         if status == "STALE":
             return {
@@ -949,6 +996,7 @@ class FmsConfigService:
                 "reason_code": "ROUTE_STALE",
                 "generated_at": generated_at(self._clock),
                 "route": format_fms_route(route) if route else None,
+                "auto_created_edges": [],
             }
         if status == "NOT_FOUND":
             return {
@@ -957,6 +1005,7 @@ class FmsConfigService:
                 "reason_code": "ROUTE_NOT_FOUND",
                 "generated_at": generated_at(self._clock),
                 "route": None,
+                "auto_created_edges": [],
             }
         if status == "MAP_MISMATCH":
             return {
@@ -965,6 +1014,16 @@ class FmsConfigService:
                 "reason_code": "ROUTE_MAP_MISMATCH",
                 "generated_at": generated_at(self._clock),
                 "route": format_fms_route(route) if route else None,
+                "auto_created_edges": [],
+            }
+        if status == "AUTO_EDGE_FAILED":
+            return {
+                "result_code": "CONFLICT",
+                "result_message": "FMS route 자동 edge 생성 중 충돌이 발생했습니다.",
+                "reason_code": "ROUTE_AUTO_EDGE_CONFLICT",
+                "generated_at": generated_at(self._clock),
+                "route": None,
+                "auto_created_edges": [],
             }
 
         return self._with_generated_at(

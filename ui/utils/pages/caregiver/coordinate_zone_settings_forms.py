@@ -428,10 +428,10 @@ def build_fms_route_form(page):
     )
 
     table_row = 5
-    page.fms_route_waypoint_table = QTableWidget(0, 5)
+    page.fms_route_waypoint_table = QTableWidget(0, 6)
     page.fms_route_waypoint_table.setObjectName("fmsRouteWaypointTable")
     page.fms_route_waypoint_table.setHorizontalHeaderLabels(
-        ["#", "waypoint", "stop", "yaw_policy", "dwell"]
+        ["#", "waypoint", "edge", "stop", "yaw_policy", "dwell"]
     )
     page.fms_route_waypoint_table.horizontalHeader().setStretchLastSection(True)
     page.fms_route_waypoint_table.cellClicked.connect(

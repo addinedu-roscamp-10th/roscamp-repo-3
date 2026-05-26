@@ -253,8 +253,10 @@ class FakeFmsConfigRepository:
                 kwargs["route_scope"],
                 kwargs["waypoint_sequence"],
                 kwargs["is_enabled"],
+                kwargs.get("auto_edges") or [],
             )
         )
+        auto_edges = kwargs.get("auto_edges") or []
         return self.route_upsert_result or {
             "status": "UPSERTED",
             "route": {
@@ -265,6 +267,15 @@ class FakeFmsConfigRepository:
                 "created_at": datetime(2026, 5, 4, 10, 6, 0),
                 "updated_at": datetime(2026, 5, 4, 10, 8, 0),
             },
+            "auto_created_edges": [
+                {
+                    **edge,
+                    "map_id": map_id,
+                    "created_at": datetime(2026, 5, 4, 10, 3, 0),
+                    "updated_at": datetime(2026, 5, 4, 10, 5, 0),
+                }
+                for edge in auto_edges
+            ],
         }
 
     async def async_upsert_route(self, *, map_id, **kwargs):
@@ -274,8 +285,10 @@ class FakeFmsConfigRepository:
                 map_id,
                 kwargs["route_id"],
                 kwargs["expected_revision"],
+                kwargs.get("auto_edges") or [],
             )
         )
+        auto_edges = kwargs.get("auto_edges") or []
         return self.route_upsert_result or {
             "status": "UPSERTED",
             "route": {
@@ -286,6 +299,15 @@ class FakeFmsConfigRepository:
                 "created_at": datetime(2026, 5, 4, 10, 6, 0),
                 "updated_at": datetime(2026, 5, 4, 10, 8, 0),
             },
+            "auto_created_edges": [
+                {
+                    **edge,
+                    "map_id": map_id,
+                    "created_at": datetime(2026, 5, 4, 10, 3, 0),
+                    "updated_at": datetime(2026, 5, 4, 10, 5, 0),
+                }
+                for edge in auto_edges
+            ],
         }
 
 
@@ -717,6 +739,7 @@ def test_fms_upsert_route_creates_or_updates_active_map_route():
                 },
             ],
             True,
+            [],
         ),
     ]
 
@@ -767,7 +790,7 @@ def test_fms_upsert_route_rejects_missing_waypoint():
     ]
 
 
-def test_fms_upsert_route_rejects_missing_enabled_edge_for_enabled_route():
+def test_fms_upsert_route_auto_creates_missing_enabled_edges_for_enabled_route():
     repository = FakeFmsConfigRepository()
     repository.edges = []
 
@@ -782,12 +805,64 @@ def test_fms_upsert_route_rejects_missing_enabled_edge_for_enabled_route():
         is_enabled=True,
     )
 
-    assert response["result_code"] == "INVALID_REQUEST"
-    assert response["reason_code"] == "ROUTE_EDGE_NOT_CONNECTED"
+    assert response["result_code"] == "OK"
+    assert response["reason_code"] is None
+    assert response["auto_created_edges"] == [
+        {
+            "edge_id": "edge_corridor_01_corridor_02",
+            "map_id": "map_0504",
+            "from_waypoint_id": "corridor_01",
+            "to_waypoint_id": "corridor_02",
+            "is_bidirectional": True,
+            "traversal_cost": 1.0,
+            "priority": 0,
+            "is_enabled": True,
+            "created_at": "2026-05-04T10:03:00",
+            "updated_at": "2026-05-04T10:05:00",
+        }
+    ]
     assert repository.calls == [
         ("get_active_map_profile",),
         ("get_waypoints", "map_0504", True),
         ("get_edges", "map_0504", True),
+        (
+            "upsert_route",
+            "map_0504",
+            "route_disconnected",
+            None,
+            "끊긴 경로",
+            "COMMON",
+            [
+                {
+                    "sequence_no": 1,
+                    "waypoint_id": "corridor_01",
+                    "yaw_policy": "AUTO_NEXT",
+                    "fixed_pose_yaw": None,
+                    "stop_required": True,
+                    "dwell_sec": None,
+                },
+                {
+                    "sequence_no": 2,
+                    "waypoint_id": "corridor_02",
+                    "yaw_policy": "AUTO_NEXT",
+                    "fixed_pose_yaw": None,
+                    "stop_required": True,
+                    "dwell_sec": None,
+                },
+            ],
+            True,
+            [
+                {
+                    "edge_id": "edge_corridor_01_corridor_02",
+                    "from_waypoint_id": "corridor_01",
+                    "to_waypoint_id": "corridor_02",
+                    "is_bidirectional": True,
+                    "traversal_cost": 1.0,
+                    "priority": 0,
+                    "is_enabled": True,
+                }
+            ],
+        ),
     ]
 
 
@@ -814,7 +889,7 @@ def test_fms_upsert_route_async_uses_async_repository_method():
         ("async_get_active_map_profile",),
         ("async_get_waypoints", "map_0504", True),
         ("async_get_edges", "map_0504", True),
-        ("async_upsert_route", "map_0504", "route_corridor_01_02", 1),
+        ("async_upsert_route", "map_0504", "route_corridor_01_02", 1, []),
     ]
 
 

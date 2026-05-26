@@ -408,6 +408,7 @@ def test_fms_config_repository_inserts_missing_route(monkeypatch):
     assert result == {
         "status": "UPSERTED",
         "route": {**inserted_row, "waypoint_sequence": sequence_rows},
+        "auto_created_edges": [],
     }
     assert connection.began is True
     assert connection.committed is True
@@ -441,6 +442,99 @@ def test_fms_config_repository_inserts_missing_route(monkeypatch):
         fms_config_repository.LIST_ROUTE_WAYPOINTS_SQL,
         ("route_corridor_01_02",),
     )
+
+
+def test_fms_config_repository_inserts_route_auto_edges_in_same_transaction(
+    monkeypatch,
+):
+    auto_edge_row = {
+        "edge_id": "edge_corridor_01_corridor_02",
+        "map_id": "map_0504",
+        "from_waypoint_id": "corridor_01",
+        "to_waypoint_id": "corridor_02",
+        "is_bidirectional": True,
+        "traversal_cost": 1.0,
+        "priority": 0,
+        "is_enabled": True,
+    }
+    inserted_row = {
+        "route_id": "route_corridor_01_02",
+        "map_id": "map_0504",
+        "revision": 1,
+    }
+    sequence_rows = [
+        {"sequence_no": 1, "waypoint_id": "corridor_01"},
+        {"sequence_no": 2, "waypoint_id": "corridor_02"},
+    ]
+    cursor = FakeCursor(rows=[None, None, auto_edge_row, inserted_row, sequence_rows])
+    connection = FakeConnection(cursor)
+    monkeypatch.setattr(fms_config_repository, "get_connection", lambda: connection)
+
+    result = fms_config_repository.FmsConfigRepository().upsert_route(
+        map_id="map_0504",
+        route_id="route_corridor_01_02",
+        expected_revision=None,
+        route_name="복도 1-2",
+        route_scope="COMMON",
+        waypoint_sequence=[
+            {
+                "sequence_no": 1,
+                "waypoint_id": "corridor_01",
+                "yaw_policy": "AUTO_NEXT",
+                "fixed_pose_yaw": None,
+                "stop_required": True,
+                "dwell_sec": None,
+            },
+            {
+                "sequence_no": 2,
+                "waypoint_id": "corridor_02",
+                "yaw_policy": "AUTO_NEXT",
+                "fixed_pose_yaw": None,
+                "stop_required": True,
+                "dwell_sec": None,
+            },
+        ],
+        is_enabled=True,
+        auto_edges=[
+            {
+                "edge_id": "edge_corridor_01_corridor_02",
+                "from_waypoint_id": "corridor_01",
+                "to_waypoint_id": "corridor_02",
+                "is_bidirectional": True,
+                "traversal_cost": 1.0,
+                "priority": 0,
+                "is_enabled": True,
+            }
+        ],
+    )
+
+    assert result == {
+        "status": "UPSERTED",
+        "route": {**inserted_row, "waypoint_sequence": sequence_rows},
+        "auto_created_edges": [auto_edge_row],
+    }
+    assert connection.began is True
+    assert connection.committed is True
+    assert cursor.calls[1] == (
+        fms_config_repository.LOCK_EDGE_SQL,
+        ("edge_corridor_01_corridor_02",),
+    )
+    assert "INSERT INTO fms_edge" in cursor.calls[2][0]
+    assert cursor.calls[2][1] == (
+        "edge_corridor_01_corridor_02",
+        "map_0504",
+        "corridor_01",
+        "corridor_02",
+        True,
+        1.0,
+        0,
+        True,
+    )
+    assert cursor.calls[3] == (
+        fms_config_repository.FIND_EDGE_SQL,
+        ("edge_corridor_01_corridor_02",),
+    )
+    assert "INSERT INTO fms_route" in cursor.calls[4][0]
 
 
 def test_fms_config_repository_updates_existing_route_with_revision_check(monkeypatch):
@@ -478,6 +572,7 @@ def test_fms_config_repository_updates_existing_route_with_revision_check(monkey
     assert result == {
         "status": "UPSERTED",
         "route": {**updated_row, "waypoint_sequence": sequence_rows},
+        "auto_created_edges": [],
     }
     assert "UPDATE fms_route" in cursor.calls[1][0]
     assert cursor.calls[1][1] == (
@@ -789,6 +884,7 @@ def test_fms_config_repository_async_upsert_route(monkeypatch):
     assert result == {
         "status": "UPSERTED",
         "route": {**inserted_row, "waypoint_sequence": sequence_rows},
+        "auto_created_edges": [],
     }
     assert calls[0] == (
         fms_config_repository.LOCK_ROUTE_SQL,

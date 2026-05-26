@@ -3950,6 +3950,7 @@ class CoordinateZoneSettingsPage(QWidget):
             self.fms_edge_rows,
             FMS_EDGE_TABLE_COLUMNS,
         )
+        self._populate_fms_route_waypoint_table()
         self._sync_fms_edge_overlay()
 
     def save_selected_fms_route(self):
@@ -4041,11 +4042,15 @@ class CoordinateZoneSettingsPage(QWidget):
             self.fms_route_waypoint_combo.blockSignals(False)
 
     def _populate_fms_route_waypoint_table(self):
-        table_rows = fms_route_waypoint_table_rows(self.fms_route_waypoint_rows)
+        table_rows = fms_route_waypoint_table_rows(
+            self.fms_route_waypoint_rows,
+            edges=self.fms_edge_rows,
+        )
         self.fms_route_waypoint_table.setRowCount(len(table_rows))
         columns = [
             "sequence_no",
             "waypoint_id",
+            "edge_status",
             "stop_required",
             "yaw_policy",
             "dwell_sec",
@@ -4249,11 +4254,23 @@ class CoordinateZoneSettingsPage(QWidget):
             return
 
         self._replace_fms_route_row(updated_route)
+        auto_created_edges = [
+            dict(edge)
+            for edge in (response or {}).get("auto_created_edges") or []
+            if isinstance(edge, dict)
+        ]
+        if auto_created_edges:
+            self._merge_fms_edge_rows(auto_created_edges)
         self.selected_fms_route = dict(updated_route)
         self._set_fms_route_form(updated_route, mode="edit")
         self.fms_route_dirty = False
         self.fms_route_mode = "edit"
-        self.validation_message_label.setText("FMS route를 저장했습니다.")
+        message = "FMS route를 저장했습니다."
+        if auto_created_edges:
+            message = (
+                f"{message} 자동 edge {len(auto_created_edges)}개를 추가했습니다."
+            )
+        self.validation_message_label.setText(message)
         self._sync_fms_route_save_state()
 
     def _replace_fms_route_row(self, updated_route):
@@ -4272,6 +4289,23 @@ class CoordinateZoneSettingsPage(QWidget):
             FMS_ROUTE_TABLE_COLUMNS,
         )
         self._sync_fms_route_overlay()
+
+    def _merge_fms_edge_rows(self, edges):
+        for edge in edges:
+            replacement = replace_row_by_key(
+                self.fms_edge_rows,
+                edge,
+                "edge_id",
+            )
+            self.fms_edge_rows = replacement.rows
+        self.current_bundle["fms_edges"] = self.fms_edge_rows
+        set_table_rows(
+            self.tables["fmsEdgeTable"],
+            self.fms_edge_rows,
+            FMS_EDGE_TABLE_COLUMNS,
+        )
+        self._populate_fms_route_waypoint_table()
+        self._sync_fms_edge_overlay()
 
     def _handle_coordinate_batch_save_finished(self, ok, response):
         if not ok:
