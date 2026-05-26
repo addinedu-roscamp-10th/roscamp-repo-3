@@ -33,6 +33,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.fms_route_pixel_points = []
         self.fms_route_labels = []
         self.selected_fms_route_index = None
+        self.initial_pose_estimate_pixel_point = None
+        self.initial_pose_estimate_heading_yaw = None
+        self.initial_pose_estimate_label = ""
         self._heading_drag_active = False
         self.fall_alert_click_radius_px = 14.0
         self.status_text = "순찰 맵 미수신"
@@ -77,6 +80,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.fms_route_pixel_points = []
         self.fms_route_labels = []
         self.selected_fms_route_index = None
+        self.initial_pose_estimate_pixel_point = None
+        self.initial_pose_estimate_heading_yaw = None
+        self.initial_pose_estimate_label = ""
 
         path = (
             task.get("patrol_path") if isinstance(task.get("patrol_path"), dict) else {}
@@ -140,6 +146,9 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.fms_route_pixel_points = []
         self.fms_route_labels = []
         self.selected_fms_route_index = None
+        self.initial_pose_estimate_pixel_point = None
+        self.initial_pose_estimate_heading_yaw = None
+        self.initial_pose_estimate_label = ""
         self.clear_map(status_text)
 
     def show_zone_boundary_editor(self, *, vertex_pixel_points, selected_index=None):
@@ -377,6 +386,27 @@ class OperationalMapOverlay(MapCanvasWidget):
         self.fms_route_pixel_points = []
         self.fms_route_labels = []
         self.selected_fms_route_index = None
+        self.initial_pose_estimate_pixel_point = None
+        self.initial_pose_estimate_heading_yaw = None
+        self.initial_pose_estimate_label = ""
+        self.update()
+
+    def show_initial_pose_estimate(
+        self,
+        *,
+        pixel_point=None,
+        yaw=None,
+        label="",
+    ):
+        self.initial_pose_estimate_pixel_point = pixel_point
+        self.initial_pose_estimate_heading_yaw = self._optional_float(yaw)
+        self.initial_pose_estimate_label = str(label or "")
+        self.update()
+
+    def clear_initial_pose_estimate(self):
+        self.initial_pose_estimate_pixel_point = None
+        self.initial_pose_estimate_heading_yaw = None
+        self.initial_pose_estimate_label = ""
         self.update()
 
     def draw_overlay(self, painter, target):
@@ -385,6 +415,7 @@ class OperationalMapOverlay(MapCanvasWidget):
         self._draw_fms_edges(painter, target)
         self._draw_fms_waypoints(painter, target)
         self._draw_fms_route(painter, target)
+        self._draw_initial_pose_estimate(painter, target)
         self._draw_route(painter, target)
         self._draw_robot(painter, target)
         self._draw_fall_alert(painter, target)
@@ -711,6 +742,37 @@ class OperationalMapOverlay(MapCanvasWidget):
             if labels[index]:
                 painter.setPen(QPen(QColor("#111827"), 1))
                 painter.drawText(point + QPointF(8, -8), labels[index])
+
+    def _draw_initial_pose_estimate(self, painter, target):
+        point = self.to_view_point(self.initial_pose_estimate_pixel_point, target)
+        if point is None:
+            return
+
+        painter.setPen(QPen(QColor("#7C2D12"), 2))
+        painter.setBrush(QColor("#FED7AA"))
+        painter.drawEllipse(point, 8, 8)
+        painter.drawLine(
+            QPointF(point.x() - 10, point.y()),
+            QPointF(point.x() + 10, point.y()),
+        )
+        painter.drawLine(
+            QPointF(point.x(), point.y() - 10),
+            QPointF(point.x(), point.y() + 10),
+        )
+        self._draw_heading_arrow(
+            painter,
+            point,
+            self.initial_pose_estimate_heading_yaw,
+            QColor("#C2410C"),
+            length=22.0,
+            width=3,
+        )
+        if self.initial_pose_estimate_label:
+            painter.setPen(QPen(QColor("#111827"), 1))
+            painter.drawText(
+                point + QPointF(10, -10),
+                self.initial_pose_estimate_label,
+            )
 
     def _draw_robot(self, painter, target):
         point = self.to_view_point(self.robot_pixel_point, target)

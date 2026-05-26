@@ -1,5 +1,6 @@
 import base64
 import copy
+import math
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -3372,6 +3373,57 @@ def test_coordinate_zone_settings_page_fms_route_create_starts_empty_and_uses_ma
         assert page.selected_fms_route_waypoint_index == 1
         assert len(page.map_canvas.fms_route_pixel_points) == 2
     finally:
+        page.close()
+
+
+def test_coordinate_zone_settings_page_initial_pose_estimate_uses_any_map_point():
+    _app()
+
+    import ui.utils.pages.caregiver.coordinate_zone_settings_page as page_module
+
+    from ui.utils.pages.caregiver.coordinate_zone_settings_page import (
+        CoordinateZoneSettingsPage,
+    )
+
+    page = CoordinateZoneSettingsPage()
+    original_start_worker_thread = page_module.start_worker_thread
+    started_payloads = []
+
+    def fake_start_worker_thread(owner, *, worker, finished_handler, clear_handler):
+        started_payloads.append(dict(worker.payload))
+        return object(), worker
+
+    try:
+        page.apply_loaded_coordinate_config(
+            {
+                "bundle": _sample_bundle(),
+                **_sample_map_assets(),
+            }
+        )
+        page_module.start_worker_thread = fake_start_worker_thread
+        page.initial_pose_robot_combo.setCurrentText("pinky1")
+        page.initial_pose_button.click()
+
+        page.handle_map_click({"x": 1.25, "y": 0.5, "yaw": 0.0})
+        page.handle_map_drag({"x": 1.25, "y": 1.5, "yaw": 0.0})
+        page.finish_map_drag_edit()
+
+        assert started_payloads == [
+            {
+                "robot_id": "pinky1",
+                "frame_id": "map",
+                "x": 1.25,
+                "y": 0.5,
+                "yaw": math.pi / 2,
+                "covariance": None,
+            }
+        ]
+        assert page.validation_message_label.text() == (
+            "pinky1 초기 위치 추정을 전송하는 중입니다."
+        )
+    finally:
+        page_module.start_worker_thread = original_start_worker_thread
+        page.initial_pose_thread = None
         page.close()
 
 

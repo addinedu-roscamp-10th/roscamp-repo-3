@@ -1,4 +1,5 @@
 import copy
+import math
 
 from PyQt6.QtCore import QEvent, QTimer, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
@@ -117,6 +118,7 @@ from ui.utils.pages.caregiver.coordinate_zone_settings_workers import (
     FmsRouteSaveWorker,
     FmsWaypointSaveWorker,
     GoalPoseSaveWorker,
+    InitialPoseEstimateWorker,
     OperationZoneBoundarySaveWorker,
     OperationZoneSaveWorker,
     PatrolAreaPathSaveWorker,
@@ -268,6 +270,11 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_edge_save_worker = None
         self.fms_route_save_thread = None
         self.fms_route_save_worker = None
+        self.initial_pose_thread = None
+        self.initial_pose_worker = None
+        self.initial_pose_estimate_active = False
+        self.initial_pose_estimate_origin = None
+        self.initial_pose_estimate_yaw = 0.0
         self.operation_zone_dirty_row_ids = set()
         self.goal_pose_dirty_row_ids = set()
         self.fms_waypoint_dirty_row_ids = set()
@@ -720,7 +727,41 @@ class CoordinateZoneSettingsPage(QWidget):
             layout.addWidget(label, row, column)
             layout.addWidget(value, row, column + 1)
 
+        initial_pose_label = QLabel("초기 위치")
+        initial_pose_label.setObjectName("keyValueKey")
+        self.initial_pose_robot_combo = QComboBox()
+        self.initial_pose_robot_combo.setObjectName("initialPoseRobotCombo")
+        self.initial_pose_robot_combo.addItems(["pinky1", "pinky3"])
+        self.initial_pose_button = QPushButton("2D Pose")
+        self.initial_pose_button.setObjectName("initialPoseEstimateButton")
+        self.initial_pose_button.setCheckable(True)
+        self.initial_pose_button.clicked.connect(self._toggle_initial_pose_estimate)
+        self.initial_pose_status_label = QLabel("-")
+        self.initial_pose_status_label.setObjectName("initialPoseStatusLabel")
+        self.initial_pose_status_label.setWordWrap(True)
+        layout.addWidget(initial_pose_label, 3, 0)
+        layout.addWidget(self.initial_pose_robot_combo, 3, 1)
+        layout.addWidget(self.initial_pose_button, 3, 2)
+        layout.addWidget(self.initial_pose_status_label, 3, 3, 1, 3)
+
         return panel
+
+    def _toggle_initial_pose_estimate(self, checked):
+        if checked and not self.map_canvas.map_loaded:
+            self.initial_pose_button.setChecked(False)
+            self.initial_pose_status_label.setText("맵 로드 후 사용할 수 있습니다.")
+            return
+
+        self.initial_pose_estimate_active = bool(checked)
+        self.initial_pose_estimate_origin = None
+        self.initial_pose_estimate_yaw = 0.0
+        if self.initial_pose_estimate_active:
+            self.initial_pose_status_label.setText(
+                "지도에서 위치를 클릭하고 방향으로 드래그하세요."
+            )
+        else:
+            self.initial_pose_status_label.setText("-")
+            self.map_canvas.clear_initial_pose_estimate()
 
     def _build_content_row(self):
         row = QHBoxLayout()
@@ -2180,6 +2221,9 @@ class CoordinateZoneSettingsPage(QWidget):
         self._sync_fms_route_save_state()
 
     def handle_map_click(self, world_pose):
+        if self.initial_pose_estimate_active:
+            self._begin_initial_pose_estimate(world_pose)
+            return
         if self.selected_edit_type == "operation_zone":
             self.handle_map_click_for_operation_zone(world_pose)
         elif self.selected_edit_type == "goal_pose":
@@ -2192,6 +2236,9 @@ class CoordinateZoneSettingsPage(QWidget):
             self.handle_map_click_for_fms_route(world_pose)
 
     def handle_map_drag(self, world_pose):
+        if self.initial_pose_estimate_active:
+            self._update_initial_pose_estimate_yaw(world_pose)
+            return
         if self.selected_edit_type == "operation_zone":
             self.move_selected_operation_zone_boundary_vertex(world_pose)
         elif self.selected_edit_type == "goal_pose":
@@ -2202,6 +2249,8 @@ class CoordinateZoneSettingsPage(QWidget):
             self.handle_map_click_for_fms_waypoint(world_pose)
 
     def begin_map_drag_edit(self):
+        if self.initial_pose_estimate_active:
+            return
         if self._map_drag_edit_active:
             return
         self._capture_current_form_to_draft()
@@ -2210,11 +2259,102 @@ class CoordinateZoneSettingsPage(QWidget):
         self._edit_history_recording_suspended = True
 
     def finish_map_drag_edit(self):
+        if self.initial_pose_estimate_active:
+            self._submit_initial_pose_estimate()
+            return
         if not self._map_drag_edit_active:
             return
         self._map_drag_edit_active = False
         self._edit_history_recording_suspended = False
         self._record_edit_history_snapshot()
+
+    def _begin_initial_pose_estimate(self, world_pose):
+        point = coerce_point2d(world_pose)
+        if point is None:
+            return
+        if not self.map_canvas.contains_world_pose(point):
+            self.initial_pose_status_label.setText(
+                "초기 위치가 맵 범위를 벗어났습니다."
+            )
+            return
+        self.initial_pose_estimate_origin = point
+        self.initial_pose_estimate_yaw = 0.0
+        self._sync_initial_pose_estimate_overlay()
+        self._set_initial_pose_estimate_status(prefix="선택")
+
+    def _update_initial_pose_estimate_yaw(self, world_pose):
+        if self.initial_pose_estimate_origin is None:
+            return
+        point = coerce_point2d(world_pose)
+        if point is None:
+            return
+        delta_x = point["x"] - self.initial_pose_estimate_origin["x"]
+        delta_y = point["y"] - self.initial_pose_estimate_origin["y"]
+        if math.hypot(delta_x, delta_y) < 1e-6:
+            return
+        self.initial_pose_estimate_yaw = math.atan2(delta_y, delta_x)
+        self._sync_initial_pose_estimate_overlay()
+        self._set_initial_pose_estimate_status(prefix="방향")
+
+    def _submit_initial_pose_estimate(self):
+        if self.initial_pose_thread is not None:
+            return
+        if self.initial_pose_estimate_origin is None:
+            return
+        payload = self._build_initial_pose_estimate_payload()
+        self.initial_pose_thread, self.initial_pose_worker = start_worker_thread(
+            self,
+            worker=InitialPoseEstimateWorker(payload=payload),
+            finished_handler=self._handle_initial_pose_estimate_finished,
+            clear_handler=self._clear_initial_pose_thread,
+        )
+        self.validation_message_label.setText(
+            f"{payload['robot_id']} 초기 위치 추정을 전송하는 중입니다."
+        )
+
+    def _build_initial_pose_estimate_payload(self):
+        point = self.initial_pose_estimate_origin or {"x": 0.0, "y": 0.0}
+        return {
+            "robot_id": self.initial_pose_robot_combo.currentText().strip(),
+            "frame_id": self._active_map_frame_id(),
+            "x": float(point["x"]),
+            "y": float(point["y"]),
+            "yaw": float(self.initial_pose_estimate_yaw),
+            "covariance": None,
+        }
+
+    def _handle_initial_pose_estimate_finished(self, ok, payload):
+        if ok:
+            robot_id = _display((payload or {}).get("robot_id"))
+            topic = _display((payload or {}).get("topic"))
+            self.validation_message_label.setText(
+                f"{robot_id} 초기 위치 추정을 전송했습니다: {topic}"
+            )
+            self.initial_pose_estimate_active = False
+            self.initial_pose_button.setChecked(False)
+            self.initial_pose_status_label.setText("전송 완료")
+            return
+
+        self.validation_message_label.setText(
+            f"초기 위치 추정 전송에 실패했습니다: {payload}"
+        )
+        self.initial_pose_status_label.setText("전송 실패")
+
+    def _sync_initial_pose_estimate_overlay(self):
+        pixel = self.map_canvas.world_to_pixel(self.initial_pose_estimate_origin)
+        self.map_canvas.show_initial_pose_estimate(
+            pixel_point=pixel,
+            yaw=self.initial_pose_estimate_yaw,
+            label=self.initial_pose_robot_combo.currentText().strip(),
+        )
+
+    def _set_initial_pose_estimate_status(self, *, prefix):
+        point = self.initial_pose_estimate_origin or {}
+        self.initial_pose_status_label.setText(
+            f"{prefix}: x={float(point.get('x', 0.0)):.2f}, "
+            f"y={float(point.get('y', 0.0)):.2f}, "
+            f"yaw={self.initial_pose_estimate_yaw:.2f}"
+        )
 
     def handle_map_heading_drag(self, payload):
         yaw = self._heading_drag_yaw(payload)
@@ -5075,6 +5215,10 @@ class CoordinateZoneSettingsPage(QWidget):
         self.fms_route_save_worker = None
         self._sync_fms_route_save_state()
 
+    def _clear_initial_pose_thread(self):
+        self.initial_pose_thread = None
+        self.initial_pose_worker = None
+
     def _clear_operation_zone_save_thread(self):
         self.operation_zone_save_thread = None
         self.operation_zone_save_worker = None
@@ -5102,6 +5246,7 @@ class CoordinateZoneSettingsPage(QWidget):
         self._stop_fms_waypoint_save_thread()
         self._stop_fms_edge_save_thread()
         self._stop_fms_route_save_thread()
+        self._stop_initial_pose_thread()
 
     def closeEvent(self, event):
         self.shutdown()
@@ -5140,6 +5285,13 @@ class CoordinateZoneSettingsPage(QWidget):
             self.fms_route_save_thread,
             wait_ms=self._worker_stop_wait_ms,
             clear_handler=self._clear_fms_route_save_thread,
+        )
+
+    def _stop_initial_pose_thread(self):
+        return stop_worker_thread(
+            self.initial_pose_thread,
+            wait_ms=self._worker_stop_wait_ms,
+            clear_handler=self._clear_initial_pose_thread,
         )
 
     def _stop_operation_zone_save_thread(self):

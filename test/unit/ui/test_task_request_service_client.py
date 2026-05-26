@@ -15,6 +15,7 @@ from ui.utils.network.service_clients import (
     FmsConfigRemoteService,
     InventoryRemoteService,
     KioskVisitorRemoteService,
+    RobotLocalizationRemoteService,
     StaffCallRemoteService,
     TaskMonitorRemoteService,
     VisitGuideRemoteService,
@@ -462,6 +463,40 @@ def test_coordinate_config_remote_service_exposes_active_map_bundle_rpc(monkeypa
                 "include_disabled": False,
                 "include_zone_boundaries": False,
                 "include_patrol_paths": False,
+            },
+        )
+    ]
+
+
+def test_robot_localization_remote_service_exposes_initial_pose_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {"result_code": "ACCEPTED", "topic": "/pinky1/initialpose"}
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    response = RobotLocalizationRemoteService().set_initial_pose(
+        robot_id="pinky1",
+        frame_id="map",
+        x=1.25,
+        y=-0.5,
+        yaw=1.57,
+    )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert calls == [
+        (
+            "robot_localization",
+            "set_initial_pose",
+            {
+                "robot_id": "pinky1",
+                "frame_id": "map",
+                "x": 1.25,
+                "y": -0.5,
+                "yaw": 1.57,
+                "covariance": None,
             },
         )
     ]

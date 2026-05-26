@@ -10,6 +10,9 @@ from server.ropi_main_service.application.fms_runtime import FmsRuntimeService
 from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.kiosk_visitor import KioskVisitorService
 from server.ropi_main_service.application.patient import PatientService
+from server.ropi_main_service.application.robot_localization import (
+    RobotLocalizationService,
+)
 from server.ropi_main_service.application.staff_call import StaffCallService
 from server.ropi_main_service.application.task_monitor import TaskMonitorService
 from server.ropi_main_service.application.task_request import TaskRequestService
@@ -26,6 +29,7 @@ def build_rpc_service_registry():
         "fms_runtime": FmsRuntimeService,
         "patient": PatientService,
         "inventory": InventoryService,
+        "robot_localization": RobotLocalizationService,
         "kiosk_visitor": KioskVisitorService,
         "fall_evidence_image": FallEvidenceImageService,
         "task_monitor": TaskMonitorService,

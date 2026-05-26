@@ -31,6 +31,7 @@ class RosServiceUdsServer:
         fall_response_control_client=None,
         guide_command_client=None,
         guide_runtime_subscriber=None,
+        initial_pose_publisher=None,
         runtime_config=None,
         patrol_runtime_config=None,
     ):
@@ -44,6 +45,7 @@ class RosServiceUdsServer:
             fall_response_control_client=fall_response_control_client,
             guide_command_client=guide_command_client,
             guide_runtime_subscriber=guide_runtime_subscriber,
+            initial_pose_publisher=initial_pose_publisher,
             runtime_config=runtime_config,
             patrol_runtime_config=patrol_runtime_config,
         )

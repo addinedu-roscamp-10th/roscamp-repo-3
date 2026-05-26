@@ -6,6 +6,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from ui.utils.network.service_clients import (
     CoordinateConfigRemoteService,
     FmsConfigRemoteService,
+    RobotLocalizationRemoteService,
 )
 
 
@@ -311,6 +312,25 @@ class FmsRouteSaveWorker(QObject):
             self.finished.emit(False, str(exc))
 
 
+class InitialPoseEstimateWorker(QObject):
+    finished = pyqtSignal(object, object)
+
+    def __init__(self, *, payload, service_factory=RobotLocalizationRemoteService):
+        super().__init__()
+        self.payload = dict(payload or {})
+        self.service_factory = service_factory
+
+    def run(self):
+        try:
+            response = self.service_factory().set_initial_pose(**self.payload)
+            if isinstance(response, dict) and response.get("result_code") == "ACCEPTED":
+                self.finished.emit(True, response)
+                return
+            self.finished.emit(False, _format_result_error(response))
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
 def _is_ok_response(response):
     return isinstance(response, dict) and response.get("result_code") == "OK"
 
@@ -352,6 +372,7 @@ __all__ = [
     "FmsRouteSaveWorker",
     "FmsWaypointSaveWorker",
     "GoalPoseSaveWorker",
+    "InitialPoseEstimateWorker",
     "OperationZoneBoundarySaveWorker",
     "OperationZoneSaveWorker",
     "PatrolAreaPathSaveWorker",

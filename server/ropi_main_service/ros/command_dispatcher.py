@@ -187,6 +187,7 @@ class RosServiceCommandDispatcher:
         fall_response_control_client=None,
         guide_command_client=None,
         guide_runtime_subscriber=None,
+        initial_pose_publisher=None,
         runtime_config=None,
         patrol_runtime_config=None,
         manipulation_result_wait_timeout_sec=None,
@@ -198,6 +199,7 @@ class RosServiceCommandDispatcher:
         self.fall_response_control_client = fall_response_control_client
         self.guide_command_client = guide_command_client
         self.guide_runtime_subscriber = guide_runtime_subscriber
+        self.initial_pose_publisher = initial_pose_publisher
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
         self.manipulation_result_wait_timeout_sec = (
@@ -213,6 +215,7 @@ class RosServiceCommandDispatcher:
             "cancel_action": self._dispatch_cancel_action,
             "get_action_feedback": self._dispatch_get_action_feedback,
             "get_runtime_status": self._dispatch_get_runtime_status,
+            "set_initial_pose": self._dispatch_set_initial_pose,
             **{
                 command: partial(self._dispatch_action_command, spec)
                 for command, spec in ACTION_COMMAND_SPECS.items()
@@ -226,6 +229,7 @@ class RosServiceCommandDispatcher:
             "cancel_action": self._async_dispatch_cancel_action,
             "get_action_feedback": self._async_dispatch_get_action_feedback,
             "get_runtime_status": self._async_dispatch_get_runtime_status,
+            "set_initial_pose": self._async_dispatch_set_initial_pose,
             **{
                 command: partial(self._async_dispatch_action_command, spec)
                 for command, spec in ACTION_COMMAND_SPECS.items()
@@ -366,6 +370,40 @@ class RosServiceCommandDispatcher:
             service_name=getattr(self, spec.service_name_builder)(pinky_id),
             request=request,
         )
+
+    def _dispatch_set_initial_pose(self, payload: dict) -> dict:
+        publisher = self._require_action_client(
+            self.initial_pose_publisher,
+            error_code="INITIAL_POSE_SERVICE_UNAVAILABLE",
+            error_message="set_initial_pose command requires initial pose publisher.",
+        )
+        request = self._build_initial_pose_publish_request(payload)
+        return publisher.publish_initial_pose(**request)
+
+    async def _async_dispatch_set_initial_pose(self, payload: dict) -> dict:
+        return self._dispatch_set_initial_pose(payload)
+
+    def _build_initial_pose_publish_request(self, payload: dict) -> dict:
+        robot_id = self._get_required_identifier(
+            payload,
+            field_name="robot_id",
+            error_code="ROBOT_ID_REQUIRED",
+            error_message="set_initial_pose command requires robot_id.",
+        )
+        if robot_id.startswith("/") or "/" in robot_id:
+            raise RosServiceCommandDispatchError(
+                "INVALID_ROBOT_ID",
+                "set_initial_pose robot_id must be a relative robot namespace.",
+            )
+
+        return {
+            "robot_id": robot_id,
+            "frame_id": str(payload.get("frame_id") or "map").strip() or "map",
+            "x": self._get_required_float(payload, "x"),
+            "y": self._get_required_float(payload, "y"),
+            "yaw": self._get_required_float(payload, "yaw"),
+            "covariance": payload.get("covariance"),
+        }
 
     def _get_action_client_for_spec(self, spec: ActionCommandSpec):
         action_client = getattr(self, spec.client_attr)
@@ -890,6 +928,16 @@ class RosServiceCommandDispatcher:
     def _get_optional_identifier(payload: dict, field_name: str):
         value = str(payload.get(field_name) or "").strip()
         return value or None
+
+    @staticmethod
+    def _get_required_float(payload: dict, field_name: str) -> float:
+        try:
+            return float(payload.get(field_name))
+        except (TypeError, ValueError):
+            raise RosServiceCommandDispatchError(
+                "INITIAL_POSE_INVALID",
+                f"set_initial_pose command requires numeric {field_name}.",
+            ) from None
 
     @staticmethod
     def _require_action_client(action_client, *, error_code: str, error_message: str):

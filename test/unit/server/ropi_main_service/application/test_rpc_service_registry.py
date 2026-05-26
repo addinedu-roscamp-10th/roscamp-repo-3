@@ -8,6 +8,9 @@ from server.ropi_main_service.application.rpc_service_registry import (
     SERVICE_REGISTRY,
     build_rpc_service_registry,
 )
+from server.ropi_main_service.application.robot_localization import (
+    RobotLocalizationService,
+)
 from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.application.visit_guide import VisitGuideService
 
@@ -22,6 +25,7 @@ def test_rpc_service_registry_exposes_phase1_service_names():
         "fms_runtime",
         "patient",
         "inventory",
+        "robot_localization",
         "kiosk_visitor",
         "fall_evidence_image",
         "task_monitor",
@@ -40,6 +44,7 @@ def test_rpc_service_registry_maps_core_services_to_application_factories():
     assert registry["coordinate_config"] is CoordinateConfigService
     assert registry["fms_config"] is FmsConfigService
     assert registry["fms_runtime"] is FmsRuntimeService
+    assert registry["robot_localization"] is RobotLocalizationService
     assert registry["task_request"] is TaskRequestService
     assert registry["visit_guide"] is VisitGuideService
 

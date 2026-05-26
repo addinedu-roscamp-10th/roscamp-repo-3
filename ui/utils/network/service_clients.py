@@ -85,6 +85,33 @@ class CaregiverRemoteService:
         )
 
 
+class RobotLocalizationRemoteService:
+    _SERVICE_NAME = "robot_localization"
+
+    def _rpc(self, method: str, **kwargs):
+        return _rpc(self._SERVICE_NAME, method, **kwargs)
+
+    def set_initial_pose(
+        self,
+        *,
+        robot_id,
+        x,
+        y,
+        yaw,
+        frame_id="map",
+        covariance=None,
+    ):
+        return self._rpc(
+            "set_initial_pose",
+            robot_id=robot_id,
+            frame_id=frame_id,
+            x=x,
+            y=y,
+            yaw=yaw,
+            covariance=covariance,
+        )
+
+
 class PatientRemoteService:
     def search_patient_candidates(
         self, name: str = "", room_no: str = "", limit: int = 10
