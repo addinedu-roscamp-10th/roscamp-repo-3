@@ -18,6 +18,7 @@ _EXPORTS = {
     "FixedGoalPoseResolver": ("goal_pose_resolvers", "FixedGoalPoseResolver"),
     "FallEvidenceImageService": ("fall_evidence_image", "FallEvidenceImageService"),
     "FmsConfigService": ("fms_config", "FmsConfigService"),
+    "FmsRuntimeService": ("fms_runtime", "FmsRuntimeService"),
     "FallResponseCommandService": (
         "fall_response_command",
         "FallResponseCommandService",

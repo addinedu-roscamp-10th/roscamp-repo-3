@@ -6,6 +6,7 @@ from server.ropi_main_service.application.fall_evidence_image import (
     FallEvidenceImageService,
 )
 from server.ropi_main_service.application.fms_config import FmsConfigService
+from server.ropi_main_service.application.fms_runtime import FmsRuntimeService
 from server.ropi_main_service.application.inventory import InventoryService
 from server.ropi_main_service.application.kiosk_visitor import KioskVisitorService
 from server.ropi_main_service.application.patient import PatientService
@@ -22,6 +23,7 @@ def build_rpc_service_registry():
         "caregiver": CaregiverRpcFacade,
         "coordinate_config": CoordinateConfigService,
         "fms_config": FmsConfigService,
+        "fms_runtime": FmsRuntimeService,
         "patient": PatientService,
         "inventory": InventoryService,
         "kiosk_visitor": KioskVisitorService,

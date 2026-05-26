@@ -9,6 +9,7 @@ from .drive_task_create_repository import (
 )
 from .drive_task_repository import DriveTaskRepository
 from .fms_config_repository import FmsConfigRepository
+from .fms_reservation_repository import FmsReservationRepository
 from .inventory_repository import InventoryRepository
 from .guide_task_repository import GuideTaskRepository
 from .guide_task_lifecycle_repository import GuideTaskLifecycleRepository
@@ -46,6 +47,7 @@ __all__ = [
     "DriveTaskCreateRepository",
     "DriveTaskRepository",
     "FmsConfigRepository",
+    "FmsReservationRepository",
     "GuideTaskRepository",
     "GuideTaskLifecycleRepository",
     "GuideTaskNavigationRepository",

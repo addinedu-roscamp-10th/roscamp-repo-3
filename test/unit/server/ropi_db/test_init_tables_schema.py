@@ -75,6 +75,7 @@ def test_schema_contains_control_task_and_log_tables():
         "patrol_task_detail",
         "patrol_area",
         "drive_task_detail",
+        "fms_reservation",
         "guide_task_detail",
         "task_state_history",
         "task_event_log",
@@ -164,6 +165,32 @@ def test_drive_task_detail_snapshots_fms_route_for_navigation_only_task():
     assert "`waypoint_count` INT UNSIGNED NOT NULL DEFAULT 0" in drive_section
     assert "`path_snapshot_json` JSON NOT NULL" in drive_section
     assert "CONSTRAINT `fk_drive_task_detail_route`" in drive_section
+
+
+def test_fms_reservation_schema_tracks_waypoint_and_edge_leases():
+    ddl = _ddl()
+
+    reservation_section = ddl.split("CREATE TABLE `fms_reservation`", 1)[1].split(
+        "CREATE TABLE `guide_task_detail`",
+        1,
+    )[0]
+
+    assert "`reservation_id` VARCHAR(100) NOT NULL" in reservation_section
+    assert "`task_id` BIGINT UNSIGNED NULL" in reservation_section
+    assert "`robot_id` VARCHAR(50) NOT NULL" in reservation_section
+    assert "`map_id` VARCHAR(100) NOT NULL" in reservation_section
+    assert "`resource_type` VARCHAR(20) NOT NULL" in reservation_section
+    assert "`resource_id` VARCHAR(100) NOT NULL" in reservation_section
+    assert "`waypoint_id` VARCHAR(100) NULL" in reservation_section
+    assert "`edge_id` VARCHAR(100) NULL" in reservation_section
+    assert "`reservation_status` VARCHAR(20) NOT NULL" in reservation_section
+    assert "`reserved_until` DATETIME(3) NULL" in reservation_section
+    assert "`released_at` DATETIME(3) NULL" in reservation_section
+    assert "CONSTRAINT `fk_fms_reservation_task`" in reservation_section
+    assert "CONSTRAINT `fk_fms_reservation_robot`" in reservation_section
+    assert "CONSTRAINT `fk_fms_reservation_waypoint`" in reservation_section
+    assert "CONSTRAINT `fk_fms_reservation_edge`" in reservation_section
+    assert "KEY `idx_fms_reservation_active_resource`" in reservation_section
 
 
 def test_operation_zone_does_not_store_patrol_robot_hint():

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from server.ropi_main_service.application.fms_config_formatters import (
     format_fms_edge,
+    format_fms_reservation,
     format_fms_route,
     format_fms_waypoint,
     format_map_profile,
@@ -81,12 +82,18 @@ class FmsConfigService:
             if bool_value(include_routes)
             else []
         )
+        reservations = (
+            self.repository.get_reservations(map_id=map_profile["map_id"])
+            if bool_value(include_reservations)
+            else []
+        )
 
         return self._ok_bundle_response(
             map_profile=map_profile,
             waypoints=waypoints,
             edges=edges,
             routes=routes,
+            reservations=reservations,
             include_edges=include_edges,
             include_routes=include_routes,
             include_reservations=include_reservations,
@@ -152,12 +159,22 @@ class FmsConfigService:
             if bool_value(include_routes)
             else []
         )
+        reservations = (
+            await self._call_async_or_thread(
+                "async_get_reservations",
+                "get_reservations",
+                map_id=map_profile["map_id"],
+            )
+            if bool_value(include_reservations)
+            else []
+        )
 
         return self._ok_bundle_response(
             map_profile=map_profile,
             waypoints=waypoints,
             edges=edges,
             routes=routes,
+            reservations=reservations,
             include_edges=include_edges,
             include_routes=include_routes,
             include_reservations=include_reservations,
@@ -758,6 +775,7 @@ class FmsConfigService:
         waypoints,
         edges,
         routes,
+        reservations,
         include_edges,
         include_routes,
         include_reservations,
@@ -775,7 +793,11 @@ class FmsConfigService:
             "routes": [format_fms_route(row) for row in routes or []]
             if bool_value(include_routes)
             else [],
-            "reservations": [] if bool_value(include_reservations) else [],
+            "reservations": [
+                format_fms_reservation(row) for row in reservations or []
+            ]
+            if bool_value(include_reservations)
+            else [],
         }
 
     def _not_found_bundle_response(self):

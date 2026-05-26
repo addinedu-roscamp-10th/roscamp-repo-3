@@ -90,6 +90,20 @@ class FakeFmsConfigRepository:
                 "updated_at": datetime(2026, 5, 4, 10, 7, 0),
             }
         ]
+        self.reservations = [
+            {
+                "reservation_id": "resv_held_001",
+                "task_id": 3001,
+                "robot_id": "pinky1",
+                "map_id": "map_0504",
+                "resource_type": "EDGE",
+                "resource_id": "edge_corridor_01_02",
+                "reservation_status": "HELD",
+                "reserved_from": datetime(2026, 5, 4, 10, 10, 0),
+                "reserved_until": datetime(2026, 5, 4, 10, 10, 30),
+                "reason_code": None,
+            }
+        ]
         self.upsert_result = None
         self.edge_upsert_result = None
         self.route_upsert_result = None
@@ -125,6 +139,14 @@ class FakeFmsConfigRepository:
     async def async_get_routes(self, *, map_id, include_disabled=True):
         self.calls.append(("async_get_routes", map_id, include_disabled))
         return self.routes
+
+    def get_reservations(self, *, map_id):
+        self.calls.append(("get_reservations", map_id))
+        return self.reservations
+
+    async def async_get_reservations(self, *, map_id):
+        self.calls.append(("async_get_reservations", map_id))
+        return self.reservations
 
     def upsert_waypoint(self, *, map_id, **kwargs):
         self.calls.append(
@@ -363,12 +385,25 @@ def test_fms_graph_bundle_formats_active_waypoint_foundation():
             "updated_at": "2026-05-04T10:07:00",
         }
     ]
-    assert response["reservations"] == []
+    assert response["reservations"] == [
+        {
+            "reservation_id": "resv_held_001",
+            "task_id": 3001,
+            "robot_id": "pinky1",
+            "resource_type": "EDGE",
+            "resource_id": "edge_corridor_01_02",
+            "status": "HELD",
+            "reserved_from": "2026-05-04T10:10:00",
+            "reserved_until": "2026-05-04T10:10:30",
+            "reason_code": None,
+        }
+    ]
     assert repository.calls == [
         ("get_active_map_profile",),
         ("get_waypoints", "map_0504", False),
         ("get_edges", "map_0504", False),
         ("get_routes", "map_0504", False),
+        ("get_reservations", "map_0504"),
     ]
 
 

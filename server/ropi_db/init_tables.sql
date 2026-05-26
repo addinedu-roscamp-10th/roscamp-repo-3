@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS `command_execution`;
 DROP TABLE IF EXISTS `task_event_log`;
 DROP TABLE IF EXISTS `task_state_history`;
 DROP TABLE IF EXISTS `guide_task_detail`;
+DROP TABLE IF EXISTS `fms_reservation`;
 DROP TABLE IF EXISTS `drive_task_detail`;
 DROP TABLE IF EXISTS `patrol_task_zone`;
 DROP TABLE IF EXISTS `patrol_task_detail`;
@@ -435,6 +436,47 @@ CREATE TABLE `drive_task_detail` (
         FOREIGN KEY (`route_id`)
         REFERENCES `fms_route` (`route_id`),
     KEY `idx_drive_task_detail_route_revision` (`route_id`, `route_revision`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `fms_reservation` (
+    `reservation_id` VARCHAR(100) NOT NULL,
+    `task_id` BIGINT UNSIGNED NULL,
+    `robot_id` VARCHAR(50) NOT NULL,
+    `map_id` VARCHAR(100) NOT NULL,
+    `resource_type` VARCHAR(20) NOT NULL,
+    `resource_id` VARCHAR(100) NOT NULL,
+    `waypoint_id` VARCHAR(100) NULL,
+    `edge_id` VARCHAR(100) NULL,
+    `reservation_status` VARCHAR(20) NOT NULL,
+    `reserved_from` DATETIME(3) NULL,
+    `reserved_until` DATETIME(3) NULL,
+    `released_at` DATETIME(3) NULL,
+    `reason_code` VARCHAR(100) NULL,
+    `created_at` DATETIME(3) NOT NULL,
+    `updated_at` DATETIME(3) NOT NULL,
+    CONSTRAINT `pk_fms_reservation` PRIMARY KEY (`reservation_id`),
+    CONSTRAINT `fk_fms_reservation_task`
+        FOREIGN KEY (`task_id`)
+        REFERENCES `task` (`task_id`)
+        ON DELETE SET NULL,
+    CONSTRAINT `fk_fms_reservation_robot`
+        FOREIGN KEY (`robot_id`)
+        REFERENCES `robot` (`robot_id`),
+    CONSTRAINT `fk_fms_reservation_map_profile`
+        FOREIGN KEY (`map_id`)
+        REFERENCES `map_profile` (`map_id`),
+    CONSTRAINT `fk_fms_reservation_waypoint`
+        FOREIGN KEY (`waypoint_id`)
+        REFERENCES `fms_waypoint` (`waypoint_id`),
+    CONSTRAINT `fk_fms_reservation_edge`
+        FOREIGN KEY (`edge_id`)
+        REFERENCES `fms_edge` (`edge_id`),
+    KEY `idx_fms_reservation_active_resource`
+        (`map_id`, `resource_type`, `resource_id`, `reservation_status`, `reserved_until`),
+    KEY `idx_fms_reservation_task_status`
+        (`task_id`, `reservation_status`, `updated_at`),
+    KEY `idx_fms_reservation_robot_status`
+        (`robot_id`, `reservation_status`, `updated_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `guide_task_detail` (

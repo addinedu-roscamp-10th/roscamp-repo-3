@@ -28,6 +28,9 @@ LIST_ROUTE_WAYPOINTS_FOR_MAP_SQL = load_sql(
 )
 LIST_ROUTE_WAYPOINTS_SQL = load_sql("fms_config/list_route_waypoints.sql")
 LIST_WAYPOINTS_SQL = load_sql("fms_config/list_waypoints.sql")
+LIST_ACTIVE_RESERVATIONS_SQL = load_sql(
+    "fms_reservation/list_active_reservations.sql"
+)
 LOCK_EDGE_SQL = load_sql("fms_config/lock_edge.sql")
 LOCK_ROUTE_SQL = load_sql("fms_config/lock_route.sql")
 LOCK_WAYPOINT_SQL = load_sql("fms_config/lock_waypoint.sql")
@@ -94,6 +97,20 @@ class FmsConfigRepository:
             (str(map_id), bool(include_disabled)),
         )
         return self._attach_route_sequences(routes, route_waypoints)
+
+    def get_reservations(self, *, map_id):
+        normalized_map_id = str(map_id)
+        return fetch_all(
+            LIST_ACTIVE_RESERVATIONS_SQL,
+            (normalized_map_id, normalized_map_id),
+        )
+
+    async def async_get_reservations(self, *, map_id):
+        normalized_map_id = str(map_id)
+        return await async_fetch_all(
+            LIST_ACTIVE_RESERVATIONS_SQL,
+            (normalized_map_id, normalized_map_id),
+        )
 
     def upsert_waypoint(
         self,

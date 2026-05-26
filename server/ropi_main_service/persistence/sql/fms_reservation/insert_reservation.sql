@@ -1,0 +1,33 @@
+INSERT INTO fms_reservation (
+    reservation_id,
+    task_id,
+    robot_id,
+    map_id,
+    resource_type,
+    resource_id,
+    waypoint_id,
+    edge_id,
+    reservation_status,
+    reserved_from,
+    reserved_until,
+    released_at,
+    reason_code,
+    created_at,
+    updated_at
+) VALUES (
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    %s,
+    CASE WHEN %s = 'HELD' THEN NOW(3) ELSE NULL END,
+    CASE WHEN %s = 'HELD' THEN DATE_ADD(NOW(3), INTERVAL %s SECOND) ELSE NULL END,
+    NULL,
+    %s,
+    NOW(3),
+    NOW(3)
+)

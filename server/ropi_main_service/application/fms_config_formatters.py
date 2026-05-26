@@ -74,9 +74,25 @@ def format_fms_route_waypoint(row):
     }
 
 
+def format_fms_reservation(row):
+    row = row if isinstance(row, dict) else {}
+    return {
+        "reservation_id": row.get("reservation_id"),
+        "task_id": optional_int(row.get("task_id")),
+        "robot_id": row.get("robot_id"),
+        "resource_type": row.get("resource_type"),
+        "resource_id": row.get("resource_id"),
+        "status": row.get("reservation_status") or row.get("status"),
+        "reserved_from": isoformat(row.get("reserved_from")),
+        "reserved_until": isoformat(row.get("reserved_until")),
+        "reason_code": normalize_optional_text(row.get("reason_code")),
+    }
+
+
 __all__ = [
     "bool_value",
     "format_fms_edge",
+    "format_fms_reservation",
     "format_fms_route",
     "format_fms_route_waypoint",
     "format_fms_waypoint",

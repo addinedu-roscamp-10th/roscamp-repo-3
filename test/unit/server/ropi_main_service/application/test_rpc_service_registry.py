@@ -3,6 +3,7 @@ from server.ropi_main_service.application.caregiver_rpc_facade import (
 )
 from server.ropi_main_service.application.coordinate_config import CoordinateConfigService
 from server.ropi_main_service.application.fms_config import FmsConfigService
+from server.ropi_main_service.application.fms_runtime import FmsRuntimeService
 from server.ropi_main_service.application.rpc_service_registry import (
     SERVICE_REGISTRY,
     build_rpc_service_registry,
@@ -18,6 +19,7 @@ def test_rpc_service_registry_exposes_phase1_service_names():
         "caregiver",
         "coordinate_config",
         "fms_config",
+        "fms_runtime",
         "patient",
         "inventory",
         "kiosk_visitor",
@@ -37,6 +39,7 @@ def test_rpc_service_registry_maps_core_services_to_application_factories():
     assert registry["caregiver"] is CaregiverRpcFacade
     assert registry["coordinate_config"] is CoordinateConfigService
     assert registry["fms_config"] is FmsConfigService
+    assert registry["fms_runtime"] is FmsRuntimeService
     assert registry["task_request"] is TaskRequestService
     assert registry["visit_guide"] is VisitGuideService
 
