@@ -28,12 +28,16 @@ class FakeDriveExecutionRepository:
     def __init__(self, *, events, snapshot):
         self.events = events
         self.snapshot = snapshot
+        self.snapshots = list(snapshot) if isinstance(snapshot, list) else None
         self.waiting_records = []
         self.started = []
         self.results = []
 
     async def async_get_drive_execution_snapshot(self, task_id):
         self.events.append("snapshot")
+        if self.snapshots is not None:
+            snapshot = self.snapshots.pop(0) if len(self.snapshots) > 1 else self.snapshots[0]
+            return dict(snapshot, task_id=int(task_id))
         return dict(self.snapshot, task_id=int(task_id))
 
     async def async_record_drive_reservation_waiting(
@@ -322,6 +326,7 @@ def test_drive_runtime_retries_waiting_reservation_and_dispatches_when_held():
             "snapshot",
             "reserve",
             "waiting",
+            "snapshot",
             "reserve",
             "started",
             "navigate",
@@ -332,6 +337,45 @@ def test_drive_runtime_retries_waiting_reservation_and_dispatches_when_held():
         assert len(execution_repository.waiting_records) == 1
         assert drive_orchestrator.calls[0]["robot_id"] == "pinky1"
         assert execution_repository.results[0]["workflow_response"]["result_code"] == "SUCCESS"
+
+    asyncio.run(_run())
+
+
+def test_drive_runtime_stops_waiting_retry_when_task_is_cancel_requested():
+    async def _run():
+        events = []
+        manager = FakeWorkflowTaskManager()
+        cancelled_snapshot = {
+            **_snapshot(),
+            "task_status": "CANCEL_REQUESTED",
+            "phase": "CANCEL_REQUESTED",
+        }
+        execution_repository = FakeDriveExecutionRepository(
+            events=events,
+            snapshot=[_snapshot(), cancelled_snapshot],
+        )
+        fms_runtime = FakeFmsRuntime(events=events, result_code=["WAITING", "HELD"])
+        drive_orchestrator = FakeDriveOrchestrator(events=events)
+        service = build_drive_request_service(
+            loop=asyncio.get_running_loop(),
+            workflow_task_manager=manager,
+            task_request_repository=FakeTaskRequestRepository(),
+            drive_execution_repository=execution_repository,
+            fms_runtime_service=fms_runtime,
+            drive_orchestrator=drive_orchestrator,
+            fms_reservation_retry_interval_sec=0,
+        )
+
+        await service.async_create_drive_task(**_drive_payload())
+        await asyncio.gather(*manager.tasks)
+
+        assert events == ["snapshot", "reserve", "waiting", "snapshot", "result"]
+        assert drive_orchestrator.calls == []
+        assert len(fms_runtime.requested) == 1
+        assert fms_runtime.released == []
+        assert execution_repository.results[0]["workflow_response"]["result_code"] == (
+            "CANCELLED"
+        )
 
     asyncio.run(_run())
 

@@ -34,6 +34,9 @@ from server.ropi_main_service.persistence.repositories.drive_task_repository imp
 from server.ropi_main_service.persistence.repositories.drive_task_create_repository import (
     DriveTaskCreateRepository,
 )
+from server.ropi_main_service.persistence.repositories.drive_task_cancel_repository import (
+    DriveTaskCancelRepository,
+)
 from server.ropi_main_service.persistence.repositories.patrol_task_repository import (
     PatrolTaskRepository,
 )
@@ -84,6 +87,7 @@ class TaskRequestRepository:
         drive_runtime_config=None,
         drive_task_repository=None,
         drive_task_create_repository=None,
+        drive_task_cancel_repository=None,
         idempotency_repository=None,
         lookup_repository=None,
         delivery_request_event_repository=None,
@@ -105,6 +109,9 @@ class TaskRequestRepository:
         self.patrol_task_result_repository = patrol_task_result_repository or PatrolTaskResultRepository()
         self.patrol_task_resume_repository = patrol_task_resume_repository or PatrolTaskResumeRepository()
         self.drive_task_repository = drive_task_repository or DriveTaskRepository()
+        self.drive_task_cancel_repository = (
+            drive_task_cancel_repository or DriveTaskCancelRepository()
+        )
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
         self.delivery_task_create_repository = (
             delivery_task_create_repository
@@ -395,6 +402,44 @@ class TaskRequestRepository:
             (numeric_task_id,),
         )
         return self._format_task_cancel_target(row, task_id=numeric_task_id)
+
+    def get_drive_task_cancel_target(self, task_id):
+        return self.drive_task_cancel_repository.get_drive_task_cancel_target(task_id)
+
+    async def async_get_drive_task_cancel_target(self, task_id):
+        return await self.drive_task_cancel_repository.async_get_drive_task_cancel_target(
+            task_id
+        )
+
+    def record_drive_task_cancel_result(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        reason,
+        cancel_response,
+    ):
+        return self.drive_task_cancel_repository.record_drive_task_cancel_result(
+            task_id=task_id,
+            caregiver_id=caregiver_id,
+            reason=reason,
+            cancel_response=cancel_response,
+        )
+
+    async def async_record_drive_task_cancel_result(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        reason,
+        cancel_response,
+    ):
+        return await self.drive_task_cancel_repository.async_record_drive_task_cancel_result(
+            task_id=task_id,
+            caregiver_id=caregiver_id,
+            reason=reason,
+            cancel_response=cancel_response,
+        )
 
     def record_delivery_task_cancel_result(self, *, task_id, cancel_response):
         return self.delivery_task_cancel_repository.record_delivery_task_cancel_result(

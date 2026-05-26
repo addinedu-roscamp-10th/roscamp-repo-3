@@ -9,6 +9,7 @@ DRIVE_EXECUTION_START_MESSAGE = "DRIVE task execution started."
 DRIVE_RESERVATION_WAITING_MESSAGE = "DRIVE task is waiting for FMS reservation."
 TASK_STATUS_RUNNING = "RUNNING"
 TASK_STATUS_WAITING_DISPATCH = "WAITING_DISPATCH"
+TASK_STATUS_CANCEL_REQUESTED = "CANCEL_REQUESTED"
 TASK_STATUS_COMPLETED = "COMPLETED"
 TASK_STATUS_CANCELLED = "CANCELLED"
 TASK_STATUS_FAILED = "FAILED"
@@ -343,6 +344,18 @@ class DriveTaskExecutionRepository:
                 phase=row.get("phase") or PHASE_FOLLOW_DRIVE_ROUTE,
                 assigned_robot_id=row.get("assigned_robot_id"),
                 cancellable=True,
+            )
+
+        if task_status == TASK_STATUS_CANCEL_REQUESTED:
+            return self._build_drive_state_response(
+                result_code="CANCELLED",
+                result_message="DRIVE task 취소 요청으로 주행을 시작하지 않습니다.",
+                reason_code="DRIVE_TASK_CANCEL_REQUESTED",
+                task_id=row.get("task_id"),
+                task_status=TASK_STATUS_CANCELLED,
+                phase=TASK_STATUS_CANCELLED,
+                assigned_robot_id=row.get("assigned_robot_id"),
+                cancellable=False,
             )
 
         if task_status not in STARTABLE_DRIVE_TASK_STATUSES:

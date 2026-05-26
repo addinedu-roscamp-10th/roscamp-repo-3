@@ -5,6 +5,7 @@ from server.ropi_main_service.application.command_execution import (
 )
 from server.ropi_main_service.application.delivery_cancel import DeliveryCancelService
 from server.ropi_main_service.application.delivery_task_create import DeliveryTaskCreateService
+from server.ropi_main_service.application.drive_cancel import DriveCancelService
 from server.ropi_main_service.application.drive_task_create import DriveTaskCreateService
 from server.ropi_main_service.application.fall_response_command import (
     FallResponseCommandService,
@@ -44,6 +45,7 @@ class TaskRequestService:
         fall_response_command_service=None,
         delivery_cancel_service=None,
         patrol_cancel_service=None,
+        drive_cancel_service=None,
         patrol_resume_service=None,
         cancel_timeout_sec=5.0,
     ):
@@ -78,6 +80,15 @@ class TaskRequestService:
         self.patrol_cancel_service = (
             patrol_cancel_service
             or PatrolCancelService(
+                repository=self.repository,
+                command_client=self.command_client,
+                command_execution_recorder=self.command_execution_recorder,
+                timeout_sec=self.cancel_timeout_sec,
+            )
+        )
+        self.drive_cancel_service = (
+            drive_cancel_service
+            or DriveCancelService(
                 repository=self.repository,
                 command_client=self.command_client,
                 command_execution_recorder=self.command_execution_recorder,
@@ -317,6 +328,15 @@ class TaskRequestService:
                 action_name=action_name,
             )
 
+        if task_type == "DRIVE":
+            self._sync_cancel_service_dependencies()
+            return self.drive_cancel_service.cancel_drive_task(
+                task_id=task_id,
+                caregiver_id=caregiver_id,
+                reason=reason,
+                action_name=action_name,
+            )
+
         return self._unsupported_cancel_task_type_response(target_response)
 
     async def async_cancel_task(
@@ -351,6 +371,15 @@ class TaskRequestService:
         if task_type == "PATROL":
             self._sync_cancel_service_dependencies()
             return await self.patrol_cancel_service.async_cancel_patrol_task(
+                task_id=task_id,
+                caregiver_id=caregiver_id,
+                reason=reason,
+                action_name=action_name,
+            )
+
+        if task_type == "DRIVE":
+            self._sync_cancel_service_dependencies()
+            return await self.drive_cancel_service.async_cancel_drive_task(
                 task_id=task_id,
                 caregiver_id=caregiver_id,
                 reason=reason,
@@ -624,6 +653,10 @@ class TaskRequestService:
         self.patrol_cancel_service.command_client = self.command_client
         self.patrol_cancel_service.command_execution_recorder = self.command_execution_recorder
         self.patrol_cancel_service.timeout_sec = self.cancel_timeout_sec
+        self.drive_cancel_service.repository = self.repository
+        self.drive_cancel_service.command_client = self.command_client
+        self.drive_cancel_service.command_execution_recorder = self.command_execution_recorder
+        self.drive_cancel_service.timeout_sec = self.cancel_timeout_sec
 
     @staticmethod
     def _unsupported_cancel_task_type_response(target_response):

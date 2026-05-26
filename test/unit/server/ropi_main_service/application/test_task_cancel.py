@@ -61,6 +61,34 @@ class FakePatrolCancelService:
         }
 
 
+class FakeDriveCancelService:
+    def __init__(self):
+        self.calls = []
+
+    async def async_cancel_drive_task(
+        self,
+        *,
+        task_id,
+        caregiver_id,
+        reason,
+        action_name=None,
+    ):
+        self.calls.append(
+            {
+                "task_id": task_id,
+                "caregiver_id": caregiver_id,
+                "reason": reason,
+                "action_name": action_name,
+            }
+        )
+        return {
+            "result_code": "CANCEL_REQUESTED",
+            "task_id": task_id,
+            "task_type": "DRIVE",
+            "task_status": "CANCEL_REQUESTED",
+        }
+
+
 def test_cancel_task_dispatches_delivery_to_existing_cancel_service():
     repository = FakeTaskCancelRepository("DELIVERY")
     delivery_cancel_service = FakeDeliveryCancelService()
@@ -108,6 +136,39 @@ def test_cancel_task_dispatches_patrol_to_patrol_cancel_service():
     assert patrol_cancel_service.calls == [
         {
             "task_id": "2001",
+            "caregiver_id": 7,
+            "reason": "operator_cancel",
+            "action_name": None,
+        }
+    ]
+
+
+def test_cancel_task_dispatches_drive_to_drive_cancel_service():
+    repository = FakeTaskCancelRepository("DRIVE")
+    delivery_cancel_service = FakeDeliveryCancelService()
+    patrol_cancel_service = FakePatrolCancelService()
+    drive_cancel_service = FakeDriveCancelService()
+    service = TaskRequestService(
+        repository=repository,
+        delivery_cancel_service=delivery_cancel_service,
+        patrol_cancel_service=patrol_cancel_service,
+        drive_cancel_service=drive_cancel_service,
+    )
+
+    response = asyncio.run(
+        service.async_cancel_task(
+            task_id="3001",
+            caregiver_id=7,
+            reason="operator_cancel",
+        )
+    )
+
+    assert response["result_code"] == "CANCEL_REQUESTED"
+    assert delivery_cancel_service.calls == []
+    assert patrol_cancel_service.calls == []
+    assert drive_cancel_service.calls == [
+        {
+            "task_id": "3001",
             "caregiver_id": 7,
             "reason": "operator_cancel",
             "action_name": None,

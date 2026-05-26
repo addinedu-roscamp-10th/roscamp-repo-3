@@ -28,6 +28,8 @@ DEFAULT_DRIVE_NAVIGATION_TIMEOUT_SEC = 120
 DEFAULT_FMS_RESERVATION_LEASE_SEC = 30
 DEFAULT_FMS_RESERVATION_RETRY_INTERVAL_SEC = 1.0
 WAITING_FMS_RESERVATION_PHASE = "WAITING_FMS_RESERVATION"
+CANCEL_REQUESTED_PHASE = "CANCEL_REQUESTED"
+CANCELLED_PHASE = "CANCELLED"
 
 _DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
 logger = logging.getLogger(__name__)
@@ -251,6 +253,24 @@ def build_drive_request_service(
             waiting_recorded = False
             reservation_attempt = 0
             while True:
+                if reservation_attempt > 0:
+                    snapshot = (
+                        await drive_execution_repository.async_get_drive_execution_snapshot(
+                            task_id
+                        )
+                    )
+                    if snapshot is None:
+                        return _failed(
+                            "DRIVE task 실행 정보를 찾을 수 없습니다.",
+                            reason_code="DRIVE_TASK_NOT_FOUND",
+                        )
+
+                if _is_cancel_requested(snapshot):
+                    return _cancelled(
+                        "DRIVE task 취소 요청으로 주행을 시작하지 않습니다.",
+                        reason_code="DRIVE_TASK_CANCEL_REQUESTED",
+                    )
+
                 reservation_attempt += 1
                 reservation_response = await _request_fms_reservation(
                     fms_runtime_service=fms_runtime_service,
@@ -306,7 +326,7 @@ def build_drive_request_service(
                     fms_runtime_service=fms_runtime_service,
                     task_id=task_id,
                     robot_id=snapshot["assigned_robot_id"],
-                    reason_code="FAILED",
+                    reason_code=_release_reason_for_workflow(start_response),
                 )
                 return start_response
 
@@ -473,6 +493,15 @@ def _release_reason_for_workflow(workflow_response):
     return "FAILED"
 
 
+def _is_cancel_requested(snapshot):
+    task_status = str((snapshot or {}).get("task_status") or "").strip().upper()
+    phase = str((snapshot or {}).get("phase") or "").strip().upper()
+    return task_status in {CANCEL_REQUESTED_PHASE, CANCELLED_PHASE} or phase in {
+        CANCEL_REQUESTED_PHASE,
+        CANCELLED_PHASE,
+    }
+
+
 def _normalize_workflow_response(response):
     if not isinstance(response, dict):
         return _failed(
@@ -485,6 +514,14 @@ def _normalize_workflow_response(response):
 def _failed(result_message, *, reason_code):
     return {
         "result_code": "FAILED",
+        "result_message": result_message,
+        "reason_code": reason_code,
+    }
+
+
+def _cancelled(result_message, *, reason_code):
+    return {
+        "result_code": "CANCELLED",
         "result_message": result_message,
         "reason_code": reason_code,
     }
