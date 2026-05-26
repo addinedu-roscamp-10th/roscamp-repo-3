@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import math
+from contextlib import suppress
 from copy import deepcopy
 
 from server.ropi_main_service.application.drive_config import get_drive_runtime_config
@@ -27,6 +28,7 @@ from server.ropi_main_service.persistence.repositories.task_request_repository i
 DEFAULT_DRIVE_NAVIGATION_TIMEOUT_SEC = 120
 DEFAULT_FMS_RESERVATION_LEASE_SEC = 30
 DEFAULT_FMS_RESERVATION_RETRY_INTERVAL_SEC = 1.0
+DEFAULT_FMS_RESERVATION_RENEW_INTERVAL_SEC = 10.0
 WAITING_FMS_RESERVATION_PHASE = "WAITING_FMS_RESERVATION"
 CANCEL_REQUESTED_PHASE = "CANCEL_REQUESTED"
 CANCELLED_PHASE = "CANCELLED"
@@ -219,6 +221,7 @@ def build_drive_request_service(
     task_update_publisher=None,
     fms_reservation_retry_interval_sec=DEFAULT_FMS_RESERVATION_RETRY_INTERVAL_SEC,
     fms_reservation_retry_max_attempts=None,
+    fms_reservation_renew_interval_sec=DEFAULT_FMS_RESERVATION_RENEW_INTERVAL_SEC,
 ) -> TaskRequestService:
     get_drive_runtime_config()
     task_request_repository = task_request_repository or _new_task_request_repository()
@@ -228,6 +231,9 @@ def build_drive_request_service(
     )
     retry_max_attempts = _normalize_retry_max_attempts(
         fms_reservation_retry_max_attempts
+    )
+    renew_interval_sec = _normalize_renew_interval_sec(
+        fms_reservation_renew_interval_sec
     )
 
     if loop is not None:
@@ -332,6 +338,15 @@ def build_drive_request_service(
 
             workflow_response = None
             release_reason = "FAILED"
+            reservation_renew_task = asyncio.create_task(
+                _renew_fms_reservation_periodically(
+                    fms_runtime_service=fms_runtime_service,
+                    task_id=task_id,
+                    robot_id=snapshot["assigned_robot_id"],
+                    renew_interval_sec=renew_interval_sec,
+                ),
+                name=f"drive_fms_reservation_renew_{task_id}",
+            )
             try:
                 workflow_response = await drive_orchestrator.async_run(
                     task_id=str(task_id),
@@ -350,6 +365,9 @@ def build_drive_request_service(
                 )
                 return workflow_response
             finally:
+                reservation_renew_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await reservation_renew_task
                 await _release_fms_reservation(
                     fms_runtime_service=fms_runtime_service,
                     task_id=task_id,
@@ -484,6 +502,59 @@ async def _release_fms_reservation(
     return await asyncio.to_thread(fms_runtime_service.release_reservation, **kwargs)
 
 
+async def _renew_fms_reservation(
+    *,
+    fms_runtime_service,
+    task_id,
+    robot_id,
+):
+    kwargs = {
+        "task_id": int(task_id),
+        "robot_id": robot_id,
+        "lease_sec": DEFAULT_FMS_RESERVATION_LEASE_SEC,
+    }
+    async_renew = getattr(fms_runtime_service, "async_renew_reservation", None)
+    if async_renew is not None:
+        return await async_renew(**kwargs)
+    return await asyncio.to_thread(fms_runtime_service.renew_reservation, **kwargs)
+
+
+async def _renew_fms_reservation_periodically(
+    *,
+    fms_runtime_service,
+    task_id,
+    robot_id,
+    renew_interval_sec,
+):
+    while True:
+        await asyncio.sleep(renew_interval_sec)
+        try:
+            response = await _renew_fms_reservation(
+                fms_runtime_service=fms_runtime_service,
+                task_id=task_id,
+                robot_id=robot_id,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "drive fms reservation renewal failed",
+                extra={"task_id": task_id, "robot_id": robot_id},
+            )
+            continue
+
+        result_code = str((response or {}).get("result_code") or "").upper()
+        if result_code != "RENEWED":
+            log_event(
+                logger,
+                logging.WARNING,
+                "drive_fms_reservation_renewal_not_found",
+                task_id=task_id,
+                robot_id=robot_id,
+                result_code=result_code,
+            )
+
+
 def _release_reason_for_workflow(workflow_response):
     result_code = str((workflow_response or {}).get("result_code") or "").upper()
     if result_code in {"SUCCESS", "SUCCEEDED"}:
@@ -548,6 +619,13 @@ def _normalize_retry_max_attempts(value):
         return max(1, int(value))
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_renew_interval_sec(value):
+    try:
+        return max(0.001, float(value))
+    except (TypeError, ValueError):
+        return DEFAULT_FMS_RESERVATION_RENEW_INTERVAL_SEC
 
 
 def _new_task_request_repository():

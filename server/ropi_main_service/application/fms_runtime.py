@@ -98,6 +98,33 @@ class FmsRuntimeService:
             "task_id": normalized_task_id,
         }
 
+    def renew_reservation(self, *, task_id, robot_id=None, lease_sec=None):
+        normalized_task_id = optional_int(task_id)
+        if normalized_task_id is None:
+            return {
+                "result_code": "INVALID_REQUEST",
+                "result_message": None,
+                "reason_code": "TASK_ID_INVALID",
+                "generated_at": generated_at(self._clock),
+                "renewed_count": 0,
+                "task_id": None,
+            }
+
+        normalized_robot_id = str(robot_id or "").strip() or None
+        renewed_count = self.repository.renew_reservation(
+            task_id=normalized_task_id,
+            robot_id=normalized_robot_id,
+            lease_sec=self._normalize_lease_sec(lease_sec),
+        )
+        return {
+            "result_code": "RENEWED" if renewed_count else "NOT_FOUND",
+            "result_message": None,
+            "reason_code": None,
+            "generated_at": generated_at(self._clock),
+            "renewed_count": renewed_count,
+            "task_id": normalized_task_id,
+        }
+
     def _normalize_resources(self, resources):
         if not isinstance(resources, list) or not resources:
             return [], "FMS_RESOURCE_INVALID"

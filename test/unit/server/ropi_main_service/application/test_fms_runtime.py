@@ -6,6 +6,7 @@ from server.ropi_main_service.application.fms_runtime import FmsRuntimeService
 class FakeFmsReservationRepository:
     def __init__(self):
         self.requested = None
+        self.renewed = None
         self.released = None
         self.snapshot_map_id = None
         self.request_result = {
@@ -27,6 +28,7 @@ class FakeFmsReservationRepository:
             ],
         }
         self.release_count = 2
+        self.renew_count = 2
         self.reservations = list(self.request_result["reservations"])
 
     def request_reservation(self, **kwargs):
@@ -36,6 +38,10 @@ class FakeFmsReservationRepository:
     def release_reservation(self, **kwargs):
         self.released = kwargs
         return self.release_count
+
+    def renew_reservation(self, **kwargs):
+        self.renewed = kwargs
+        return self.renew_count
 
     def get_reservation_snapshot(self, *, map_id=None):
         self.snapshot_map_id = map_id
@@ -148,6 +154,34 @@ def test_fms_runtime_release_reservation_returns_released_count():
         "task_id": 3001,
         "robot_id": "pinky1",
         "reason_code": "ARRIVED",
+    }
+
+
+def test_fms_runtime_renew_reservation_returns_renewed_count():
+    repository = FakeFmsReservationRepository()
+    service = FmsRuntimeService(
+        repository=repository,
+        clock=lambda: datetime(2026, 5, 4, 1, 2, 3, tzinfo=timezone.utc),
+    )
+
+    response = service.renew_reservation(
+        task_id=3001,
+        robot_id="pinky1",
+        lease_sec=45,
+    )
+
+    assert response == {
+        "result_code": "RENEWED",
+        "result_message": None,
+        "reason_code": None,
+        "generated_at": "2026-05-04T01:02:03+00:00",
+        "renewed_count": 2,
+        "task_id": 3001,
+    }
+    assert repository.renewed == {
+        "task_id": 3001,
+        "robot_id": "pinky1",
+        "lease_sec": 45,
     }
 
 

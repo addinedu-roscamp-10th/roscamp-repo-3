@@ -18,6 +18,12 @@ RELEASE_TASK_RESERVATIONS_SQL = load_sql(
 RELEASE_TASK_ROBOT_RESERVATIONS_SQL = load_sql(
     "fms_reservation/release_task_robot_reservations.sql"
 )
+RENEW_TASK_RESERVATIONS_SQL = load_sql(
+    "fms_reservation/renew_task_reservations.sql"
+)
+RENEW_TASK_ROBOT_RESERVATIONS_SQL = load_sql(
+    "fms_reservation/renew_task_robot_reservations.sql"
+)
 
 
 class FmsReservationRepository:
@@ -124,6 +130,31 @@ class FmsReservationRepository:
                 released_count = cur.rowcount
             conn.commit()
             return released_count
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def renew_reservation(self, *, task_id, robot_id=None, lease_sec=None):
+        lease_sec = self._normalize_lease_sec(lease_sec)
+        conn = self.connection_factory()
+        try:
+            conn.begin()
+            with conn.cursor() as cur:
+                if robot_id:
+                    cur.execute(
+                        RENEW_TASK_ROBOT_RESERVATIONS_SQL,
+                        (lease_sec, int(task_id), str(robot_id)),
+                    )
+                else:
+                    cur.execute(
+                        RENEW_TASK_RESERVATIONS_SQL,
+                        (lease_sec, int(task_id)),
+                    )
+                renewed_count = cur.rowcount
+            conn.commit()
+            return renewed_count
         except Exception:
             conn.rollback()
             raise

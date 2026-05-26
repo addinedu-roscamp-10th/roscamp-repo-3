@@ -90,14 +90,16 @@ class FakeDriveExecutionRepository:
 
 
 class FakeFmsRuntime:
-    def __init__(self, *, events, result_code="HELD"):
+    def __init__(self, *, events, result_code="HELD", renew_event=None):
         self.events = events
         self.result_codes = (
             list(result_code)
             if isinstance(result_code, list)
             else [result_code]
         )
+        self.renew_event = renew_event
         self.requested = []
+        self.renewed = []
         self.released = []
 
     def request_reservation(self, **kwargs):
@@ -128,20 +130,30 @@ class FakeFmsRuntime:
         self.released.append(kwargs)
         return {"result_code": "RELEASED", "released_count": 1}
 
+    def renew_reservation(self, **kwargs):
+        self.events.append("renew")
+        self.renewed.append(kwargs)
+        if self.renew_event is not None:
+            self.renew_event.set()
+        return {"result_code": "RENEWED", "renewed_count": 3}
+
 
 class FakeDriveOrchestrator:
-    def __init__(self, *, events, response=None):
+    def __init__(self, *, events, response=None, wait_for_event=None):
         self.events = events
         self.response = response or {
             "result_code": "SUCCESS",
             "result_message": "drive route completed.",
             "reason_code": None,
         }
+        self.wait_for_event = wait_for_event
         self.calls = []
 
     async def async_run(self, **kwargs):
         self.events.append("navigate")
         self.calls.append(kwargs)
+        if self.wait_for_event is not None:
+            await asyncio.wait_for(self.wait_for_event.wait(), timeout=1)
         return dict(self.response)
 
 
@@ -336,6 +348,48 @@ def test_drive_runtime_retries_waiting_reservation_and_dispatches_when_held():
         assert len(fms_runtime.requested) == 2
         assert len(execution_repository.waiting_records) == 1
         assert drive_orchestrator.calls[0]["robot_id"] == "pinky1"
+        assert execution_repository.results[0]["workflow_response"]["result_code"] == "SUCCESS"
+
+    asyncio.run(_run())
+
+
+def test_drive_runtime_renews_fms_reservation_during_navigation():
+    async def _run():
+        events = []
+        manager = FakeWorkflowTaskManager()
+        renew_event = asyncio.Event()
+        execution_repository = FakeDriveExecutionRepository(
+            events=events,
+            snapshot=_snapshot(),
+        )
+        fms_runtime = FakeFmsRuntime(
+            events=events,
+            renew_event=renew_event,
+        )
+        drive_orchestrator = FakeDriveOrchestrator(
+            events=events,
+            wait_for_event=renew_event,
+        )
+        service = build_drive_request_service(
+            loop=asyncio.get_running_loop(),
+            workflow_task_manager=manager,
+            task_request_repository=FakeTaskRequestRepository(),
+            drive_execution_repository=execution_repository,
+            fms_runtime_service=fms_runtime,
+            drive_orchestrator=drive_orchestrator,
+            fms_reservation_renew_interval_sec=0.001,
+        )
+
+        await service.async_create_drive_task(**_drive_payload())
+        await asyncio.gather(*manager.tasks)
+
+        assert "renew" in events
+        assert events.index("started") < events.index("renew") < events.index("release")
+        assert fms_runtime.renewed[0] == {
+            "task_id": 3001,
+            "robot_id": "pinky1",
+            "lease_sec": 30,
+        }
         assert execution_repository.results[0]["workflow_response"]["result_code"] == "SUCCESS"
 
     asyncio.run(_run())
