@@ -11,6 +11,7 @@
 - 공통 맵: `ropi_nav_config/maps/map_0504.yaml`
 - 주행 방식: 단순 `DRIVE` 태스크 중심 FMS 실험
 - 실제 로봇 드라이버: `pinky_bringup` legacy Dynamixel driver
+- Nav2 파라미터: 팀 최종 튜닝값을 기준으로 하되, FMS namespace 격리를 위해 costmap scan topic은 절대 `/scan`이 아니라 상대 `scan`으로 둔다.
 
 ## 실행 명령
 
@@ -194,4 +195,21 @@ ros2 topic info -v /pinky1/cmd_vel
 
 5. `timeout`이나 Ctrl-C로 launch를 끊은 뒤 보이는 `KeyboardInterrupt`, `exit code -2`, 일부 `exit code 1`은 종료 과정에서 나올 수 있다.
 초기 bringup 실패로 판단할 때는 그 이전에 `SLLidar health OK`, `Pinky Bringup ... started successfully`, `Managed nodes are active`가 찍혔는지를 먼저 본다.
+
+## Nav2 파라미터 적용 기준
+
+2026-05-26 팀 최종 Nav2 튜닝값을 `nav2_params_fms.yaml`에 반영한다.
+
+단, 팀원 원본 값에 costmap scan topic이 `/scan`으로 적혀 있어도 FMS bringup에서는 그대로 쓰지 않는다.
+`ropi_fms_bringup`은 로봇마다 `/pinky1/scan`, `/pinky3/scan`처럼 namespace를 나눠야 하므로 YAML에는 상대 topic인 `scan`을 사용한다.
+
+이 기준이 깨졌는지는 다음 테스트가 잡는다.
+
+```bash
+cd ~/roscamp-repo-3/device
+source /opt/ros/jazzy/setup.bash
+source ~/pinky_pro/install/setup.bash
+source install/setup.bash
+colcon test --packages-select ropi_fms_bringup --event-handlers console_direct+
+```
 
