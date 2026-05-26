@@ -12,6 +12,7 @@
 | `ropi-db-migrate-multimap` | 기존 DB를 멀티맵 좌표 설정 계약으로 보정하는 CLI. |
 | `ropi-db-migrate-guide-location` | 기존 DB에 phase-1 안내 목적지 좌표를 보강하는 CLI. |
 | `ropi-db-migrate-guide-tracking` | 기존 DB의 안내 tracking 컬럼을 현재 정수 계약으로 보정하는 CLI. |
+| `ropi-db-migrate-fms-drive-runtime` | 기존 DB에 FMS/DRIVE 런타임 테이블을 보강하는 CLI. |
 
 ## 실행 방법
 
@@ -88,6 +89,17 @@ uv run ropi-db-migrate-guide-location --apply
 uv run ropi-db-migrate-guide-tracking
 uv run ropi-db-migrate-guide-tracking --apply
 ```
+
+## 기존 DB FMS/DRIVE 런타임 스키마 마이그레이션
+
+FMS route 설정 UI를 먼저 사용한 기존 DB에는 `fms_waypoint`, `fms_edge`, `fms_route`, `fms_route_waypoint`만 있고, 주행 요청/예약 런타임에서 필요한 `drive_task_detail`, `fms_reservation` 테이블이 빠져 있을 수 있다. 아래 CLI는 기존 waypoint/edge/route 데이터를 삭제하지 않고 누락된 FMS/DRIVE 런타임 테이블만 생성한다.
+
+```bash
+uv run ropi-db-migrate-fms-drive-runtime
+uv run ropi-db-migrate-fms-drive-runtime --apply
+```
+
+마이그레이션 성공 후 `ropi_schema_migration`에 적용 이력을 남긴다. 이미 적용된 DB에서는 기본 실행이 no-op이며, 재실행이 꼭 필요할 때만 `--force --apply`를 사용한다.
 
 ## 주의사항
 
