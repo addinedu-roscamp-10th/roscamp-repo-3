@@ -7,6 +7,7 @@ from .drive_task_create_repository import (
     DriveRouteSnapshotBuilder,
     DriveTaskCreateRepository,
 )
+from .drive_task_execution_repository import DriveTaskExecutionRepository
 from .drive_task_repository import DriveTaskRepository
 from .fms_config_repository import FmsConfigRepository
 from .fms_reservation_repository import FmsReservationRepository
@@ -45,6 +46,7 @@ __all__ = [
     "DeliveryTaskExecutionRepository",
     "DriveRouteSnapshotBuilder",
     "DriveTaskCreateRepository",
+    "DriveTaskExecutionRepository",
     "DriveTaskRepository",
     "FmsConfigRepository",
     "FmsReservationRepository",

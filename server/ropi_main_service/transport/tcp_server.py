@@ -15,6 +15,9 @@ from server.ropi_main_service.application.action_feedback_event_runtime import (
 from server.ropi_main_service.application.delivery_runtime import (
     build_delivery_request_service,
 )
+from server.ropi_main_service.application.drive_runtime import (
+    build_drive_request_service,
+)
 from server.ropi_main_service.application.fall_inference_runtime import (
     start_fall_inference_stream_if_enabled,
 )
@@ -34,6 +37,7 @@ from server.ropi_main_service.application.runtime_readiness import (
     RosRuntimeReadinessService,
 )
 from server.ropi_main_service.application.rpc_service_registry import SERVICE_REGISTRY
+from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.observability import configure_logging, log_event
 from server.ropi_main_service.persistence.async_connection import close_pool
 from server.ropi_main_service.persistence.background_db_writer import (
@@ -310,6 +314,15 @@ class ControlServiceServer:
         }
 
     def _build_runtime_service(self, service_name, factory):
+        if service_name == "task_request" and factory is TaskRequestService:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            return build_drive_request_service(
+                loop=loop,
+                task_update_publisher=self.task_update_event_publisher,
+            )
         return factory()
 
     async def start(self):

@@ -10,6 +10,7 @@ _EXPORTS = {
     "DeliveryRuntimeConfig": ("delivery_config", "DeliveryRuntimeConfig"),
     "DeliveryService": ("task_request", "DeliveryRequestService"),
     "DriveRuntimeConfig": ("drive_config", "DriveRuntimeConfig"),
+    "DriveOrchestrator": ("drive_runtime", "DriveOrchestrator"),
     "DriveTaskCreateService": ("drive_task_create", "DriveTaskCreateService"),
     "DeliveryWorkflowTaskManager": (
         "delivery_workflow_task_manager",
@@ -57,6 +58,7 @@ _EXPORTS = {
         "build_delivery_request_service",
     ),
     "build_patrol_request_service": ("patrol_runtime", "build_patrol_request_service"),
+    "build_drive_request_service": ("drive_runtime", "build_drive_request_service"),
     "get_delivery_navigation_config": (
         "delivery_config",
         "get_delivery_navigation_config",
