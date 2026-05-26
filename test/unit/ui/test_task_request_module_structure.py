@@ -34,6 +34,14 @@ PATROL_REQUEST_FORM = (
     / "caregiver"
     / "patrol_request_form.py"
 )
+DRIVE_REQUEST_FORM = (
+    REPO_ROOT
+    / "ui"
+    / "utils"
+    / "pages"
+    / "caregiver"
+    / "drive_request_form.py"
+)
 NOT_READY_SCENARIO_FORM = (
     REPO_ROOT
     / "ui"
@@ -66,6 +74,7 @@ def test_task_request_page_keeps_only_page_orchestration_classes():
 def test_task_request_forms_module_only_reexports_scenario_forms():
     from ui.utils.pages.caregiver.task_request_forms import (
         DeliveryRequestForm,
+        DriveRequestForm,
         FollowRequestForm,
         GuideRequestForm,
         NotReadyScenarioForm,
@@ -75,14 +84,17 @@ def test_task_request_forms_module_only_reexports_scenario_forms():
     source = TASK_REQUEST_FORMS.read_text(encoding="utf-8")
 
     assert DeliveryRequestForm.__module__.endswith("delivery_request_form")
+    assert DriveRequestForm.__module__.endswith("drive_request_form")
     assert PatrolRequestForm.__module__.endswith("patrol_request_form")
     assert NotReadyScenarioForm.__module__.endswith("not_ready_scenario_form")
     assert GuideRequestForm.__module__.endswith("not_ready_scenario_form")
     assert FollowRequestForm.__module__.endswith("not_ready_scenario_form")
     assert "class DeliveryRequestForm" not in source
+    assert "class DriveRequestForm" not in source
     assert "class PatrolRequestForm" not in source
     assert "class NotReadyScenarioForm" not in source
     assert DELIVERY_REQUEST_FORM.exists()
+    assert DRIVE_REQUEST_FORM.exists()
     assert PATROL_REQUEST_FORM.exists()
     assert NOT_READY_SCENARIO_FORM.exists()
 
@@ -100,6 +112,9 @@ def test_task_request_options_worker_name_matches_shared_options_role(monkeypatc
 
         def get_patrol_areas(self):
             return [{"patrol_area_id": "patrol_ward_night_01"}]
+
+        def get_drive_routes(self):
+            return [{"route_id": "corridor_round_trip"}]
 
     monkeypatch.setattr(
         task_request_workers,
@@ -120,6 +135,50 @@ def test_task_request_options_worker_name_matches_shared_options_role(monkeypatc
                 "items": [{"item_id": 1}],
                 "destinations": [{"destination_id": "delivery_room_301"}],
                 "patrol_areas": [{"patrol_area_id": "patrol_ward_night_01"}],
+                "drive_routes": [{"route_id": "corridor_round_trip"}],
+            },
+        )
+    ]
+
+
+def test_task_request_options_worker_keeps_delivery_options_when_drive_routes_fail(
+    monkeypatch,
+):
+    from ui.utils.pages.caregiver import task_request_workers
+    from ui.utils.pages.caregiver.task_request_workers import TaskRequestOptionsLoadWorker
+
+    class FakeService:
+        def get_delivery_items(self):
+            return [{"item_id": 1}]
+
+        def get_delivery_destinations(self):
+            return [{"destination_id": "delivery_room_301"}]
+
+        def get_patrol_areas(self):
+            return [{"patrol_area_id": "patrol_ward_night_01"}]
+
+        def get_drive_routes(self):
+            raise RuntimeError("active map missing")
+
+    monkeypatch.setattr(
+        task_request_workers,
+        "DeliveryRequestRemoteService",
+        FakeService,
+    )
+
+    emitted = []
+    worker = TaskRequestOptionsLoadWorker()
+    worker.finished.connect(lambda ok, payload: emitted.append((ok, payload)))
+    worker.run()
+
+    assert emitted == [
+        (
+            True,
+            {
+                "items": [{"item_id": 1}],
+                "destinations": [{"destination_id": "delivery_room_301"}],
+                "patrol_areas": [{"patrol_area_id": "patrol_ward_night_01"}],
+                "drive_routes": [],
             },
         )
     ]
@@ -209,6 +268,56 @@ def test_patrol_submit_worker_calls_remote_patrol_create_service(monkeypatch):
                 "task_id": 2001,
                 "task_status": "WAITING_DISPATCH",
                 "assigned_robot_id": "pinky3",
+            },
+        )
+    ]
+
+
+def test_drive_submit_worker_calls_remote_drive_create_service(monkeypatch):
+    from ui.utils.pages.caregiver import task_request_workers
+    from ui.utils.pages.caregiver.task_request_workers import DriveSubmitWorker
+
+    payload = {
+        "request_id": "req_drive_001",
+        "caregiver_id": 1,
+        "robot_id": "pinky1",
+        "route_id": "corridor_round_trip",
+        "priority": "NORMAL",
+        "notes": None,
+        "idempotency_key": "idem_drive_001",
+    }
+    calls = []
+
+    class FakeService:
+        def create_drive_task(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "result_code": "ACCEPTED",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky1",
+            }
+
+    monkeypatch.setattr(
+        task_request_workers,
+        "DeliveryRequestRemoteService",
+        FakeService,
+    )
+
+    emitted = []
+    worker = DriveSubmitWorker(payload)
+    worker.finished.connect(lambda ok, response: emitted.append((ok, response)))
+    worker.run()
+
+    assert calls == [payload]
+    assert emitted == [
+        (
+            True,
+            {
+                "result_code": "ACCEPTED",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky1",
             },
         )
     ]

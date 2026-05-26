@@ -4,6 +4,7 @@ from server.ropi_main_service.application.delivery_config import (
     DEFAULT_DELIVERY_PINKY_ID,
     get_delivery_runtime_config,
 )
+from server.ropi_main_service.application.drive_config import get_drive_runtime_config
 from server.ropi_main_service.application.patrol_config import get_patrol_runtime_config
 from server.ropi_main_service.persistence.connection import fetch_one, get_connection
 from server.ropi_main_service.persistence.repositories.delivery_task_repository import (
@@ -26,6 +27,12 @@ from server.ropi_main_service.persistence.repositories.idempotency_repository im
 )
 from server.ropi_main_service.persistence.repositories.delivery_request_event_repository import (
     DeliveryRequestEventRepository,
+)
+from server.ropi_main_service.persistence.repositories.drive_task_repository import (
+    DriveTaskRepository,
+)
+from server.ropi_main_service.persistence.repositories.drive_task_create_repository import (
+    DriveTaskCreateRepository,
 )
 from server.ropi_main_service.persistence.repositories.patrol_task_repository import (
     PatrolTaskRepository,
@@ -74,12 +81,16 @@ class TaskRequestRepository:
         patrol_task_cancel_repository=None,
         patrol_task_result_repository=None,
         patrol_task_resume_repository=None,
+        drive_runtime_config=None,
+        drive_task_repository=None,
+        drive_task_create_repository=None,
         idempotency_repository=None,
         lookup_repository=None,
         delivery_request_event_repository=None,
     ):
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
+        self.drive_runtime_config = drive_runtime_config or get_drive_runtime_config()
         self.lookup_repository = lookup_repository or TaskRequestLookupRepository()
         self.delivery_task_repository = delivery_task_repository or DeliveryTaskRepository(
             runtime_config=self.runtime_config
@@ -93,6 +104,7 @@ class TaskRequestRepository:
         self.patrol_task_cancel_repository = patrol_task_cancel_repository or PatrolTaskCancelRepository()
         self.patrol_task_result_repository = patrol_task_result_repository or PatrolTaskResultRepository()
         self.patrol_task_resume_repository = patrol_task_resume_repository or PatrolTaskResumeRepository()
+        self.drive_task_repository = drive_task_repository or DriveTaskRepository()
         self.idempotency_repository = idempotency_repository or IdempotencyRepository()
         self.delivery_task_create_repository = (
             delivery_task_create_repository
@@ -128,6 +140,18 @@ class TaskRequestRepository:
                 async_caregiver_exists=self._async_caregiver_exists,
                 fetch_patrol_area_by_id=self._fetch_patrol_area_by_id,
                 async_fetch_patrol_area_by_id=self._async_fetch_patrol_area_by_id,
+            )
+        )
+        self.drive_task_create_repository = (
+            drive_task_create_repository
+            or DriveTaskCreateRepository(
+                runtime_config=self.drive_runtime_config,
+                drive_task_repository=self.drive_task_repository,
+                idempotency_repository=self.idempotency_repository,
+                connection_factory=lambda: get_connection(),
+                async_transaction_factory=lambda: async_transaction(),
+                caregiver_exists=self._caregiver_exists,
+                async_caregiver_exists=self._async_caregiver_exists,
             )
         )
         self.delivery_request_event_repository = (
@@ -289,6 +313,48 @@ class TaskRequestRepository:
             caregiver_id=caregiver_id,
             patrol_area_id=patrol_area_id,
             priority=priority,
+            idempotency_key=idempotency_key,
+        )
+
+    def create_drive_task(
+        self,
+        request_id,
+        caregiver_id,
+        robot_id,
+        route_id,
+        priority,
+        notes,
+        idempotency_key,
+    ):
+        self._sync_drive_task_create_repository_dependencies()
+        return self.drive_task_create_repository.create_drive_task(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            robot_id=robot_id,
+            route_id=route_id,
+            priority=priority,
+            notes=notes,
+            idempotency_key=idempotency_key,
+        )
+
+    async def async_create_drive_task(
+        self,
+        request_id,
+        caregiver_id,
+        robot_id,
+        route_id,
+        priority,
+        notes,
+        idempotency_key,
+    ):
+        self._sync_drive_task_create_repository_dependencies()
+        return await self.drive_task_create_repository.async_create_drive_task(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            robot_id=robot_id,
+            route_id=route_id,
+            priority=priority,
+            notes=notes,
             idempotency_key=idempotency_key,
         )
 
@@ -501,6 +567,21 @@ class TaskRequestRepository:
         )
         self.patrol_task_create_repository.async_fetch_patrol_area_by_id = (
             self._async_fetch_patrol_area_by_id
+        )
+
+    def _sync_drive_task_create_repository_dependencies(self):
+        self.drive_task_create_repository.runtime_config = self.drive_runtime_config
+        self.drive_task_create_repository.drive_task_repository = self.drive_task_repository
+        self.drive_task_create_repository.idempotency_repository = (
+            self.idempotency_repository
+        )
+        self.drive_task_create_repository.connection_factory = lambda: get_connection()
+        self.drive_task_create_repository.async_transaction_factory = (
+            lambda: async_transaction()
+        )
+        self.drive_task_create_repository.caregiver_exists = self._caregiver_exists
+        self.drive_task_create_repository.async_caregiver_exists = (
+            self._async_caregiver_exists
         )
 
     def create_delivery_request(

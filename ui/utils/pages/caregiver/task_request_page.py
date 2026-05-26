@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 from ui.utils.pages.caregiver.task_request_forms import (
     DeliveryRequestForm,
+    DriveRequestForm,
     PatrolRequestForm,
 )
 from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
@@ -49,10 +50,12 @@ class TaskRequestPage(QWidget):
 
         self.delivery_btn = QPushButton("물품 운반")
         self.patrol_btn = QPushButton("순찰")
+        self.drive_btn = QPushButton("주행")
 
         for btn in [
             self.delivery_btn,
             self.patrol_btn,
+            self.drive_btn,
         ]:
             btn.setObjectName("scenarioTabButton")
             btn.setCheckable(True)
@@ -108,6 +111,7 @@ class TaskRequestPage(QWidget):
 
         self.delivery_btn.clicked.connect(self.show_delivery_page)
         self.patrol_btn.clicked.connect(self.show_patrol_page)
+        self.drive_btn.clicked.connect(self.show_drive_page)
         self.side_panel.cancel_task_btn.clicked.connect(self._request_delivery_cancel)
 
         self.content_row.addWidget(
@@ -136,6 +140,7 @@ class TaskRequestPage(QWidget):
         self.robot_id_label = self.side_panel.robot_id_label
         self.robot_state_label = self.side_panel.robot_state_label
         self.robot_pose_label = self.side_panel.robot_pose_label
+        self.robot_destination_text_label = self.side_panel.robot_destination_text_label
         self.robot_destination_label = self.side_panel.robot_destination_label
         self.robot_map_label = self.side_panel.robot_map_label
 
@@ -156,9 +161,11 @@ class TaskRequestPage(QWidget):
         logger.debug("initialize task request forms")
         self.delivery_form = DeliveryRequestForm()
         self.patrol_form = PatrolRequestForm()
+        self.drive_form = DriveRequestForm()
         self.forms = [
             self.delivery_form,
             self.patrol_form,
+            self.drive_form,
         ]
 
         self.delivery_form.preview_changed.connect(self.side_panel.update_preview)
@@ -166,6 +173,8 @@ class TaskRequestPage(QWidget):
         self.delivery_form.options_loaded.connect(self._handle_request_options_loaded)
         self.patrol_form.preview_changed.connect(self.side_panel.update_preview)
         self.patrol_form.result_received.connect(self.side_panel.show_delivery_result)
+        self.drive_form.preview_changed.connect(self.side_panel.update_preview)
+        self.drive_form.result_received.connect(self.side_panel.show_delivery_result)
 
         for form in self.forms:
             form.hide()
@@ -201,6 +210,7 @@ class TaskRequestPage(QWidget):
         if not isinstance(options, dict):
             return
         self.patrol_form.set_patrol_areas(options.get("patrol_areas") or [])
+        self.drive_form.set_drive_routes(options.get("drive_routes") or [])
 
     def _resize_form_container(self, form):
         form_height = form.sizeHint().height()
@@ -215,6 +225,7 @@ class TaskRequestPage(QWidget):
         form_to_button = {
             self.delivery_form: self.delivery_btn,
             self.patrol_form: self.patrol_btn,
+            self.drive_form: self.drive_btn,
         }
         for target_form, button in form_to_button.items():
             button.setChecked(target_form is form)
@@ -230,6 +241,11 @@ class TaskRequestPage(QWidget):
         self._show_form(self.patrol_form)
         self.patrol_form.emit_preview_changed()
         logger.debug("switched to patrol page")
+
+    def show_drive_page(self):
+        self._show_form(self.drive_form)
+        self.drive_form.emit_preview_changed()
+        logger.debug("switched to drive page")
 
     def _request_delivery_cancel(self):
         task_id = self.cancel_task_btn.property("task_id")
@@ -312,6 +328,7 @@ class TaskRequestPage(QWidget):
 
 __all__ = [
     "DeliveryRequestForm",
+    "DriveRequestForm",
     "PatrolRequestForm",
     "TaskRequestPage",
 ]

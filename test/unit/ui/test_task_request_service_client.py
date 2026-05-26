@@ -40,6 +40,67 @@ def test_delivery_request_remote_service_exposes_option_rpc_methods(monkeypatch)
     ]
 
 
+def test_delivery_request_remote_service_exposes_drive_route_options(monkeypatch):
+    calls = []
+
+    def fake_rpc(service, method, **kwargs):
+        calls.append((service, method, kwargs))
+        return {
+            "result_code": "OK",
+            "routes": [
+                {
+                    "route_id": "corridor_round_trip",
+                    "route_name": "복도 왕복",
+                    "revision": 4,
+                    "is_enabled": True,
+                    "waypoint_sequence": [{"waypoint_id": "a"}, {"waypoint_id": "b"}],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(service_clients, "_rpc", fake_rpc)
+
+    routes = DeliveryRequestRemoteService().get_drive_routes()
+
+    assert routes[0]["route_id"] == "corridor_round_trip"
+    assert calls == [
+        (
+            "fms_config",
+            "get_active_graph_bundle",
+            {
+                "include_disabled": False,
+                "include_edges": False,
+                "include_routes": True,
+                "include_reservations": False,
+            },
+        )
+    ]
+
+
+def test_delivery_request_remote_service_sends_drive_create_over_rpc(monkeypatch):
+    calls = []
+
+    def fake_rpc(self, method, **kwargs):
+        calls.append((method, kwargs))
+        return {"result_code": "ACCEPTED", "task_id": 3001}
+
+    monkeypatch.setattr(DeliveryRequestRemoteService, "_rpc", fake_rpc)
+
+    payload = {
+        "request_id": "req_drive_001",
+        "caregiver_id": 7,
+        "robot_id": "pinky1",
+        "route_id": "corridor_round_trip",
+        "priority": "NORMAL",
+        "notes": None,
+        "idempotency_key": "idem_drive_001",
+    }
+    response = DeliveryRequestRemoteService().create_drive_task(**payload)
+
+    assert response["task_id"] == 3001
+    assert calls == [("create_drive_task", payload)]
+
+
 def test_caregiver_remote_service_exposes_robot_status_bundle_rpc(monkeypatch):
     calls = []
 

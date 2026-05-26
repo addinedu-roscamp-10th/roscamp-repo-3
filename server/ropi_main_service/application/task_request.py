@@ -5,6 +5,7 @@ from server.ropi_main_service.application.command_execution import (
 )
 from server.ropi_main_service.application.delivery_cancel import DeliveryCancelService
 from server.ropi_main_service.application.delivery_task_create import DeliveryTaskCreateService
+from server.ropi_main_service.application.drive_task_create import DriveTaskCreateService
 from server.ropi_main_service.application.fall_response_command import (
     FallResponseCommandService,
 )
@@ -33,6 +34,7 @@ class TaskRequestService:
         repository=None,
         delivery_workflow_starter=None,
         patrol_workflow_starter=None,
+        drive_workflow_starter=None,
         delivery_request_precheck=None,
         async_delivery_request_precheck=None,
         patrol_request_precheck=None,
@@ -48,6 +50,7 @@ class TaskRequestService:
         self.repository = repository or _new_task_request_repository()
         self.delivery_workflow_starter = delivery_workflow_starter
         self.patrol_workflow_starter = patrol_workflow_starter
+        self.drive_workflow_starter = drive_workflow_starter
         self.delivery_request_precheck = delivery_request_precheck
         self.async_delivery_request_precheck = async_delivery_request_precheck
         self.patrol_request_precheck = patrol_request_precheck
@@ -99,6 +102,10 @@ class TaskRequestService:
             patrol_workflow_starter=patrol_workflow_starter,
             patrol_request_precheck=patrol_request_precheck,
             async_patrol_request_precheck=async_patrol_request_precheck,
+        )
+        self.drive_create_service = DriveTaskCreateService(
+            repository=self.repository,
+            drive_workflow_starter=drive_workflow_starter,
         )
 
     def get_product_names(self):
@@ -212,6 +219,48 @@ class TaskRequestService:
             caregiver_id=caregiver_id,
             patrol_area_id=patrol_area_id,
             priority=priority,
+            idempotency_key=idempotency_key,
+        )
+
+    def create_drive_task(
+        self,
+        request_id,
+        caregiver_id,
+        robot_id,
+        route_id,
+        priority,
+        notes=None,
+        idempotency_key=None,
+    ):
+        self._sync_create_service_dependencies()
+        return self.drive_create_service.create_drive_task(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            robot_id=robot_id,
+            route_id=route_id,
+            priority=priority,
+            notes=notes,
+            idempotency_key=idempotency_key,
+        )
+
+    async def async_create_drive_task(
+        self,
+        request_id,
+        caregiver_id,
+        robot_id,
+        route_id,
+        priority,
+        notes=None,
+        idempotency_key=None,
+    ):
+        self._sync_create_service_dependencies()
+        return await self.drive_create_service.async_create_drive_task(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            robot_id=robot_id,
+            route_id=route_id,
+            priority=priority,
+            notes=notes,
             idempotency_key=idempotency_key,
         )
 
@@ -408,6 +457,26 @@ class TaskRequestService:
             idempotency_key=idempotency_key,
         )
 
+    def _validate_create_drive_task_request(
+        self,
+        *,
+        request_id,
+        caregiver_id,
+        robot_id,
+        route_id,
+        priority,
+        idempotency_key,
+    ):
+        self._sync_create_service_dependencies()
+        return self.drive_create_service._validate_create_drive_task_request(
+            request_id=request_id,
+            caregiver_id=caregiver_id,
+            robot_id=robot_id,
+            route_id=route_id,
+            priority=priority,
+            idempotency_key=idempotency_key,
+        )
+
     @staticmethod
     def _format_delivery_destination(row):
         destination_name = str(
@@ -528,6 +597,10 @@ class TaskRequestService:
         self._sync_create_service_dependencies()
         return self.patrol_create_service._start_patrol_workflow_if_needed(response=response)
 
+    def _start_drive_workflow_if_needed(self, *, response):
+        self._sync_create_service_dependencies()
+        return self.drive_create_service._start_drive_workflow_if_needed(response=response)
+
     def _sync_create_service_dependencies(self):
         self.create_service.repository = self.repository
         self.create_service.delivery_workflow_starter = self.delivery_workflow_starter
@@ -539,6 +612,8 @@ class TaskRequestService:
         self.patrol_create_service.async_patrol_request_precheck = (
             self.async_patrol_request_precheck
         )
+        self.drive_create_service.repository = self.repository
+        self.drive_create_service.drive_workflow_starter = self.drive_workflow_starter
 
     def _sync_cancel_service_dependencies(self):
         self.delivery_cancel_service.repository = self.repository

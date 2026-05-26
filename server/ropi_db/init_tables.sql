@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS `command_execution`;
 DROP TABLE IF EXISTS `task_event_log`;
 DROP TABLE IF EXISTS `task_state_history`;
 DROP TABLE IF EXISTS `guide_task_detail`;
+DROP TABLE IF EXISTS `drive_task_detail`;
 DROP TABLE IF EXISTS `patrol_task_zone`;
 DROP TABLE IF EXISTS `patrol_task_detail`;
 DROP TABLE IF EXISTS `delivery_task_item`;
@@ -413,6 +414,27 @@ CREATE TABLE `patrol_task_detail` (
         FOREIGN KEY (`patrol_area_id`)
         REFERENCES `patrol_area` (`patrol_area_id`),
     KEY `idx_patrol_task_detail_area_revision` (`patrol_area_id`, `patrol_area_revision`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `drive_task_detail` (
+    `task_id` BIGINT UNSIGNED NOT NULL,
+    `route_id` VARCHAR(100) NOT NULL,
+    `route_revision` INT UNSIGNED NOT NULL,
+    `drive_status` VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    `frame_id` VARCHAR(50) NOT NULL DEFAULT 'map',
+    `waypoint_count` INT UNSIGNED NOT NULL DEFAULT 0,
+    `current_waypoint_index` INT UNSIGNED NULL,
+    `path_snapshot_json` JSON NOT NULL,
+    `notes` TEXT NULL,
+    CONSTRAINT `pk_drive_task_detail` PRIMARY KEY (`task_id`),
+    CONSTRAINT `fk_drive_task_detail_task`
+        FOREIGN KEY (`task_id`)
+        REFERENCES `task` (`task_id`)
+        ON DELETE CASCADE,
+    CONSTRAINT `fk_drive_task_detail_route`
+        FOREIGN KEY (`route_id`)
+        REFERENCES `fms_route` (`route_id`),
+    KEY `idx_drive_task_detail_route_revision` (`route_id`, `route_revision`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE `guide_task_detail` (

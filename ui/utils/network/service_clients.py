@@ -156,6 +156,15 @@ class DeliveryRequestRemoteService:
     def get_patrol_areas(self):
         return self._rpc("get_patrol_areas")
 
+    def get_drive_routes(self):
+        bundle = FmsConfigRemoteService().get_active_graph_bundle(
+            include_disabled=False,
+            include_edges=False,
+            include_routes=True,
+            include_reservations=False,
+        )
+        return (bundle or {}).get("routes") or []
+
     def get_product_names(self):
         return self._rpc("get_product_names")
 
@@ -178,6 +187,9 @@ class DeliveryRequestRemoteService:
             )
 
         return response.get("payload")
+
+    def create_drive_task(self, **payload):
+        return self._rpc("create_drive_task", **payload)
 
     def resume_patrol_task(self, **payload):
         response = send_request(MESSAGE_CODE_PATROL_RESUME_TASK, payload)

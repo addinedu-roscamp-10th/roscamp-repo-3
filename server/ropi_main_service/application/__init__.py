@@ -9,6 +9,8 @@ _EXPORTS = {
     "DeliveryRequestService": ("task_request", "DeliveryRequestService"),
     "DeliveryRuntimeConfig": ("delivery_config", "DeliveryRuntimeConfig"),
     "DeliveryService": ("task_request", "DeliveryRequestService"),
+    "DriveRuntimeConfig": ("drive_config", "DriveRuntimeConfig"),
+    "DriveTaskCreateService": ("drive_task_create", "DriveTaskCreateService"),
     "DeliveryWorkflowTaskManager": (
         "delivery_workflow_task_manager",
         "DeliveryWorkflowTaskManager",

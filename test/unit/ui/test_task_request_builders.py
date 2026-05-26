@@ -141,3 +141,54 @@ def test_patrol_builder_creates_pat_001_payload_and_preview():
         "waypoint_count": 3,
         "path_frame_id": None,
     }
+
+
+def test_drive_builder_creates_if_fms_008_payload_and_preview():
+    from ui.utils.pages.caregiver.task_request_builders import (
+        build_drive_create_payload,
+        build_drive_preview,
+    )
+
+    current_user = UserSession(user_id="7", name="김보호", role="caregiver")
+    route = {
+        "route_id": "corridor_round_trip",
+        "route_name": "복도 왕복",
+        "revision": 4,
+        "map_id": "map_0504",
+        "waypoint_sequence": [
+            {"waypoint_id": "wait_a"},
+            {"waypoint_id": "wait_b"},
+        ],
+    }
+
+    payload = build_drive_create_payload(
+        current_user=current_user,
+        route=route,
+        robot_id="pinky1",
+        priority="URGENT",
+        notes="first run",
+        request_id_factory=lambda: "req_drive_fixed",
+        idempotency_key_factory=lambda: "idem_drive_fixed",
+    )
+    preview = build_drive_preview(current_user, route, "pinky1", "URGENT")
+
+    assert payload == {
+        "request_id": "req_drive_fixed",
+        "caregiver_id": 7,
+        "robot_id": "pinky1",
+        "route_id": "corridor_round_trip",
+        "priority": "URGENT",
+        "notes": "first run",
+        "idempotency_key": "idem_drive_fixed",
+    }
+    assert preview == {
+        "task_type": "DRIVE",
+        "caregiver_id": "7",
+        "robot_id": "pinky1",
+        "route_id": "corridor_round_trip",
+        "route_name": "복도 왕복",
+        "route_revision": 4,
+        "map_id": "map_0504",
+        "waypoint_count": 2,
+        "priority": "URGENT",
+    }

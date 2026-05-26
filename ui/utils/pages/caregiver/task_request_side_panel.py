@@ -6,6 +6,7 @@ from ui.utils.widgets.admin_common import make_key_value_row
 
 PRIORITY_CODE_TO_LABEL = {
     "NORMAL": "일반",
+    "HIGH": "높음",
     "URGENT": "긴급",
     "HIGHEST": "최우선",
 }
@@ -110,6 +111,11 @@ class RequestPreviewCard(QFrame):
         self.preview_quantity_label.setText("구역 ID")
         self.preview_destination_label.setText("배정 로봇")
 
+    def set_drive_context(self):
+        self.preview_item_label.setText("주행 경로")
+        self.preview_quantity_label.setText("경로 ID")
+        self.preview_destination_label.setText("로봇")
+
     def update_delivery(self, preview):
         item_name = _display(preview.get("item_name"))
 
@@ -124,6 +130,13 @@ class RequestPreviewCard(QFrame):
         self.preview_item.setText(_display(preview.get("patrol_area_name")))
         self.preview_quantity.setText(_display(preview.get("patrol_area_id")))
         self.preview_destination.setText("작업 생성 후 확정")
+        self.preview_priority.setText(_priority_label(preview.get("priority")))
+
+    def update_drive(self, preview):
+        self.preview_caregiver_id.setText(_display(preview.get("caregiver_id")))
+        self.preview_item.setText(_display(preview.get("route_name")))
+        self.preview_quantity.setText(_display(preview.get("route_id")))
+        self.preview_destination.setText(_display(preview.get("robot_id")))
         self.preview_priority.setText(_priority_label(preview.get("priority")))
 
 
@@ -192,6 +205,13 @@ class RobotStatusCard(QFrame):
         self.robot_destination_text_label.setText("배정")
         self.robot_map_label.setText("순찰 요청 미리보기")
 
+    def set_drive_context(self):
+        self.robot_id_text_label.setText("로봇")
+        self.robot_state_text_label.setText("상태")
+        self.robot_pose_text_label.setText("위치")
+        self.robot_destination_text_label.setText("경로")
+        self.robot_map_label.setText("주행 요청 미리보기")
+
     def update_delivery_destination(self, destination_id):
         self.robot_destination_label.setText(_display(destination_id))
 
@@ -200,6 +220,15 @@ class RobotStatusCard(QFrame):
         self.robot_state_label.setText("상태 업데이트 대기")
         self.robot_pose_label.setText("미수신")
         self.robot_destination_label.setText("미수신")
+
+    def update_drive(self, preview):
+        self.robot_id_label.setText(_display_unassigned_robot(preview.get("robot_id")))
+        self.robot_state_label.setText("상태 업데이트 대기")
+        self.robot_pose_label.setText("미수신")
+        self.robot_destination_label.setText(_display(preview.get("route_id")))
+        map_id = _display(preview.get("map_id"))
+        waypoint_count = _display(preview.get("waypoint_count"))
+        self.robot_map_label.setText(f"{map_id} / {waypoint_count}개 waypoint")
 
 
 class RequestResultCard(QFrame):
@@ -235,6 +264,12 @@ class RequestResultCard(QFrame):
             self.assigned_robot_text_label,
             self.assigned_robot_id_label,
         ) = _metric_row("배정 로봇")
+        route_row, self.result_route_text_label, self.result_route_label = _metric_row(
+            "경로"
+        )
+        map_row, self.result_map_text_label, self.result_map_label = _metric_row(
+            "맵"
+        )
         self.cancel_task_btn = QPushButton("작업 취소")
         self.cancel_task_btn.setObjectName("dangerButton")
         self.cancel_task_btn.setEnabled(False)
@@ -246,6 +281,8 @@ class RequestResultCard(QFrame):
         layout.addWidget(task_id_row)
         layout.addWidget(task_status_row)
         layout.addWidget(assigned_robot_row)
+        layout.addWidget(route_row)
+        layout.addWidget(map_row)
         layout.addWidget(self.cancel_task_btn)
 
     def show_delivery_result(self, response):
@@ -258,7 +295,35 @@ class RequestResultCard(QFrame):
         self.assigned_robot_id_label.setText(
             _display(response.get("assigned_robot_id"))
         )
+        self.result_route_label.setText(self._format_route_result(response))
+        self.result_map_label.setText(self._format_map_result(response))
         self._sync_cancel_button(response)
+
+    @staticmethod
+    def _format_route_result(response):
+        route_name = response.get("route_name")
+        route_id = response.get("route_id") or response.get("fms_route_id")
+        route_revision = response.get("route_revision") or response.get(
+            "fms_route_revision"
+        )
+        values = [
+            _display(value)
+            for value in (route_name, route_id)
+            if value not in (None, "")
+        ]
+        if route_revision not in (None, ""):
+            values.append(f"rev {route_revision}")
+        if not values:
+            return "-"
+        return " / ".join(values)
+
+    @staticmethod
+    def _format_map_result(response):
+        map_id = response.get("map_id")
+        waypoint_count = response.get("waypoint_count")
+        if map_id in (None, "") and waypoint_count in (None, ""):
+            return "-"
+        return f"{_display(map_id)} / {_display(waypoint_count)}개 waypoint"
 
     def _sync_cancel_button(self, response):
         task_id = response.get("task_id")
@@ -367,12 +432,19 @@ class TaskRequestSidePanel(QWidget):
         self.task_status_label = self.result_card.task_status_label
         self.assigned_robot_text_label = self.result_card.assigned_robot_text_label
         self.assigned_robot_id_label = self.result_card.assigned_robot_id_label
+        self.result_route_text_label = self.result_card.result_route_text_label
+        self.result_route_label = self.result_card.result_route_label
+        self.result_map_text_label = self.result_card.result_map_text_label
+        self.result_map_label = self.result_card.result_map_label
         self.cancel_task_btn = self.result_card.cancel_task_btn
 
     def update_preview(self, preview):
         preview = preview or {}
         if preview.get("task_type") == "PATROL":
             self.update_patrol_preview(preview)
+            return
+        if preview.get("task_type") == "DRIVE":
+            self.update_drive_preview(preview)
             return
 
         self.set_delivery_context()
@@ -389,6 +461,12 @@ class TaskRequestSidePanel(QWidget):
             preview.get("assigned_robot_id")
         )
 
+    def update_drive_preview(self, preview):
+        preview = preview or {}
+        self.set_drive_context()
+        self.preview_card.update_drive(preview)
+        self.robot_status_card.update_drive(preview)
+
     def set_delivery_context(self):
         self.preview_card.set_delivery_context()
         self.robot_status_card.set_delivery_context()
@@ -396,6 +474,10 @@ class TaskRequestSidePanel(QWidget):
     def set_patrol_context(self):
         self.preview_card.set_patrol_context()
         self.robot_status_card.set_patrol_context()
+
+    def set_drive_context(self):
+        self.preview_card.set_drive_context()
+        self.robot_status_card.set_drive_context()
 
     def show_delivery_result(self, response):
         response = response or {}

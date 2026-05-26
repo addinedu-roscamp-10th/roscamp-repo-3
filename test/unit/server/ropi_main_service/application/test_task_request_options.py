@@ -6,6 +6,7 @@ from server.ropi_main_service.application.task_request import DeliveryRequestSer
 class FakeTaskRequestOptionRepository:
     def __init__(self):
         self.patrol_create_payload = None
+        self.drive_create_payload = None
 
     def get_delivery_destinations(self):
         return [
@@ -49,6 +50,25 @@ class FakeTaskRequestOptionRepository:
 
     async def async_create_patrol_task(self, **payload):
         return self.create_patrol_task(**payload)
+
+    def create_drive_task(self, **payload):
+        self.drive_create_payload = payload
+        return {
+            "result_code": "ACCEPTED",
+            "task_id": 3001,
+            "task_type": "DRIVE",
+            "task_status": "WAITING_DISPATCH",
+            "phase": "REQUESTED",
+            "assigned_robot_id": payload["robot_id"],
+            "map_id": "map_0504",
+            "route_id": payload["route_id"],
+            "route_name": "corridor round trip",
+            "route_revision": 4,
+            "waypoint_count": 2,
+        }
+
+    async def async_create_drive_task(self, **payload):
+        return self.create_drive_task(**payload)
 
 
 def test_task_request_service_exposes_db_backed_delivery_destinations():
@@ -143,3 +163,80 @@ def test_task_request_service_rejects_invalid_patrol_create_payload():
 
     assert response["result_code"] == "INVALID_REQUEST"
     assert response["reason_code"] == "PATROL_AREA_ID_INVALID"
+
+
+def test_task_request_service_creates_drive_task_from_fms_008_payload():
+    repository = FakeTaskRequestOptionRepository()
+    service = DeliveryRequestService(repository=repository)
+
+    response = service.create_drive_task(
+        request_id="req_drive_001",
+        caregiver_id=1,
+        robot_id="pinky1",
+        route_id="corridor_round_trip",
+        priority="NORMAL",
+        notes="first FMS run",
+        idempotency_key="idem_drive_001",
+    )
+
+    assert response == {
+        "result_code": "ACCEPTED",
+        "task_id": 3001,
+        "task_type": "DRIVE",
+        "task_status": "WAITING_DISPATCH",
+        "phase": "REQUESTED",
+        "assigned_robot_id": "pinky1",
+        "map_id": "map_0504",
+        "route_id": "corridor_round_trip",
+        "route_name": "corridor round trip",
+        "route_revision": 4,
+        "waypoint_count": 2,
+    }
+    assert repository.drive_create_payload == {
+        "request_id": "req_drive_001",
+        "caregiver_id": 1,
+        "robot_id": "pinky1",
+        "route_id": "corridor_round_trip",
+        "priority": "NORMAL",
+        "notes": "first FMS run",
+        "idempotency_key": "idem_drive_001",
+    }
+
+
+def test_task_request_service_rejects_invalid_drive_create_payload():
+    service = DeliveryRequestService(repository=FakeTaskRequestOptionRepository())
+
+    response = service.create_drive_task(
+        request_id="req_drive_001",
+        caregiver_id=1,
+        robot_id="/pinky1",
+        route_id="corridor_round_trip",
+        priority="NORMAL",
+        notes=None,
+        idempotency_key="idem_drive_001",
+    )
+
+    assert response["result_code"] == "INVALID_REQUEST"
+    assert response["reason_code"] == "DRIVE_ROBOT_ID_INVALID"
+
+
+def test_task_request_service_drive_create_method_has_async_variant():
+    repository = FakeTaskRequestOptionRepository()
+    service = DeliveryRequestService(repository=repository)
+
+    async def scenario():
+        return await service.async_create_drive_task(
+            request_id="req_drive_001",
+            caregiver_id=1,
+            robot_id="pinky3",
+            route_id="corridor_round_trip",
+            priority="URGENT",
+            notes=None,
+            idempotency_key="idem_drive_001",
+        )
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["assigned_robot_id"] == "pinky3"
+    assert repository.drive_create_payload["priority"] == "URGENT"

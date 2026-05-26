@@ -3,6 +3,11 @@ from .coordinate_config_repository import CoordinateConfigRepository
 from .delivery_task_create_repository import DeliveryTaskCreateRepository
 from .delivery_task_execution_repository import DeliveryTaskExecutionRepository
 from .delivery_request_event_repository import DeliveryRequestEventRepository
+from .drive_task_create_repository import (
+    DriveRouteSnapshotBuilder,
+    DriveTaskCreateRepository,
+)
+from .drive_task_repository import DriveTaskRepository
 from .fms_config_repository import FmsConfigRepository
 from .inventory_repository import InventoryRepository
 from .guide_task_repository import GuideTaskRepository
@@ -37,6 +42,9 @@ __all__ = [
     "DeliveryRequestEventRepository",
     "DeliveryTaskCreateRepository",
     "DeliveryTaskExecutionRepository",
+    "DriveRouteSnapshotBuilder",
+    "DriveTaskCreateRepository",
+    "DriveTaskRepository",
     "FmsConfigRepository",
     "GuideTaskRepository",
     "GuideTaskLifecycleRepository",

@@ -74,6 +74,7 @@ def test_schema_contains_control_task_and_log_tables():
         "delivery_task_item",
         "patrol_task_detail",
         "patrol_area",
+        "drive_task_detail",
         "guide_task_detail",
         "task_state_history",
         "task_event_log",
@@ -145,6 +146,24 @@ def test_patrol_schema_separates_area_from_operation_zone():
     assert "polygon_json" not in seed_sql
     assert "coverage_polygon_snapshot_json" not in ddl
     assert "coverage_polygon_snapshot_json" not in seed_sql
+
+
+def test_drive_task_detail_snapshots_fms_route_for_navigation_only_task():
+    ddl = _ddl()
+
+    drive_section = ddl.split("CREATE TABLE `drive_task_detail`", 1)[1].split(
+        "CREATE TABLE `guide_task_detail`",
+        1,
+    )[0]
+
+    assert "`task_id` BIGINT UNSIGNED NOT NULL" in drive_section
+    assert "`route_id` VARCHAR(100) NOT NULL" in drive_section
+    assert "`route_revision` INT UNSIGNED NOT NULL" in drive_section
+    assert "`drive_status` VARCHAR(30) NOT NULL DEFAULT 'PENDING'" in drive_section
+    assert "`frame_id` VARCHAR(50) NOT NULL DEFAULT 'map'" in drive_section
+    assert "`waypoint_count` INT UNSIGNED NOT NULL DEFAULT 0" in drive_section
+    assert "`path_snapshot_json` JSON NOT NULL" in drive_section
+    assert "CONSTRAINT `fk_drive_task_detail_route`" in drive_section
 
 
 def test_operation_zone_does_not_store_patrol_robot_hint():

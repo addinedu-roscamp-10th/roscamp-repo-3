@@ -1,6 +1,7 @@
 from server.ropi_main_service.persistence.repositories import (
-    DeliveryTaskCreateRepository,
     DeliveryRequestEventRepository,
+    DeliveryTaskCreateRepository,
+    DriveTaskCreateRepository,
 )
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
     TaskRequestRepository,
@@ -63,6 +64,10 @@ def test_delivery_request_event_repository_is_public_member_event_writer_name():
 
 def test_delivery_task_create_repository_is_public_create_transaction_owner():
     assert DeliveryTaskCreateRepository.__name__ == "DeliveryTaskCreateRepository"
+
+
+def test_drive_task_create_repository_is_public_create_transaction_owner():
+    assert DriveTaskCreateRepository.__name__ == "DriveTaskCreateRepository"
 
 
 def test_task_request_repository_delegates_option_reads_to_lookup_repository():
@@ -154,4 +159,42 @@ def test_task_request_repository_delegates_delivery_create_to_create_repository(
         "priority": "NORMAL",
         "notes": "note",
         "idempotency_key": "idem_001",
+    }
+
+
+def test_task_request_repository_delegates_drive_create_to_create_repository():
+    class FakeDriveTaskCreateRepository:
+        def __init__(self):
+            self.created = None
+
+        def create_drive_task(self, **kwargs):
+            self.created = kwargs
+            return {"result_code": "ACCEPTED", "task_id": 3001}
+
+    create_repository = FakeDriveTaskCreateRepository()
+    repository = TaskRequestRepository(
+        lookup_repository=FakeLookupRepository(),
+        delivery_request_event_repository=FakeDeliveryRequestEventRepository(),
+        drive_task_create_repository=create_repository,
+    )
+
+    response = repository.create_drive_task(
+        request_id="req_drive_001",
+        caregiver_id=1,
+        robot_id="pinky1",
+        route_id="corridor_round_trip",
+        priority="NORMAL",
+        notes="note",
+        idempotency_key="idem_drive_001",
+    )
+
+    assert response == {"result_code": "ACCEPTED", "task_id": 3001}
+    assert create_repository.created == {
+        "request_id": "req_drive_001",
+        "caregiver_id": 1,
+        "robot_id": "pinky1",
+        "route_id": "corridor_round_trip",
+        "priority": "NORMAL",
+        "notes": "note",
+        "idempotency_key": "idem_drive_001",
     }

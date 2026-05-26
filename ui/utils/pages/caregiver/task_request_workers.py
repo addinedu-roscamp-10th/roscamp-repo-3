@@ -16,10 +16,18 @@ class TaskRequestOptionsLoadWorker(QObject):
                     "items": service.get_delivery_items(),
                     "destinations": service.get_delivery_destinations(),
                     "patrol_areas": service.get_patrol_areas(),
+                    "drive_routes": self._get_drive_routes_or_empty(service),
                 },
             )
         except Exception as exc:
             self.finished.emit(False, str(exc))
+
+    @staticmethod
+    def _get_drive_routes_or_empty(service):
+        try:
+            return service.get_drive_routes()
+        except Exception:
+            return []
 
 
 class DeliverySubmitWorker(QObject):
@@ -74,6 +82,34 @@ class PatrolSubmitWorker(QObject):
                     "task_id": None,
                     "task_status": None,
                     "assigned_robot_id": None,
+                },
+            )
+
+
+class DriveSubmitWorker(QObject):
+    finished = pyqtSignal(bool, object)
+
+    def __init__(self, payload):
+        super().__init__()
+        self.payload = payload
+
+    def run(self):
+        service = DeliveryRequestRemoteService()
+
+        try:
+            response = service.create_drive_task(**self.payload) or {}
+            result_code = str(response.get("result_code", "")).upper()
+            self.finished.emit(result_code == "ACCEPTED", response)
+        except Exception as exc:
+            self.finished.emit(
+                False,
+                {
+                    "result_code": "CLIENT_ERROR",
+                    "result_message": f"주행 요청 처리 중 오류가 발생했습니다.\n{exc}",
+                    "reason_code": "CLIENT_EXCEPTION",
+                    "task_id": None,
+                    "task_status": None,
+                    "assigned_robot_id": self.payload.get("robot_id"),
                 },
             )
 
@@ -142,6 +178,7 @@ class DeliveryCancelWorker(QObject):
 __all__ = [
     "DeliveryCancelWorker",
     "DeliverySubmitWorker",
+    "DriveSubmitWorker",
     "PatrolResumeWorker",
     "PatrolSubmitWorker",
     "TaskRequestOptionsLoadWorker",

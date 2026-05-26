@@ -164,3 +164,77 @@ def build_patrol_preview(current_user: Any, area: dict, priority: str) -> dict:
         "path_frame_id": area.get("path_frame_id"),
         "priority": priority,
     }
+
+
+def build_drive_create_payload(
+    *,
+    current_user: Any,
+    route: dict,
+    robot_id: str,
+    priority: str,
+    notes: str | None,
+    request_id_factory: Callable[[], str] | None = None,
+    idempotency_key_factory: Callable[[], str] | None = None,
+) -> dict:
+    if current_user is None:
+        raise PayloadValidationError("로그인 사용자가 없습니다.")
+
+    route_id = str((route or {}).get("route_id") or "").strip()
+    if not route_id:
+        raise PayloadValidationError("주행 경로를 선택하세요.")
+
+    normalized_robot_id = str(robot_id or "").strip()
+    if (
+        not normalized_robot_id
+        or normalized_robot_id.startswith("/")
+        or normalized_robot_id.endswith("/")
+        or "/" in normalized_robot_id
+    ):
+        raise PayloadValidationError("로봇 namespace를 선택하세요.")
+
+    request_id = (
+        request_id_factory()
+        if request_id_factory is not None
+        else _uuid_value("req_drive_")
+    )
+    idempotency_key = (
+        idempotency_key_factory()
+        if idempotency_key_factory is not None
+        else _uuid_value("idem_drive_")
+    )
+
+    return {
+        "request_id": request_id,
+        "caregiver_id": _require_decimal(
+            _user_id(current_user),
+            "caregiver_id를 확인할 수 없습니다.",
+        ),
+        "robot_id": normalized_robot_id,
+        "route_id": route_id,
+        "priority": priority,
+        "notes": str(notes or "").strip() or None,
+        "idempotency_key": idempotency_key,
+    }
+
+
+def build_drive_preview(
+    current_user: Any,
+    route: dict,
+    robot_id: str,
+    priority: str,
+) -> dict:
+    route = route if isinstance(route, dict) else {}
+    waypoint_count = route.get("waypoint_count")
+    if waypoint_count is None:
+        waypoint_count = len(route.get("waypoint_sequence") or [])
+    return {
+        "task_type": "DRIVE",
+        "caregiver_id": _user_id(current_user) if current_user else None,
+        "robot_id": str(robot_id or "").strip() or None,
+        "route_id": route.get("route_id"),
+        "route_name": route.get("route_name"),
+        "route_revision": route.get("revision"),
+        "map_id": route.get("map_id"),
+        "waypoint_count": waypoint_count,
+        "priority": priority,
+    }

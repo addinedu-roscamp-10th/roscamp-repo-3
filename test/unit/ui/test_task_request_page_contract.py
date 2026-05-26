@@ -44,7 +44,7 @@ def test_task_request_page_uses_logger_instead_of_direct_print():
     assert "print(" not in source
 
 
-def test_task_request_page_exposes_only_delivery_and_patrol_tabs(monkeypatch):
+def test_task_request_page_exposes_delivery_patrol_and_drive_tabs(monkeypatch):
     _app()
 
     from ui.utils.pages.caregiver.task_request_page import (
@@ -65,6 +65,7 @@ def test_task_request_page_exposes_only_delivery_and_patrol_tabs(monkeypatch):
         assert tabs == [
             "물품 운반",
             "순찰",
+            "주행",
         ]
         assert all("준비 중" not in text for text in tabs)
         assert "추종" not in tabs
@@ -74,12 +75,16 @@ def test_task_request_page_exposes_only_delivery_and_patrol_tabs(monkeypatch):
         assert page.current_form is page.patrol_form
         assert page.patrol_form.submit_btn.isEnabled() is False
         assert page.patrol_form.submit_btn.text() == "순찰 요청 등록"
+        page.drive_btn.click()
+        assert page.current_form is page.drive_form
+        assert page.drive_form.submit_btn.isEnabled() is False
+        assert page.drive_form.submit_btn.text() == "주행 요청 등록"
 
         assert not hasattr(page, "guide_btn")
         assert not hasattr(page, "guide_form")
         assert not hasattr(page, "follow_btn")
         assert not hasattr(page, "follow_form")
-        assert page.current_form is page.patrol_form
+        assert page.current_form is page.drive_form
     finally:
         page.close()
 
@@ -290,6 +295,83 @@ def test_patrol_request_tab_uses_pat_001_fields_and_preview(monkeypatch):
         page.close()
 
 
+def test_drive_request_tab_uses_if_fms_008_fields_and_preview(monkeypatch):
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import (
+        DeliveryRequestForm,
+        TaskRequestPage,
+    )
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+    SessionManager.login(UserSession(user_id="7", name="김보호", role="caregiver"))
+
+    page = TaskRequestPage()
+
+    try:
+        page.drive_form.set_drive_routes(
+            [
+                {
+                    "route_id": "corridor_round_trip",
+                    "route_name": "복도 왕복",
+                    "revision": 4,
+                    "map_id": "map_0504",
+                    "waypoint_sequence": [
+                        {"waypoint_id": "wait_a"},
+                        {"waypoint_id": "wait_b"},
+                    ],
+                    "is_enabled": True,
+                }
+            ]
+        )
+        page.drive_btn.click()
+
+        form = page.drive_form
+        assert form.submit_btn.isEnabled() is True
+        assert form.submit_btn.text() == "주행 요청 등록"
+        assert form.findChild(QGridLayout, "driveFormGrid") is not None
+        assert form.route_combo.isEditable() is True
+        assert form.route_combo.completer() is not None
+        assert form.route_combo.currentText() == "복도 왕복 (rev 4, 2점)"
+
+        robot_buttons = [
+            button.text()
+            for button in form.findChildren(QPushButton)
+            if button.objectName() == "driveRobotButton"
+        ]
+        assert robot_buttons == ["pinky1", "pinky3"]
+
+        form.set_robot_id("pinky1")
+        form.set_priority("URGENT")
+        form.emit_preview_changed()
+
+        assert page.preview_caregiver_id.text() == "7"
+        assert page.preview_item.text() == "복도 왕복"
+        assert page.preview_quantity.text() == "corridor_round_trip"
+        assert page.preview_destination.text() == "pinky1"
+        assert page.preview_priority.text() == "긴급"
+        assert page.robot_id_label.text() == "pinky1"
+        assert page.robot_state_label.text() == "상태 업데이트 대기"
+        assert page.robot_destination_text_label.text() == "경로"
+        assert page.robot_destination_label.text() == "corridor_round_trip"
+        assert page.robot_map_label.text() == "map_0504 / 2개 waypoint"
+
+        payload = form._build_create_drive_task_payload(SessionManager.current_user())
+        assert payload["caregiver_id"] == 7
+        assert payload["robot_id"] == "pinky1"
+        assert payload["route_id"] == "corridor_round_trip"
+        assert payload["priority"] == "URGENT"
+        assert payload["request_id"].startswith("req_drive_")
+        assert payload["idempotency_key"].startswith("idem_drive_")
+
+        notes = form.findChild(QTextEdit, "driveNotesInput")
+        assert notes is form.notes_input
+        assert notes.maximumHeight() <= 88
+    finally:
+        SessionManager.logout()
+        page.close()
+
+
 def test_delivery_form_uses_wireframe_form_controls():
     app = _app()
 
@@ -479,6 +561,39 @@ def test_patrol_form_loads_area_options_from_server_options():
         assert form.patrol_area_combo.currentData()["patrol_area_id"] == (
             "patrol_no_robot"
         )
+    finally:
+        form.close()
+
+
+def test_drive_form_loads_route_options_from_server_options():
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_page import DriveRequestForm
+
+    form = DriveRequestForm()
+
+    try:
+        assert not hasattr(DriveRequestForm, "DRIVE_ROUTE_OPTIONS")
+
+        form.set_drive_routes(
+            [
+                {
+                    "route_id": "corridor_round_trip",
+                    "route_name": "복도 왕복",
+                    "revision": 4,
+                    "map_id": "map_0504",
+                    "waypoint_sequence": [
+                        {"waypoint_id": "wait_a"},
+                        {"waypoint_id": "wait_b"},
+                    ],
+                    "is_enabled": True,
+                }
+            ]
+        )
+
+        assert form.route_combo.currentText() == "복도 왕복 (rev 4, 2점)"
+        assert form.route_combo.currentData()["route_id"] == "corridor_round_trip"
+        assert form.submit_btn.isEnabled() is True
     finally:
         form.close()
 

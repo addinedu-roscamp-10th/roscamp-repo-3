@@ -103,6 +103,30 @@ def test_task_request_side_panel_cards_update_delivery_and_patrol_contexts():
 
         assert panel.preview_destination.text() == "작업 생성 후 확정"
         assert panel.robot_id_label.text() == "미정"
+
+        panel.update_preview(
+            {
+                "task_type": "DRIVE",
+                "caregiver_id": "7",
+                "robot_id": "pinky1",
+                "route_id": "corridor_round_trip",
+                "route_name": "복도 왕복",
+                "map_id": "map_0504",
+                "waypoint_count": 2,
+                "priority": "URGENT",
+            }
+        )
+
+        assert panel.preview_item_label.text() == "주행 경로"
+        assert panel.preview_item.text() == "복도 왕복"
+        assert panel.preview_quantity_label.text() == "경로 ID"
+        assert panel.preview_quantity.text() == "corridor_round_trip"
+        assert panel.preview_destination_label.text() == "로봇"
+        assert panel.preview_destination.text() == "pinky1"
+        assert panel.robot_id_label.text() == "pinky1"
+        assert panel.robot_destination_text_label.text() == "경로"
+        assert panel.robot_destination_label.text() == "corridor_round_trip"
+        assert panel.robot_map_label.text() == "map_0504 / 2개 waypoint"
     finally:
         panel.close()
 
@@ -160,6 +184,35 @@ def test_request_result_card_exposes_cancel_button_by_task_status():
 
         assert panel.cancel_task_btn.isEnabled() is False
         assert panel.cancel_task_btn.text() == "취소 처리 중"
+    finally:
+        panel.close()
+
+
+def test_request_result_card_displays_drive_route_response_fields():
+    _app()
+
+    from ui.utils.pages.caregiver.task_request_side_panel import TaskRequestSidePanel
+
+    panel = TaskRequestSidePanel()
+
+    try:
+        panel.show_delivery_result(
+            {
+                "result_code": "ACCEPTED",
+                "task_type": "DRIVE",
+                "task_id": 3001,
+                "task_status": "WAITING_DISPATCH",
+                "assigned_robot_id": "pinky1",
+                "map_id": "map_0504",
+                "route_id": "corridor_round_trip",
+                "route_name": "복도 왕복",
+                "route_revision": 4,
+                "waypoint_count": 2,
+            }
+        )
+
+        assert panel.result_route_label.text() == "복도 왕복 / corridor_round_trip / rev 4"
+        assert panel.result_map_label.text() == "map_0504 / 2개 waypoint"
     finally:
         panel.close()
 
