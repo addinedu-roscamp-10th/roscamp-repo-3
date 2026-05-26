@@ -170,7 +170,7 @@ def build_drive_create_payload(
     *,
     current_user: Any,
     route: dict,
-    robot_id: str,
+    robot_id: str | None,
     priority: str,
     notes: str | None,
     request_id_factory: Callable[[], str] | None = None,
@@ -184,13 +184,14 @@ def build_drive_create_payload(
         raise PayloadValidationError("주행 경로를 선택하세요.")
 
     normalized_robot_id = str(robot_id or "").strip()
-    if (
-        not normalized_robot_id
-        or normalized_robot_id.startswith("/")
+    if normalized_robot_id.upper() == "AUTO":
+        normalized_robot_id = ""
+    if normalized_robot_id and (
+        normalized_robot_id.startswith("/")
         or normalized_robot_id.endswith("/")
         or "/" in normalized_robot_id
     ):
-        raise PayloadValidationError("로봇 namespace를 선택하세요.")
+        raise PayloadValidationError("로봇 namespace는 상대 이름이어야 합니다.")
 
     request_id = (
         request_id_factory()
@@ -203,24 +204,26 @@ def build_drive_create_payload(
         else _uuid_value("idem_drive_")
     )
 
-    return {
+    payload = {
         "request_id": request_id,
         "caregiver_id": _require_decimal(
             _user_id(current_user),
             "caregiver_id를 확인할 수 없습니다.",
         ),
-        "robot_id": normalized_robot_id,
         "route_id": route_id,
         "priority": priority,
         "notes": str(notes or "").strip() or None,
         "idempotency_key": idempotency_key,
     }
+    if normalized_robot_id:
+        payload["robot_id"] = normalized_robot_id
+    return payload
 
 
 def build_drive_preview(
     current_user: Any,
     route: dict,
-    robot_id: str,
+    robot_id: str | None,
     priority: str,
 ) -> dict:
     route = route if isinstance(route, dict) else {}

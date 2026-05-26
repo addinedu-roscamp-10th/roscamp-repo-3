@@ -245,6 +245,7 @@ class TaskRequestPage(QWidget):
     def show_drive_page(self):
         self._show_form(self.drive_form)
         self.drive_form.emit_preview_changed()
+        QTimer.singleShot(0, self.drive_form.refresh_routes)
         logger.debug("switched to drive page")
 
     def _request_delivery_cancel(self):

@@ -32,7 +32,7 @@ def build_drive_payload():
     return {
         "request_id": "req_drive_001",
         "caregiver_id": "1",
-        "robot_id": "pinky1",
+        "robot_id": None,
         "route_id": "corridor_round_trip",
         "priority": "NORMAL",
         "notes": "first FMS test",
@@ -99,6 +99,21 @@ def test_create_drive_task_rejects_ambiguous_robot_namespace():
     assert response["result_code"] == "INVALID_REQUEST"
     assert response["reason_code"] == "DRIVE_ROBOT_ID_INVALID"
     assert repository.calls == []
+
+
+def test_create_drive_task_accepts_explicit_allowed_robot_namespace():
+    repository = FakeDriveTaskRepository(response={"result_code": "ACCEPTED"})
+    service = DriveTaskCreateService(
+        repository=repository,
+        runtime_config=DriveRuntimeConfig(robot_ids=("pinky1", "pinky3")),
+    )
+
+    payload = build_drive_payload()
+    payload["robot_id"] = "pinky1"
+    response = service.create_drive_task(**payload)
+
+    assert response["result_code"] == "ACCEPTED"
+    assert repository.calls == [payload]
 
 
 def test_create_drive_task_rejects_robot_outside_drive_runtime_config():

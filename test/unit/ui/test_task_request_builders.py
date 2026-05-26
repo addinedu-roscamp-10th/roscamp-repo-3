@@ -164,18 +164,17 @@ def test_drive_builder_creates_if_fms_008_payload_and_preview():
     payload = build_drive_create_payload(
         current_user=current_user,
         route=route,
-        robot_id="pinky1",
+        robot_id=None,
         priority="URGENT",
         notes="first run",
         request_id_factory=lambda: "req_drive_fixed",
         idempotency_key_factory=lambda: "idem_drive_fixed",
     )
-    preview = build_drive_preview(current_user, route, "pinky1", "URGENT")
+    preview = build_drive_preview(current_user, route, None, "URGENT")
 
     assert payload == {
         "request_id": "req_drive_fixed",
         "caregiver_id": 7,
-        "robot_id": "pinky1",
         "route_id": "corridor_round_trip",
         "priority": "URGENT",
         "notes": "first run",
@@ -184,7 +183,7 @@ def test_drive_builder_creates_if_fms_008_payload_and_preview():
     assert preview == {
         "task_type": "DRIVE",
         "caregiver_id": "7",
-        "robot_id": "pinky1",
+        "robot_id": None,
         "route_id": "corridor_round_trip",
         "route_name": "복도 왕복",
         "route_revision": 4,

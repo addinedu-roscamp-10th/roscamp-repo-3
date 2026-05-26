@@ -59,7 +59,7 @@ class FakeTaskRequestOptionRepository:
             "task_type": "DRIVE",
             "task_status": "WAITING_DISPATCH",
             "phase": "REQUESTED",
-            "assigned_robot_id": payload["robot_id"],
+            "assigned_robot_id": payload.get("robot_id") or "pinky1",
             "map_id": "map_0504",
             "route_id": payload["route_id"],
             "route_name": "corridor round trip",
@@ -172,7 +172,6 @@ def test_task_request_service_creates_drive_task_from_fms_008_payload():
     response = service.create_drive_task(
         request_id="req_drive_001",
         caregiver_id=1,
-        robot_id="pinky1",
         route_id="corridor_round_trip",
         priority="NORMAL",
         notes="first FMS run",
@@ -195,7 +194,7 @@ def test_task_request_service_creates_drive_task_from_fms_008_payload():
     assert repository.drive_create_payload == {
         "request_id": "req_drive_001",
         "caregiver_id": 1,
-        "robot_id": "pinky1",
+        "robot_id": None,
         "route_id": "corridor_round_trip",
         "priority": "NORMAL",
         "notes": "first FMS run",

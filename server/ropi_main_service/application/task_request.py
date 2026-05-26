@@ -226,9 +226,9 @@ class TaskRequestService:
         self,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
+        robot_id=None,
+        route_id=None,
+        priority=None,
         notes=None,
         idempotency_key=None,
     ):
@@ -247,9 +247,9 @@ class TaskRequestService:
         self,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
+        robot_id=None,
+        route_id=None,
+        priority=None,
         notes=None,
         idempotency_key=None,
     ):
@@ -462,10 +462,10 @@ class TaskRequestService:
         *,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
-        idempotency_key,
+        robot_id=None,
+        route_id=None,
+        priority=None,
+        idempotency_key=None,
     ):
         self._sync_create_service_dependencies()
         return self.drive_create_service._validate_create_drive_task_request(

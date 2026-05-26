@@ -176,6 +176,76 @@ def test_drive_task_create_repository_creates_sync_drive_task_records():
     assert fake_conn.closed is True
 
 
+def test_drive_task_create_repository_auto_assigns_robot_when_robot_id_is_omitted():
+    fake_conn = FakeConnection()
+    drive_task_repository = FakeDriveTaskRepository()
+    repository = DriveTaskCreateRepository(
+        runtime_config=DriveRuntimeConfig(
+            map_id="map_0504",
+            robot_ids=("pinky1", "pinky3"),
+        ),
+        drive_task_repository=drive_task_repository,
+        idempotency_repository=FakeIdempotencyRepository(),
+        connection_factory=lambda: fake_conn,
+        caregiver_exists=lambda cur, caregiver_id: True,
+        fetch_route_by_id=lambda cur, route_id: _build_route(),
+        select_robot_id=lambda cur: "pinky3",
+    )
+
+    response = repository.create_drive_task(
+        request_id="req_drive_001",
+        caregiver_id=1,
+        robot_id=None,
+        route_id="corridor_round_trip",
+        priority="NORMAL",
+        notes=None,
+        idempotency_key="idem_drive_001",
+    )
+
+    assert response["result_code"] == "ACCEPTED"
+    assert response["assigned_robot_id"] == "pinky3"
+    assert drive_task_repository.created["assigned_robot_id"] == "pinky3"
+
+
+def test_drive_task_create_repository_rejects_when_auto_assignment_has_no_robot():
+    fake_conn = FakeConnection()
+    drive_task_repository = FakeDriveTaskRepository()
+    repository = DriveTaskCreateRepository(
+        runtime_config=DriveRuntimeConfig(map_id="map_0504", robot_ids=()),
+        drive_task_repository=drive_task_repository,
+        idempotency_repository=FakeIdempotencyRepository(),
+        connection_factory=lambda: fake_conn,
+        caregiver_exists=lambda cur, caregiver_id: True,
+        fetch_route_by_id=lambda cur, route_id: _build_route(),
+        select_robot_id=lambda cur: None,
+    )
+
+    response = repository.create_drive_task(
+        request_id="req_drive_001",
+        caregiver_id=1,
+        robot_id="AUTO",
+        route_id="corridor_round_trip",
+        priority="NORMAL",
+        notes=None,
+        idempotency_key="idem_drive_001",
+    )
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "DRIVE_ROBOT_NOT_AVAILABLE"
+    assert drive_task_repository.created is None
+    assert fake_conn.rolled_back is True
+
+
+def test_drive_task_create_repository_auto_assignment_prefers_fewer_active_drive_tasks():
+    selected = DriveTaskCreateRepository._choose_robot_id(
+        allowed_robot_ids=("pinky1", "pinky3"),
+        existing_robot_ids={"pinky1", "pinky3"},
+        active_counts={"pinky1": 1, "pinky3": 0},
+    )
+
+    assert selected == "pinky3"
+
+
 def test_drive_task_create_repository_creates_async_drive_task_records():
     fake_transaction = FakeAsyncTransaction()
     idempotency_repository = FakeIdempotencyRepository()

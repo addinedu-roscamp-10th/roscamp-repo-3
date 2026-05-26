@@ -30,6 +30,18 @@ class TaskRequestOptionsLoadWorker(QObject):
             return []
 
 
+class DriveRoutesLoadWorker(QObject):
+    finished = pyqtSignal(bool, object)
+
+    def run(self):
+        service = DeliveryRequestRemoteService()
+
+        try:
+            self.finished.emit(True, service.get_drive_routes())
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
+
 class DeliverySubmitWorker(QObject):
     finished = pyqtSignal(bool, object)
 
@@ -178,6 +190,7 @@ class DeliveryCancelWorker(QObject):
 __all__ = [
     "DeliveryCancelWorker",
     "DeliverySubmitWorker",
+    "DriveRoutesLoadWorker",
     "DriveSubmitWorker",
     "PatrolResumeWorker",
     "PatrolSubmitWorker",

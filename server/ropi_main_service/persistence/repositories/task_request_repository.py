@@ -320,11 +320,11 @@ class TaskRequestRepository:
         self,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
-        notes,
-        idempotency_key,
+        robot_id=None,
+        route_id=None,
+        priority=None,
+        notes=None,
+        idempotency_key=None,
     ):
         self._sync_drive_task_create_repository_dependencies()
         return self.drive_task_create_repository.create_drive_task(
@@ -341,11 +341,11 @@ class TaskRequestRepository:
         self,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
-        notes,
-        idempotency_key,
+        robot_id=None,
+        route_id=None,
+        priority=None,
+        notes=None,
+        idempotency_key=None,
     ):
         self._sync_drive_task_create_repository_dependencies()
         return await self.drive_task_create_repository.async_create_drive_task(

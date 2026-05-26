@@ -29,9 +29,9 @@ class DriveTaskCreateService:
         self,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
+        robot_id=None,
+        route_id=None,
+        priority=None,
         notes=None,
         idempotency_key=None,
     ):
@@ -62,9 +62,9 @@ class DriveTaskCreateService:
         self,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
+        robot_id=None,
+        route_id=None,
+        priority=None,
         notes=None,
         idempotency_key=None,
     ):
@@ -128,23 +128,23 @@ class DriveTaskCreateService:
                 reason_code="REQUESTER_NOT_AUTHORIZED",
             )
         normalized_robot_id = str(robot_id or "").strip()
-        if (
-            not normalized_robot_id
-            or normalized_robot_id.startswith("/")
-            or normalized_robot_id.endswith("/")
-            or "/" in normalized_robot_id
-        ):
-            return self._build_drive_task_response(
-                result_code=self.INVALID_REQUEST,
-                result_message="robot_id는 상대 namespace여야 합니다.",
-                reason_code="DRIVE_ROBOT_ID_INVALID",
-            )
-        if not self.runtime_config.is_robot_allowed(normalized_robot_id):
-            return self._build_drive_task_response(
-                result_code=self.REJECTED,
-                result_message="허용되지 않은 FMS 주행 로봇입니다.",
-                reason_code="DRIVE_ROBOT_NOT_ALLOWED",
-            )
+        if not self._is_auto_robot_id(normalized_robot_id):
+            if (
+                normalized_robot_id.startswith("/")
+                or normalized_robot_id.endswith("/")
+                or "/" in normalized_robot_id
+            ):
+                return self._build_drive_task_response(
+                    result_code=self.INVALID_REQUEST,
+                    result_message="robot_id는 상대 namespace여야 합니다.",
+                    reason_code="DRIVE_ROBOT_ID_INVALID",
+                )
+            if not self.runtime_config.is_robot_allowed(normalized_robot_id):
+                return self._build_drive_task_response(
+                    result_code=self.REJECTED,
+                    result_message="허용되지 않은 FMS 주행 로봇입니다.",
+                    reason_code="DRIVE_ROBOT_NOT_ALLOWED",
+                )
         if self._is_blank(route_id):
             return self._build_drive_task_response(
                 result_code=self.INVALID_REQUEST,
@@ -183,6 +183,11 @@ class DriveTaskCreateService:
     @staticmethod
     def _is_blank(value) -> bool:
         return not str(value or "").strip()
+
+    @classmethod
+    def _is_auto_robot_id(cls, value) -> bool:
+        normalized = str(value or "").strip()
+        return cls._is_blank(normalized) or normalized.upper() == "AUTO"
 
     @staticmethod
     def _build_drive_task_response(

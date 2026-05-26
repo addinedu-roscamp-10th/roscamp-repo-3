@@ -2,11 +2,8 @@ import logging
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QButtonGroup,
     QComboBox,
-    QFrame,
     QGridLayout,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
@@ -23,7 +20,10 @@ from ui.utils.pages.caregiver.task_request_builders import (
     build_drive_preview,
     normalize_delivery_response,
 )
-from ui.utils.pages.caregiver.task_request_workers import DriveSubmitWorker
+from ui.utils.pages.caregiver.task_request_workers import (
+    DriveRoutesLoadWorker,
+    DriveSubmitWorker,
+)
 from ui.utils.session.session_manager import SessionManager
 from ui.utils.widgets.common import InlineStatusMixin
 from ui.utils.widgets.form_controls import (
@@ -35,7 +35,6 @@ from ui.utils.widgets.form_controls import (
 
 logger = logging.getLogger(__name__)
 
-DRIVE_ROBOT_IDS = ("pinky1", "pinky3")
 DRIVE_PRIORITY_CODE_TO_LABEL = {
     "NORMAL": "일반",
     "HIGH": "높음",
@@ -51,7 +50,8 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
         super().__init__()
         self.submit_thread = None
         self.submit_worker = None
-        self._robot_id = DRIVE_ROBOT_IDS[0]
+        self.routes_load_thread = None
+        self.routes_load_worker = None
         self._worker_stop_wait_ms = max(
             1000,
             int((CONTROL_SERVER_TIMEOUT * 2 + 0.5) * 1000),
@@ -92,27 +92,6 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
         self.route_combo.setEnabled(False)
         self.route_combo.setMinimumHeight(44)
 
-        self.robot_segment = QFrame()
-        self.robot_segment.setObjectName("driveRobotSegment")
-        robot_layout = QHBoxLayout(self.robot_segment)
-        robot_layout.setContentsMargins(4, 4, 4, 4)
-        robot_layout.setSpacing(6)
-        self.robot_group = QButtonGroup(self)
-        self.robot_group.setExclusive(True)
-        self.robot_buttons = {}
-        for robot_id in DRIVE_ROBOT_IDS:
-            button = QPushButton(robot_id)
-            button.setObjectName("driveRobotButton")
-            button.setCheckable(True)
-            button.clicked.connect(
-                lambda _checked=False, target_robot_id=robot_id: self.set_robot_id(
-                    target_robot_id
-                )
-            )
-            self.robot_buttons[robot_id] = button
-            self.robot_group.addButton(button)
-            robot_layout.addWidget(button)
-
         (
             self.priority_segment,
             self.priority_group,
@@ -142,15 +121,8 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
             2,
         )
         self.form_grid.addWidget(
-            make_field_group("로봇", self.robot_segment),
-            1,
-            0,
-            1,
-            2,
-        )
-        self.form_grid.addWidget(
             make_field_group("우선순위", self.priority_segment),
-            2,
+            1,
             0,
             1,
             2,
@@ -163,7 +135,7 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
         )
         self.form_grid.addWidget(
             self.notes_field_group,
-            3,
+            2,
             0,
             1,
             2,
@@ -176,10 +148,12 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
 
         self.route_combo.currentIndexChanged.connect(self.emit_preview_changed)
         self.notes_input.textChanged.connect(self.emit_preview_changed)
-        self.set_robot_id(self._robot_id)
         self.set_priority("NORMAL")
 
     def set_drive_routes(self, routes):
+        selected_route_id = str(
+            (self._selected_route() or {}).get("route_id") or ""
+        ).strip()
         self.route_combo.clear()
         enabled_routes = [
             route
@@ -196,11 +170,16 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
 
         self.route_combo.setEnabled(True)
         self.submit_btn.setEnabled(True)
+        selected_index = -1
         for route in enabled_routes:
             route_id = str(route.get("route_id") or "").strip()
             if not route_id:
                 continue
             self.route_combo.addItem(self._build_route_display_name(route), route)
+            if route_id == selected_route_id:
+                selected_index = self.route_combo.count() - 1
+        if selected_index >= 0:
+            self.route_combo.setCurrentIndex(selected_index)
         self.emit_preview_changed()
 
     @staticmethod
@@ -215,16 +194,11 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
         return f"{name} (rev {revision}, {waypoint_count}점)"
 
     def set_robot_id(self, robot_id):
-        normalized = str(robot_id or DRIVE_ROBOT_IDS[0]).strip()
-        if normalized not in self.robot_buttons:
-            normalized = DRIVE_ROBOT_IDS[0]
-
-        self._robot_id = normalized
-        self.robot_buttons[normalized].setChecked(True)
+        _ = robot_id
         self.emit_preview_changed()
 
     def get_robot_id(self):
-        return self._robot_id
+        return None
 
     def set_priority(self, priority_code):
         normalized = str(priority_code or "NORMAL").upper()
@@ -250,6 +224,44 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
             priority=self.get_priority_code(),
             notes=self.notes_input.toPlainText(),
         )
+
+    def refresh_routes(self):
+        self._load_routes()
+
+    def _load_routes(self):
+        if self.routes_load_thread is not None:
+            return
+
+        self.route_combo.clear()
+        self.route_combo.addItem("주행 경로 목록 불러오는 중...")
+        self.route_combo.setEnabled(False)
+        self.submit_btn.setEnabled(False)
+        self.submit_btn.setText("불러오는 중...")
+
+        self.routes_load_thread, self.routes_load_worker = start_worker_thread(
+            self,
+            worker=DriveRoutesLoadWorker(),
+            finished_handler=self._handle_routes_loaded,
+            clear_handler=self._clear_routes_load_thread,
+        )
+
+    def _handle_routes_loaded(self, ok, payload):
+        self.submit_btn.setText("주행 요청 등록")
+        if not ok:
+            self.route_combo.clear()
+            self.route_combo.addItem("주행 경로 불러오기 실패")
+            self.route_combo.setEnabled(False)
+            self.submit_btn.setEnabled(False)
+            self.show_inline_status(f"주행 경로를 불러오지 못했습니다. {payload}", "error")
+            self.emit_preview_changed()
+            return
+
+        self.hide_inline_status()
+        self.set_drive_routes(payload if isinstance(payload, list) else [])
+
+    def _clear_routes_load_thread(self):
+        self.routes_load_thread = None
+        self.routes_load_worker = None
 
     def submit_request(self):
         if self.submit_thread is not None:
@@ -313,7 +325,16 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
             self.submit_thread.wait(self._worker_stop_wait_ms)
         self._clear_submit_thread()
 
+    def _stop_routes_load_thread(self):
+        if self.routes_load_thread is None:
+            return
+        if self.routes_load_thread.isRunning():
+            self.routes_load_thread.quit()
+            self.routes_load_thread.wait(self._worker_stop_wait_ms)
+        self._clear_routes_load_thread()
+
     def closeEvent(self, event):
+        self._stop_routes_load_thread()
         self._stop_submit_thread()
         super().closeEvent(event)
 
@@ -330,7 +351,6 @@ class DriveRequestForm(QWidget, InlineStatusMixin):
 
     def reset_form(self):
         self.route_combo.setCurrentIndex(0)
-        self.set_robot_id(DRIVE_ROBOT_IDS[0])
         self.set_priority("NORMAL")
         self.notes_input.clear()
         self.hide_inline_status()

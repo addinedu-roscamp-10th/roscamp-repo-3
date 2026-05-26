@@ -41,6 +41,12 @@ def _display_unassigned_robot(value):
     return str(value)
 
 
+def _display_auto_robot(value):
+    if value is None or str(value).strip() == "":
+        return "자동 배정"
+    return str(value)
+
+
 def _priority_label(priority_code):
     priority_code = _display(priority_code)
     return PRIORITY_CODE_TO_LABEL.get(priority_code, priority_code)
@@ -136,7 +142,7 @@ class RequestPreviewCard(QFrame):
         self.preview_caregiver_id.setText(_display(preview.get("caregiver_id")))
         self.preview_item.setText(_display(preview.get("route_name")))
         self.preview_quantity.setText(_display(preview.get("route_id")))
-        self.preview_destination.setText(_display(preview.get("robot_id")))
+        self.preview_destination.setText(_display_auto_robot(preview.get("robot_id")))
         self.preview_priority.setText(_priority_label(preview.get("priority")))
 
 
@@ -222,7 +228,7 @@ class RobotStatusCard(QFrame):
         self.robot_destination_label.setText("미수신")
 
     def update_drive(self, preview):
-        self.robot_id_label.setText(_display_unassigned_robot(preview.get("robot_id")))
+        self.robot_id_label.setText(_display_auto_robot(preview.get("robot_id")))
         self.robot_state_label.setText("상태 업데이트 대기")
         self.robot_pose_label.setText("미수신")
         self.robot_destination_label.setText(_display(preview.get("route_id")))

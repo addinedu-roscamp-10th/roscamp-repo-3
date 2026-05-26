@@ -89,6 +89,35 @@ def test_task_request_page_exposes_delivery_patrol_and_drive_tabs(monkeypatch):
         page.close()
 
 
+def test_task_request_page_refreshes_drive_routes_when_drive_tab_opens(monkeypatch):
+    app = _app()
+
+    from ui.utils.pages.caregiver.task_request_page import (
+        DeliveryRequestForm,
+        DriveRequestForm,
+        TaskRequestPage,
+    )
+
+    monkeypatch.setattr(DeliveryRequestForm, "ensure_items_loaded", lambda self: None)
+    refresh_calls = []
+    monkeypatch.setattr(
+        DriveRequestForm,
+        "refresh_routes",
+        lambda self: refresh_calls.append(self),
+        raising=False,
+    )
+
+    page = TaskRequestPage()
+
+    try:
+        page.drive_btn.click()
+        app.processEvents()
+
+        assert refresh_calls == [page.drive_form]
+    finally:
+        page.close()
+
+
 def test_delivery_request_preview_uses_standard_fields_and_no_task_id_before_submit(monkeypatch):
     _app()
 
@@ -333,24 +362,21 @@ def test_drive_request_tab_uses_if_fms_008_fields_and_preview(monkeypatch):
         assert form.route_combo.isEditable() is True
         assert form.route_combo.completer() is not None
         assert form.route_combo.currentText() == "복도 왕복 (rev 4, 2점)"
-
-        robot_buttons = [
-            button.text()
+        assert not [
+            button
             for button in form.findChildren(QPushButton)
             if button.objectName() == "driveRobotButton"
         ]
-        assert robot_buttons == ["pinky1", "pinky3"]
 
-        form.set_robot_id("pinky1")
         form.set_priority("URGENT")
         form.emit_preview_changed()
 
         assert page.preview_caregiver_id.text() == "7"
         assert page.preview_item.text() == "복도 왕복"
         assert page.preview_quantity.text() == "corridor_round_trip"
-        assert page.preview_destination.text() == "pinky1"
+        assert page.preview_destination.text() == "자동 배정"
         assert page.preview_priority.text() == "긴급"
-        assert page.robot_id_label.text() == "pinky1"
+        assert page.robot_id_label.text() == "자동 배정"
         assert page.robot_state_label.text() == "상태 업데이트 대기"
         assert page.robot_destination_text_label.text() == "경로"
         assert page.robot_destination_label.text() == "corridor_round_trip"
@@ -358,7 +384,7 @@ def test_drive_request_tab_uses_if_fms_008_fields_and_preview(monkeypatch):
 
         payload = form._build_create_drive_task_payload(SessionManager.current_user())
         assert payload["caregiver_id"] == 7
-        assert payload["robot_id"] == "pinky1"
+        assert "robot_id" not in payload
         assert payload["route_id"] == "corridor_round_trip"
         assert payload["priority"] == "URGENT"
         assert payload["request_id"].startswith("req_drive_")

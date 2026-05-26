@@ -90,6 +90,8 @@ class DriveTaskCreateRepository:
         async_caregiver_exists=None,
         fetch_route_by_id=None,
         async_fetch_route_by_id=None,
+        select_robot_id=None,
+        async_select_robot_id=None,
     ):
         self.runtime_config = runtime_config or get_drive_runtime_config()
         self.drive_task_repository = drive_task_repository or DriveTaskRepository()
@@ -104,19 +106,22 @@ class DriveTaskCreateRepository:
         self.async_fetch_route_by_id = (
             async_fetch_route_by_id or self._async_fetch_route_by_id
         )
+        self.select_robot_id = select_robot_id or self._select_robot_id
+        self.async_select_robot_id = async_select_robot_id or self._async_select_robot_id
 
     def create_drive_task(
         self,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
-        notes,
-        idempotency_key,
+        robot_id=None,
+        route_id=None,
+        priority=None,
+        notes=None,
+        idempotency_key=None,
     ):
         numeric_caregiver_id = parse_numeric_identifier(caregiver_id)
         normalized_robot_id = str(robot_id or "").strip()
+        is_auto_robot = self._is_auto_robot_id(normalized_robot_id)
         normalized_route_id = str(route_id or "").strip()
         request_hash = self.idempotency_repository.build_request_hash(
             request_id=request_id,
@@ -133,7 +138,10 @@ class DriveTaskCreateRepository:
                 result_message="caregiver_id를 확인할 수 없습니다.",
                 reason_code="REQUESTER_NOT_AUTHORIZED",
             )
-        if not self.runtime_config.is_robot_allowed(normalized_robot_id):
+        if (
+            not is_auto_robot
+            and not self.runtime_config.is_robot_allowed(normalized_robot_id)
+        ):
             return self.build_drive_task_response(
                 result_code="REJECTED",
                 result_message="허용되지 않은 FMS 주행 로봇입니다.",
@@ -169,11 +177,26 @@ class DriveTaskCreateRepository:
                     conn.rollback()
                     return route_response
 
+                assigned_robot_id = normalized_robot_id
+                if is_auto_robot:
+                    assigned_robot_id = self.select_robot_id(cur)
+                    if self._is_blank(assigned_robot_id):
+                        conn.rollback()
+                        return self.build_drive_task_response(
+                            result_code="REJECTED",
+                            result_message="배정 가능한 FMS 주행 로봇이 없습니다.",
+                            reason_code="DRIVE_ROBOT_NOT_AVAILABLE",
+                            route_id=route.get("route_id"),
+                            route_name=route.get("route_name"),
+                            route_revision=route.get("revision"),
+                            map_id=route.get("map_id"),
+                        )
+
                 response = self._create_accepted_drive_task(
                     cur,
                     request_id=request_id,
                     caregiver_id=numeric_caregiver_id,
-                    robot_id=normalized_robot_id,
+                    robot_id=assigned_robot_id,
                     route_id=normalized_route_id,
                     priority=priority,
                     notes=notes,
@@ -201,14 +224,15 @@ class DriveTaskCreateRepository:
         self,
         request_id,
         caregiver_id,
-        robot_id,
-        route_id,
-        priority,
-        notes,
-        idempotency_key,
+        robot_id=None,
+        route_id=None,
+        priority=None,
+        notes=None,
+        idempotency_key=None,
     ):
         numeric_caregiver_id = parse_numeric_identifier(caregiver_id)
         normalized_robot_id = str(robot_id or "").strip()
+        is_auto_robot = self._is_auto_robot_id(normalized_robot_id)
         normalized_route_id = str(route_id or "").strip()
         request_hash = self.idempotency_repository.build_request_hash(
             request_id=request_id,
@@ -225,7 +249,10 @@ class DriveTaskCreateRepository:
                 result_message="caregiver_id를 확인할 수 없습니다.",
                 reason_code="REQUESTER_NOT_AUTHORIZED",
             )
-        if not self.runtime_config.is_robot_allowed(normalized_robot_id):
+        if (
+            not is_auto_robot
+            and not self.runtime_config.is_robot_allowed(normalized_robot_id)
+        ):
             return self.build_drive_task_response(
                 result_code="REJECTED",
                 result_message="허용되지 않은 FMS 주행 로봇입니다.",
@@ -255,11 +282,25 @@ class DriveTaskCreateRepository:
             if route_response is not None:
                 return route_response
 
+            assigned_robot_id = normalized_robot_id
+            if is_auto_robot:
+                assigned_robot_id = await self.async_select_robot_id(cur)
+                if self._is_blank(assigned_robot_id):
+                    return self.build_drive_task_response(
+                        result_code="REJECTED",
+                        result_message="배정 가능한 FMS 주행 로봇이 없습니다.",
+                        reason_code="DRIVE_ROBOT_NOT_AVAILABLE",
+                        route_id=route.get("route_id"),
+                        route_name=route.get("route_name"),
+                        route_revision=route.get("revision"),
+                        map_id=route.get("map_id"),
+                    )
+
             response = await self._async_create_accepted_drive_task(
                 cur,
                 request_id=request_id,
                 caregiver_id=numeric_caregiver_id,
-                robot_id=normalized_robot_id,
+                robot_id=assigned_robot_id,
                 route_id=normalized_route_id,
                 priority=priority,
                 notes=notes,
@@ -406,6 +447,137 @@ class DriveTaskCreateRepository:
 
         return None
 
+    def _select_robot_id(self, cur):
+        allowed_robot_ids = self._allowed_robot_ids()
+        if not allowed_robot_ids:
+            return None
+
+        existing_robot_ids = self._fetch_existing_robot_ids(cur, allowed_robot_ids)
+        if not existing_robot_ids:
+            return None
+
+        active_counts = self._fetch_active_drive_task_counts(cur, allowed_robot_ids)
+        return self._choose_robot_id(
+            allowed_robot_ids=allowed_robot_ids,
+            existing_robot_ids=existing_robot_ids,
+            active_counts=active_counts,
+        )
+
+    async def _async_select_robot_id(self, cur):
+        allowed_robot_ids = self._allowed_robot_ids()
+        if not allowed_robot_ids:
+            return None
+
+        existing_robot_ids = await self._async_fetch_existing_robot_ids(
+            cur,
+            allowed_robot_ids,
+        )
+        if not existing_robot_ids:
+            return None
+
+        active_counts = await self._async_fetch_active_drive_task_counts(
+            cur,
+            allowed_robot_ids,
+        )
+        return self._choose_robot_id(
+            allowed_robot_ids=allowed_robot_ids,
+            existing_robot_ids=existing_robot_ids,
+            active_counts=active_counts,
+        )
+
+    def _allowed_robot_ids(self):
+        return tuple(
+            robot_id
+            for robot_id in (
+                str(robot_id or "").strip()
+                for robot_id in self.runtime_config.robot_ids
+            )
+            if robot_id
+        )
+
+    @staticmethod
+    def _fetch_existing_robot_ids(cur, robot_ids):
+        placeholders = ", ".join(["%s"] * len(robot_ids))
+        cur.execute(
+            f"SELECT robot_id FROM robot WHERE robot_id IN ({placeholders})",
+            robot_ids,
+        )
+        return {
+            str(row.get("robot_id") or "").strip()
+            for row in cur.fetchall()
+            if str(row.get("robot_id") or "").strip()
+        }
+
+    @staticmethod
+    async def _async_fetch_existing_robot_ids(cur, robot_ids):
+        placeholders = ", ".join(["%s"] * len(robot_ids))
+        await cur.execute(
+            f"SELECT robot_id FROM robot WHERE robot_id IN ({placeholders})",
+            robot_ids,
+        )
+        return {
+            str(row.get("robot_id") or "").strip()
+            for row in await cur.fetchall()
+            if str(row.get("robot_id") or "").strip()
+        }
+
+    @staticmethod
+    def _fetch_active_drive_task_counts(cur, robot_ids):
+        placeholders = ", ".join(["%s"] * len(robot_ids))
+        cur.execute(
+            f"""
+            SELECT assigned_robot_id, COUNT(*) AS active_task_count
+            FROM task
+            WHERE task_type = 'DRIVE'
+              AND task_status NOT IN ('COMPLETED', 'CANCELLED', 'FAILED')
+              AND assigned_robot_id IN ({placeholders})
+            GROUP BY assigned_robot_id
+            """,
+            robot_ids,
+        )
+        return {
+            str(row.get("assigned_robot_id") or "").strip(): int(
+                row.get("active_task_count") or 0
+            )
+            for row in cur.fetchall()
+        }
+
+    @staticmethod
+    async def _async_fetch_active_drive_task_counts(cur, robot_ids):
+        placeholders = ", ".join(["%s"] * len(robot_ids))
+        await cur.execute(
+            f"""
+            SELECT assigned_robot_id, COUNT(*) AS active_task_count
+            FROM task
+            WHERE task_type = 'DRIVE'
+              AND task_status NOT IN ('COMPLETED', 'CANCELLED', 'FAILED')
+              AND assigned_robot_id IN ({placeholders})
+            GROUP BY assigned_robot_id
+            """,
+            robot_ids,
+        )
+        return {
+            str(row.get("assigned_robot_id") or "").strip(): int(
+                row.get("active_task_count") or 0
+            )
+            for row in await cur.fetchall()
+        }
+
+    @staticmethod
+    def _choose_robot_id(*, allowed_robot_ids, existing_robot_ids, active_counts):
+        candidates = [
+            robot_id for robot_id in allowed_robot_ids if robot_id in existing_robot_ids
+        ]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda robot_id: (
+                active_counts.get(robot_id, 0),
+                allowed_robot_ids.index(robot_id),
+            ),
+        )
+
     @staticmethod
     def _caregiver_exists(cur, caregiver_id) -> bool:
         cur.execute(load_sql("task_request/caregiver_exists.sql"), (caregiver_id,))
@@ -465,6 +637,15 @@ class DriveTaskCreateRepository:
     def _begin(conn):
         if hasattr(conn, "begin"):
             conn.begin()
+
+    @staticmethod
+    def _is_blank(value) -> bool:
+        return not str(value or "").strip()
+
+    @classmethod
+    def _is_auto_robot_id(cls, value) -> bool:
+        normalized = str(value or "").strip()
+        return cls._is_blank(normalized) or normalized.upper() == "AUTO"
 
     @staticmethod
     def build_drive_task_response(
