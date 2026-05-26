@@ -8,8 +8,8 @@ from server.ropi_main_service.application.drive_config import get_drive_runtime_
 from server.ropi_main_service.application.fms_runtime import FmsRuntimeService
 from server.ropi_main_service.application.goal_pose_navigation import (
     DEFAULT_FRAME_ID,
-    GoalPoseNavigationService,
 )
+from server.ropi_main_service.application.nav2_navigation import Nav2PoseNavigationService
 from server.ropi_main_service.application.task_request import TaskRequestService
 from server.ropi_main_service.application.workflow_task_manager import (
     get_default_workflow_task_manager,
@@ -37,11 +37,14 @@ class DriveOrchestrator:
     def __init__(
         self,
         *,
+        nav2_navigation_service=None,
         goal_pose_navigation_service=None,
         drive_navigation_timeout_sec=DEFAULT_DRIVE_NAVIGATION_TIMEOUT_SEC,
     ):
-        self.goal_pose_navigation_service = (
-            goal_pose_navigation_service or GoalPoseNavigationService()
+        self.navigation_service = (
+            nav2_navigation_service
+            or goal_pose_navigation_service
+            or Nav2PoseNavigationService()
         )
         self.drive_navigation_timeout_sec = int(drive_navigation_timeout_sec)
 
@@ -57,7 +60,7 @@ class DriveOrchestrator:
                     "pose": pose_stamped["pose"],
                 },
                 timeout_sec=self.drive_navigation_timeout_sec,
-                pinky_id=robot_id,
+                robot_id=robot_id,
             )
             if not self._is_success(response):
                 return self._failed_navigation_response(response)
@@ -70,14 +73,14 @@ class DriveOrchestrator:
 
     async def _async_navigate(self, **kwargs):
         async_navigate = getattr(
-            self.goal_pose_navigation_service,
+            self.navigation_service,
             "async_navigate",
             None,
         )
         if async_navigate is not None:
             return await async_navigate(**kwargs)
         return await asyncio.to_thread(
-            self.goal_pose_navigation_service.navigate,
+            self.navigation_service.navigate,
             **kwargs,
         )
 

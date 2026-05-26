@@ -340,7 +340,7 @@ def test_drive_orchestrator_sends_namespaced_goal_for_each_route_waypoint():
     async def _run():
         navigation = FakeNavigationService()
         orchestrator = DriveOrchestrator(
-            goal_pose_navigation_service=navigation,
+            nav2_navigation_service=navigation,
             drive_navigation_timeout_sec=42,
         )
 
@@ -351,7 +351,7 @@ def test_drive_orchestrator_sends_namespaced_goal_for_each_route_waypoint():
         )
 
         assert response["result_code"] == "SUCCESS"
-        assert [call["pinky_id"] for call in navigation.calls] == ["pinky3", "pinky3"]
+        assert [call["robot_id"] for call in navigation.calls] == ["pinky3", "pinky3"]
         assert [call["nav_phase"] for call in navigation.calls] == [
             "DRIVE_WAYPOINT_1",
             "DRIVE_WAYPOINT_2",
@@ -360,3 +360,13 @@ def test_drive_orchestrator_sends_namespaced_goal_for_each_route_waypoint():
         assert navigation.calls[1]["goal_pose"]["pose"]["position"]["x"] == 1.0
 
     asyncio.run(_run())
+
+
+def test_drive_orchestrator_defaults_to_nav2_navigation_service():
+    from server.ropi_main_service.application.nav2_navigation import (
+        Nav2PoseNavigationService,
+    )
+
+    orchestrator = DriveOrchestrator()
+
+    assert isinstance(orchestrator.navigation_service, Nav2PoseNavigationService)

@@ -78,6 +78,10 @@ ACTION_CLIENT_SPECS = (
         required=True,
     ),
     ActionClientSpec(
+        client_attr="nav2_navigate_to_pose_action_client",
+        client_name="nav2_navigation",
+    ),
+    ActionClientSpec(
         client_attr="manipulation_action_client",
         client_name="manipulation",
     ),
@@ -109,6 +113,18 @@ ACTION_COMMAND_SPECS = {
         identifier_error_message="navigate_to_goal command requires pinky_id.",
         action_name_template="/ropi/control/{identifier}/navigate_to_goal",
         timeout_strategy="navigation",
+    ),
+    "navigate_to_pose": ActionCommandSpec(
+        client_attr="nav2_navigate_to_pose_action_client",
+        identifier_field="robot_id",
+        identifier_error_code="ROBOT_ID_REQUIRED",
+        identifier_error_message="navigate_to_pose command requires robot_id.",
+        action_name_template="/{identifier}/navigate_to_pose",
+        timeout_strategy="navigation",
+        missing_client_error_code="NAV2_NAVIGATION_SERVICE_UNAVAILABLE",
+        missing_client_error_message=(
+            "navigate_to_pose command requires Nav2 NavigateToPose action client."
+        ),
     ),
     "execute_manipulation": ActionCommandSpec(
         client_attr="manipulation_action_client",
@@ -165,6 +181,7 @@ class RosServiceCommandDispatcher:
         self,
         *,
         goal_pose_action_client,
+        nav2_navigate_to_pose_action_client=None,
         manipulation_action_client=None,
         patrol_path_action_client=None,
         fall_response_control_client=None,
@@ -175,6 +192,7 @@ class RosServiceCommandDispatcher:
         manipulation_result_wait_timeout_sec=None,
     ):
         self.goal_pose_action_client = goal_pose_action_client
+        self.nav2_navigate_to_pose_action_client = nav2_navigate_to_pose_action_client
         self.manipulation_action_client = manipulation_action_client
         self.patrol_path_action_client = patrol_path_action_client
         self.fall_response_control_client = fall_response_control_client

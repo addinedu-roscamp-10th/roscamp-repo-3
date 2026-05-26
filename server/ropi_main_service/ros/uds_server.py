@@ -25,6 +25,7 @@ class RosServiceUdsServer:
         *,
         socket_path: str | None = None,
         goal_pose_action_client,
+        nav2_navigate_to_pose_action_client=None,
         manipulation_action_client=None,
         patrol_path_action_client=None,
         fall_response_control_client=None,
@@ -37,6 +38,7 @@ class RosServiceUdsServer:
         self.socket_path = socket_path or ipc_config["socket_path"]
         self.dispatcher = RosServiceCommandDispatcher(
             goal_pose_action_client=goal_pose_action_client,
+            nav2_navigate_to_pose_action_client=nav2_navigate_to_pose_action_client,
             manipulation_action_client=manipulation_action_client,
             patrol_path_action_client=patrol_path_action_client,
             fall_response_control_client=fall_response_control_client,

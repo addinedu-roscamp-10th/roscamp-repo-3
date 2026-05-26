@@ -9,6 +9,7 @@ from server.ropi_main_service.ros.command_dispatcher import (
 def test_action_command_specs_define_ros_action_contracts():
     assert set(ACTION_COMMAND_SPECS) == {
         "navigate_to_goal",
+        "navigate_to_pose",
         "execute_manipulation",
         "execute_patrol_path",
     }
@@ -18,6 +19,12 @@ def test_action_command_specs_define_ros_action_contracts():
     assert navigation.identifier_field == "pinky_id"
     assert navigation.action_name_template == "/ropi/control/{identifier}/navigate_to_goal"
     assert navigation.timeout_strategy == "navigation"
+
+    nav2_navigation = ACTION_COMMAND_SPECS["navigate_to_pose"]
+    assert nav2_navigation.client_attr == "nav2_navigate_to_pose_action_client"
+    assert nav2_navigation.identifier_field == "robot_id"
+    assert nav2_navigation.action_name_template == "/{identifier}/navigate_to_pose"
+    assert nav2_navigation.timeout_strategy == "navigation"
 
     manipulation = ACTION_COMMAND_SPECS["execute_manipulation"]
     assert manipulation.client_attr == "manipulation_action_client"
@@ -54,16 +61,19 @@ def test_service_command_specs_define_ros_service_contracts():
 def test_action_client_specs_define_cancel_and_feedback_client_order():
     assert [spec.client_name for spec in ACTION_CLIENT_SPECS] == [
         "navigation",
+        "nav2_navigation",
         "manipulation",
         "patrol",
     ]
     assert [spec.client_attr for spec in ACTION_CLIENT_SPECS] == [
         "goal_pose_action_client",
+        "nav2_navigate_to_pose_action_client",
         "manipulation_action_client",
         "patrol_path_action_client",
     ]
     assert [spec.required for spec in ACTION_CLIENT_SPECS] == [
         True,
+        False,
         False,
         False,
     ]

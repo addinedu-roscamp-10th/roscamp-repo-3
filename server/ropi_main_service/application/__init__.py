@@ -38,6 +38,7 @@ _EXPORTS = {
         "manipulation_command",
         "ManipulationCommandService",
     ),
+    "Nav2PoseNavigationService": ("nav2_navigation", "Nav2PoseNavigationService"),
     "PatientService": ("patient", "PatientService"),
     "PatrolResumeService": ("patrol_resume", "PatrolResumeService"),
     "PatrolTaskCreateService": ("patrol_task_create", "PatrolTaskCreateService"),

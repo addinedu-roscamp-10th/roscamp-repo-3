@@ -9,6 +9,9 @@ from server.ropi_main_service.ros.guide_command_client import RclpyGuideCommandC
 from server.ropi_main_service.ros.goal_pose_action_client import RclpyGoalPoseActionClient
 from server.ropi_main_service.ros.fall_response_control_client import RclpyFallResponseControlClient
 from server.ropi_main_service.ros.manipulation_action_client import RclpyManipulationActionClient
+from server.ropi_main_service.ros.nav2_navigate_to_pose_action_client import (
+    RclpyNav2NavigateToPoseActionClient,
+)
 from server.ropi_main_service.ros.patrol_path_action_client import RclpyPatrolPathActionClient
 from server.ropi_main_service.ros.uds_server import RosServiceUdsServer
 from server.ropi_main_service.persistence.background_db_writer import (
@@ -32,6 +35,7 @@ async def _run_ros_service(node_name: str):
     executor.add_node(node)
 
     goal_pose_action_client = RclpyGoalPoseActionClient(node=node)
+    nav2_navigate_to_pose_action_client = RclpyNav2NavigateToPoseActionClient(node=node)
     manipulation_action_client = RclpyManipulationActionClient(node=node)
     patrol_path_action_client = RclpyPatrolPathActionClient(node=node)
     fall_response_control_client = RclpyFallResponseControlClient(node=node)
@@ -39,13 +43,14 @@ async def _run_ros_service(node_name: str):
     guide_runtime_subscriber = _build_guide_runtime_subscriber(node)
     db_writer = get_default_background_db_writer()
     db_writer.start()
-    status_runtime_subscriber = _build_status_runtime_subscriber(
+    _status_runtime_subscriber = _build_status_runtime_subscriber(
         node,
         loop=asyncio.get_running_loop(),
         db_writer=db_writer,
     )
     uds_server = RosServiceUdsServer(
         goal_pose_action_client=goal_pose_action_client,
+        nav2_navigate_to_pose_action_client=nav2_navigate_to_pose_action_client,
         manipulation_action_client=manipulation_action_client,
         patrol_path_action_client=patrol_path_action_client,
         fall_response_control_client=fall_response_control_client,

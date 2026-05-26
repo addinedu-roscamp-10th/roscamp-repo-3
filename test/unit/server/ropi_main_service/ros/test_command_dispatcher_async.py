@@ -61,6 +61,10 @@ class FakeAsyncGoalPoseActionClient(FakeAsyncActionClient):
     pass
 
 
+class FakeAsyncNav2ActionClient(FakeAsyncActionClient):
+    pass
+
+
 class FakeAsyncPatrolActionClient(FakeAsyncActionClient):
     async def async_send_goal(self, **kwargs):
         self.goal_calls.append(kwargs)
@@ -187,6 +191,49 @@ def test_async_dispatch_prefers_async_goal_pose_action_client():
             "goal": {
                 "task_id": "task_delivery_001",
                 "nav_phase": "DELIVERY_DESTINATION",
+                "timeout_sec": 120,
+            },
+            "result_wait_timeout_sec": 125.0,
+        }
+    ]
+
+
+def test_async_dispatch_routes_nav2_navigate_to_pose_to_robot_namespace():
+    nav2_client = FakeAsyncNav2ActionClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        nav2_navigate_to_pose_action_client=nav2_client,
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "navigate_to_pose",
+                {
+                    "robot_id": "pinky1",
+                    "goal": {
+                        "task_id": "3001",
+                        "nav_phase": "DRIVE_WAYPOINT_1",
+                        "pose": {"header": {"frame_id": "map"}, "pose": {}},
+                        "behavior_tree": "",
+                        "timeout_sec": 120,
+                    },
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["result_code"] == "SUCCESS"
+    assert nav2_client.goal_calls == [
+        {
+            "action_name": "/pinky1/navigate_to_pose",
+            "goal": {
+                "task_id": "3001",
+                "nav_phase": "DRIVE_WAYPOINT_1",
+                "pose": {"header": {"frame_id": "map"}, "pose": {}},
+                "behavior_tree": "",
                 "timeout_sec": 120,
             },
             "result_wait_timeout_sec": 125.0,
