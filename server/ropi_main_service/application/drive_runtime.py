@@ -27,6 +27,7 @@ from server.ropi_main_service.persistence.repositories.task_request_repository i
 
 DEFAULT_DRIVE_NAVIGATION_TIMEOUT_SEC = 120
 DEFAULT_FMS_RESERVATION_LEASE_SEC = 30
+DEFAULT_FAILED_FMS_RESERVATION_LEASE_SEC = 300
 DEFAULT_FMS_RESERVATION_RETRY_INTERVAL_SEC = 1.0
 DEFAULT_FMS_RESERVATION_RENEW_INTERVAL_SEC = 10.0
 WAITING_FMS_RESERVATION_PHASE = "WAITING_FMS_RESERVATION"
@@ -447,12 +448,29 @@ def build_drive_request_service(
                 reservation_renew_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await reservation_renew_task
-                await _release_fms_reservation(
-                    fms_runtime_service=fms_runtime_service,
-                    task_id=task_id,
-                    robot_id=snapshot["assigned_robot_id"],
-                    reason_code=release_reason,
-                )
+                if release_reason == "FAILED":
+                    try:
+                        await _renew_fms_reservation(
+                            fms_runtime_service=fms_runtime_service,
+                            task_id=task_id,
+                            robot_id=snapshot["assigned_robot_id"],
+                            lease_sec=DEFAULT_FAILED_FMS_RESERVATION_LEASE_SEC,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "failed drive fms reservation recovery renewal failed",
+                            extra={
+                                "task_id": task_id,
+                                "robot_id": snapshot["assigned_robot_id"],
+                            },
+                        )
+                else:
+                    await _release_fms_reservation(
+                        fms_runtime_service=fms_runtime_service,
+                        task_id=task_id,
+                        robot_id=snapshot["assigned_robot_id"],
+                        reason_code=release_reason,
+                    )
 
         async def _record_workflow_result(*, task_id, workflow_response):
             try:
@@ -729,11 +747,12 @@ async def _renew_fms_reservation(
     fms_runtime_service,
     task_id,
     robot_id,
+    lease_sec=DEFAULT_FMS_RESERVATION_LEASE_SEC,
 ):
     kwargs = {
         "task_id": int(task_id),
         "robot_id": robot_id,
-        "lease_sec": DEFAULT_FMS_RESERVATION_LEASE_SEC,
+        "lease_sec": lease_sec,
     }
     async_renew = getattr(fms_runtime_service, "async_renew_reservation", None)
     if async_renew is not None:

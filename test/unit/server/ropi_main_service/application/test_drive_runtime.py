@@ -1,6 +1,7 @@
 import asyncio
 
 from server.ropi_main_service.application.drive_runtime import (
+    DEFAULT_FAILED_FMS_RESERVATION_LEASE_SEC,
     DriveOrchestrator,
     build_drive_request_service,
 )
@@ -588,6 +589,72 @@ def test_drive_runtime_stops_waiting_retry_when_task_is_cancel_requested():
         assert fms_runtime.released == []
         assert execution_repository.results[0]["workflow_response"]["result_code"] == (
             "CANCELLED"
+        )
+
+    asyncio.run(_run())
+
+
+def test_drive_runtime_keeps_reservation_held_for_recovery_after_nav2_failure():
+    class FailingAfterFirstSegmentOrchestrator:
+        def __init__(self, *, events):
+            self.events = events
+            self.calls = []
+
+        async def async_run(self, **kwargs):
+            self.calls.append(kwargs)
+            before_waypoint = kwargs.get("before_waypoint")
+            if before_waypoint is not None:
+                before_response = await before_waypoint(
+                    sequence_no=1,
+                    waypoint_index=1,
+                    pose_stamped={"sequence_no": 1},
+                )
+                if before_response is not None:
+                    return before_response
+            self.events.append("navigate_1")
+            return {
+                "result_code": "FAILED",
+                "result_message": "Nav2 goal failed.",
+                "reason_code": "DRIVE_NAVIGATION_FAILED",
+            }
+
+    async def _run():
+        events = []
+        manager = FakeWorkflowTaskManager()
+        execution_repository = FakeDriveExecutionRepository(
+            events=events,
+            snapshot=_snapshot(),
+        )
+        fms_runtime = FakeFmsRuntime(events=events)
+        drive_orchestrator = FailingAfterFirstSegmentOrchestrator(events=events)
+        service = build_drive_request_service(
+            loop=asyncio.get_running_loop(),
+            workflow_task_manager=manager,
+            task_request_repository=FakeTaskRequestRepository(),
+            drive_execution_repository=execution_repository,
+            fms_runtime_service=fms_runtime,
+            drive_orchestrator=drive_orchestrator,
+        )
+
+        await service.async_create_drive_task(**_drive_payload())
+        await asyncio.gather(*manager.tasks)
+
+        assert events == [
+            "snapshot",
+            "reserve",
+            "started",
+            "navigate_1",
+            "renew",
+            "result",
+        ]
+        assert fms_runtime.released == []
+        assert fms_runtime.renewed[-1] == {
+            "task_id": 3001,
+            "robot_id": "pinky1",
+            "lease_sec": DEFAULT_FAILED_FMS_RESERVATION_LEASE_SEC,
+        }
+        assert execution_repository.results[0]["workflow_response"]["result_code"] == (
+            "FAILED"
         )
 
     asyncio.run(_run())
