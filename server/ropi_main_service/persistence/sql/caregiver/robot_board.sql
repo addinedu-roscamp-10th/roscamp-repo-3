@@ -9,15 +9,15 @@ SELECT
     END AS current_location,
     COALESCE(rrs.runtime_state, r.robot_status_name) AS robot_status,
     rrs.battery_percent,
-    t.map_id AS current_pose_map_id,
+    current_task.map_id AS current_pose_map_id,
     rrs.pose_x,
     rrs.pose_y,
     rrs.pose_yaw,
     rrs.frame_id,
-    t.task_id AS current_task_id,
-    t.task_type AS current_task_type,
-    t.phase AS current_task_phase,
-    t.task_status AS current_task_status,
+    current_task.task_id AS current_task_id,
+    current_task.task_type AS current_task_type,
+    current_task.phase AS current_task_phase,
+    current_task.task_status AS current_task_status,
     d.route_id AS drive_route_id,
     fr.route_name AS drive_route_name,
     d.route_revision AS drive_route_revision,
@@ -35,11 +35,69 @@ SELECT
 FROM robot r
 LEFT JOIN robot_runtime_status rrs
   ON r.robot_id = rrs.robot_id
-LEFT JOIN task t
-  ON rrs.active_task_id = t.task_id
+LEFT JOIN task runtime_task
+  ON rrs.active_task_id = runtime_task.task_id
+LEFT JOIN task assigned_drive_task
+  ON assigned_drive_task.task_id = (
+      SELECT active_drive.task_id
+      FROM task active_drive
+      WHERE active_drive.assigned_robot_id = r.robot_id
+        AND active_drive.task_type = 'DRIVE'
+        AND active_drive.task_status IN (
+            'WAITING',
+            'WAITING_DISPATCH',
+            'READY',
+            'ASSIGNED',
+            'RUNNING',
+            'CANCEL_REQUESTED',
+            'CANCELLING',
+            'PREEMPTING'
+        )
+      ORDER BY
+        CASE active_drive.task_status
+            WHEN 'RUNNING' THEN 0
+            WHEN 'WAITING_DISPATCH' THEN 1
+            WHEN 'ASSIGNED' THEN 2
+            WHEN 'READY' THEN 3
+            WHEN 'WAITING' THEN 4
+            WHEN 'CANCEL_REQUESTED' THEN 5
+            WHEN 'CANCELLING' THEN 6
+            WHEN 'PREEMPTING' THEN 7
+            ELSE 8
+        END,
+        active_drive.updated_at DESC,
+        active_drive.task_id DESC
+      LIMIT 1
+  )
+LEFT JOIN task current_task
+  ON current_task.task_id = COALESCE(
+      CASE
+        WHEN runtime_task.task_status IN (
+            'WAITING',
+            'WAITING_DISPATCH',
+            'READY',
+            'ASSIGNED',
+            'RUNNING',
+            'CANCEL_REQUESTED',
+            'CANCELLING',
+            'PREEMPTING'
+        )
+        AND runtime_task.task_type = 'DRIVE'
+        THEN runtime_task.task_id
+        ELSE NULL
+      END,
+      assigned_drive_task.task_id,
+      runtime_task.task_id
+  )
 LEFT JOIN drive_task_detail d
-  ON d.task_id = t.task_id
- AND t.task_type = 'DRIVE'
+  ON d.task_id = COALESCE(
+      CASE
+        WHEN current_task.task_type = 'DRIVE'
+        THEN current_task.task_id
+        ELSE NULL
+      END,
+      assigned_drive_task.task_id
+  )
 LEFT JOIN fms_route fr
   ON fr.route_id = d.route_id
 ORDER BY r.robot_id

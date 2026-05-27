@@ -133,6 +133,17 @@ def test_caregiver_repository_uses_task_and_runtime_status_tables():
     assert "event_type" in source
 
 
+def test_caregiver_robot_board_uses_assigned_drive_task_fallback_for_route_overlay():
+    source = _sql_source("caregiver/robot_board.sql")
+
+    assert "assigned_drive_task" in source
+    assert "active_drive.task_type = 'DRIVE'" in source
+    assert "active_drive.assigned_robot_id = r.robot_id" in source
+    assert "runtime_task.task_type = 'DRIVE'" in source
+    assert "drive_task_detail d" in source
+    assert "assigned_drive_task.task_id" in source
+
+
 def test_fms_waypoint_schema_is_available_for_config_repository():
     init_sql = (REPO_ROOT / "server" / "ropi_db" / "init_tables.sql").read_text(
         encoding="utf-8"
