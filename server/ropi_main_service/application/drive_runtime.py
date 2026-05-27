@@ -35,6 +35,7 @@ CANCEL_REQUESTED_PHASE = "CANCEL_REQUESTED"
 CANCELLED_PHASE = "CANCELLED"
 
 _DEFAULT_TASK_REQUEST_REPOSITORY = TaskRequestRepository
+_DEFAULT_DRIVE_ROBOT_READINESS_SERVICE = object()
 logger = logging.getLogger(__name__)
 
 
@@ -246,6 +247,7 @@ def build_drive_request_service(
     fms_runtime_service=None,
     drive_orchestrator=None,
     task_update_publisher=None,
+    drive_robot_readiness_service=_DEFAULT_DRIVE_ROBOT_READINESS_SERVICE,
     fms_reservation_retry_interval_sec=DEFAULT_FMS_RESERVATION_RETRY_INTERVAL_SEC,
     fms_reservation_retry_max_attempts=None,
     fms_reservation_renew_interval_sec=DEFAULT_FMS_RESERVATION_RENEW_INTERVAL_SEC,
@@ -302,6 +304,15 @@ def build_drive_request_service(
                 publish_waiting_update=_publish_workflow_task_update,
             )
             if first_segment_response is not None:
+                if first_segment_response.get("terminal", True):
+                    await _release_fms_reservation(
+                        fms_runtime_service=fms_runtime_service,
+                        task_id=task_id,
+                        robot_id=snapshot["assigned_robot_id"],
+                        reason_code=_release_reason_for_workflow(
+                            first_segment_response
+                        ),
+                    )
                 return first_segment_response
             held_segment_sequences.add(segments[0]["sequence_no"])
 
@@ -561,10 +572,15 @@ def build_drive_request_service(
 
         drive_workflow_starter = _start_drive_workflow
 
-    return TaskRequestService(
+    service = TaskRequestService(
         repository=task_request_repository,
         drive_workflow_starter=drive_workflow_starter,
     )
+    if drive_robot_readiness_service is not _DEFAULT_DRIVE_ROBOT_READINESS_SERVICE:
+        service.drive_create_service.drive_robot_readiness_service = (
+            drive_robot_readiness_service
+        )
+    return service
 
 
 async def _request_fms_reservation(*, fms_runtime_service, snapshot, resources=None):

@@ -8,6 +8,9 @@ from server.ropi_main_service.observability import configure_logging
 from server.ropi_main_service.ros.guide_command_client import RclpyGuideCommandClient
 from server.ropi_main_service.ros.goal_pose_action_client import RclpyGoalPoseActionClient
 from server.ropi_main_service.ros.initial_pose_publisher import InitialPosePublisher
+from server.ropi_main_service.ros.lifecycle_state_client import (
+    RclpyLifecycleStateClient,
+)
 from server.ropi_main_service.ros.fall_response_control_client import RclpyFallResponseControlClient
 from server.ropi_main_service.ros.manipulation_action_client import RclpyManipulationActionClient
 from server.ropi_main_service.ros.nav2_navigate_to_pose_action_client import (
@@ -42,6 +45,7 @@ async def _run_ros_service(node_name: str):
     fall_response_control_client = RclpyFallResponseControlClient(node=node)
     guide_command_client = RclpyGuideCommandClient(node=node)
     initial_pose_publisher = InitialPosePublisher(node=node)
+    lifecycle_state_client = RclpyLifecycleStateClient(node=node)
     guide_runtime_subscriber = _build_guide_runtime_subscriber(node)
     db_writer = get_default_background_db_writer()
     db_writer.start()
@@ -59,6 +63,7 @@ async def _run_ros_service(node_name: str):
         guide_command_client=guide_command_client,
         guide_runtime_subscriber=guide_runtime_subscriber,
         initial_pose_publisher=initial_pose_publisher,
+        lifecycle_state_client=lifecycle_state_client,
     )
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()

@@ -8,7 +8,13 @@ FIND_RESERVATION_SQL = load_sql("fms_reservation/find_reservation.sql")
 FIND_ACTIVE_RESOURCE_RESERVATION_FOR_UPDATE_SQL = load_sql(
     "fms_reservation/find_active_resource_reservation_for_update.sql"
 )
+FIND_TASK_RESOURCE_RESERVATION_FOR_UPDATE_SQL = load_sql(
+    "fms_reservation/find_task_resource_reservation_for_update.sql"
+)
 INSERT_RESERVATION_SQL = load_sql("fms_reservation/insert_reservation.sql")
+PROMOTE_WAITING_RESERVATION_SQL = load_sql(
+    "fms_reservation/promote_waiting_reservation.sql"
+)
 LIST_ACTIVE_RESERVATIONS_SQL = load_sql(
     "fms_reservation/list_active_reservations.sql"
 )
@@ -61,6 +67,7 @@ class FmsReservationRepository:
             conn.begin()
             with conn.cursor() as cur:
                 held_rows = {}
+                task_resource_rows = {}
                 has_conflict = False
                 for resource in normalized_resources:
                     cur.execute(
@@ -79,6 +86,21 @@ class FmsReservationRepository:
                         continue
                     has_conflict = True
 
+                for resource in normalized_resources:
+                    if resource["key"] in held_rows:
+                        continue
+                    if resource["key"] in task_resource_rows:
+                        continue
+                    task_resource = self._find_task_resource_reservation(
+                        cur,
+                        task_id=task_id,
+                        robot_id=robot_id,
+                        map_id=map_id,
+                        resource=resource,
+                    )
+                    if task_resource is not None:
+                        task_resource_rows[resource["key"]] = task_resource
+
                 reservation_status = "WAITING" if has_conflict else "HELD"
                 reason_code = (
                     "FMS_RESOURCE_ALREADY_HELD" if reservation_status == "WAITING" else None
@@ -87,6 +109,20 @@ class FmsReservationRepository:
                 for resource in normalized_resources:
                     existing = held_rows.get(resource["key"])
                     if existing is not None:
+                        reservations.append(existing)
+                        continue
+
+                    existing = task_resource_rows.get(resource["key"])
+                    if existing is not None:
+                        if (
+                            reservation_status == "HELD"
+                            and existing.get("reservation_status") != "HELD"
+                        ):
+                            existing = self._promote_waiting_reservation(
+                                cur,
+                                reservation_id=existing["reservation_id"],
+                                lease_sec=lease_sec,
+                            )
                         reservations.append(existing)
                         continue
 
@@ -114,6 +150,32 @@ class FmsReservationRepository:
             raise
         finally:
             conn.close()
+
+    def _find_task_resource_reservation(
+        self,
+        cur,
+        *,
+        task_id,
+        robot_id,
+        map_id,
+        resource,
+    ):
+        cur.execute(
+            FIND_TASK_RESOURCE_RESERVATION_FOR_UPDATE_SQL,
+            (
+                int(task_id),
+                str(robot_id),
+                str(map_id),
+                resource["resource_type"],
+                resource["resource_id"],
+            ),
+        )
+        return cur.fetchone()
+
+    def _promote_waiting_reservation(self, cur, *, reservation_id, lease_sec):
+        cur.execute(PROMOTE_WAITING_RESERVATION_SQL, (lease_sec, reservation_id))
+        cur.execute(FIND_RESERVATION_SQL, (reservation_id,))
+        return cur.fetchone()
 
     def release_reservation(
         self,

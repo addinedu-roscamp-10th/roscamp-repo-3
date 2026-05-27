@@ -79,6 +79,7 @@ def test_create_drive_task_validates_and_starts_workflow_after_acceptance():
     service = DriveTaskCreateService(
         repository=repository,
         drive_workflow_starter=workflow_starter,
+        drive_robot_readiness_service=FakeDriveRobotReadinessService(),
     )
 
     response = service.create_drive_task(**build_drive_payload())
@@ -103,6 +104,7 @@ def test_async_create_drive_task_uses_async_repository_and_starts_workflow():
     service = DriveTaskCreateService(
         repository=repository,
         drive_workflow_starter=workflow_starter,
+        drive_robot_readiness_service=FakeDriveRobotReadinessService(),
     )
 
     response = asyncio.run(service.async_create_drive_task(**build_drive_payload()))
@@ -130,6 +132,7 @@ def test_create_drive_task_accepts_explicit_allowed_robot_namespace():
     service = DriveTaskCreateService(
         repository=repository,
         runtime_config=DriveRuntimeConfig(robot_ids=("pinky1", "pinky3")),
+        drive_robot_readiness_service=FakeDriveRobotReadinessService(),
     )
 
     payload = build_drive_payload()

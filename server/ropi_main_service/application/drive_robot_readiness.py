@@ -99,6 +99,7 @@ class DriveRobotReadinessService:
             "arm_ids": [],
             "include_navigation": False,
             "include_nav2_navigation": True,
+            "include_nav2_lifecycle": True,
         }
 
     @staticmethod
@@ -108,6 +109,9 @@ class DriveRobotReadinessService:
             return False
         expected_action_name = f"/{robot_id}/navigate_to_pose"
         expected_check_name = f"{robot_id}.navigate_to_pose"
+        lifecycle_check_prefix = f"{robot_id}.nav2_lifecycle."
+        action_ready = False
+        lifecycle_checks = []
         for check in checks:
             if not isinstance(check, dict):
                 continue
@@ -115,8 +119,13 @@ class DriveRobotReadinessService:
                 check.get("action_name") == expected_action_name
                 or check.get("name") == expected_check_name
             ):
-                return check.get("ready") is True
-        return False
+                action_ready = check.get("ready") is True
+                continue
+            if str(check.get("name") or "").startswith(lifecycle_check_prefix):
+                lifecycle_checks.append(check)
+        if not action_ready:
+            return False
+        return all(check.get("ready") is True for check in lifecycle_checks)
 
 
 __all__ = [

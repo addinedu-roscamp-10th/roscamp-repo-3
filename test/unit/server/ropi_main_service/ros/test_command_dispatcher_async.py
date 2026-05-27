@@ -144,6 +144,21 @@ class FakeAsyncGuideCommandClient:
         }
 
 
+class FakeAsyncLifecycleStateClient:
+    def __init__(self, states):
+        self.states = dict(states)
+        self.calls = []
+
+    async def async_get_state(self, *, node_name, timeout_sec):
+        self.calls.append(
+            {
+                "node_name": node_name,
+                "timeout_sec": timeout_sec,
+            }
+        )
+        return self.states.get(node_name)
+
+
 class FakeGuidePhaseSnapshotView:
     pinky_id = "pinky1"
     task_id = "3001"
@@ -711,6 +726,98 @@ def test_async_dispatch_runtime_status_can_check_namespaced_nav2_navigation():
             "ready": True,
             "action_name": "/pinky3/navigate_to_pose",
         }
+    ]
+
+
+def test_async_dispatch_runtime_status_requires_active_nav2_lifecycle_nodes():
+    nav2_client = FakeAsyncNav2ActionClient()
+    lifecycle_client = FakeAsyncLifecycleStateClient(
+        {
+            "/pinky1/bt_navigator": {"label": "active", "id": 3},
+            "/pinky1/planner_server": {"label": "inactive", "id": 2},
+            "/pinky1/controller_server": {"label": "active", "id": 3},
+            "/pinky1/map_server": {"label": "active", "id": 3},
+            "/pinky1/amcl": {"label": "active", "id": 3},
+        }
+    )
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=FakeAsyncGoalPoseActionClient(),
+        nav2_navigate_to_pose_action_client=nav2_client,
+        lifecycle_state_client=lifecycle_client,
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "get_runtime_status",
+                {
+                    "pinky_id": "pinky1",
+                    "include_navigation": False,
+                    "include_nav2_navigation": True,
+                    "include_nav2_lifecycle": True,
+                    "arm_ids": [],
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["ready"] is False
+    assert nav2_client.ready_calls == [
+        {
+            "action_name": "/pinky1/navigate_to_pose",
+            "wait_timeout_sec": 0.0,
+        }
+    ]
+    assert lifecycle_client.calls == [
+        {"node_name": "/pinky1/bt_navigator", "timeout_sec": 0.15},
+        {"node_name": "/pinky1/planner_server", "timeout_sec": 0.15},
+        {"node_name": "/pinky1/controller_server", "timeout_sec": 0.15},
+        {"node_name": "/pinky1/map_server", "timeout_sec": 0.15},
+        {"node_name": "/pinky1/amcl", "timeout_sec": 0.15},
+    ]
+    assert response["checks"][1:] == [
+        {
+            "name": "pinky1.nav2_lifecycle.bt_navigator",
+            "ready": True,
+            "node_name": "/pinky1/bt_navigator",
+            "expected_state": "active",
+            "state_label": "active",
+            "state_id": 3,
+        },
+        {
+            "name": "pinky1.nav2_lifecycle.planner_server",
+            "ready": False,
+            "node_name": "/pinky1/planner_server",
+            "expected_state": "active",
+            "state_label": "inactive",
+            "state_id": 2,
+        },
+        {
+            "name": "pinky1.nav2_lifecycle.controller_server",
+            "ready": True,
+            "node_name": "/pinky1/controller_server",
+            "expected_state": "active",
+            "state_label": "active",
+            "state_id": 3,
+        },
+        {
+            "name": "pinky1.nav2_lifecycle.map_server",
+            "ready": True,
+            "node_name": "/pinky1/map_server",
+            "expected_state": "active",
+            "state_label": "active",
+            "state_id": 3,
+        },
+        {
+            "name": "pinky1.nav2_lifecycle.amcl",
+            "ready": True,
+            "node_name": "/pinky1/amcl",
+            "expected_state": "active",
+            "state_label": "active",
+            "state_id": 3,
+        },
     ]
 
 

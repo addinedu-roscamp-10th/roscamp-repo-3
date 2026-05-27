@@ -304,6 +304,7 @@ def test_drive_runtime_reserves_each_segment_before_navigation_and_releases_on_a
             drive_execution_repository=execution_repository,
             fms_runtime_service=fms_runtime,
             drive_orchestrator=drive_orchestrator,
+            drive_robot_readiness_service=None,
         )
 
         response = await service.async_create_drive_task(**_drive_payload())
@@ -390,6 +391,7 @@ def test_drive_runtime_records_waiting_without_navigation_when_reservation_confl
             drive_execution_repository=execution_repository,
             fms_runtime_service=fms_runtime,
             drive_orchestrator=drive_orchestrator,
+            drive_robot_readiness_service=None,
             fms_reservation_retry_max_attempts=1,
         )
 
@@ -427,6 +429,7 @@ def test_drive_runtime_retries_waiting_reservation_and_dispatches_when_held():
             drive_execution_repository=execution_repository,
             fms_runtime_service=fms_runtime,
             drive_orchestrator=drive_orchestrator,
+            drive_robot_readiness_service=None,
             fms_reservation_retry_interval_sec=0,
         )
 
@@ -477,6 +480,7 @@ def test_drive_runtime_waits_at_previous_waypoint_when_next_segment_is_blocked()
             drive_execution_repository=execution_repository,
             fms_runtime_service=fms_runtime,
             drive_orchestrator=drive_orchestrator,
+            drive_robot_readiness_service=None,
             fms_reservation_retry_interval_sec=0,
         )
 
@@ -537,6 +541,7 @@ def test_drive_runtime_renews_fms_reservation_during_navigation():
             drive_execution_repository=execution_repository,
             fms_runtime_service=fms_runtime,
             drive_orchestrator=drive_orchestrator,
+            drive_robot_readiness_service=None,
             fms_reservation_renew_interval_sec=0.001,
         )
 
@@ -577,16 +582,31 @@ def test_drive_runtime_stops_waiting_retry_when_task_is_cancel_requested():
             drive_execution_repository=execution_repository,
             fms_runtime_service=fms_runtime,
             drive_orchestrator=drive_orchestrator,
+            drive_robot_readiness_service=None,
             fms_reservation_retry_interval_sec=0,
         )
 
         await service.async_create_drive_task(**_drive_payload())
         await asyncio.gather(*manager.tasks)
 
-        assert events == ["snapshot", "reserve", "waiting", "snapshot", "result"]
+        assert events == [
+            "snapshot",
+            "reserve",
+            "waiting",
+            "snapshot",
+            "release",
+            "result",
+        ]
         assert drive_orchestrator.calls == []
         assert len(fms_runtime.requested) == 1
-        assert fms_runtime.released == []
+        assert fms_runtime.released == [
+            {
+                "task_id": 3001,
+                "robot_id": "pinky1",
+                "reason_code": "CANCELLED",
+                "resources": None,
+            }
+        ]
         assert execution_repository.results[0]["workflow_response"]["result_code"] == (
             "CANCELLED"
         )
@@ -634,6 +654,7 @@ def test_drive_runtime_keeps_reservation_held_for_recovery_after_nav2_failure():
             drive_execution_repository=execution_repository,
             fms_runtime_service=fms_runtime,
             drive_orchestrator=drive_orchestrator,
+            drive_robot_readiness_service=None,
         )
 
         await service.async_create_drive_task(**_drive_payload())

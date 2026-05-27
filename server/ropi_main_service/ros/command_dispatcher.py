@@ -51,6 +51,7 @@ class RuntimeStatusContext:
     pinky_id: str
     include_navigation: bool
     include_nav2_navigation: bool
+    include_nav2_lifecycle: bool
     include_patrol: bool
     include_guide: bool
     patrol_pinky_id: str
@@ -69,6 +70,16 @@ class RuntimeStatusActionCheck:
     name: str
     action_name: str
     action_client: object | None
+    missing_client_error: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeStatusLifecycleCheck:
+    name: str
+    node_name: str
+    lifecycle_state_client: object | None
+    expected_state: str = "active"
+    timeout_sec: float = 0.15
     missing_client_error: str | None = None
 
 
@@ -109,6 +120,14 @@ RUNTIME_STATUS_ACTION_TARGET_SPECS = {
         action_name_template="/ropi/control/{patrol_pinky_id}/execute_patrol_path",
     ),
 }
+
+NAV2_LIFECYCLE_NODE_SUFFIXES = (
+    "bt_navigator",
+    "planner_server",
+    "controller_server",
+    "map_server",
+    "amcl",
+)
 
 
 ACTION_COMMAND_SPECS = {
@@ -194,6 +213,7 @@ class RosServiceCommandDispatcher:
         guide_command_client=None,
         guide_runtime_subscriber=None,
         initial_pose_publisher=None,
+        lifecycle_state_client=None,
         runtime_config=None,
         patrol_runtime_config=None,
         manipulation_result_wait_timeout_sec=None,
@@ -206,6 +226,7 @@ class RosServiceCommandDispatcher:
         self.guide_command_client = guide_command_client
         self.guide_runtime_subscriber = guide_runtime_subscriber
         self.initial_pose_publisher = initial_pose_publisher
+        self.lifecycle_state_client = lifecycle_state_client
         self.runtime_config = runtime_config or get_delivery_runtime_config()
         self.patrol_runtime_config = patrol_runtime_config or get_patrol_runtime_config()
         self.manipulation_result_wait_timeout_sec = (
@@ -585,6 +606,10 @@ class RosServiceCommandDispatcher:
             self._build_runtime_action_ready_check(check)
             for check in self._iter_runtime_status_action_checks(context)
         ]
+        checks.extend(
+            self._build_runtime_lifecycle_ready_check(check)
+            for check in self._iter_runtime_status_lifecycle_checks(context)
+        )
         guide_snapshot = None
 
         if context.include_guide:
@@ -599,6 +624,12 @@ class RosServiceCommandDispatcher:
             await self._async_build_runtime_action_ready_check(check)
             for check in self._iter_runtime_status_action_checks(context)
         ]
+        checks.extend(
+            [
+                await self._async_build_runtime_lifecycle_ready_check(check)
+                for check in self._iter_runtime_status_lifecycle_checks(context)
+            ]
+        )
         guide_snapshot = None
 
         if context.include_guide:
@@ -620,6 +651,7 @@ class RosServiceCommandDispatcher:
             True if include_navigation is None else bool(include_navigation)
         )
         include_nav2_navigation = bool(payload.get("include_nav2_navigation"))
+        include_nav2_lifecycle = bool(payload.get("include_nav2_lifecycle"))
         patrol_pinky_id = (
             str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
         )
@@ -627,6 +659,7 @@ class RosServiceCommandDispatcher:
             pinky_id=pinky_id,
             include_navigation=include_navigation,
             include_nav2_navigation=include_nav2_navigation,
+            include_nav2_lifecycle=include_nav2_lifecycle,
             include_patrol=bool(payload.get("include_patrol")),
             include_guide=bool(payload.get("include_guide")),
             patrol_pinky_id=patrol_pinky_id,
@@ -661,6 +694,17 @@ class RosServiceCommandDispatcher:
                 action_name=f"/ropi/arm/{arm_id}/execute_manipulation",
                 action_client=self.manipulation_action_client,
                 missing_client_error="manipulation action client is not configured",
+            )
+
+    def _iter_runtime_status_lifecycle_checks(self, context: RuntimeStatusContext):
+        if not context.include_nav2_lifecycle:
+            return
+        for suffix in NAV2_LIFECYCLE_NODE_SUFFIXES:
+            yield RuntimeStatusLifecycleCheck(
+                name=f"{context.pinky_id}.nav2_lifecycle.{suffix}",
+                node_name=f"/{context.pinky_id}/{suffix}",
+                lifecycle_state_client=self.lifecycle_state_client,
+                missing_client_error="lifecycle state client is not configured",
             )
 
     def _build_runtime_status_action_target_check(
@@ -730,6 +774,95 @@ class RosServiceCommandDispatcher:
             "name": check.name,
             "ready": ready,
             "action_name": check.action_name,
+        }
+        if error:
+            payload["error"] = error
+        return payload
+
+    def _build_runtime_lifecycle_ready_check(self, check: RuntimeStatusLifecycleCheck):
+        if check.lifecycle_state_client is None:
+            return self._build_runtime_lifecycle_unavailable_check(check)
+
+        try:
+            state = check.lifecycle_state_client.get_state(
+                node_name=check.node_name,
+                timeout_sec=check.timeout_sec,
+            )
+            return self._build_runtime_lifecycle_check_payload(
+                check,
+                state=state,
+            )
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_lifecycle_check_payload(
+                check,
+                state=None,
+                error=str(exc),
+            )
+
+    async def _async_build_runtime_lifecycle_ready_check(
+        self,
+        check: RuntimeStatusLifecycleCheck,
+    ):
+        if check.lifecycle_state_client is None:
+            return self._build_runtime_lifecycle_unavailable_check(check)
+
+        try:
+            async_get_state = getattr(
+                check.lifecycle_state_client,
+                "async_get_state",
+                None,
+            )
+            if async_get_state is not None:
+                state = await async_get_state(
+                    node_name=check.node_name,
+                    timeout_sec=check.timeout_sec,
+                )
+            else:
+                state = await asyncio.to_thread(
+                    check.lifecycle_state_client.get_state,
+                    node_name=check.node_name,
+                    timeout_sec=check.timeout_sec,
+                )
+            return self._build_runtime_lifecycle_check_payload(
+                check,
+                state=state,
+            )
+        except Exception as exc:  # pragma: no cover
+            return self._build_runtime_lifecycle_check_payload(
+                check,
+                state=None,
+                error=str(exc),
+            )
+
+    @staticmethod
+    def _build_runtime_lifecycle_unavailable_check(
+        check: RuntimeStatusLifecycleCheck,
+    ):
+        return {
+            "name": check.name,
+            "ready": False,
+            "node_name": check.node_name,
+            "expected_state": check.expected_state,
+            "error": check.missing_client_error
+            or "lifecycle state client is not configured",
+        }
+
+    @staticmethod
+    def _build_runtime_lifecycle_check_payload(
+        check: RuntimeStatusLifecycleCheck,
+        *,
+        state,
+        error=None,
+    ):
+        state = state or {}
+        state_label = str(state.get("label") or "").strip()
+        payload = {
+            "name": check.name,
+            "ready": state_label == check.expected_state,
+            "node_name": check.node_name,
+            "expected_state": check.expected_state,
+            "state_label": state_label or None,
+            "state_id": state.get("id"),
         }
         if error:
             payload["error"] = error
