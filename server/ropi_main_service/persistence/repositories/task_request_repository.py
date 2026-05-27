@@ -332,17 +332,21 @@ class TaskRequestRepository:
         priority=None,
         notes=None,
         idempotency_key=None,
+        candidate_robot_ids=None,
     ):
         self._sync_drive_task_create_repository_dependencies()
-        return self.drive_task_create_repository.create_drive_task(
-            request_id=request_id,
-            caregiver_id=caregiver_id,
-            robot_id=robot_id,
-            route_id=route_id,
-            priority=priority,
-            notes=notes,
-            idempotency_key=idempotency_key,
-        )
+        kwargs = {
+            "request_id": request_id,
+            "caregiver_id": caregiver_id,
+            "robot_id": robot_id,
+            "route_id": route_id,
+            "priority": priority,
+            "notes": notes,
+            "idempotency_key": idempotency_key,
+        }
+        if candidate_robot_ids is not None:
+            kwargs["candidate_robot_ids"] = candidate_robot_ids
+        return self.drive_task_create_repository.create_drive_task(**kwargs)
 
     async def async_create_drive_task(
         self,
@@ -353,17 +357,21 @@ class TaskRequestRepository:
         priority=None,
         notes=None,
         idempotency_key=None,
+        candidate_robot_ids=None,
     ):
         self._sync_drive_task_create_repository_dependencies()
-        return await self.drive_task_create_repository.async_create_drive_task(
-            request_id=request_id,
-            caregiver_id=caregiver_id,
-            robot_id=robot_id,
-            route_id=route_id,
-            priority=priority,
-            notes=notes,
-            idempotency_key=idempotency_key,
-        )
+        kwargs = {
+            "request_id": request_id,
+            "caregiver_id": caregiver_id,
+            "robot_id": robot_id,
+            "route_id": route_id,
+            "priority": priority,
+            "notes": notes,
+            "idempotency_key": idempotency_key,
+        }
+        if candidate_robot_ids is not None:
+            kwargs["candidate_robot_ids"] = candidate_robot_ids
+        return await self.drive_task_create_repository.async_create_drive_task(**kwargs)
 
     def get_delivery_task_cancel_target(self, task_id):
         return self.delivery_task_cancel_repository.get_delivery_task_cancel_target(task_id)

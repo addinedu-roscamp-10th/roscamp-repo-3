@@ -118,6 +118,7 @@ class DriveTaskCreateRepository:
         priority=None,
         notes=None,
         idempotency_key=None,
+        candidate_robot_ids=None,
     ):
         numeric_caregiver_id = parse_numeric_identifier(caregiver_id)
         normalized_robot_id = str(robot_id or "").strip()
@@ -179,7 +180,13 @@ class DriveTaskCreateRepository:
 
                 assigned_robot_id = normalized_robot_id
                 if is_auto_robot:
-                    assigned_robot_id = self.select_robot_id(cur)
+                    if candidate_robot_ids is None:
+                        assigned_robot_id = self.select_robot_id(cur)
+                    else:
+                        assigned_robot_id = self._select_robot_id(
+                            cur,
+                            candidate_robot_ids=candidate_robot_ids,
+                        )
                     if self._is_blank(assigned_robot_id):
                         conn.rollback()
                         return self.build_drive_task_response(
@@ -229,6 +236,7 @@ class DriveTaskCreateRepository:
         priority=None,
         notes=None,
         idempotency_key=None,
+        candidate_robot_ids=None,
     ):
         numeric_caregiver_id = parse_numeric_identifier(caregiver_id)
         normalized_robot_id = str(robot_id or "").strip()
@@ -284,7 +292,13 @@ class DriveTaskCreateRepository:
 
             assigned_robot_id = normalized_robot_id
             if is_auto_robot:
-                assigned_robot_id = await self.async_select_robot_id(cur)
+                if candidate_robot_ids is None:
+                    assigned_robot_id = await self.async_select_robot_id(cur)
+                else:
+                    assigned_robot_id = await self._async_select_robot_id(
+                        cur,
+                        candidate_robot_ids=candidate_robot_ids,
+                    )
                 if self._is_blank(assigned_robot_id):
                     return self.build_drive_task_response(
                         result_code="REJECTED",
@@ -447,8 +461,10 @@ class DriveTaskCreateRepository:
 
         return None
 
-    def _select_robot_id(self, cur):
-        allowed_robot_ids = self._allowed_robot_ids()
+    def _select_robot_id(self, cur, *, candidate_robot_ids=None):
+        allowed_robot_ids = self._allowed_robot_ids(
+            candidate_robot_ids=candidate_robot_ids,
+        )
         if not allowed_robot_ids:
             return None
 
@@ -463,8 +479,10 @@ class DriveTaskCreateRepository:
             active_counts=active_counts,
         )
 
-    async def _async_select_robot_id(self, cur):
-        allowed_robot_ids = self._allowed_robot_ids()
+    async def _async_select_robot_id(self, cur, *, candidate_robot_ids=None):
+        allowed_robot_ids = self._allowed_robot_ids(
+            candidate_robot_ids=candidate_robot_ids,
+        )
         if not allowed_robot_ids:
             return None
 
@@ -485,8 +503,8 @@ class DriveTaskCreateRepository:
             active_counts=active_counts,
         )
 
-    def _allowed_robot_ids(self):
-        return tuple(
+    def _allowed_robot_ids(self, *, candidate_robot_ids=None):
+        allowed_robot_ids = tuple(
             robot_id
             for robot_id in (
                 str(robot_id or "").strip()
@@ -494,6 +512,15 @@ class DriveTaskCreateRepository:
             )
             if robot_id
         )
+        if candidate_robot_ids is None:
+            return allowed_robot_ids
+
+        candidate_set = {
+            str(robot_id or "").strip()
+            for robot_id in candidate_robot_ids
+            if str(robot_id or "").strip()
+        }
+        return tuple(robot_id for robot_id in allowed_robot_ids if robot_id in candidate_set)
 
     @staticmethod
     def _fetch_existing_robot_ids(cur, robot_ids):

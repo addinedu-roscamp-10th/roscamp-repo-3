@@ -28,6 +28,30 @@ class FakeWorkflowStarter:
         self.calls.append(kwargs)
 
 
+class FakeDriveRobotReadinessService:
+    def __init__(self, *, available_robot_ids=None, ready_by_robot=None):
+        self.available_robot_ids_result = available_robot_ids
+        self.ready_by_robot = ready_by_robot or {}
+        self.available_calls = []
+        self.ready_calls = []
+
+    def available_robot_ids(self, robot_ids):
+        self.available_calls.append(tuple(robot_ids))
+        return self.available_robot_ids_result
+
+    async def async_available_robot_ids(self, robot_ids):
+        self.available_calls.append(tuple(robot_ids))
+        return self.available_robot_ids_result
+
+    def is_robot_ready(self, robot_id):
+        self.ready_calls.append(robot_id)
+        return self.ready_by_robot.get(robot_id)
+
+    async def async_is_robot_ready(self, robot_id):
+        self.ready_calls.append(robot_id)
+        return self.ready_by_robot.get(robot_id)
+
+
 def build_drive_payload():
     return {
         "request_id": "req_drive_001",
@@ -129,6 +153,70 @@ def test_create_drive_task_rejects_robot_outside_drive_runtime_config():
 
     assert response["result_code"] == "REJECTED"
     assert response["reason_code"] == "DRIVE_ROBOT_NOT_ALLOWED"
+    assert repository.calls == []
+
+
+def test_create_drive_task_auto_assignment_uses_ready_nav2_robot_candidates():
+    repository = FakeDriveTaskRepository(
+        response={
+            "result_code": "ACCEPTED",
+            "task_id": 3001,
+            "task_type": "DRIVE",
+            "task_status": "WAITING_DISPATCH",
+            "phase": "REQUESTED",
+            "assigned_robot_id": "pinky3",
+        }
+    )
+    readiness = FakeDriveRobotReadinessService(available_robot_ids=("pinky3",))
+    service = DriveTaskCreateService(
+        repository=repository,
+        runtime_config=DriveRuntimeConfig(robot_ids=("pinky1", "pinky3")),
+        drive_robot_readiness_service=readiness,
+    )
+
+    response = service.create_drive_task(**build_drive_payload())
+
+    assert response["result_code"] == "ACCEPTED"
+    assert readiness.available_calls == [("pinky1", "pinky3")]
+    assert repository.calls == [
+        {
+            **build_drive_payload(),
+            "candidate_robot_ids": ("pinky3",),
+        }
+    ]
+
+
+def test_create_drive_task_rejects_auto_when_no_nav2_robot_is_ready():
+    repository = FakeDriveTaskRepository(response={"result_code": "ACCEPTED"})
+    readiness = FakeDriveRobotReadinessService(available_robot_ids=())
+    service = DriveTaskCreateService(
+        repository=repository,
+        runtime_config=DriveRuntimeConfig(robot_ids=("pinky1", "pinky3")),
+        drive_robot_readiness_service=readiness,
+    )
+
+    response = service.create_drive_task(**build_drive_payload())
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "DRIVE_ROBOT_NOT_AVAILABLE"
+    assert repository.calls == []
+
+
+def test_create_drive_task_rejects_explicit_robot_without_ready_nav2_action():
+    repository = FakeDriveTaskRepository(response={"result_code": "ACCEPTED"})
+    readiness = FakeDriveRobotReadinessService(ready_by_robot={"pinky1": False})
+    service = DriveTaskCreateService(
+        repository=repository,
+        runtime_config=DriveRuntimeConfig(robot_ids=("pinky1", "pinky3")),
+        drive_robot_readiness_service=readiness,
+    )
+
+    payload = build_drive_payload()
+    payload["robot_id"] = "pinky1"
+    response = service.create_drive_task(**payload)
+
+    assert response["result_code"] == "REJECTED"
+    assert response["reason_code"] == "DRIVE_ROBOT_NOT_AVAILABLE"
     assert repository.calls == []
 
 

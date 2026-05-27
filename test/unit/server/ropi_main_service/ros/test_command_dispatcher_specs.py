@@ -82,6 +82,7 @@ def test_action_client_specs_define_cancel_and_feedback_client_order():
 def test_runtime_status_action_target_specs_define_fixed_readiness_checks():
     assert list(RUNTIME_STATUS_ACTION_TARGET_SPECS) == [
         "navigation",
+        "nav2_navigation",
         "patrol",
     ]
 
@@ -89,6 +90,11 @@ def test_runtime_status_action_target_specs_define_fixed_readiness_checks():
     assert navigation.client_attr == "goal_pose_action_client"
     assert navigation.check_name_template == "{pinky_id}.navigate_to_goal"
     assert navigation.action_name_template == "/ropi/control/{pinky_id}/navigate_to_goal"
+
+    nav2_navigation = RUNTIME_STATUS_ACTION_TARGET_SPECS["nav2_navigation"]
+    assert nav2_navigation.client_attr == "nav2_navigate_to_pose_action_client"
+    assert nav2_navigation.check_name_template == "{pinky_id}.navigate_to_pose"
+    assert nav2_navigation.action_name_template == "/{pinky_id}/navigate_to_pose"
 
     patrol = RUNTIME_STATUS_ACTION_TARGET_SPECS["patrol"]
     assert patrol.client_attr == "patrol_path_action_client"

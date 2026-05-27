@@ -673,6 +673,47 @@ def test_async_dispatch_runtime_status_can_skip_navigation_for_arm_only_checks()
     ]
 
 
+def test_async_dispatch_runtime_status_can_check_namespaced_nav2_navigation():
+    goal_client = FakeAsyncGoalPoseActionClient()
+    nav2_client = FakeAsyncNav2ActionClient()
+    dispatcher = RosServiceCommandDispatcher(
+        goal_pose_action_client=goal_client,
+        nav2_navigate_to_pose_action_client=nav2_client,
+    )
+
+    async def scenario():
+        try:
+            return await dispatcher.async_dispatch(
+                "get_runtime_status",
+                {
+                    "pinky_id": "pinky3",
+                    "include_navigation": False,
+                    "include_nav2_navigation": True,
+                    "arm_ids": [],
+                },
+            )
+        finally:
+            dispatcher.close()
+
+    response = asyncio.run(scenario())
+
+    assert response["ready"] is True
+    assert goal_client.ready_calls == []
+    assert nav2_client.ready_calls == [
+        {
+            "action_name": "/pinky3/navigate_to_pose",
+            "wait_timeout_sec": 0.0,
+        }
+    ]
+    assert response["checks"] == [
+        {
+            "name": "pinky3.navigate_to_pose",
+            "ready": True,
+            "action_name": "/pinky3/navigate_to_pose",
+        }
+    ]
+
+
 def test_async_dispatch_cancel_action_cancels_matching_goal_by_task_id():
     goal_client = FakeAsyncGoalPoseActionClient()
     manipulation_client = FakeAsyncManipulationActionClient()

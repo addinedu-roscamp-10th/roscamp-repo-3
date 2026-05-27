@@ -1,6 +1,9 @@
 import asyncio
 
 from server.ropi_main_service.application.drive_config import get_drive_runtime_config
+from server.ropi_main_service.application.drive_robot_readiness import (
+    DriveRobotReadinessService,
+)
 from server.ropi_main_service.persistence.repositories.task_request_repository import (
     TaskRequestRepository,
 )
@@ -20,10 +23,14 @@ class DriveTaskCreateService:
         repository=None,
         runtime_config=None,
         drive_workflow_starter=None,
+        drive_robot_readiness_service=None,
     ):
         self.repository = repository or _new_task_request_repository()
         self.runtime_config = runtime_config or get_drive_runtime_config()
         self.drive_workflow_starter = drive_workflow_starter
+        self.drive_robot_readiness_service = (
+            drive_robot_readiness_service or DriveRobotReadinessService()
+        )
 
     def create_drive_task(
         self,
@@ -46,14 +53,28 @@ class DriveTaskCreateService:
         if invalid_response is not None:
             return invalid_response
 
-        response = self.repository.create_drive_task(
-            request_id=request_id,
-            caregiver_id=caregiver_id,
+        candidate_robot_ids = None
+        readiness_response = self._resolve_robot_readiness(
             robot_id=robot_id,
-            route_id=route_id,
-            priority=priority,
-            notes=notes,
-            idempotency_key=idempotency_key,
+        )
+        if isinstance(readiness_response, dict):
+            return readiness_response
+        candidate_robot_ids = readiness_response
+
+        kwargs = {
+            "request_id": request_id,
+            "caregiver_id": caregiver_id,
+            "robot_id": robot_id,
+            "route_id": route_id,
+            "priority": priority,
+            "notes": notes,
+            "idempotency_key": idempotency_key,
+        }
+        if candidate_robot_ids is not None:
+            kwargs["candidate_robot_ids"] = candidate_robot_ids
+
+        response = self.repository.create_drive_task(
+            **kwargs,
         )
         self._start_drive_workflow_if_needed(response=response)
         return response
@@ -79,31 +100,99 @@ class DriveTaskCreateService:
         if invalid_response is not None:
             return invalid_response
 
+        candidate_robot_ids = None
+        readiness_response = await self._async_resolve_robot_readiness(
+            robot_id=robot_id,
+        )
+        if isinstance(readiness_response, dict):
+            return readiness_response
+        candidate_robot_ids = readiness_response
+
+        kwargs = {
+            "request_id": request_id,
+            "caregiver_id": caregiver_id,
+            "robot_id": robot_id,
+            "route_id": route_id,
+            "priority": priority,
+            "notes": notes,
+            "idempotency_key": idempotency_key,
+        }
+        if candidate_robot_ids is not None:
+            kwargs["candidate_robot_ids"] = candidate_robot_ids
+
         async_create = getattr(self.repository, "async_create_drive_task", None)
         if async_create is not None:
-            response = await async_create(
-                request_id=request_id,
-                caregiver_id=caregiver_id,
-                robot_id=robot_id,
-                route_id=route_id,
-                priority=priority,
-                notes=notes,
-                idempotency_key=idempotency_key,
-            )
+            response = await async_create(**kwargs)
         else:
             response = await asyncio.to_thread(
                 self.repository.create_drive_task,
-                request_id=request_id,
-                caregiver_id=caregiver_id,
-                robot_id=robot_id,
-                route_id=route_id,
-                priority=priority,
-                notes=notes,
-                idempotency_key=idempotency_key,
+                **kwargs,
             )
 
         self._start_drive_workflow_if_needed(response=response)
         return response
+
+    def _resolve_robot_readiness(self, *, robot_id):
+        readiness_service = self.drive_robot_readiness_service
+        if readiness_service is None:
+            return None
+
+        normalized_robot_id = str(robot_id or "").strip()
+        if self._is_auto_robot_id(normalized_robot_id):
+            available_robot_ids = readiness_service.available_robot_ids(
+                self.runtime_config.robot_ids,
+            )
+            if available_robot_ids is None:
+                return None
+            if not available_robot_ids:
+                return self._robot_not_available_response()
+            return tuple(available_robot_ids)
+
+        ready = readiness_service.is_robot_ready(normalized_robot_id)
+        if ready is False:
+            return self._robot_not_available_response(
+                assigned_robot_id=normalized_robot_id,
+            )
+        return None
+
+    async def _async_resolve_robot_readiness(self, *, robot_id):
+        readiness_service = self.drive_robot_readiness_service
+        if readiness_service is None:
+            return None
+
+        normalized_robot_id = str(robot_id or "").strip()
+        if self._is_auto_robot_id(normalized_robot_id):
+            async_available = getattr(
+                readiness_service,
+                "async_available_robot_ids",
+                None,
+            )
+            if async_available is not None:
+                available_robot_ids = await async_available(self.runtime_config.robot_ids)
+            else:
+                available_robot_ids = await asyncio.to_thread(
+                    readiness_service.available_robot_ids,
+                    self.runtime_config.robot_ids,
+                )
+            if available_robot_ids is None:
+                return None
+            if not available_robot_ids:
+                return self._robot_not_available_response()
+            return tuple(available_robot_ids)
+
+        async_ready = getattr(readiness_service, "async_is_robot_ready", None)
+        if async_ready is not None:
+            ready = await async_ready(normalized_robot_id)
+        else:
+            ready = await asyncio.to_thread(
+                readiness_service.is_robot_ready,
+                normalized_robot_id,
+            )
+        if ready is False:
+            return self._robot_not_available_response(
+                assigned_robot_id=normalized_robot_id,
+            )
+        return None
 
     def _validate_create_drive_task_request(
         self,
@@ -221,6 +310,15 @@ class DriveTaskCreateService:
             "route_revision": route_revision,
             "waypoint_count": waypoint_count,
         }
+
+    @classmethod
+    def _robot_not_available_response(cls, *, assigned_robot_id=None):
+        return cls._build_drive_task_response(
+            result_code=cls.REJECTED,
+            result_message="주행 가능한 FMS Pinky 로봇이 없습니다.",
+            reason_code="DRIVE_ROBOT_NOT_AVAILABLE",
+            assigned_robot_id=assigned_robot_id,
+        )
 
 
 __all__ = ["DriveTaskCreateService"]

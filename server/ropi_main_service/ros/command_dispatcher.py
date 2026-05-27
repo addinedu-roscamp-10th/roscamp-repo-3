@@ -50,6 +50,7 @@ class ActionClientSpec:
 class RuntimeStatusContext:
     pinky_id: str
     include_navigation: bool
+    include_nav2_navigation: bool
     include_patrol: bool
     include_guide: bool
     patrol_pinky_id: str
@@ -96,6 +97,11 @@ RUNTIME_STATUS_ACTION_TARGET_SPECS = {
         client_attr="goal_pose_action_client",
         check_name_template="{pinky_id}.navigate_to_goal",
         action_name_template="/ropi/control/{pinky_id}/navigate_to_goal",
+    ),
+    "nav2_navigation": RuntimeStatusActionTargetSpec(
+        client_attr="nav2_navigate_to_pose_action_client",
+        check_name_template="{pinky_id}.navigate_to_pose",
+        action_name_template="/{pinky_id}/navigate_to_pose",
     ),
     "patrol": RuntimeStatusActionTargetSpec(
         client_attr="patrol_path_action_client",
@@ -613,12 +619,14 @@ class RosServiceCommandDispatcher:
         include_navigation = (
             True if include_navigation is None else bool(include_navigation)
         )
+        include_nav2_navigation = bool(payload.get("include_nav2_navigation"))
         patrol_pinky_id = (
             str(payload.get("patrol_pinky_id") or pinky_id).strip() or pinky_id
         )
         return RuntimeStatusContext(
             pinky_id=pinky_id,
             include_navigation=include_navigation,
+            include_nav2_navigation=include_nav2_navigation,
             include_patrol=bool(payload.get("include_patrol")),
             include_guide=bool(payload.get("include_guide")),
             patrol_pinky_id=patrol_pinky_id,
@@ -629,6 +637,13 @@ class RosServiceCommandDispatcher:
         if context.include_navigation:
             yield self._build_runtime_status_action_target_check(
                 RUNTIME_STATUS_ACTION_TARGET_SPECS["navigation"],
+                pinky_id=context.pinky_id,
+                patrol_pinky_id=context.patrol_pinky_id,
+            )
+
+        if context.include_nav2_navigation:
+            yield self._build_runtime_status_action_target_check(
+                RUNTIME_STATUS_ACTION_TARGET_SPECS["nav2_navigation"],
                 pinky_id=context.pinky_id,
                 patrol_pinky_id=context.patrol_pinky_id,
             )

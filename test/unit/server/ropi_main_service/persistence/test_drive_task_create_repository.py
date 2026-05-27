@@ -246,6 +246,19 @@ def test_drive_task_create_repository_auto_assignment_prefers_fewer_active_drive
     assert selected == "pinky3"
 
 
+def test_drive_task_create_repository_limits_auto_candidates_to_ready_robot_ids():
+    repository = DriveTaskCreateRepository(
+        runtime_config=DriveRuntimeConfig(
+            map_id="map_0504",
+            robot_ids=("pinky1", "pinky3", "pinky4"),
+        )
+    )
+
+    assert repository._allowed_robot_ids(candidate_robot_ids=("pinky3", "pinky9")) == (
+        "pinky3",
+    )
+
+
 def test_drive_task_create_repository_creates_async_drive_task_records():
     fake_transaction = FakeAsyncTransaction()
     idempotency_repository = FakeIdempotencyRepository()
