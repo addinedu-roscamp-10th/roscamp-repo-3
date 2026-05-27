@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QPointF
+from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QColor, QPainterPath, QPen
 
 
@@ -126,10 +126,13 @@ def draw_drive_route_markers(canvas, painter, target, markers):
             path = QPainterPath(points[0])
             for point in points[1:]:
                 path.lineTo(point)
+            painter.save()
             pen = QPen(QColor("#0EA5E9"))
             pen.setWidth(3)
             painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
+            painter.restore()
 
         target_route_index = marker.get("target_route_index")
         for index, point in enumerate(points):
