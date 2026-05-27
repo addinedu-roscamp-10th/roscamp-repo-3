@@ -5,6 +5,7 @@ from test_support.paths import REPO_ROOT
 DEVICE_ROOT = REPO_ROOT / "device"
 ROPI_INTERFACE_ROOT = DEVICE_ROOT / "ropi_common" / "src" / "ropi_interface"
 PINKY_CONFIG_ROOT = DEVICE_ROOT / "ropi_mobile" / "src" / "ropi_nav_config"
+FMS_BRINGUP_ROOT = DEVICE_ROOT / "ropi_mobile" / "src" / "ropi_fms_bringup"
 JET_ARM_ROOT = DEVICE_ROOT / "ropi_arm" / "src" / "ropi_arm_control"
 
 
@@ -47,6 +48,10 @@ def test_pinky_config_wraps_common_nav_files():
     for robot_id in ("pinky1", "pinky2", "pinky3"):
         assert not (PINKY_CONFIG_ROOT / "config" / robot_id).exists()
         assert not (PINKY_CONFIG_ROOT / "maps" / robot_id).exists()
+
+
+def test_fms_bringup_tests_live_under_root_test_tree():
+    assert not (FMS_BRINGUP_ROOT / "test").exists()
 
 
 def test_ropi_arm_control_is_shared_between_jetcobots():
