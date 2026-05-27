@@ -78,16 +78,30 @@ class FmsRuntimeService:
             ),
         }
 
-    def release_reservation(self, *, task_id, robot_id=None, reason_code=None):
+    def release_reservation(
+        self,
+        *,
+        task_id,
+        robot_id=None,
+        reason_code=None,
+        resources=None,
+    ):
         normalized_task_id = optional_int(task_id)
         if normalized_task_id is None:
             return self._invalid_request_response("TASK_ID_INVALID")
+
+        normalized_resources = None
+        if resources is not None:
+            normalized_resources, resource_error = self._normalize_resources(resources)
+            if resource_error is not None:
+                return self._invalid_request_response(resource_error)
 
         normalized_robot_id = str(robot_id or "").strip() or None
         released_count = self.repository.release_reservation(
             task_id=normalized_task_id,
             robot_id=normalized_robot_id,
             reason_code=reason_code,
+            resources=normalized_resources,
         )
         return {
             "result_code": "RELEASED" if released_count else "NOT_FOUND",

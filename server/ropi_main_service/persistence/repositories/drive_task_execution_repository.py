@@ -52,6 +52,10 @@ class DriveTaskExecutionRepository:
             path_snapshot=snapshot["path_snapshot_json"],
             edge_rows=edge_rows,
         )
+        snapshot["reservation_segments"] = self._build_reservation_segments(
+            path_snapshot=snapshot["path_snapshot_json"],
+            edge_rows=edge_rows,
+        )
         return snapshot
 
     async def async_record_drive_reservation_waiting(
@@ -79,7 +83,7 @@ class DriveTaskExecutionRepository:
                 (numeric_task_id,),
             )
             row = await cur.fetchone()
-            guard_response = self._build_start_guard(row, task_id=numeric_task_id)
+            guard_response = self._build_waiting_guard(row, task_id=numeric_task_id)
             if guard_response is not None:
                 return guard_response
 
@@ -372,6 +376,58 @@ class DriveTaskExecutionRepository:
 
         return None
 
+    def _build_waiting_guard(self, row, *, task_id):
+        if not row:
+            return self._build_drive_state_response(
+                result_code="NOT_FOUND",
+                result_message="DRIVE task 실행 정보를 찾을 수 없습니다.",
+                reason_code="DRIVE_TASK_NOT_FOUND",
+                task_id=task_id,
+                task_status=None,
+                phase=None,
+                assigned_robot_id=None,
+                cancellable=False,
+            )
+
+        task_status = str(row.get("task_status") or "").strip().upper()
+        if task_status in TERMINAL_DRIVE_TASK_STATUSES:
+            return self._build_drive_state_response(
+                result_code="NOT_ALLOWED",
+                result_message="이미 종료된 DRIVE task는 FMS 대기 상태로 바꿀 수 없습니다.",
+                reason_code="DRIVE_TASK_ALREADY_TERMINAL",
+                task_id=row.get("task_id"),
+                task_status=row.get("task_status"),
+                phase=row.get("phase"),
+                assigned_robot_id=row.get("assigned_robot_id"),
+                cancellable=False,
+            )
+
+        if task_status == TASK_STATUS_CANCEL_REQUESTED:
+            return self._build_drive_state_response(
+                result_code="CANCELLED",
+                result_message="DRIVE task 취소 요청으로 FMS 대기를 기록하지 않습니다.",
+                reason_code="DRIVE_TASK_CANCEL_REQUESTED",
+                task_id=row.get("task_id"),
+                task_status=TASK_STATUS_CANCELLED,
+                phase=TASK_STATUS_CANCELLED,
+                assigned_robot_id=row.get("assigned_robot_id"),
+                cancellable=False,
+            )
+
+        if task_status not in STARTABLE_DRIVE_TASK_STATUSES:
+            return self._build_drive_state_response(
+                result_code="NOT_ALLOWED",
+                result_message="DRIVE task를 FMS 대기 상태로 바꿀 수 없습니다.",
+                reason_code="DRIVE_TASK_NOT_WAITABLE",
+                task_id=row.get("task_id"),
+                task_status=row.get("task_status"),
+                phase=row.get("phase"),
+                assigned_robot_id=row.get("assigned_robot_id"),
+                cancellable=False,
+            )
+
+        return None
+
     @staticmethod
     def _build_reservation_resources(*, path_snapshot, edge_rows):
         resources = []
@@ -407,6 +463,67 @@ class DriveTaskExecutionRepository:
                     seen.add(key)
 
         return resources
+
+    @staticmethod
+    def _build_reservation_segments(*, path_snapshot, edge_rows):
+        segments = []
+        poses = path_snapshot.get("poses") if isinstance(path_snapshot, dict) else []
+        edges_by_sequence = {}
+        for row in edge_rows or []:
+            try:
+                sequence_no = int(row.get("from_sequence_no") or 0)
+            except (TypeError, ValueError):
+                continue
+            edges_by_sequence.setdefault(sequence_no, []).append(row)
+
+        for index, pose in enumerate(poses or [], start=1):
+            if not isinstance(pose, dict):
+                continue
+            sequence_no = pose.get("sequence_no") or index
+            try:
+                sequence_no = int(sequence_no)
+            except (TypeError, ValueError):
+                sequence_no = index
+
+            resources = []
+            seen = set()
+            if index > 1:
+                previous_pose = poses[index - 2] if index - 2 >= 0 else {}
+                previous_sequence_no = (
+                    previous_pose.get("sequence_no")
+                    if isinstance(previous_pose, dict)
+                    else index - 1
+                )
+                try:
+                    previous_sequence_no = int(previous_sequence_no or index - 1)
+                except (TypeError, ValueError):
+                    previous_sequence_no = index - 1
+                for row in edges_by_sequence.get(previous_sequence_no, []):
+                    edge_id = str(row.get("edge_id") or "").strip()
+                    key = ("EDGE", edge_id)
+                    if edge_id and key not in seen:
+                        resources.append(
+                            {"resource_type": "EDGE", "resource_id": edge_id}
+                        )
+                        seen.add(key)
+
+            waypoint_id = str(pose.get("waypoint_id") or "").strip()
+            key = ("WAYPOINT", waypoint_id)
+            if waypoint_id and key not in seen:
+                resources.append(
+                    {"resource_type": "WAYPOINT", "resource_id": waypoint_id}
+                )
+                seen.add(key)
+
+            segments.append(
+                {
+                    "sequence_no": sequence_no,
+                    "waypoint_id": waypoint_id or None,
+                    "resources": resources,
+                }
+            )
+
+        return segments
 
     @staticmethod
     def _parse_task_id(value):

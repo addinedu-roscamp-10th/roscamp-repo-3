@@ -154,6 +154,33 @@ def test_fms_runtime_release_reservation_returns_released_count():
         "task_id": 3001,
         "robot_id": "pinky1",
         "reason_code": "ARRIVED",
+        "resources": None,
+    }
+
+
+def test_fms_runtime_release_reservation_can_target_specific_resources():
+    repository = FakeFmsReservationRepository()
+    service = FmsRuntimeService(repository=repository)
+
+    response = service.release_reservation(
+        task_id=3001,
+        robot_id="pinky1",
+        reason_code="SEGMENT_COMPLETED",
+        resources=[
+            {"resource_type": "WAYPOINT", "resource_id": "corridor_01"},
+            {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+        ],
+    )
+
+    assert response["result_code"] == "RELEASED"
+    assert repository.released == {
+        "task_id": 3001,
+        "robot_id": "pinky1",
+        "reason_code": "SEGMENT_COMPLETED",
+        "resources": [
+            {"resource_type": "WAYPOINT", "resource_id": "corridor_01"},
+            {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+        ],
     }
 
 

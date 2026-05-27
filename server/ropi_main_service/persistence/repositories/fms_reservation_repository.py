@@ -18,6 +18,9 @@ RELEASE_TASK_RESERVATIONS_SQL = load_sql(
 RELEASE_TASK_ROBOT_RESERVATIONS_SQL = load_sql(
     "fms_reservation/release_task_robot_reservations.sql"
 )
+RELEASE_TASK_RESOURCE_RESERVATIONS_SQL = load_sql(
+    "fms_reservation/release_task_resource_reservations.sql"
+)
 RENEW_TASK_RESERVATIONS_SQL = load_sql(
     "fms_reservation/renew_task_reservations.sql"
 )
@@ -112,12 +115,36 @@ class FmsReservationRepository:
         finally:
             conn.close()
 
-    def release_reservation(self, *, task_id, robot_id=None, reason_code=None):
+    def release_reservation(
+        self,
+        *,
+        task_id,
+        robot_id=None,
+        reason_code=None,
+        resources=None,
+    ):
+        normalized_resources = [
+            self._normalize_resource(resource) for resource in resources or []
+        ]
         conn = self.connection_factory()
         try:
             conn.begin()
             with conn.cursor() as cur:
-                if robot_id:
+                if normalized_resources:
+                    released_count = 0
+                    for resource in normalized_resources:
+                        cur.execute(
+                            RELEASE_TASK_RESOURCE_RESERVATIONS_SQL,
+                            (
+                                reason_code,
+                                int(task_id),
+                                str(robot_id),
+                                resource["resource_type"],
+                                resource["resource_id"],
+                            ),
+                        )
+                        released_count += cur.rowcount
+                elif robot_id:
                     cur.execute(
                         RELEASE_TASK_ROBOT_RESERVATIONS_SQL,
                         (reason_code, int(task_id), str(robot_id)),
@@ -127,7 +154,7 @@ class FmsReservationRepository:
                         RELEASE_TASK_RESERVATIONS_SQL,
                         (reason_code, int(task_id)),
                     )
-                released_count = cur.rowcount
+                    released_count = cur.rowcount
             conn.commit()
             return released_count
         except Exception:

@@ -150,8 +150,28 @@ class FakeDriveOrchestrator:
         self.calls = []
 
     async def async_run(self, **kwargs):
-        self.events.append("navigate")
         self.calls.append(kwargs)
+        before_waypoint = kwargs.get("before_waypoint")
+        after_waypoint = kwargs.get("after_waypoint")
+        for sequence_no in (1, 2):
+            if before_waypoint is not None:
+                before_response = await before_waypoint(
+                    sequence_no=sequence_no,
+                    waypoint_index=sequence_no,
+                    pose_stamped={"sequence_no": sequence_no},
+                )
+                if before_response is not None:
+                    return before_response
+            self.events.append(f"navigate_{sequence_no}")
+            if self.wait_for_event is not None:
+                await asyncio.wait_for(self.wait_for_event.wait(), timeout=1)
+            if after_waypoint is not None:
+                await after_waypoint(
+                    sequence_no=sequence_no,
+                    waypoint_index=sequence_no,
+                    pose_stamped={"sequence_no": sequence_no},
+                )
+        self.events.append("navigate")
         if self.wait_for_event is not None:
             await asyncio.wait_for(self.wait_for_event.wait(), timeout=1)
         return dict(self.response)
@@ -228,10 +248,25 @@ def _snapshot():
             {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
             {"resource_type": "WAYPOINT", "resource_id": "corridor_02"},
         ],
+        "reservation_segments": [
+            {
+                "sequence_no": 1,
+                "resources": [
+                    {"resource_type": "WAYPOINT", "resource_id": "corridor_01"},
+                ],
+            },
+            {
+                "sequence_no": 2,
+                "resources": [
+                    {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+                    {"resource_type": "WAYPOINT", "resource_id": "corridor_02"},
+                ],
+            },
+        ],
     }
 
 
-def test_drive_runtime_reserves_before_navigation_and_releases_after_success():
+def test_drive_runtime_reserves_each_segment_before_navigation_and_releases_on_arrival():
     async def _run():
         events = []
         manager = FakeWorkflowTaskManager()
@@ -255,13 +290,32 @@ def test_drive_runtime_reserves_before_navigation_and_releases_after_success():
         await asyncio.gather(*manager.tasks)
 
         assert response["result_code"] == "ACCEPTED"
-        assert events == ["snapshot", "reserve", "started", "navigate", "release", "result"]
+        assert events == [
+            "snapshot",
+            "reserve",
+            "started",
+            "navigate_1",
+            "reserve",
+            "started",
+            "navigate_2",
+            "release",
+            "navigate",
+            "release",
+            "result",
+        ]
         assert fms_runtime.requested == [
             {
                 "task_id": 3001,
                 "robot_id": "pinky1",
                 "map_id": "map_0504",
-                "resources": _snapshot()["reservation_resources"],
+                "resources": _snapshot()["reservation_segments"][0]["resources"],
+                "lease_sec": 30,
+            },
+            {
+                "task_id": 3001,
+                "robot_id": "pinky1",
+                "map_id": "map_0504",
+                "resources": _snapshot()["reservation_segments"][1]["resources"],
                 "lease_sec": 30,
             }
         ]
@@ -269,8 +323,22 @@ def test_drive_runtime_reserves_before_navigation_and_releases_after_success():
         assert drive_orchestrator.calls[0]["path_snapshot_json"] == _snapshot()[
             "path_snapshot_json"
         ]
-        assert fms_runtime.released == [
-            {"task_id": 3001, "robot_id": "pinky1", "reason_code": "COMPLETED"}
+        assert fms_runtime.released[:2] == [
+            {
+                "task_id": 3001,
+                "robot_id": "pinky1",
+                "reason_code": "SEGMENT_COMPLETED",
+                "resources": [
+                    {"resource_type": "WAYPOINT", "resource_id": "corridor_01"},
+                    {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+                ],
+            },
+            {
+                "task_id": 3001,
+                "robot_id": "pinky1",
+                "reason_code": "COMPLETED",
+                "resources": None,
+            },
         ]
         assert execution_repository.results[0]["workflow_response"]["result_code"] == "SUCCESS"
 
@@ -319,7 +387,10 @@ def test_drive_runtime_retries_waiting_reservation_and_dispatches_when_held():
             events=events,
             snapshot=_snapshot(),
         )
-        fms_runtime = FakeFmsRuntime(events=events, result_code=["WAITING", "HELD"])
+        fms_runtime = FakeFmsRuntime(
+            events=events,
+            result_code=["WAITING", "HELD", "HELD"],
+        )
         drive_orchestrator = FakeDriveOrchestrator(events=events)
         service = build_drive_request_service(
             loop=asyncio.get_running_loop(),
@@ -341,14 +412,75 @@ def test_drive_runtime_retries_waiting_reservation_and_dispatches_when_held():
             "snapshot",
             "reserve",
             "started",
+            "navigate_1",
+            "reserve",
+            "started",
+            "navigate_2",
+            "release",
             "navigate",
             "release",
             "result",
         ]
-        assert len(fms_runtime.requested) == 2
+        assert len(fms_runtime.requested) == 3
         assert len(execution_repository.waiting_records) == 1
         assert drive_orchestrator.calls[0]["robot_id"] == "pinky1"
         assert execution_repository.results[0]["workflow_response"]["result_code"] == "SUCCESS"
+
+    asyncio.run(_run())
+
+
+def test_drive_runtime_waits_at_previous_waypoint_when_next_segment_is_blocked():
+    async def _run():
+        events = []
+        manager = FakeWorkflowTaskManager()
+        execution_repository = FakeDriveExecutionRepository(
+            events=events,
+            snapshot=_snapshot(),
+        )
+        fms_runtime = FakeFmsRuntime(
+            events=events,
+            result_code=["HELD", "WAITING", "HELD"],
+        )
+        drive_orchestrator = FakeDriveOrchestrator(events=events)
+        service = build_drive_request_service(
+            loop=asyncio.get_running_loop(),
+            workflow_task_manager=manager,
+            task_request_repository=FakeTaskRequestRepository(),
+            drive_execution_repository=execution_repository,
+            fms_runtime_service=fms_runtime,
+            drive_orchestrator=drive_orchestrator,
+            fms_reservation_retry_interval_sec=0,
+        )
+
+        await service.async_create_drive_task(**_drive_payload())
+        await asyncio.gather(*manager.tasks)
+
+        assert events == [
+            "snapshot",
+            "reserve",
+            "started",
+            "navigate_1",
+            "reserve",
+            "waiting",
+            "snapshot",
+            "reserve",
+            "started",
+            "navigate_2",
+            "release",
+            "navigate",
+            "release",
+            "result",
+        ]
+        assert fms_runtime.requested[0]["resources"] == _snapshot()[
+            "reservation_segments"
+        ][0]["resources"]
+        assert fms_runtime.requested[1]["resources"] == _snapshot()[
+            "reservation_segments"
+        ][1]["resources"]
+        assert fms_runtime.requested[2]["resources"] == _snapshot()[
+            "reservation_segments"
+        ][1]["resources"]
+        assert events.index("waiting") < events.index("navigate_2")
 
     asyncio.run(_run())
 

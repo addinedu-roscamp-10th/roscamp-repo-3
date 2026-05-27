@@ -52,10 +52,27 @@ class DriveOrchestrator:
         )
         self.drive_navigation_timeout_sec = int(drive_navigation_timeout_sec)
 
-    async def async_run(self, *, task_id, robot_id, path_snapshot_json):
+    async def async_run(
+        self,
+        *,
+        task_id,
+        robot_id,
+        path_snapshot_json,
+        before_waypoint=None,
+        after_waypoint=None,
+    ):
         path = self._normalize_path_snapshot(path_snapshot_json)
         for index, pose_stamped in enumerate(path["poses"], start=1):
             sequence_no = pose_stamped.get("sequence_no") or index
+            if before_waypoint is not None:
+                before_response = await before_waypoint(
+                    sequence_no=sequence_no,
+                    waypoint_index=index,
+                    pose_stamped=pose_stamped,
+                )
+                if before_response is not None:
+                    return before_response
+
             response = await self._async_navigate(
                 task_id=task_id,
                 nav_phase=f"DRIVE_WAYPOINT_{sequence_no}",
@@ -68,6 +85,15 @@ class DriveOrchestrator:
             )
             if not self._is_success(response):
                 return self._failed_navigation_response(response)
+
+            if after_waypoint is not None:
+                after_response = await after_waypoint(
+                    sequence_no=sequence_no,
+                    waypoint_index=index,
+                    pose_stamped=pose_stamped,
+                )
+                if after_response is not None:
+                    return after_response
 
         return {
             "result_code": "SUCCESS",
@@ -256,67 +282,27 @@ def build_drive_request_service(
                     reason_code="DRIVE_TASK_NOT_FOUND",
                 )
 
-            waiting_recorded = False
-            reservation_attempt = 0
-            while True:
-                if reservation_attempt > 0:
-                    snapshot = (
-                        await drive_execution_repository.async_get_drive_execution_snapshot(
-                            task_id
-                        )
-                    )
-                    if snapshot is None:
-                        return _failed(
-                            "DRIVE task 실행 정보를 찾을 수 없습니다.",
-                            reason_code="DRIVE_TASK_NOT_FOUND",
-                        )
-
-                if _is_cancel_requested(snapshot):
-                    return _cancelled(
-                        "DRIVE task 취소 요청으로 주행을 시작하지 않습니다.",
-                        reason_code="DRIVE_TASK_CANCEL_REQUESTED",
-                    )
-
-                reservation_attempt += 1
-                reservation_response = await _request_fms_reservation(
-                    fms_runtime_service=fms_runtime_service,
-                    snapshot=snapshot,
-                )
-                reservation_result = str(
-                    reservation_response.get("result_code") or ""
-                ).upper()
-                if reservation_result != "WAITING":
-                    break
-
-                if not waiting_recorded:
-                    waiting_response = await drive_execution_repository.async_record_drive_reservation_waiting(
-                        task_id=task_id,
-                        reservation_response=reservation_response,
-                    )
-                    await _publish_workflow_task_update(
-                        waiting_response,
-                        source="DRIVE_FMS_RESERVATION_WAITING",
-                    )
-                    waiting_recorded = True
-
-                if (
-                    retry_max_attempts is not None
-                    and reservation_attempt >= retry_max_attempts
-                ):
-                    return {
-                        **reservation_response,
-                        "terminal": False,
-                    }
-
-                await asyncio.sleep(retry_interval_sec)
-
-            if reservation_result != "HELD":
+            segments = _reservation_segments_from_snapshot(snapshot)
+            if not segments:
                 return _failed(
-                    reservation_response.get("result_message")
-                    or "DRIVE FMS reservation failed.",
-                    reason_code=reservation_response.get("reason_code")
-                    or "DRIVE_FMS_RESERVATION_FAILED",
+                    "DRIVE FMS segment reservation 정보가 비어 있습니다.",
+                    reason_code="DRIVE_FMS_SEGMENTS_EMPTY",
                 )
+
+            held_segment_sequences = set()
+            first_segment_response = await _reserve_drive_segment_until_held(
+                fms_runtime_service=fms_runtime_service,
+                drive_execution_repository=drive_execution_repository,
+                task_id=task_id,
+                snapshot=snapshot,
+                resources=segments[0]["resources"],
+                retry_interval_sec=retry_interval_sec,
+                retry_max_attempts=retry_max_attempts,
+                publish_waiting_update=_publish_workflow_task_update,
+            )
+            if first_segment_response is not None:
+                return first_segment_response
+            held_segment_sequences.add(segments[0]["sequence_no"])
 
             start_response = (
                 await drive_execution_repository.async_record_drive_execution_started(
@@ -336,6 +322,86 @@ def build_drive_request_service(
                 )
                 return start_response
 
+            segments_by_sequence = {
+                segment["sequence_no"]: segment for segment in segments
+            }
+
+            async def _reserve_before_waypoint(
+                *,
+                sequence_no,
+                waypoint_index,
+                pose_stamped,
+            ):
+                del pose_stamped
+                normalized_sequence_no = _normalize_sequence_no(
+                    sequence_no,
+                    fallback=waypoint_index,
+                )
+                if normalized_sequence_no in held_segment_sequences:
+                    return None
+
+                segment = segments_by_sequence.get(normalized_sequence_no)
+                if segment is None:
+                    return _failed(
+                        "DRIVE FMS segment reservation 정보를 찾을 수 없습니다.",
+                        reason_code="DRIVE_FMS_SEGMENT_NOT_FOUND",
+                    )
+
+                response = await _reserve_drive_segment_until_held(
+                    fms_runtime_service=fms_runtime_service,
+                    drive_execution_repository=drive_execution_repository,
+                    task_id=task_id,
+                    snapshot=snapshot,
+                    resources=segment["resources"],
+                    retry_interval_sec=retry_interval_sec,
+                    retry_max_attempts=retry_max_attempts,
+                    publish_waiting_update=_publish_workflow_task_update,
+                )
+                if response is not None:
+                    return response
+
+                held_segment_sequences.add(normalized_sequence_no)
+                segment_start_response = await drive_execution_repository.async_record_drive_execution_started(
+                    task_id
+                )
+                await _publish_workflow_task_update(
+                    segment_start_response,
+                    source="DRIVE_WORKFLOW_SEGMENT_STARTED",
+                )
+                if segment_start_response.get("result_code") != "ACCEPTED":
+                    return segment_start_response
+                return None
+
+            async def _release_after_waypoint(
+                *,
+                sequence_no,
+                waypoint_index,
+                pose_stamped,
+            ):
+                del pose_stamped
+                normalized_sequence_no = _normalize_sequence_no(
+                    sequence_no,
+                    fallback=waypoint_index,
+                )
+                if normalized_sequence_no not in held_segment_sequences:
+                    return None
+
+                resources_to_release = _segment_resources_released_after_arrival(
+                    segments=segments,
+                    sequence_no=normalized_sequence_no,
+                )
+                if not resources_to_release:
+                    return None
+
+                await _release_fms_reservation(
+                    fms_runtime_service=fms_runtime_service,
+                    task_id=task_id,
+                    robot_id=snapshot["assigned_robot_id"],
+                    reason_code="SEGMENT_COMPLETED",
+                    resources=resources_to_release,
+                )
+                return None
+
             workflow_response = None
             release_reason = "FAILED"
             reservation_renew_task = asyncio.create_task(
@@ -352,6 +418,8 @@ def build_drive_request_service(
                     task_id=str(task_id),
                     robot_id=snapshot["assigned_robot_id"],
                     path_snapshot_json=snapshot["path_snapshot_json"],
+                    before_waypoint=_reserve_before_waypoint,
+                    after_waypoint=_release_after_waypoint,
                 )
                 release_reason = _release_reason_for_workflow(workflow_response)
                 return workflow_response
@@ -470,12 +538,14 @@ def build_drive_request_service(
     )
 
 
-async def _request_fms_reservation(*, fms_runtime_service, snapshot):
+async def _request_fms_reservation(*, fms_runtime_service, snapshot, resources=None):
     kwargs = {
         "task_id": int(snapshot["task_id"]),
         "robot_id": snapshot["assigned_robot_id"],
         "map_id": snapshot["map_id"],
-        "resources": snapshot.get("reservation_resources") or [],
+        "resources": resources
+        if resources is not None
+        else snapshot.get("reservation_resources") or [],
         "lease_sec": DEFAULT_FMS_RESERVATION_LEASE_SEC,
     }
     async_request = getattr(fms_runtime_service, "async_request_reservation", None)
@@ -484,22 +554,163 @@ async def _request_fms_reservation(*, fms_runtime_service, snapshot):
     return await asyncio.to_thread(fms_runtime_service.request_reservation, **kwargs)
 
 
+async def _reserve_drive_segment_until_held(
+    *,
+    fms_runtime_service,
+    drive_execution_repository,
+    task_id,
+    snapshot,
+    resources,
+    retry_interval_sec,
+    retry_max_attempts,
+    publish_waiting_update,
+):
+    waiting_recorded = False
+    reservation_attempt = 0
+    current_snapshot = snapshot
+    while True:
+        if reservation_attempt > 0:
+            current_snapshot = (
+                await drive_execution_repository.async_get_drive_execution_snapshot(
+                    task_id
+                )
+            )
+            if current_snapshot is None:
+                return _failed(
+                    "DRIVE task 실행 정보를 찾을 수 없습니다.",
+                    reason_code="DRIVE_TASK_NOT_FOUND",
+                )
+
+        if _is_cancel_requested(current_snapshot):
+            return _cancelled(
+                "DRIVE task 취소 요청으로 다음 segment 주행을 시작하지 않습니다.",
+                reason_code="DRIVE_TASK_CANCEL_REQUESTED",
+            )
+
+        reservation_attempt += 1
+        reservation_response = await _request_fms_reservation(
+            fms_runtime_service=fms_runtime_service,
+            snapshot=current_snapshot,
+            resources=resources,
+        )
+        reservation_result = str(
+            reservation_response.get("result_code") or ""
+        ).upper()
+        if reservation_result == "HELD":
+            return None
+
+        if reservation_result != "WAITING":
+            return _failed(
+                reservation_response.get("result_message")
+                or "DRIVE FMS segment reservation failed.",
+                reason_code=reservation_response.get("reason_code")
+                or "DRIVE_FMS_SEGMENT_RESERVATION_FAILED",
+            )
+
+        if not waiting_recorded:
+            waiting_response = await drive_execution_repository.async_record_drive_reservation_waiting(
+                task_id=task_id,
+                reservation_response=reservation_response,
+            )
+            await publish_waiting_update(
+                waiting_response,
+                source="DRIVE_FMS_SEGMENT_RESERVATION_WAITING",
+            )
+            waiting_recorded = True
+
+        if (
+            retry_max_attempts is not None
+            and reservation_attempt >= retry_max_attempts
+        ):
+            return {
+                **reservation_response,
+                "terminal": False,
+            }
+
+        await asyncio.sleep(retry_interval_sec)
+
+
 async def _release_fms_reservation(
     *,
     fms_runtime_service,
     task_id,
     robot_id,
     reason_code,
+    resources=None,
 ):
     kwargs = {
         "task_id": int(task_id),
         "robot_id": robot_id,
         "reason_code": reason_code,
+        "resources": resources,
     }
     async_release = getattr(fms_runtime_service, "async_release_reservation", None)
     if async_release is not None:
         return await async_release(**kwargs)
     return await asyncio.to_thread(fms_runtime_service.release_reservation, **kwargs)
+
+
+def _reservation_segments_from_snapshot(snapshot):
+    segments = []
+    for index, segment in enumerate(
+        (snapshot or {}).get("reservation_segments") or [],
+        start=1,
+    ):
+        if not isinstance(segment, dict):
+            continue
+        sequence_no = _normalize_sequence_no(
+            segment.get("sequence_no"),
+            fallback=index,
+        )
+        resources = segment.get("resources")
+        if not isinstance(resources, list) or not resources:
+            continue
+        segments.append(
+            {
+                "sequence_no": sequence_no,
+                "resources": resources,
+            }
+        )
+
+    if segments:
+        return segments
+
+    resources = (snapshot or {}).get("reservation_resources") or []
+    if resources:
+        return [{"sequence_no": 1, "resources": resources}]
+    return []
+
+
+def _segment_resources_released_after_arrival(*, segments, sequence_no):
+    segment_index = None
+    for index, segment in enumerate(segments):
+        if segment["sequence_no"] == sequence_no:
+            segment_index = index
+            break
+    if segment_index is None or segment_index == 0:
+        return []
+
+    releasable = []
+    previous_segment = segments[segment_index - 1]
+    releasable.extend(
+        resource
+        for resource in previous_segment["resources"]
+        if resource.get("resource_type") == "WAYPOINT"
+    )
+    current_segment = segments[segment_index]
+    releasable.extend(
+        resource
+        for resource in current_segment["resources"]
+        if resource.get("resource_type") == "EDGE"
+    )
+    return releasable
+
+
+def _normalize_sequence_no(value, *, fallback):
+    try:
+        return int(value or fallback)
+    except (TypeError, ValueError):
+        return int(fallback)
 
 
 async def _renew_fms_reservation(
