@@ -246,6 +246,7 @@ def _snapshot():
         "reservation_resources": [
             {"resource_type": "WAYPOINT", "resource_id": "corridor_01"},
             {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+            {"resource_type": "CONFLICT_ZONE", "resource_id": "cz_corridor_cross"},
             {"resource_type": "WAYPOINT", "resource_id": "corridor_02"},
         ],
         "reservation_segments": [
@@ -259,6 +260,10 @@ def _snapshot():
                 "sequence_no": 2,
                 "resources": [
                     {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+                    {
+                        "resource_type": "CONFLICT_ZONE",
+                        "resource_id": "cz_corridor_cross",
+                    },
                     {"resource_type": "WAYPOINT", "resource_id": "corridor_02"},
                 ],
             },
@@ -331,6 +336,10 @@ def test_drive_runtime_reserves_each_segment_before_navigation_and_releases_on_a
                 "resources": [
                     {"resource_type": "WAYPOINT", "resource_id": "corridor_01"},
                     {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+                    {
+                        "resource_type": "CONFLICT_ZONE",
+                        "resource_id": "cz_corridor_cross",
+                    },
                 ],
             },
             {

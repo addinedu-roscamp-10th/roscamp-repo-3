@@ -149,6 +149,7 @@ class FmsReservationRepository:
                         RELEASE_TASK_ROBOT_RESERVATIONS_SQL,
                         (reason_code, int(task_id), str(robot_id)),
                     )
+                    released_count = cur.rowcount
                 else:
                     cur.execute(
                         RELEASE_TASK_RESERVATIONS_SQL,

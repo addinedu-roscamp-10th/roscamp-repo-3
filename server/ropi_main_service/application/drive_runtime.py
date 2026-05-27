@@ -701,7 +701,7 @@ def _segment_resources_released_after_arrival(*, segments, sequence_no):
     releasable.extend(
         resource
         for resource in current_segment["resources"]
-        if resource.get("resource_type") == "EDGE"
+        if resource.get("resource_type") in {"EDGE", "CONFLICT_ZONE"}
     )
     return releasable
 
