@@ -13,6 +13,8 @@
 | `ropi-db-migrate-guide-location` | 기존 DB에 phase-1 안내 목적지 좌표를 보강하는 CLI. |
 | `ropi-db-migrate-guide-tracking` | 기존 DB의 안내 tracking 컬럼을 현재 정수 계약으로 보정하는 CLI. |
 | `ropi-db-migrate-fms-drive-runtime` | 기존 DB에 FMS/DRIVE 런타임 테이블을 보강하는 CLI. |
+| `ropi-db-migrate-fms-conflict-zone` | 기존 DB에 FMS 기하학적 conflict-zone 예약 테이블/컬럼을 보강하는 CLI. |
+| `ropi-db-sync-fms-conflict-zones` | enabled FMS edge 선분 교차를 계산해 conflict-zone DB row와 edge mapping을 갱신하는 CLI. |
 
 ## 실행 방법
 
@@ -100,6 +102,22 @@ uv run ropi-db-migrate-fms-drive-runtime --apply
 ```
 
 마이그레이션 성공 후 `ropi_schema_migration`에 적용 이력을 남긴다. 이미 적용된 DB에서는 기본 실행이 no-op이며, 재실행이 꼭 필요할 때만 `--force --apply`를 사용한다.
+
+## 기존 DB FMS conflict-zone 스키마/기하 동기화
+
+서로 다른 FMS edge가 map 좌표에서 교차하면 같은 `CONFLICT_ZONE` 예약 리소스를 공유해야 한다. 아래 CLI는 기존 waypoint/edge/route 데이터를 유지하면서 `fms_conflict_zone`, `fms_edge_conflict_zone`, `fms_reservation.conflict_zone_id`를 보강한다.
+
+```bash
+uv run ropi-db-migrate-fms-conflict-zone
+uv run ropi-db-migrate-fms-conflict-zone --apply
+```
+
+스키마 보강 후 enabled edge geometry에서 교차 zone을 생성/갱신한다. 기본은 dry-run이고, 적용 시 기존 `AUTO_GEOMETRY` link는 재계산하며 더 이상 검출되지 않는 자동 zone은 비활성화한다.
+
+```bash
+uv run ropi-db-sync-fms-conflict-zones --map-id map_0504
+uv run ropi-db-sync-fms-conflict-zones --map-id map_0504 --apply
+```
 
 ## 주의사항
 

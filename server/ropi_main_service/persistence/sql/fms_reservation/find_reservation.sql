@@ -7,6 +7,7 @@ SELECT
     resource_id,
     waypoint_id,
     edge_id,
+    conflict_zone_id,
     reservation_status,
     reserved_from,
     reserved_until,

@@ -20,6 +20,8 @@ DROP TABLE IF EXISTS `delivery_task_detail`;
 DROP TABLE IF EXISTS `task`;
 DROP TABLE IF EXISTS `fms_route_waypoint`;
 DROP TABLE IF EXISTS `fms_route`;
+DROP TABLE IF EXISTS `fms_edge_conflict_zone`;
+DROP TABLE IF EXISTS `fms_conflict_zone`;
 DROP TABLE IF EXISTS `fms_edge`;
 DROP TABLE IF EXISTS `fms_waypoint`;
 DROP TABLE IF EXISTS `goal_pose`;
@@ -278,6 +280,45 @@ CREATE TABLE `fms_edge` (
         (`from_waypoint_id`, `to_waypoint_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `fms_conflict_zone` (
+    `conflict_zone_id` VARCHAR(100) NOT NULL,
+    `map_id` VARCHAR(100) NOT NULL,
+    `zone_name` VARCHAR(100) NOT NULL,
+    `zone_type` VARCHAR(30) NOT NULL DEFAULT 'EDGE_INTERSECTION',
+    `source_type` VARCHAR(30) NOT NULL DEFAULT 'AUTO_GEOMETRY',
+    `center_x` DOUBLE NULL,
+    `center_y` DOUBLE NULL,
+    `radius_m` DOUBLE NULL,
+    `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `created_at` DATETIME(3) NOT NULL,
+    `updated_at` DATETIME(3) NOT NULL,
+    CONSTRAINT `pk_fms_conflict_zone` PRIMARY KEY (`conflict_zone_id`),
+    CONSTRAINT `fk_fms_conflict_zone_map_profile`
+        FOREIGN KEY (`map_id`)
+        REFERENCES `map_profile` (`map_id`),
+    KEY `idx_fms_conflict_zone_map_enabled_type`
+        (`map_id`, `is_enabled`, `zone_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `fms_edge_conflict_zone` (
+    `edge_id` VARCHAR(100) NOT NULL,
+    `conflict_zone_id` VARCHAR(100) NOT NULL,
+    `map_id` VARCHAR(100) NOT NULL,
+    `created_at` DATETIME(3) NOT NULL,
+    CONSTRAINT `pk_fms_edge_conflict_zone`
+        PRIMARY KEY (`edge_id`, `conflict_zone_id`),
+    CONSTRAINT `fk_fms_edge_conflict_zone_edge`
+        FOREIGN KEY (`edge_id`)
+        REFERENCES `fms_edge` (`edge_id`)
+        ON DELETE CASCADE,
+    CONSTRAINT `fk_fms_edge_conflict_zone_zone`
+        FOREIGN KEY (`conflict_zone_id`)
+        REFERENCES `fms_conflict_zone` (`conflict_zone_id`)
+        ON DELETE CASCADE,
+    KEY `idx_fms_edge_conflict_zone_zone` (`conflict_zone_id`),
+    KEY `idx_fms_edge_conflict_zone_map` (`map_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `fms_route` (
     `route_id` VARCHAR(100) NOT NULL,
     `map_id` VARCHAR(100) NOT NULL,
@@ -447,6 +488,7 @@ CREATE TABLE `fms_reservation` (
     `resource_id` VARCHAR(100) NOT NULL,
     `waypoint_id` VARCHAR(100) NULL,
     `edge_id` VARCHAR(100) NULL,
+    `conflict_zone_id` VARCHAR(100) NULL,
     `reservation_status` VARCHAR(20) NOT NULL,
     `reserved_from` DATETIME(3) NULL,
     `reserved_until` DATETIME(3) NULL,
@@ -471,6 +513,9 @@ CREATE TABLE `fms_reservation` (
     CONSTRAINT `fk_fms_reservation_edge`
         FOREIGN KEY (`edge_id`)
         REFERENCES `fms_edge` (`edge_id`),
+    CONSTRAINT `fk_fms_reservation_conflict_zone`
+        FOREIGN KEY (`conflict_zone_id`)
+        REFERENCES `fms_conflict_zone` (`conflict_zone_id`),
     KEY `idx_fms_reservation_active_resource`
         (`map_id`, `resource_type`, `resource_id`, `reservation_status`, `reserved_until`),
     KEY `idx_fms_reservation_task_status`

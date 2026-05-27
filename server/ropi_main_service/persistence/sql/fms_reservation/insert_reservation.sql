@@ -7,6 +7,7 @@ INSERT INTO fms_reservation (
     resource_id,
     waypoint_id,
     edge_id,
+    conflict_zone_id,
     reservation_status,
     reserved_from,
     reserved_until,
@@ -15,6 +16,7 @@ INSERT INTO fms_reservation (
     created_at,
     updated_at
 ) VALUES (
+    %s,
     %s,
     %s,
     %s,

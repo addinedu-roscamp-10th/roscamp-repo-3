@@ -443,12 +443,12 @@ class DriveTaskExecutionRepository:
 
         for index, pose in enumerate(poses or [], start=1):
             waypoint_id = str((pose or {}).get("waypoint_id") or "").strip()
-            key = ("WAYPOINT", waypoint_id)
-            if waypoint_id and key not in seen:
-                resources.append(
-                    {"resource_type": "WAYPOINT", "resource_id": waypoint_id}
-                )
-                seen.add(key)
+            DriveTaskExecutionRepository._append_reservation_resource(
+                resources,
+                seen,
+                "WAYPOINT",
+                waypoint_id,
+            )
 
             sequence_no = pose.get("sequence_no") if isinstance(pose, dict) else index
             try:
@@ -457,10 +457,19 @@ class DriveTaskExecutionRepository:
                 sequence_no = index
             for row in edges_by_sequence.get(sequence_no, []):
                 edge_id = str(row.get("edge_id") or "").strip()
-                key = ("EDGE", edge_id)
-                if edge_id and key not in seen:
-                    resources.append({"resource_type": "EDGE", "resource_id": edge_id})
-                    seen.add(key)
+                DriveTaskExecutionRepository._append_reservation_resource(
+                    resources,
+                    seen,
+                    "EDGE",
+                    edge_id,
+                )
+                conflict_zone_id = str(row.get("conflict_zone_id") or "").strip()
+                DriveTaskExecutionRepository._append_reservation_resource(
+                    resources,
+                    seen,
+                    "CONFLICT_ZONE",
+                    conflict_zone_id,
+                )
 
         return resources
 
@@ -500,20 +509,27 @@ class DriveTaskExecutionRepository:
                     previous_sequence_no = index - 1
                 for row in edges_by_sequence.get(previous_sequence_no, []):
                     edge_id = str(row.get("edge_id") or "").strip()
-                    key = ("EDGE", edge_id)
-                    if edge_id and key not in seen:
-                        resources.append(
-                            {"resource_type": "EDGE", "resource_id": edge_id}
-                        )
-                        seen.add(key)
+                    DriveTaskExecutionRepository._append_reservation_resource(
+                        resources,
+                        seen,
+                        "EDGE",
+                        edge_id,
+                    )
+                    conflict_zone_id = str(row.get("conflict_zone_id") or "").strip()
+                    DriveTaskExecutionRepository._append_reservation_resource(
+                        resources,
+                        seen,
+                        "CONFLICT_ZONE",
+                        conflict_zone_id,
+                    )
 
             waypoint_id = str(pose.get("waypoint_id") or "").strip()
-            key = ("WAYPOINT", waypoint_id)
-            if waypoint_id and key not in seen:
-                resources.append(
-                    {"resource_type": "WAYPOINT", "resource_id": waypoint_id}
-                )
-                seen.add(key)
+            DriveTaskExecutionRepository._append_reservation_resource(
+                resources,
+                seen,
+                "WAYPOINT",
+                waypoint_id,
+            )
 
             segments.append(
                 {
@@ -524,6 +540,15 @@ class DriveTaskExecutionRepository:
             )
 
         return segments
+
+    @staticmethod
+    def _append_reservation_resource(resources, seen, resource_type, resource_id):
+        resource_id = str(resource_id or "").strip()
+        key = (resource_type, resource_id)
+        if not resource_id or key in seen:
+            return
+        resources.append({"resource_type": resource_type, "resource_id": resource_id})
+        seen.add(key)
 
     @staticmethod
     def _parse_task_id(value):

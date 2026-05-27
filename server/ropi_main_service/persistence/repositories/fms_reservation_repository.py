@@ -212,6 +212,7 @@ class FmsReservationRepository:
                 resource["resource_id"],
                 resource["waypoint_id"],
                 resource["edge_id"],
+                resource["conflict_zone_id"],
                 reservation_status,
                 reservation_status,
                 reservation_status,
@@ -232,6 +233,9 @@ class FmsReservationRepository:
             "resource_id": resource_id,
             "waypoint_id": resource_id if resource_type == "WAYPOINT" else None,
             "edge_id": resource_id if resource_type == "EDGE" else None,
+            "conflict_zone_id": (
+                resource_id if resource_type == "CONFLICT_ZONE" else None
+            ),
         }
 
     @staticmethod

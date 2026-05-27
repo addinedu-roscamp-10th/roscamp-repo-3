@@ -12,7 +12,7 @@ from server.ropi_main_service.persistence.repositories.fms_reservation_repositor
 class FmsRuntimeService:
     DEFAULT_LEASE_SEC = 30
     WAITING_PHASE = "WAITING_FMS_RESERVATION"
-    VALID_RESOURCE_TYPES = {"WAYPOINT", "EDGE"}
+    VALID_RESOURCE_TYPES = {"WAYPOINT", "EDGE", "CONFLICT_ZONE"}
 
     def __init__(self, repository=None, clock=None):
         self.repository = repository or FmsReservationRepository()

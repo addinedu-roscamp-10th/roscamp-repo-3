@@ -2,7 +2,8 @@ SELECT
     previous.sequence_no AS from_sequence_no,
     edge.edge_id,
     edge.from_waypoint_id,
-    edge.to_waypoint_id
+    edge.to_waypoint_id,
+    conflict_zone.conflict_zone_id
 FROM task t
 JOIN drive_task_detail d
     ON d.task_id = t.task_id
@@ -24,6 +25,13 @@ JOIN fms_edge edge
             AND edge.to_waypoint_id = previous.waypoint_id
         )
     )
+LEFT JOIN fms_edge_conflict_zone edge_conflict_zone
+    ON edge_conflict_zone.edge_id = edge.edge_id
+    AND edge_conflict_zone.map_id = edge.map_id
+LEFT JOIN fms_conflict_zone conflict_zone
+    ON conflict_zone.conflict_zone_id = edge_conflict_zone.conflict_zone_id
+    AND conflict_zone.map_id = edge.map_id
+    AND conflict_zone.is_enabled = TRUE
 WHERE t.task_id = %s
   AND t.task_type = 'DRIVE'
-ORDER BY previous.sequence_no ASC, edge.edge_id ASC
+ORDER BY previous.sequence_no ASC, edge.edge_id ASC, conflict_zone.conflict_zone_id ASC

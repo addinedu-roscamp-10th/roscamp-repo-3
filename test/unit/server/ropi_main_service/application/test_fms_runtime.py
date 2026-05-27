@@ -169,6 +169,7 @@ def test_fms_runtime_release_reservation_can_target_specific_resources():
         resources=[
             {"resource_type": "WAYPOINT", "resource_id": "corridor_01"},
             {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+            {"resource_type": "CONFLICT_ZONE", "resource_id": "cz_geo_cross_01"},
         ],
     )
 
@@ -180,6 +181,7 @@ def test_fms_runtime_release_reservation_can_target_specific_resources():
         "resources": [
             {"resource_type": "WAYPOINT", "resource_id": "corridor_01"},
             {"resource_type": "EDGE", "resource_id": "edge_corridor_01_02"},
+            {"resource_type": "CONFLICT_ZONE", "resource_id": "cz_geo_cross_01"},
         ],
     }
 

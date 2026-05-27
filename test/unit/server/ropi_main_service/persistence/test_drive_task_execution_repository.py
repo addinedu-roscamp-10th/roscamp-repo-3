@@ -12,7 +12,11 @@ def test_drive_execution_repository_builds_segment_reservation_resources():
         ]
     }
     edge_rows = [
-        {"from_sequence_no": 1, "edge_id": "edge_hall_1_2"},
+        {
+            "from_sequence_no": 1,
+            "edge_id": "edge_hall_1_2",
+            "conflict_zone_id": "cz_cross_01",
+        },
         {"from_sequence_no": 2, "edge_id": "edge_hall_2_3"},
     ]
 
@@ -32,6 +36,7 @@ def test_drive_execution_repository_builds_segment_reservation_resources():
             "waypoint_id": "hall_2",
             "resources": [
                 {"resource_type": "EDGE", "resource_id": "edge_hall_1_2"},
+                {"resource_type": "CONFLICT_ZONE", "resource_id": "cz_cross_01"},
                 {"resource_type": "WAYPOINT", "resource_id": "hall_2"},
             ],
         },

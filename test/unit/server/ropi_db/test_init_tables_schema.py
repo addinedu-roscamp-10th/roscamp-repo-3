@@ -75,6 +75,8 @@ def test_schema_contains_control_task_and_log_tables():
         "patrol_task_detail",
         "patrol_area",
         "drive_task_detail",
+        "fms_conflict_zone",
+        "fms_edge_conflict_zone",
         "fms_reservation",
         "guide_task_detail",
         "task_state_history",
@@ -167,13 +169,37 @@ def test_drive_task_detail_snapshots_fms_route_for_navigation_only_task():
     assert "CONSTRAINT `fk_drive_task_detail_route`" in drive_section
 
 
-def test_fms_reservation_schema_tracks_waypoint_and_edge_leases():
+def test_fms_reservation_schema_tracks_waypoint_edge_and_conflict_zone_leases():
     ddl = _ddl()
 
+    conflict_zone_section = ddl.split("CREATE TABLE `fms_conflict_zone`", 1)[1].split(
+        "CREATE TABLE `fms_edge_conflict_zone`",
+        1,
+    )[0]
+    edge_conflict_zone_section = ddl.split(
+        "CREATE TABLE `fms_edge_conflict_zone`",
+        1,
+    )[1].split(
+        "CREATE TABLE `fms_route`",
+        1,
+    )[0]
     reservation_section = ddl.split("CREATE TABLE `fms_reservation`", 1)[1].split(
         "CREATE TABLE `guide_task_detail`",
         1,
     )[0]
+
+    assert "`conflict_zone_id` VARCHAR(100) NOT NULL" in conflict_zone_section
+    assert "`zone_type` VARCHAR(30) NOT NULL DEFAULT 'EDGE_INTERSECTION'" in conflict_zone_section
+    assert "`source_type` VARCHAR(30) NOT NULL DEFAULT 'AUTO_GEOMETRY'" in conflict_zone_section
+    assert "`center_x` DOUBLE NULL" in conflict_zone_section
+    assert "`center_y` DOUBLE NULL" in conflict_zone_section
+    assert "CONSTRAINT `fk_fms_conflict_zone_map_profile`" in conflict_zone_section
+    assert "KEY `idx_fms_conflict_zone_map_enabled_type`" in conflict_zone_section
+
+    assert "CONSTRAINT `pk_fms_edge_conflict_zone`" in edge_conflict_zone_section
+    assert "CONSTRAINT `fk_fms_edge_conflict_zone_edge`" in edge_conflict_zone_section
+    assert "CONSTRAINT `fk_fms_edge_conflict_zone_zone`" in edge_conflict_zone_section
+    assert "KEY `idx_fms_edge_conflict_zone_zone`" in edge_conflict_zone_section
 
     assert "`reservation_id` VARCHAR(100) NOT NULL" in reservation_section
     assert "`task_id` BIGINT UNSIGNED NULL" in reservation_section
@@ -183,6 +209,7 @@ def test_fms_reservation_schema_tracks_waypoint_and_edge_leases():
     assert "`resource_id` VARCHAR(100) NOT NULL" in reservation_section
     assert "`waypoint_id` VARCHAR(100) NULL" in reservation_section
     assert "`edge_id` VARCHAR(100) NULL" in reservation_section
+    assert "`conflict_zone_id` VARCHAR(100) NULL" in reservation_section
     assert "`reservation_status` VARCHAR(20) NOT NULL" in reservation_section
     assert "`reserved_until` DATETIME(3) NULL" in reservation_section
     assert "`released_at` DATETIME(3) NULL" in reservation_section
@@ -190,6 +217,7 @@ def test_fms_reservation_schema_tracks_waypoint_and_edge_leases():
     assert "CONSTRAINT `fk_fms_reservation_robot`" in reservation_section
     assert "CONSTRAINT `fk_fms_reservation_waypoint`" in reservation_section
     assert "CONSTRAINT `fk_fms_reservation_edge`" in reservation_section
+    assert "CONSTRAINT `fk_fms_reservation_conflict_zone`" in reservation_section
     assert "KEY `idx_fms_reservation_active_resource`" in reservation_section
 
 
@@ -289,6 +317,10 @@ def test_db_runbook_documents_multimap_coordinate_migration_cli():
         'ropi-db-migrate-fms-drive-runtime = "server.ropi_db.fms_drive_runtime_schema_migration:main"'
         in pyproject
     )
+    assert (
+        'ropi-db-migrate-fms-conflict-zone = "server.ropi_db.fms_conflict_zone_schema_migration:main"'
+        in pyproject
+    )
     assert "uv run ropi-db-migrate-multimap" in readme
     assert "uv run ropi-db-migrate-multimap --apply" in readme
     assert "uv run ropi-db-migrate-guide-location" in readme
@@ -297,7 +329,10 @@ def test_db_runbook_documents_multimap_coordinate_migration_cli():
     assert "uv run ropi-db-migrate-guide-tracking --apply" in readme
     assert "uv run ropi-db-migrate-fms-drive-runtime" in readme
     assert "uv run ropi-db-migrate-fms-drive-runtime --apply" in readme
+    assert "uv run ropi-db-migrate-fms-conflict-zone" in readme
+    assert "uv run ropi-db-migrate-fms-conflict-zone --apply" in readme
     assert "`drive_task_detail`, `fms_reservation`" in readme
+    assert "`fms_conflict_zone`, `fms_edge_conflict_zone`" in readme
     assert "`operation_zone` primary key를 `(map_id, zone_id)`로 보정" in readme
     assert "`goal_pose(map_id, zone_id)` -> `operation_zone(map_id, zone_id)`" in readme
 
@@ -313,6 +348,13 @@ def test_goal_pose_queries_join_operation_zone_by_map_and_zone():
         sql = _sql(relative_path)
         assert "ON oz.map_id = gp.map_id" in sql
         assert "AND oz.zone_id = gp.zone_id" in sql
+
+
+def test_drive_route_edge_query_includes_conflict_zone_mapping():
+    sql = _sql("server/ropi_main_service/persistence/sql/drive/list_drive_route_edges.sql")
+
+    assert "LEFT JOIN fms_edge_conflict_zone" in sql
+    assert "edge_conflict_zone.conflict_zone_id" in sql
 
 
 def test_dummy_patrol_area_contains_path_backed_route():
