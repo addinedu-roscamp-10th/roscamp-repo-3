@@ -130,6 +130,25 @@ def test_task_update_event_publisher_keeps_patrol_fall_alert_payload():
     }
 
 
+def test_task_update_event_publisher_keeps_drive_waypoint_progress_payload():
+    payload = TaskUpdateEventPublisher.build_payload(
+        {
+            "result_code": "ACCEPTED",
+            "task_id": 3001,
+            "task_type": "DRIVE",
+            "task_status": "RUNNING",
+            "phase": "FOLLOW_DRIVE_ROUTE",
+            "assigned_robot_id": "pinky1",
+            "current_waypoint_index": 1,
+        },
+        source="DRIVE_WAYPOINT_ARRIVED",
+        task_type="DRIVE",
+    )
+
+    assert payload["task_type"] == "DRIVE"
+    assert payload["current_waypoint_index"] == 1
+
+
 def test_task_update_event_publisher_skips_invalid_response():
     published = []
 

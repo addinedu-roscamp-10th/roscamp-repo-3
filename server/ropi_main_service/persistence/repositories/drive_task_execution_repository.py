@@ -312,6 +312,55 @@ class DriveTaskExecutionRepository:
             cancellable=False,
         )
 
+    async def async_record_drive_waypoint_arrived(self, *, task_id, waypoint_index):
+        numeric_task_id = self._parse_task_id(task_id)
+        numeric_waypoint_index = self._parse_waypoint_index(waypoint_index)
+        if numeric_task_id is None or numeric_waypoint_index is None:
+            return self._build_drive_state_response(
+                result_code="REJECTED",
+                result_message="DRIVE waypoint index를 확인할 수 없습니다.",
+                reason_code="DRIVE_WAYPOINT_INDEX_INVALID",
+                task_id=numeric_task_id,
+                task_status=None,
+                phase=None,
+                assigned_robot_id=None,
+                cancellable=False,
+            )
+
+        async with async_transaction() as cur:
+            await cur.execute(
+                load_sql("drive/lock_drive_task_for_result.sql"),
+                (numeric_task_id,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return self._build_drive_state_response(
+                    result_code="NOT_FOUND",
+                    result_message="DRIVE task 실행 정보를 찾을 수 없습니다.",
+                    reason_code="DRIVE_TASK_NOT_FOUND",
+                    task_id=numeric_task_id,
+                    task_status=None,
+                    phase=None,
+                    assigned_robot_id=None,
+                    cancellable=False,
+                )
+            await cur.execute(
+                load_sql("drive/update_drive_task_waypoint_arrived.sql"),
+                (numeric_waypoint_index, numeric_task_id),
+            )
+
+        return self._build_drive_state_response(
+            result_code="ACCEPTED",
+            result_message=None,
+            reason_code=None,
+            task_id=numeric_task_id,
+            task_status=row.get("task_status") or TASK_STATUS_RUNNING,
+            phase=row.get("phase") or PHASE_FOLLOW_DRIVE_ROUTE,
+            assigned_robot_id=row.get("assigned_robot_id"),
+            cancellable=True,
+            current_waypoint_index=numeric_waypoint_index,
+        )
+
     def _build_start_guard(self, row, *, task_id):
         if not row:
             return self._build_drive_state_response(
@@ -558,6 +607,14 @@ class DriveTaskExecutionRepository:
         return int(raw)
 
     @staticmethod
+    def _parse_waypoint_index(value):
+        raw = str(value or "").strip()
+        if not raw.isdigit():
+            return None
+        numeric = int(raw)
+        return numeric if numeric >= 0 else None
+
+    @staticmethod
     def _parse_path_snapshot(value):
         if isinstance(value, str):
             return json.loads(value)
@@ -618,17 +675,21 @@ class DriveTaskExecutionRepository:
         phase,
         assigned_robot_id,
         cancellable,
+        **extra_fields,
     ):
-        return {
+        response = {
             "result_code": result_code,
             "result_message": result_message,
             "reason_code": reason_code,
             "task_id": task_id,
+            "task_type": "DRIVE",
             "task_status": task_status,
             "phase": phase,
             "assigned_robot_id": assigned_robot_id,
             "cancellable": cancellable,
         }
+        response.update(extra_fields)
+        return response
 
 
 __all__ = ["DriveTaskExecutionRepository"]

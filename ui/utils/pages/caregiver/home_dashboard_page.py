@@ -44,6 +44,12 @@ from ui.utils.widgets.admin_common import (
 )
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 from ui.utils.widgets.map_canvas import MapCanvasWidget
+from ui.utils.widgets.drive_route_overlay import (
+    build_drive_route_markers,
+    draw_drive_route_markers,
+    drive_route_label,
+    drive_target_waypoint_text,
+)
 
 
 CANCELABLE_TASK_STATUSES = {
@@ -474,6 +480,7 @@ class HomeOperationMapCanvas(MapCanvasWidget):
         )
         self.visible_robot_ids = []
         self.robot_markers = []
+        self.drive_route_markers = []
         self._syncing_canvas_height = False
 
     def load_map_from_assets(self, *, yaml_text, pgm_bytes, cache_key=None):
@@ -512,10 +519,17 @@ class HomeOperationMapCanvas(MapCanvasWidget):
     def show_robots(self, robots, *, selected_map_id):
         self.visible_robot_ids = []
         self.robot_markers = []
+        self.drive_route_markers = []
         selected_map_id = str(selected_map_id or "").strip()
         if not self.map_loaded or not selected_map_id:
             self.update()
             return
+
+        self.drive_route_markers = build_drive_route_markers(
+            self,
+            robots,
+            selected_map_id=selected_map_id,
+        )
 
         for robot in robots or []:
             if not isinstance(robot, dict):
@@ -548,6 +562,7 @@ class HomeOperationMapCanvas(MapCanvasWidget):
         self.update()
 
     def draw_overlay(self, painter, target):
+        draw_drive_route_markers(self, painter, target, self.drive_route_markers)
         for marker in self.robot_markers:
             point = self.to_view_point(marker.get("pixel"), target)
             if point is None:
@@ -632,6 +647,8 @@ class RobotBoardCard(QFrame):
         current_task = _display(
             robot.get("current_task_id") or robot.get("current_task")
         )
+        target_waypoint = drive_target_waypoint_text(robot.get("active_drive_task"))
+        drive_route = drive_route_label(robot.get("active_drive_task"))
         last_seen = _datetime(robot.get("last_seen_at"))
         chip_type = _display(robot.get("chip_type"), "blue")
 
@@ -648,14 +665,16 @@ class RobotBoardCard(QFrame):
         top.addStretch()
         top.addWidget(chip)
 
-        rows = (
+        rows = [
             ("구분", robot_type),
             ("지원 기능", capabilities),
             ("현재 작업", current_task),
             ("위치", location),
             ("배터리", _battery_text(battery)),
             ("마지막 수신", last_seen),
-        )
+        ]
+        if target_waypoint != "-" or drive_route != "-":
+            rows[3:3] = [("목표 WP", target_waypoint), ("주행 경로", drive_route)]
         for row in rows:
             self._add_field_row(root, *row)
 
@@ -1226,7 +1245,7 @@ class CaregiverHomePage(QWidget):
                 robot_data.get("robot_id") or robot_data.get("robot_name") or ""
             ).strip()
             if current_id == robot_id:
-                robot_data.update(patch)
+                robot_data = self._merge_robot_patch(robot_data, patch)
                 patched = True
             next_robots.append(robot_data)
 
@@ -1376,6 +1395,7 @@ class CaregiverHomePage(QWidget):
         next_flow_data = self._normalize_flow_data(next_tasks)
         self.apply_flow_board_data(next_flow_data)
         self._apply_task_flow_kpi_counts(next_flow_data)
+        self._apply_drive_task_progress_to_robot(payload)
         self._mark_last_update()
         return True
 
@@ -1420,6 +1440,64 @@ class CaregiverHomePage(QWidget):
             patch["task_type"] = str(patch["task_type"] or "").upper()
 
         return patch
+
+    def _apply_drive_task_progress_to_robot(self, payload: dict) -> bool:
+        if not self._last_robots:
+            return False
+        robot_id = str(payload.get("assigned_robot_id") or "").strip()
+        if not robot_id:
+            return False
+        if (
+            "current_waypoint_index" not in payload
+            and not isinstance(payload.get("active_drive_task"), dict)
+        ):
+            return False
+
+        active_drive_patch = (
+            dict(payload["active_drive_task"])
+            if isinstance(payload.get("active_drive_task"), dict)
+            else {"current_waypoint_index": payload.get("current_waypoint_index")}
+        )
+        patch = {
+            "robot_id": robot_id,
+            "current_task_id": payload.get("task_id"),
+            "current_phase": payload.get("phase") or payload.get("task_status"),
+            "active_drive_task": active_drive_patch,
+        }
+
+        next_robots = []
+        patched = False
+        for robot in self._last_robots:
+            robot_data = dict(robot) if isinstance(robot, dict) else {}
+            current_id = str(
+                robot_data.get("robot_id") or robot_data.get("robot_name") or ""
+            ).strip()
+            if current_id == robot_id:
+                robot_data = self._merge_robot_patch(robot_data, patch)
+                patched = True
+            next_robots.append(robot_data)
+
+        if not patched:
+            return False
+
+        self.apply_robot_board_data(next_robots)
+        if self._last_home_map_data:
+            self.apply_home_map_data(self._last_home_map_data, robots=next_robots)
+        return True
+
+    @staticmethod
+    def _merge_robot_patch(robot_data: dict, patch: dict) -> dict:
+        merged = dict(robot_data)
+        for key, value in patch.items():
+            if (
+                key == "active_drive_task"
+                and isinstance(value, dict)
+                and isinstance(merged.get(key), dict)
+            ):
+                merged[key] = {**merged[key], **value}
+            else:
+                merged[key] = value
+        return merged
 
     def _apply_task_flow_kpi_counts(self, flow_data):
         normalized = self._normalize_flow_data(flow_data)

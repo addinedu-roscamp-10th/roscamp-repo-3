@@ -345,6 +345,81 @@ def test_caregiver_service_robot_status_bundle_is_robot_centered():
     ]
 
 
+def test_caregiver_robot_board_exposes_active_drive_route_target():
+    rows = [
+        {
+            "robot_id": "pinky1",
+            "robot_type_name": "Pinky Pro",
+            "robot_manager_name": "모바일팀",
+            "robot_status": "RUNNING",
+            "current_location": "x=0.0, y=0.0",
+            "battery_percent": 82.0,
+            "current_task_id": 3001,
+            "current_task_type": "DRIVE",
+            "current_task_phase": "FOLLOW_DRIVE_ROUTE",
+            "current_task_status": "RUNNING",
+            "current_pose_map_id": "map_0504",
+            "pose_x": 0.0,
+            "pose_y": 0.0,
+            "pose_yaw": 0.0,
+            "frame_id": "map",
+            "last_seen_at": "2026-05-03T12:00:00",
+            "last_seen_age_sec": 1,
+            "fault_code": None,
+            "drive_route_id": "route_01",
+            "drive_route_name": "교차 복도 1",
+            "drive_route_revision": 2,
+            "drive_status": "MOVING",
+            "drive_frame_id": "map",
+            "drive_waypoint_count": 3,
+            "drive_current_waypoint_index": 1,
+            "drive_path_snapshot_json": {
+                "header": {"frame_id": "map"},
+                "poses": [
+                    {
+                        "sequence_no": 1,
+                        "waypoint_id": "hall_1_1",
+                        "x": 0.0,
+                        "y": 0.0,
+                        "yaw": 0.0,
+                    },
+                    {
+                        "sequence_no": 2,
+                        "waypoint_id": "hall_1_4",
+                        "x": 1.0,
+                        "y": 0.0,
+                        "yaw": 0.0,
+                    },
+                    {
+                        "sequence_no": 3,
+                        "waypoint_id": "hall_2_4",
+                        "x": 1.0,
+                        "y": -1.0,
+                        "yaw": -1.57,
+                    },
+                ],
+            },
+        }
+    ]
+
+    robots = CaregiverService._format_robot_board_data(rows)
+    active_drive = robots[0]["active_drive_task"]
+
+    assert active_drive["task_id"] == 3001
+    assert active_drive["route_id"] == "route_01"
+    assert active_drive["route_name"] == "교차 복도 1"
+    assert active_drive["route_path"]["map_id"] == "map_0504"
+    assert [pose["waypoint_id"] for pose in active_drive["route_path"]["poses"]] == [
+        "hall_1_1",
+        "hall_1_4",
+        "hall_2_4",
+    ]
+    assert active_drive["current_waypoint_index"] == 1
+    assert active_drive["target_waypoint_index"] == 2
+    assert active_drive["target_waypoint"]["waypoint_id"] == "hall_1_4"
+    assert active_drive["target_waypoint"]["x"] == 1.0
+
+
 def test_caregiver_service_marks_stale_runtime_offline_and_hides_ip_location():
     rows = [
         {

@@ -273,6 +273,173 @@ def test_home_dashboard_map_uses_dashboard_robot_pose_and_db_assets():
         page.close()
 
 
+def test_home_dashboard_map_renders_active_drive_route_and_target():
+    _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+
+    try:
+        robots = [
+            {
+                "robot_id": "pinky2",
+                "connection_status": "ONLINE",
+                "current_task_id": 3001,
+                "current_pose": {
+                    "map_id": "map_0504",
+                    "x": 1.0,
+                    "y": 1.0,
+                    "yaw": 0.5,
+                },
+                "active_drive_task": {
+                    "task_id": 3001,
+                    "route_id": "route_01",
+                    "route_name": "교차 복도 1",
+                    "current_waypoint_index": 1,
+                    "target_waypoint_index": 2,
+                    "target_waypoint": {
+                        "sequence_no": 2,
+                        "waypoint_id": "hall_1_4",
+                        "x": 2.0,
+                        "y": 1.0,
+                    },
+                    "route_path": {
+                        "map_id": "map_0504",
+                        "frame_id": "map",
+                        "poses": [
+                            {
+                                "sequence_no": 1,
+                                "waypoint_id": "hall_1_1",
+                                "x": 1.0,
+                                "y": 1.0,
+                            },
+                            {
+                                "sequence_no": 2,
+                                "waypoint_id": "hall_1_4",
+                                "x": 2.0,
+                                "y": 1.0,
+                            },
+                            {
+                                "sequence_no": 3,
+                                "waypoint_id": "hall_2_4",
+                                "x": 2.0,
+                                "y": 2.0,
+                            },
+                        ],
+                    },
+                },
+            }
+        ]
+
+        page.apply_robot_board_data(robots)
+        page.apply_home_map_data(
+            {
+                "selected_map_id": "map_0504",
+                "map_assets": _map_assets("map_0504"),
+            },
+            robots=robots,
+        )
+
+        labels = _label_texts(page)
+        assert "목표 WP" in labels
+        assert "hall_1_4" in labels
+        marker = page.home_map_canvas.drive_route_markers[0]
+        assert marker["robot_id"] == "pinky2"
+        assert marker["route_pixel_points"] == [(1, 3), (2, 3), (2, 2)]
+        assert marker["target_waypoint_id"] == "hall_1_4"
+    finally:
+        page.close()
+
+
+def test_home_dashboard_updates_drive_target_from_task_stream_event():
+    app = _app()
+
+    from ui.utils.pages.caregiver.home_dashboard_page import CaregiverHomePage
+
+    page = CaregiverHomePage(autoload=False)
+    page.show()
+    app.processEvents()
+
+    try:
+        robots = [
+            {
+                "robot_id": "pinky2",
+                "connection_status": "ONLINE",
+                "current_task_id": 3001,
+                "current_pose": {"map_id": "map_0504", "x": 1.0, "y": 1.0},
+                "active_drive_task": {
+                    "task_id": 3001,
+                    "route_id": "route_01",
+                    "route_name": "교차 복도 1",
+                    "current_waypoint_index": 0,
+                    "route_path": {
+                        "map_id": "map_0504",
+                        "frame_id": "map",
+                        "poses": [
+                            {
+                                "sequence_no": 1,
+                                "waypoint_id": "hall_1_1",
+                                "x": 1.0,
+                                "y": 1.0,
+                            },
+                            {
+                                "sequence_no": 2,
+                                "waypoint_id": "hall_1_4",
+                                "x": 2.0,
+                                "y": 1.0,
+                            },
+                        ],
+                    },
+                },
+            }
+        ]
+        page.apply_robot_board_data(robots)
+        page.apply_home_map_data(
+            {
+                "selected_map_id": "map_0504",
+                "map_assets": _map_assets("map_0504"),
+            },
+            robots=robots,
+        )
+        page.apply_flow_board_data(
+            {
+                "IN_PROGRESS": [
+                    {
+                        "task_id": 3001,
+                        "task_type": "DRIVE",
+                        "task_status": "RUNNING",
+                        "assigned_robot_id": "pinky2",
+                    }
+                ]
+            }
+        )
+
+        assert page.home_map_canvas.drive_route_markers[0]["target_waypoint_id"] == (
+            "hall_1_1"
+        )
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": 3001,
+                    "task_type": "DRIVE",
+                    "task_status": "RUNNING",
+                    "phase": "FOLLOW_DRIVE_ROUTE",
+                    "assigned_robot_id": "pinky2",
+                    "current_waypoint_index": 1,
+                },
+            }
+        )
+
+        assert page.home_map_canvas.drive_route_markers[0]["target_waypoint_id"] == (
+            "hall_1_4"
+        )
+    finally:
+        page.close()
+
+
 def test_home_dashboard_load_worker_attaches_db_backed_map_assets(monkeypatch):
     _app()
 

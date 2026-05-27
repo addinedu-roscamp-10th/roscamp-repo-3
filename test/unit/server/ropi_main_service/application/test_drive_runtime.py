@@ -31,6 +31,7 @@ class FakeDriveExecutionRepository:
         self.snapshots = list(snapshot) if isinstance(snapshot, list) else None
         self.waiting_records = []
         self.started = []
+        self.waypoint_arrivals = []
         self.results = []
 
     async def async_get_drive_execution_snapshot(self, task_id):
@@ -68,6 +69,19 @@ class FakeDriveExecutionRepository:
             "task_id": int(task_id),
             "task_status": "RUNNING",
             "phase": "FOLLOW_DRIVE_ROUTE",
+        }
+
+    async def async_record_drive_waypoint_arrived(self, *, task_id, waypoint_index):
+        self.waypoint_arrivals.append(
+            {"task_id": int(task_id), "waypoint_index": int(waypoint_index)}
+        )
+        return {
+            "result_code": "ACCEPTED",
+            "task_id": int(task_id),
+            "task_status": "RUNNING",
+            "phase": "FOLLOW_DRIVE_ROUTE",
+            "assigned_robot_id": "pinky1",
+            "current_waypoint_index": int(waypoint_index),
         }
 
     async def async_record_drive_task_workflow_result(
@@ -327,6 +341,10 @@ def test_drive_runtime_reserves_each_segment_before_navigation_and_releases_on_a
         assert drive_orchestrator.calls[0]["robot_id"] == "pinky1"
         assert drive_orchestrator.calls[0]["path_snapshot_json"] == _snapshot()[
             "path_snapshot_json"
+        ]
+        assert execution_repository.waypoint_arrivals == [
+            {"task_id": 3001, "waypoint_index": 1},
+            {"task_id": 3001, "waypoint_index": 2},
         ]
         assert fms_runtime.released[:2] == [
             {

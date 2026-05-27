@@ -386,6 +386,17 @@ def build_drive_request_service(
                 if normalized_sequence_no not in held_segment_sequences:
                     return None
 
+                arrival_response = await drive_execution_repository.async_record_drive_waypoint_arrived(
+                    task_id=task_id,
+                    waypoint_index=waypoint_index,
+                )
+                await _publish_workflow_task_update(
+                    arrival_response,
+                    source="DRIVE_WAYPOINT_ARRIVED",
+                )
+                if arrival_response.get("result_code") != "ACCEPTED":
+                    return arrival_response
+
                 resources_to_release = _segment_resources_released_after_arrival(
                     segments=segments,
                     sequence_no=normalized_sequence_no,

@@ -43,6 +43,13 @@ class TaskUpdateEventPublisher:
             dict,
         ):
             payload["fall_alert"] = dict(response["fall_alert"])
+        if resolved_task_type == "DRIVE":
+            if "current_waypoint_index" in response:
+                payload["current_waypoint_index"] = response.get(
+                    "current_waypoint_index"
+                )
+            if isinstance(response.get("active_drive_task"), dict):
+                payload["active_drive_task"] = dict(response["active_drive_task"])
 
         return payload
 

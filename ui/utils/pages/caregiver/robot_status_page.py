@@ -40,6 +40,12 @@ from ui.utils.widgets.admin_common import (
 )
 from ui.utils.widgets.admin_shell import PageHeader, PageTimeCard
 from ui.utils.widgets.map_canvas import MapCanvasWidget
+from ui.utils.widgets.drive_route_overlay import (
+    build_drive_route_markers,
+    draw_drive_route_markers,
+    drive_route_label,
+    drive_target_waypoint_text,
+)
 
 
 SUMMARY_ITEMS = (
@@ -268,14 +274,22 @@ class RobotLocationMapCanvas(MapCanvasWidget):
         self.setObjectName("robotLocationMapCanvas")
         self.visible_robot_ids = []
         self.robot_markers = []
+        self.drive_route_markers = []
 
     def show_robots(self, robots, *, selected_map_id):
         self.visible_robot_ids = []
         self.robot_markers = []
+        self.drive_route_markers = []
         selected_map_id = str(selected_map_id or "").strip()
         if not self.map_loaded or not selected_map_id:
             self.update()
             return
+
+        self.drive_route_markers = build_drive_route_markers(
+            self,
+            robots,
+            selected_map_id=selected_map_id,
+        )
 
         for robot in robots or []:
             if not isinstance(robot, dict):
@@ -308,6 +322,7 @@ class RobotLocationMapCanvas(MapCanvasWidget):
         self.update()
 
     def draw_overlay(self, painter, target):
+        draw_drive_route_markers(self, painter, target, self.drive_route_markers)
         for marker in self.robot_markers:
             point = self.to_view_point(marker.get("pixel"), target)
             if point is None:
@@ -356,6 +371,8 @@ class RobotStatusCard(QFrame):
         title_row.addStretch()
         title_row.addWidget(chip)
 
+        target_waypoint = drive_target_waypoint_text(robot.get("active_drive_task"))
+        drive_route = drive_route_label(robot.get("active_drive_task"))
         details = [
             ("구분", _display(robot.get("robot_type"))),
             ("지원 기능", _capabilities_text(robot.get("capabilities"))),
@@ -365,6 +382,8 @@ class RobotStatusCard(QFrame):
             ("배터리", _battery_text(robot.get("battery_percent"))),
             ("마지막 수신", _datetime(robot.get("last_seen_at"))),
         ]
+        if target_waypoint != "-" or drive_route != "-":
+            details[3:3] = [("목표 WP", target_waypoint), ("주행 경로", drive_route)]
 
         layout.addLayout(title_row)
         for key, value in details:
@@ -724,11 +743,18 @@ class RobotStatusPage(QWidget):
         robot_id = str(payload.get("assigned_robot_id") or "").strip()
         if not robot_id:
             return None
-        return {
+        patch = {
             "robot_id": robot_id,
             "current_task_id": payload.get("task_id"),
             "current_phase": payload.get("phase") or payload.get("task_status"),
         }
+        if isinstance(payload.get("active_drive_task"), dict):
+            patch["active_drive_task"] = dict(payload["active_drive_task"])
+        elif "current_waypoint_index" in payload:
+            patch["active_drive_task"] = {
+                "current_waypoint_index": payload.get("current_waypoint_index")
+            }
+        return patch
 
     def _normalize_runtime_pose(self, robot_id, pose, *, updated_at=None):
         existing_pose = {}
@@ -757,7 +783,14 @@ class RobotStatusPage(QWidget):
                 merged = dict(robot)
                 for key, value in patch.items():
                     if value is not None:
-                        merged[key] = value
+                        if (
+                            key == "active_drive_task"
+                            and isinstance(value, dict)
+                            and isinstance(merged.get(key), dict)
+                        ):
+                            merged[key] = {**merged[key], **value}
+                        else:
+                            merged[key] = value
                 robots.append(merged)
                 updated = True
             else:
@@ -938,6 +971,8 @@ class RobotStatusPage(QWidget):
         if not isinstance(robot, dict):
             return
         self._selected_robot_id = str(robot.get("robot_id") or "").strip() or None
+        target_waypoint = drive_target_waypoint_text(robot.get("active_drive_task"))
+        drive_route = drive_route_label(robot.get("active_drive_task"))
         detail_rows = [
             ("선택 로봇", _display(robot.get("robot_id"))),
             ("표시명", _display(robot.get("display_name"))),
@@ -955,6 +990,11 @@ class RobotStatusPage(QWidget):
             ("마지막 수신", _datetime(robot.get("last_seen_at"))),
             ("Fault", _display(robot.get("fault_code"))),
         ]
+        if target_waypoint != "-" or drive_route != "-":
+            detail_rows[6:6] = [
+                ("목표 WP", target_waypoint),
+                ("주행 경로", drive_route),
+            ]
         self.detail_list.set_rows(detail_rows)
 
     def _remember_map_assets(self, bundle):

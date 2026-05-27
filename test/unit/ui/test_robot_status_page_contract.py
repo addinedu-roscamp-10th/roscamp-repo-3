@@ -312,6 +312,129 @@ def test_robot_status_page_preserves_map_payload_on_runtime_only_refresh():
         page.close()
 
 
+def test_robot_status_page_map_renders_active_drive_route_and_target():
+    _app()
+
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False)
+    bundle = _bundle()
+    bundle["robots"][0] = {
+        **bundle["robots"][0],
+        "current_task_id": 3001,
+        "current_phase": "FOLLOW_DRIVE_ROUTE",
+        "active_drive_task": {
+            "task_id": 3001,
+            "route_id": "route_01",
+            "route_name": "교차 복도 1",
+            "route_revision": 2,
+            "current_waypoint_index": 1,
+            "target_waypoint_index": 2,
+            "target_waypoint": {
+                "sequence_no": 2,
+                "waypoint_id": "hall_1_4",
+                "x": 2.0,
+                "y": 1.0,
+                "yaw": 0.0,
+            },
+            "route_path": {
+                "map_id": "map_0504",
+                "frame_id": "map",
+                "poses": [
+                    {
+                        "sequence_no": 1,
+                        "waypoint_id": "hall_1_1",
+                        "x": 1.0,
+                        "y": 1.0,
+                        "yaw": 0.0,
+                    },
+                    {
+                        "sequence_no": 2,
+                        "waypoint_id": "hall_1_4",
+                        "x": 2.0,
+                        "y": 1.0,
+                        "yaw": 0.0,
+                    },
+                    {
+                        "sequence_no": 3,
+                        "waypoint_id": "hall_2_4",
+                        "x": 2.0,
+                        "y": 2.0,
+                        "yaw": 1.57,
+                    },
+                ],
+            },
+        },
+    }
+
+    try:
+        page.apply_robot_status_bundle(bundle)
+
+        labels = _label_texts(page)
+        assert "목표 WP" in labels
+        assert "hall_1_4" in labels
+        marker = page.robot_map_canvas.drive_route_markers[0]
+        assert marker["robot_id"] == "pinky2"
+        assert marker["route_pixel_points"] == [(1, 3), (2, 3), (2, 2)]
+        assert marker["target_waypoint_id"] == "hall_1_4"
+    finally:
+        page.close()
+
+
+def test_robot_status_page_updates_drive_target_from_task_stream_event():
+    _app()
+
+    from ui.utils.pages.caregiver.robot_status_page import RobotStatusPage
+
+    page = RobotStatusPage(autoload=False)
+    bundle = _bundle()
+    bundle["robots"][0] = {
+        **bundle["robots"][0],
+        "current_task_id": 3001,
+        "current_phase": "FOLLOW_DRIVE_ROUTE",
+        "active_drive_task": {
+            "task_id": 3001,
+            "route_id": "route_01",
+            "route_name": "교차 복도 1",
+            "current_waypoint_index": 0,
+            "route_path": {
+                "map_id": "map_0504",
+                "frame_id": "map",
+                "poses": [
+                    {"sequence_no": 1, "waypoint_id": "hall_1_1", "x": 1.0, "y": 1.0},
+                    {"sequence_no": 2, "waypoint_id": "hall_1_4", "x": 2.0, "y": 1.0},
+                ],
+            },
+        },
+    }
+
+    try:
+        page.apply_robot_status_bundle(bundle)
+        assert page.robot_map_canvas.drive_route_markers[0]["target_waypoint_id"] == (
+            "hall_1_1"
+        )
+
+        page.apply_stream_event(
+            {
+                "event_type": "TASK_UPDATED",
+                "payload": {
+                    "task_id": 3001,
+                    "task_type": "DRIVE",
+                    "task_status": "RUNNING",
+                    "phase": "FOLLOW_DRIVE_ROUTE",
+                    "assigned_robot_id": "pinky2",
+                    "current_waypoint_index": 1,
+                },
+            }
+        )
+
+        assert page.robot_map_canvas.drive_route_markers[0]["target_waypoint_id"] == (
+            "hall_1_4"
+        )
+    finally:
+        page.close()
+
+
 def test_robot_status_page_orders_pinky_cards_above_jetcobot_cards():
     _app()
 

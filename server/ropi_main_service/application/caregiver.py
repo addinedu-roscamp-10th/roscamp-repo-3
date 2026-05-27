@@ -142,33 +142,37 @@ class CaregiverService:
             else:
                 chip_type = "red"
 
-            current_phase = row.get("current_task_phase") or row.get("current_task_status")
-
-            result.append(
-                {
-                    "robot_id": row["robot_id"],
-                    "display_name": CaregiverService._display_name(row),
-                    "robot_type": CaregiverService._robot_type(row),
-                    "manager_group": row.get("robot_manager_name") or "-",
-                    "capabilities": CaregiverService._capabilities(row),
-                    "station_roles": CaregiverService._station_roles(row),
-                    "connection_status": connection_status,
-                    "runtime_state": status,
-                    "battery_percent": battery_percent,
-                    "current_location": current_location,
-                    "current_pose": current_pose,
-                    "current_task_id": row.get("current_task_id"),
-                    "current_phase": current_phase,
-                    "last_seen_at": last_seen_at,
-                    "fault_code": row.get("fault_code"),
-                    "robot_name": row["robot_id"],
-                    "status": connection_status,
-                    "zone": current_location,
-                    "battery": battery_percent if battery_percent is not None else "-",
-                    "current_task": current_phase or "-",
-                    "chip_type": chip_type,
-                }
+            current_phase = row.get("current_task_phase") or row.get(
+                "current_task_status"
             )
+            active_drive_task = CaregiverService._format_active_drive_task(row)
+
+            robot = {
+                "robot_id": row["robot_id"],
+                "display_name": CaregiverService._display_name(row),
+                "robot_type": CaregiverService._robot_type(row),
+                "manager_group": row.get("robot_manager_name") or "-",
+                "capabilities": CaregiverService._capabilities(row),
+                "station_roles": CaregiverService._station_roles(row),
+                "connection_status": connection_status,
+                "runtime_state": status,
+                "battery_percent": battery_percent,
+                "current_location": current_location,
+                "current_pose": current_pose,
+                "current_task_id": row.get("current_task_id"),
+                "current_phase": current_phase,
+                "last_seen_at": last_seen_at,
+                "fault_code": row.get("fault_code"),
+                "robot_name": row["robot_id"],
+                "status": connection_status,
+                "zone": current_location,
+                "battery": battery_percent if battery_percent is not None else "-",
+                "current_task": current_phase or "-",
+                "chip_type": chip_type,
+            }
+            if active_drive_task is not None:
+                robot["active_drive_task"] = active_drive_task
+            result.append(robot)
 
         return result
 
@@ -290,6 +294,82 @@ class CaregiverService:
             "yaw": yaw,
             "updated_at": updated_at,
         }
+
+    @classmethod
+    def _format_active_drive_task(cls, row):
+        if str(row.get("current_task_type") or "").strip().upper() != "DRIVE":
+            return None
+        route_id = str(row.get("drive_route_id") or "").strip()
+        if not route_id:
+            return None
+
+        path_json = json_object(row.get("drive_path_snapshot_json"))
+        raw_poses = (
+            path_json.get("poses") if isinstance(path_json.get("poses"), list) else []
+        )
+        poses = [pose for pose in (cls._drive_pose(pose) for pose in raw_poses) if pose]
+        header = path_json.get("header") if isinstance(path_json.get("header"), dict) else {}
+        frame_id = (
+            str(row.get("drive_frame_id") or header.get("frame_id") or "").strip()
+            or "map"
+        )
+        waypoint_count = optional_int(row.get("drive_waypoint_count"))
+        if waypoint_count is None:
+            waypoint_count = len(poses)
+        current_waypoint_index = optional_int(row.get("drive_current_waypoint_index"))
+        if current_waypoint_index is None:
+            current_waypoint_index = 0
+        target_waypoint_index = cls._drive_target_waypoint_index(
+            current_waypoint_index=current_waypoint_index,
+            pose_count=len(poses),
+        )
+        target_waypoint = (
+            dict(poses[target_waypoint_index - 1])
+            if target_waypoint_index is not None
+            else None
+        )
+
+        return {
+            "task_id": row.get("current_task_id"),
+            "route_id": route_id,
+            "route_name": row.get("drive_route_name"),
+            "route_revision": optional_int(row.get("drive_route_revision")),
+            "drive_status": row.get("drive_status"),
+            "waypoint_count": waypoint_count,
+            "current_waypoint_index": current_waypoint_index,
+            "target_waypoint_index": target_waypoint_index,
+            "target_waypoint": target_waypoint,
+            "route_path": {
+                "map_id": row.get("current_pose_map_id") or row.get("map_id"),
+                "frame_id": frame_id,
+                "poses": poses,
+            },
+        }
+
+    @classmethod
+    def _drive_pose(cls, pose):
+        if not isinstance(pose, dict):
+            return None
+        x = cls._optional_float(pose.get("x"))
+        y = cls._optional_float(pose.get("y"))
+        if x is None or y is None:
+            return None
+        return {
+            "sequence_no": optional_int(pose.get("sequence_no")),
+            "waypoint_id": str(pose.get("waypoint_id") or "").strip() or None,
+            "x": x,
+            "y": y,
+            "yaw": cls._optional_float(pose.get("yaw"), default=0.0),
+            "stop_required": bool(pose.get("stop_required", True)),
+            "dwell_sec": cls._optional_float(pose.get("dwell_sec")),
+        }
+
+    @staticmethod
+    def _drive_target_waypoint_index(*, current_waypoint_index, pose_count):
+        target_index = (current_waypoint_index or 0) + 1
+        if target_index < 1 or target_index > pose_count:
+            return None
+        return target_index
 
     @staticmethod
     def _optional_float(value, default=None):
